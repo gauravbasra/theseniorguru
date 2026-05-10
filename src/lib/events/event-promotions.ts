@@ -3,6 +3,7 @@ import type {
   CreateEventPromotionInput,
   EventPromotionRecord
 } from "@/lib/domain/events";
+import { requireProviderFeature } from "@/lib/billing/entitlements";
 import { getEventById } from "@/lib/events/events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -49,6 +50,10 @@ export async function createEventPromotion(input: CreateEventPromotionInput): Pr
 
   if (!event) {
     throw new Error("Event not found");
+  }
+
+  if (event.providerId) {
+    await requireProviderFeature(event.providerId, "event_promotions");
   }
 
   const policy = await runPolicyCheck({
@@ -171,6 +176,10 @@ export async function activateEventPromotion(input: ActivateEventPromotionInput)
     throw new Error("Event not found");
   }
 
+  if (event.providerId) {
+    await requireProviderFeature(event.providerId, "event_promotions");
+  }
+
   const { data, error } = await supabase
     .from("event_promotions")
     .update({ status: "active" })
@@ -275,4 +284,3 @@ async function createSponsoredEventCreative(input: {
     throw new Error(`Event promotion creative creation failed: ${creativeError.message}`);
   }
 }
-

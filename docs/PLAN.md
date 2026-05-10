@@ -37,6 +37,7 @@ Deliverables:
 - Campaign create/generate/publish APIs. Completed.
 - Provider growth plans, subscriptions, and entitlements schema. Completed.
 - Contract-first provider growth subscription APIs. Completed.
+- Provider feature entitlement check API and enforcement hooks. Completed.
 - Reviews/reputation schema. Completed.
 - Review submit/list and AI response draft APIs. Completed.
 - Docker deployment scaffolding. Completed.
@@ -137,6 +138,7 @@ Deliverables:
 - AI chat/voice.
 - Provider dashboard and metrics.
 - Provider growth plans and feature entitlements. Completed.
+- Paid feature entitlement enforcement. Completed.
 
 ## Phase 7: Advertising and Placement Engine
 

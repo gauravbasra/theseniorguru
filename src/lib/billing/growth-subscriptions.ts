@@ -46,7 +46,58 @@ const seedGrowthPlans: GrowthPlanRecord[] = [
 ];
 
 const seedSubscriptions: ProviderGrowthSubscriptionRecord[] = [];
-const seedEntitlements: ProviderFeatureEntitlementRecord[] = [];
+const seedEntitlements: ProviderFeatureEntitlementRecord[] = [
+  {
+    id: "seed-entitlement-campaigns",
+    providerId: "seed-denver-memory-care",
+    subscriptionId: "seed-growth-pro-subscription",
+    featureKey: "campaigns",
+    status: "active",
+    startsAt: "2026-05-10T00:00:00.000Z",
+    endsAt: "2026-11-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  },
+  {
+    id: "seed-entitlement-event-promotions",
+    providerId: "seed-denver-memory-care",
+    subscriptionId: "seed-growth-pro-subscription",
+    featureKey: "event_promotions",
+    status: "active",
+    startsAt: "2026-05-10T00:00:00.000Z",
+    endsAt: "2026-11-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  },
+  {
+    id: "seed-entitlement-ai-seo",
+    providerId: "seed-denver-memory-care",
+    subscriptionId: "seed-growth-pro-subscription",
+    featureKey: "ai_seo",
+    status: "active",
+    startsAt: "2026-05-10T00:00:00.000Z",
+    endsAt: "2026-11-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  },
+  {
+    id: "seed-entitlement-ai-social",
+    providerId: "seed-denver-memory-care",
+    subscriptionId: "seed-growth-pro-subscription",
+    featureKey: "ai_social",
+    status: "active",
+    startsAt: "2026-05-10T00:00:00.000Z",
+    endsAt: "2026-11-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  },
+  {
+    id: "seed-entitlement-reviews",
+    providerId: "seed-denver-memory-care",
+    subscriptionId: "seed-growth-pro-subscription",
+    featureKey: "reviews",
+    status: "active",
+    startsAt: "2026-05-10T00:00:00.000Z",
+    endsAt: "2026-11-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  }
+];
 
 function addMonths(date: Date, months: number) {
   const next = new Date(date);

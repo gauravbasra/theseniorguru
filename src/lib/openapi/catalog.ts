@@ -122,6 +122,9 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/growth-subscriptions/{id}/activate": {
         post: { tags: ["Billing"], summary: "Activate a provider growth subscription and feature entitlements" }
       },
+      "/api/v1/provider/entitlements/check": {
+        post: { tags: ["Billing"], summary: "Check whether a provider has access to a paid or free feature" }
+      },
       "/api/v1/provider/campaigns": {
         get: { tags: ["Campaigns"], summary: "List provider campaigns" },
         post: { tags: ["Campaigns"], summary: "Create a provider marketing campaign" }

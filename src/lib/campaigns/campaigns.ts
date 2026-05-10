@@ -1,4 +1,5 @@
 import type { CampaignAssetRecord, CreateCampaignInput, MarketingCampaignRecord } from "@/lib/domain/campaigns";
+import { featureForCampaignType, requireProviderFeature } from "@/lib/billing/entitlements";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -40,6 +41,10 @@ export async function listCampaigns(): Promise<MarketingCampaignRecord[]> {
 }
 
 export async function createCampaign(input: CreateCampaignInput): Promise<MarketingCampaignRecord> {
+  if (input.providerId) {
+    await requireProviderFeature(input.providerId, featureForCampaignType(input.campaignType));
+  }
+
   const policy = await runPolicyCheck({
     subjectType: "marketing_campaign",
     actionKey: `create_${input.campaignType}`,
@@ -149,4 +154,3 @@ export async function publishCampaign(campaignId: string) {
 
   return { id: campaignId, status: "published" };
 }
-
