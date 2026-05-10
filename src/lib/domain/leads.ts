@@ -56,3 +56,16 @@ export type FreeListingRequestRecord = FreeListingRequestInput & {
   policyDecision: string;
   createdAt: string;
 };
+
+export type LeadQueueItem =
+  | (FamilyInquiryRecord & { leadType: "family_inquiry"; displayName: string; sourceLabel: string })
+  | (OperatorDemoRequestRecord & { leadType: "operator_demo"; displayName: string; sourceLabel: string })
+  | (FreeListingRequestRecord & { leadType: "free_listing"; displayName: string; sourceLabel: string });
+
+export type LeadQueueSummary = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  total: number;
+  byType: Record<LeadQueueItem["leadType"], number>;
+  items: LeadQueueItem[];
+};

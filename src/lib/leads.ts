@@ -3,6 +3,8 @@ import type {
   FamilyInquiryRecord,
   FreeListingRequestInput,
   FreeListingRequestRecord,
+  LeadQueueItem,
+  LeadQueueSummary,
   OperatorDemoRequestInput,
   OperatorDemoRequestRecord
 } from "@/lib/domain/leads";
@@ -15,6 +17,18 @@ function hasContact(input: { requesterEmail?: string; requesterPhone?: string; c
 
 function nowId(prefix: string) {
   return `${prefix}-${Date.now()}`;
+}
+
+const localLeadStore = {
+  familyInquiries: [] as FamilyInquiryRecord[],
+  operatorDemoRequests: [] as OperatorDemoRequestRecord[],
+  freeListingRequests: [] as FreeListingRequestRecord[]
+};
+
+function pushNewest<T extends { id: string }>(items: T[], item: T) {
+  items.unshift(item);
+  items.splice(25);
+  return item;
 }
 
 function familyFromRow(row: Record<string, unknown>): FamilyInquiryRecord {
@@ -73,6 +87,51 @@ function freeListingFromRow(row: Record<string, unknown>): FreeListingRequestRec
   };
 }
 
+function toQueueItems({
+  familyInquiries,
+  operatorDemoRequests,
+  freeListingRequests
+}: {
+  familyInquiries: FamilyInquiryRecord[];
+  operatorDemoRequests: OperatorDemoRequestRecord[];
+  freeListingRequests: FreeListingRequestRecord[];
+}): LeadQueueItem[] {
+  return [
+    ...familyInquiries.map((item) => ({
+      ...item,
+      leadType: "family_inquiry" as const,
+      displayName: item.requesterName,
+      sourceLabel: [item.careType, item.city, item.state].filter(Boolean).join(" · ") || "Family inquiry"
+    })),
+    ...operatorDemoRequests.map((item) => ({
+      ...item,
+      leadType: "operator_demo" as const,
+      displayName: item.organizationName,
+      sourceLabel: [item.requestedProduct?.replaceAll("_", " "), item.communityCount].filter(Boolean).join(" · ") || "Operator demo"
+    })),
+    ...freeListingRequests.map((item) => ({
+      ...item,
+      leadType: "free_listing" as const,
+      displayName: item.communityName,
+      sourceLabel: [item.city, item.state, item.careTypes?.join(", ")].filter(Boolean).join(" · ") || "Free listing"
+    }))
+  ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+function queueSummary(source: LeadQueueSummary["source"], items: LeadQueueItem[]): LeadQueueSummary {
+  return {
+    generatedAt: new Date().toISOString(),
+    source,
+    total: items.length,
+    byType: {
+      family_inquiry: items.filter((item) => item.leadType === "family_inquiry").length,
+      operator_demo: items.filter((item) => item.leadType === "operator_demo").length,
+      free_listing: items.filter((item) => item.leadType === "free_listing").length
+    },
+    items
+  };
+}
+
 export async function submitFamilyInquiry(input: FamilyInquiryInput): Promise<FamilyInquiryRecord> {
   if (!hasContact(input)) {
     return {
@@ -102,13 +161,13 @@ export async function submitFamilyInquiry(input: FamilyInquiryInput): Promise<Fa
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return {
+    return pushNewest(localLeadStore.familyInquiries, {
       id: nowId("family-inquiry"),
       ...input,
       status: "submitted",
       policyDecision: policy.decision,
       createdAt: new Date().toISOString()
-    };
+    });
   }
 
   const { data, error } = await supabase
@@ -168,13 +227,13 @@ export async function submitOperatorDemoRequest(
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return {
+    return pushNewest(localLeadStore.operatorDemoRequests, {
       id: nowId("operator-demo"),
       ...input,
       status: "submitted",
       policyDecision: policy.decision,
       createdAt: new Date().toISOString()
-    };
+    });
   }
 
   const { data, error } = await supabase
@@ -231,13 +290,13 @@ export async function submitFreeListingRequest(input: FreeListingRequestInput): 
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return {
+    return pushNewest(localLeadStore.freeListingRequests, {
       id: nowId("free-listing"),
       ...input,
       status: "submitted",
       policyDecision: policy.decision,
       createdAt: new Date().toISOString()
-    };
+    });
   }
 
   const { data, error } = await supabase
@@ -264,4 +323,70 @@ export async function submitFreeListingRequest(input: FreeListingRequestInput): 
   }
 
   return freeListingFromRow(data);
+}
+
+export async function listLeadQueue(): Promise<LeadQueueSummary> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return queueSummary("local_fallback", toQueueItems(localLeadStore));
+  }
+
+  const [family, demos, freeListings] = await Promise.all([
+    supabase.from("family_inquiries").select("*").order("created_at", { ascending: false }).limit(50),
+    supabase.from("operator_demo_requests").select("*").order("created_at", { ascending: false }).limit(50),
+    supabase.from("free_listing_requests").select("*").order("created_at", { ascending: false }).limit(50)
+  ]);
+
+  const error = family.error ?? demos.error ?? freeListings.error;
+  if (error) {
+    throw new Error(`Lead queue query failed: ${error.message}`);
+  }
+
+  return queueSummary(
+    "supabase",
+    toQueueItems({
+      familyInquiries: (family.data ?? []).map(familyFromRow),
+      operatorDemoRequests: (demos.data ?? []).map(demoFromRow),
+      freeListingRequests: (freeListings.data ?? []).map(freeListingFromRow)
+    })
+  );
+}
+
+export async function updateLeadStatus(input: {
+  leadType: LeadQueueItem["leadType"];
+  id: string;
+  status: "submitted" | "needs_contact_info" | "blocked_by_policy";
+}) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const bucket =
+      input.leadType === "family_inquiry"
+        ? localLeadStore.familyInquiries
+        : input.leadType === "operator_demo"
+          ? localLeadStore.operatorDemoRequests
+          : localLeadStore.freeListingRequests;
+    const item = bucket.find((lead) => lead.id === input.id);
+    if (!item) {
+      throw new Error("Lead not found");
+    }
+    item.status = input.status;
+    return item;
+  }
+
+  const table =
+    input.leadType === "family_inquiry"
+      ? "family_inquiries"
+      : input.leadType === "operator_demo"
+        ? "operator_demo_requests"
+        : "free_listing_requests";
+
+  const { data, error } = await supabase.from(table).update({ status: input.status }).eq("id", input.id).select("*").single();
+
+  if (error) {
+    throw new Error(`Lead status update failed: ${error.message}`);
+  }
+
+  return data;
 }

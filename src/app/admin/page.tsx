@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { getProductMap } from "@/lib/system/product-map";
 
 export default async function AdminPage() {
@@ -55,6 +56,16 @@ export default async function AdminPage() {
             <h2>{value}</h2>
           </article>
         ))}
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Executable operations</p>
+            <h2>Run launch workflows against backend routes, including the new lead intake queue.</h2>
+          </div>
+        </div>
+        <AdminOperationsConsole />
       </section>
 
       <section className="admin-section">

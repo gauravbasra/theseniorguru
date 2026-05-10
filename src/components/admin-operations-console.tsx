@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCheck, FileCheck2, GitMerge, Loader2, MessageSquareWarning, Radar, Send, ShieldAlert } from "lucide-react";
+import {
+  CheckCheck,
+  FileCheck2,
+  GitMerge,
+  Inbox,
+  Loader2,
+  MessageSquareWarning,
+  Radar,
+  Send,
+  ShieldAlert
+} from "lucide-react";
 
 type OperationResult = {
   label: string;
@@ -124,6 +134,12 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Inbox aria-hidden="true" />}
+          label="Load lead queue"
+          loading={loadingKey === "leads"}
+          onClick={() => runOperation("Lead intake queue", "leads", () => fetch("/api/v1/admin/leads"))}
+        />
+        <OpsButton
           icon={<MessageSquareWarning aria-hidden="true" />}
           label="Create report"
           loading={loadingKey === "report"}
@@ -200,4 +216,3 @@ function OpsButton({
     </button>
   );
 }
-
