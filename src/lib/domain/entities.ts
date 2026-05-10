@@ -53,3 +53,20 @@ export type ExtractedEntityDecisionInput = {
   matchedProviderId?: string;
 };
 
+export type EntityMatchCandidateRecord = {
+  id: string;
+  extractedEntityId: string;
+  providerId: string;
+  providerName: string;
+  matchScore: number;
+  matchReasons: string[];
+  createdAt: string;
+};
+
+export type EntityMatchResult = {
+  entityId: string;
+  reviewStatus: ExtractedEntityReviewStatus;
+  candidateCount: number;
+  topScore: number;
+  candidates: EntityMatchCandidateRecord[];
+};

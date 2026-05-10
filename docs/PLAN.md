@@ -36,6 +36,7 @@ Deliverables:
 - Open API catalog endpoint. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
+- Extracted entity duplicate match scoring. Completed.
 - Import batch worker run API. Completed.
 - Provider claim outreach queue APIs. Completed.
 - Supabase project credentials. Parked for tomorrow.
@@ -56,6 +57,7 @@ Deliverables:
 - CMS/state/public-source import adapters.
 - JSON import worker for approved sources. Completed.
 - Entity matching and duplicate detection.
+- Entity match scoring and candidate persistence. Completed.
 - Confidence scoring.
 - Human review queue.
 - Extracted entity approval, rejection, duplicate, audit workflow. Completed.
