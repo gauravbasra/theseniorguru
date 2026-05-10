@@ -25,6 +25,62 @@ export type CommunityPostRecord = {
   createdAt: string;
 };
 
+export type CreateCommunityPostInput = {
+  communityId?: string;
+  providerId?: string;
+  authorName?: string;
+  postType?: CommunityPostType;
+  title: string;
+  body?: string;
+  city?: string;
+  state?: string;
+  isSponsored?: boolean;
+  disclosureLabel?: string;
+};
+
+export type CommunityCommentRecord = {
+  id: string;
+  postId: string;
+  authorName?: string;
+  body: string;
+  status: CommunityPostRecord["status"];
+  policyCheckId?: string;
+  createdAt: string;
+};
+
+export type CreateCommunityCommentInput = {
+  postId: string;
+  authorName?: string;
+  body: string;
+};
+
+export type CommunityReportRecord = {
+  id: string;
+  subjectType: string;
+  subjectId: string;
+  reporterEmail?: string;
+  reason: string;
+  details?: string;
+  status: "open" | "reviewing" | "resolved" | "dismissed";
+  createdAt: string;
+};
+
+export type CreateCommunityReportInput = {
+  subjectType: "community_post" | "community_comment" | "provider" | "event";
+  subjectId: string;
+  reporterEmail?: string;
+  reason: string;
+  details?: string;
+};
+
+export type ModerateCommunityInput = {
+  subjectType: "community_post" | "community_comment";
+  subjectId: string;
+  status: CommunityPostRecord["status"];
+  actorId?: string;
+  reason?: string;
+};
+
 export type AppFeedItem = {
   id: string;
   type: "provider" | "event" | "community_post";
@@ -37,4 +93,3 @@ export type AppFeedItem = {
   disclosureLabel?: string;
   payload: Record<string, unknown>;
 };
-

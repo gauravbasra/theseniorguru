@@ -86,6 +86,22 @@ export function getOpenApiCatalog() {
         get: { tags: ["Community"], summary: "List members of a care circle" },
         post: { tags: ["Community"], summary: "Invite or add a member to a care circle" }
       },
+      "/api/v1/community/posts": {
+        post: { tags: ["Community"], summary: "Create a policy-gated community post" }
+      },
+      "/api/v1/community/posts/{id}/comments": {
+        get: { tags: ["Community"], summary: "List published comments for a community post" },
+        post: { tags: ["Community"], summary: "Create a policy-gated community comment" }
+      },
+      "/api/v1/community/reports": {
+        post: { tags: ["Community"], summary: "Report community content for moderation" }
+      },
+      "/api/v1/admin/community/posts/{id}/moderate": {
+        post: { tags: ["Community"], summary: "Moderate a community post with audit context" }
+      },
+      "/api/v1/admin/community/comments/{id}/moderate": {
+        post: { tags: ["Community"], summary: "Moderate a community comment with audit context" }
+      },
       "/api/v1/ads/placements/{key}": {
         get: { tags: ["Ads"], summary: "Get ad placement metadata and creatives" }
       },

@@ -30,6 +30,7 @@ Deliverables:
 - Mobile app feed API. Completed.
 - Saved providers and care circle schema. Completed.
 - Saved providers and care circle APIs. Completed.
+- Community post, comment, report, and moderation APIs. Completed.
 - Ad placement schema. Completed.
 - Ad placement/impression/click APIs. Completed.
 - Marketing campaign schema. Completed.
@@ -119,6 +120,7 @@ Deliverables:
 - Groups.
 - Comments.
 - Reports/moderation.
+- Community comments, reports, and moderation APIs. Completed.
 - App feed API.
 - Saved providers and care circles.
 - Saved provider and care circle APIs. Completed.
