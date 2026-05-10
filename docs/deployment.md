@@ -35,6 +35,8 @@ server {
 ## Tomorrow Dependencies
 
 - Confirm target droplet.
+- Current Vercel deployment is available for work-in-progress review at `https://theseniorguru.vercel.app`.
+- Check `/api/v1/system/deployment` for active deployment URL, environment, commit SHA, and domain cutover actions.
 - Add production `.env`.
 - Check `/api/v1/system/readiness` after env installation; it should report Supabase, email, ads, and hosting readiness without exposing secret values.
 - Run Supabase migrations against production project.

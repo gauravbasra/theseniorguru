@@ -1,4 +1,5 @@
 import { getAppEnv } from "@/lib/env";
+import { getDeploymentStatus } from "@/lib/system/deployment";
 
 type ReadinessCheck = {
   key: string;
@@ -21,6 +22,7 @@ function groupStatus(checks: ReadinessCheck[]) {
 
 export function getSystemReadiness() {
   const env = getAppEnv();
+  const deployment = getDeploymentStatus();
   const supabaseChecks: ReadinessCheck[] = [
     {
       key: "NEXT_PUBLIC_SUPABASE_URL",
@@ -76,6 +78,14 @@ export function getSystemReadiness() {
     }
   ];
   const hostingChecks: ReadinessCheck[] = [
+    {
+      key: "ACTIVE_DEPLOYMENT_URL",
+      label: "Active deployment URL",
+      status: deployment.activeDeploymentUrl ? "ready" : "partial",
+      action: deployment.activeDeploymentUrl
+        ? `Current deployment is ${deployment.activeDeploymentUrl}.`
+        : "Deploy to production hosting and confirm public URL."
+    },
     {
       key: "NEXT_PUBLIC_APP_URL",
       label: "Canonical application URL",
@@ -134,4 +144,3 @@ export function getSystemReadiness() {
     }
   };
 }
-

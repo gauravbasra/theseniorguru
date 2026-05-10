@@ -49,6 +49,7 @@ Deliverables:
 - Admin operations console for import, claim, outreach, and moderation workflows. Completed.
 - Senior family action panel for saved providers, care circles, members, and community posts. Completed.
 - Admin AI newsroom console for source ingestion, article drafting, publishing, derivatives, and policy checks. Completed.
+- Deployment status API and admin link for active Vercel URL, commit, canonical domain, and owner DNS actions. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.

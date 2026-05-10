@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { NewsroomConsole } from "@/components/newsroom-console";
+import { getDeploymentStatus } from "@/lib/system/deployment";
 import { getSystemReadiness } from "@/lib/system/readiness";
 
 export default function AdminPage() {
   const readiness = getSystemReadiness();
+  const deployment = getDeploymentStatus();
 
   return (
     <main className="admin-shell">
@@ -19,12 +21,17 @@ export default function AdminPage() {
           <div className="actions">
             <Link className="button secondary" href="/workbench">Founder workbench</Link>
             <Link className="button secondary" href="/api/v1/system/readiness">Readiness JSON</Link>
+            <Link className="button secondary" href="/api/v1/system/deployment">Deployment JSON</Link>
           </div>
         </div>
         <aside className="admin-status-card">
           <p className="eyebrow">Production readiness</p>
           <h2>{readiness.overallStatus.replaceAll("_", " ")}</h2>
-          <p>Supabase, email, ads, DNS, and legal tasks remain visible without exposing secret values.</p>
+          <p>
+            {deployment.activeDeploymentUrl
+              ? `Live on ${deployment.platform}; canonical DNS is tracked separately.`
+              : "Supabase, email, ads, DNS, and legal tasks remain visible without exposing secret values."}
+          </p>
         </aside>
       </section>
 

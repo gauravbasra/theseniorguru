@@ -8,6 +8,9 @@ export type AppEnv = {
   googleAdsClientId?: string;
   googleAdsClientSecret?: string;
   googleAdsDeveloperToken?: string;
+  vercelEnv?: string;
+  vercelUrl?: string;
+  vercelGitCommitSha?: string;
 };
 
 export function getAppEnv(): AppEnv {
@@ -20,7 +23,10 @@ export function getAppEnv(): AppEnv {
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     googleAdsClientId: process.env.GOOGLE_ADS_CLIENT_ID,
     googleAdsClientSecret: process.env.GOOGLE_ADS_CLIENT_SECRET,
-    googleAdsDeveloperToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+    googleAdsDeveloperToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN,
+    vercelEnv: process.env.VERCEL_ENV,
+    vercelUrl: process.env.VERCEL_URL,
+    vercelGitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA
   };
 }
 

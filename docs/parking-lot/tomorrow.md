@@ -12,14 +12,16 @@ These items require owner credentials, production access, or confirmation. Imple
 
 ## Hosting
 
-- Confirm which droplet should host `theseniorguru.com`.
+- Review current Vercel work-in-progress deployment at `https://theseniorguru.vercel.app`.
+- Confirm whether `theseniorguru.com` should point to Vercel now or remain on DigitalOcean until the production Supabase/email/ads credentials are installed.
+- Confirm whether a droplet is still required for `theseniorguru.com` after the Vercel deployment.
 - Confirm whether TheVaulted server is distinct from `147.182.129.38`.
 - Confirm that `thevaulted.com` must remain untouched except for safe inspection.
 - Provide SSH target if TheVaulted is a different server.
 
 ## DNS
 
-- Confirm whether `theseniorguru.com` should continue pointing to `143.198.188.246` or move to the selected hosting droplet.
+- Confirm whether `theseniorguru.com` should continue pointing to `143.198.188.246`, move to Vercel, or move to the selected hosting droplet.
 - Confirm approval before changing any live DNS record.
 
 ## Email and Sending
