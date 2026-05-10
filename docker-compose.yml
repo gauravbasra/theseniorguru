@@ -1,0 +1,11 @@
+services:
+  theseniorguru-web:
+    build:
+      context: .
+    container_name: theseniorguru-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "3051:3000"
+

@@ -29,6 +29,7 @@ Deliverables:
 - Campaign create/generate/publish APIs. Completed.
 - Reviews/reputation schema. Completed.
 - Review submit/list and AI response draft APIs. Completed.
+- Docker deployment scaffolding. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
