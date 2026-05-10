@@ -429,15 +429,23 @@ a {
   min-height: 100vh;
 }
 
+.admin-shell {
+  min-height: 100vh;
+}
+
 .workbench-hero,
-.workbench-grid {
+.workbench-grid,
+.admin-hero,
+.ops-explain,
+.ops-console {
   max-width: 1180px;
   margin: 0 auto;
   padding-left: 24px;
   padding-right: 24px;
 }
 
-.workbench-hero {
+.workbench-hero,
+.admin-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 20px;
@@ -446,7 +454,8 @@ a {
   align-items: end;
 }
 
-.workbench-hero h1 {
+.workbench-hero h1,
+.admin-hero h1 {
   max-width: 760px;
   margin: 12px 0 0;
   font-size: clamp(34px, 5vw, 62px);
@@ -454,6 +463,8 @@ a {
 }
 
 .workbench-status,
+.admin-status-card,
+.ops-explain article,
 .workbench-panel {
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -462,6 +473,8 @@ a {
 }
 
 .workbench-status p,
+.admin-status-card p,
+.ops-explain p,
 .workbench-panel p,
 .metric-card span {
   color: var(--muted);
@@ -563,6 +576,91 @@ a {
   background: #fff4f1;
   padding: 12px;
   color: #8a2f20 !important;
+}
+
+.ops-explain {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  padding-bottom: 16px;
+}
+
+.ops-explain h2 {
+  margin: 8px 0;
+}
+
+.ops-console {
+  padding-bottom: 64px;
+}
+
+.ops-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ops-button {
+  display: grid;
+  min-height: 104px;
+  align-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 14px;
+  color: var(--foreground);
+  cursor: pointer;
+  font-weight: 800;
+  text-align: left;
+}
+
+.ops-button svg {
+  color: var(--accent-strong);
+}
+
+.ops-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.ops-results {
+  display: grid;
+  gap: 12px;
+}
+
+.ops-result {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  padding: 18px;
+}
+
+.ops-result.ok {
+  border-color: #acd2c3;
+}
+
+.ops-result.error {
+  border-color: #e5b6ac;
+}
+
+.ops-result span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.ops-result pre {
+  max-height: 300px;
+  overflow: auto;
+  border-radius: 12px;
+  background: #111827;
+  color: #f8fafc;
+  padding: 14px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .audience-shell {
@@ -733,7 +831,10 @@ a {
   .console-actions,
   .audience-hero,
   .workbench-hero,
-  .workbench-grid {
+  .workbench-grid,
+  .admin-hero,
+  .ops-explain,
+  .ops-grid {
     grid-template-columns: 1fr;
   }
 
