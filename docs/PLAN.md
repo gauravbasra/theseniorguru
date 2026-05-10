@@ -61,6 +61,7 @@ Deliverables:
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.
 - Import batch worker run API. Completed.
+- Crawl job create/list/run APIs and unresolved data quality queue API. Completed.
 - Provider claim outreach queue APIs. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
@@ -79,6 +80,7 @@ Deliverables:
 - Import batches.
 - CMS/state/public-source import adapters.
 - JSON import worker for approved sources. Completed.
+- Crawl job control plane for approved sources. Completed.
 - Entity matching and duplicate detection.
 - Entity match scoring and candidate persistence. Completed.
 - Confidence scoring.

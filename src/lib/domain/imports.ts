@@ -65,3 +65,65 @@ export type ImportBatchRunResult = {
     reason: string;
   }>;
 };
+
+export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "blocked_by_policy";
+
+export type CrawlJobRecord = {
+  id: string;
+  dataSourceId: string;
+  status: CrawlJobStatus;
+  seedUrl: string;
+  maxPages: number;
+  pagesSeen: number;
+  pagesImported: number;
+  robotsDecision?: string;
+  policyCheckId?: string;
+  errorMessage?: string;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+};
+
+export type CreateCrawlJobInput = {
+  dataSourceId: string;
+  seedUrl: string;
+  maxPages?: number;
+  actorId?: string;
+};
+
+export type CrawlPageRecord = {
+  id: string;
+  crawlJobId: string;
+  url: string;
+  statusCode?: number;
+  contentHash?: string;
+  title?: string;
+  extractedText?: string;
+  fetchedAt: string;
+};
+
+export type RunCrawlJobInput = {
+  dryRun?: boolean;
+  actorId?: string;
+};
+
+export type CrawlJobRunResult = {
+  crawlJobId: string;
+  status: CrawlJobStatus;
+  dryRun: boolean;
+  pagesSeen: number;
+  pagesImported: number;
+  pages: CrawlPageRecord[];
+  errors: string[];
+};
+
+export type DataQualityFlagRecord = {
+  id: string;
+  subjectType: string;
+  subjectId: string;
+  severity: "low" | "medium" | "high" | "critical";
+  flagKey: string;
+  message: string;
+  resolvedAt?: string;
+  createdAt: string;
+};

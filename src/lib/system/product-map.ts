@@ -187,7 +187,11 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/extracted-entities",
       "POST /api/v1/admin/extracted-entities/{id}/match",
       "POST /api/v1/admin/extracted-entities/{id}/approve",
-      "POST /api/v1/admin/current-site-inventory/import"
+      "POST /api/v1/admin/current-site-inventory/import",
+      "GET /api/v1/admin/crawl-jobs",
+      "POST /api/v1/admin/crawl-jobs",
+      "POST /api/v1/admin/crawl-jobs/{id}/run",
+      "GET /api/v1/admin/data-quality-flags"
     ],
     requiredTables: [
       "data_sources",
@@ -199,7 +203,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["CMS/state import adapters", "Crawler job API", "Data quality queue"]
+    nextBackendWork: ["CMS/state import adapters", "Crawler scheduler", "Provider website extraction parser"]
   },
   {
     key: "reviews",

@@ -191,6 +191,16 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/current-site-inventory/import": {
         post: { tags: ["Aggregation"], summary: "Run current Senior Guru inventory import into the staging pipeline" }
       },
+      "/api/v1/admin/crawl-jobs": {
+        get: { tags: ["Aggregation"], summary: "List crawler jobs for approved data sources" },
+        post: { tags: ["Aggregation"], summary: "Create a policy-gated crawler job for an approved data source" }
+      },
+      "/api/v1/admin/crawl-jobs/{id}/run": {
+        post: { tags: ["Aggregation"], summary: "Run a crawler job with dry-run support and crawl page staging" }
+      },
+      "/api/v1/admin/data-quality-flags": {
+        get: { tags: ["Aggregation"], summary: "List unresolved data quality flags for import/crawl review" }
+      },
       "/api/v1/admin/api-clients": {
         get: { tags: ["System"], summary: "List approved Open API clients" },
         post: { tags: ["System"], summary: "Create a tenant-scoped Open API client" }

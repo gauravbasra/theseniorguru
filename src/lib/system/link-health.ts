@@ -31,6 +31,8 @@ const routeContracts: LinkContract[] = [
   { label: "Notification preferences API", href: "/api/v1/me/notification-preferences", method: "GET", owner: "family" },
   { label: "Readiness API", href: "/api/v1/system/readiness", method: "GET", owner: "admin" },
   { label: "Deployment API", href: "/api/v1/system/deployment", method: "GET", owner: "admin" },
+  { label: "Crawl jobs API", href: "/api/v1/admin/crawl-jobs", method: "GET", owner: "admin" },
+  { label: "Data quality flags API", href: "/api/v1/admin/data-quality-flags", method: "GET", owner: "admin" },
   { label: "API clients API", href: "/api/v1/admin/api-clients", method: "GET", owner: "admin" },
   { label: "Webhook subscriptions API", href: "/api/v1/admin/webhook-subscriptions", method: "GET", owner: "admin" },
   { label: "Webhook deliveries API", href: "/api/v1/admin/webhook-deliveries", method: "GET", owner: "admin" },
