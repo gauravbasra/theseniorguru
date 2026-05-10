@@ -421,10 +421,44 @@ a {
   padding-top: 14px;
 }
 
+.provider-dashboard-shell {
+  min-height: 100vh;
+}
+
+.dashboard-grid,
+.task-list {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  padding-bottom: 24px;
+}
+
+.dashboard-primary {
+  grid-column: span 2;
+}
+
+.task-list {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 60px;
+}
+
 @media (max-width: 860px) {
   .profile-hero,
   .profile-grid,
-  .local-content-grid {
+  .local-content-grid,
+  .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-primary {
+    grid-column: auto;
   }
 }
