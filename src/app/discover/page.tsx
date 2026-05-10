@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { listProviders } from "@/lib/providers";
 import { getAdPlacement } from "@/lib/ads/ads";
 
@@ -22,11 +23,16 @@ export default async function DiscoverPage() {
       <section className="provider-list">
         {providers.map((provider) => (
           <article key={provider.id} className="provider-card">
+            {provider.imageUrl ? (
+              <Image src={provider.imageUrl} alt={provider.name} width={360} height={240} />
+            ) : null}
             <div>
               <p className="status">{provider.status.replaceAll("_", " ")}</p>
               <h2>{provider.name}</h2>
-              <p>{provider.city}, {provider.state}</p>
+              <p>{provider.address ? `${provider.address}, ` : ""}{provider.city}, {provider.state}</p>
+              {provider.priceLabel ? <strong className="price-label">{provider.priceLabel}</strong> : null}
               <p>{provider.categories.join(" • ")}</p>
+              {provider.summary ? <p>{provider.summary}</p> : null}
               <small>
                 Source: {provider.source.name} · Confidence {Math.round(provider.confidenceScore * 100)}%
               </small>

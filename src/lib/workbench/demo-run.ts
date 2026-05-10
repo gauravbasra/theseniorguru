@@ -9,7 +9,7 @@ import { createCareCircle, saveProvider } from "@/lib/mobile/stickiness";
 import { getSystemReadiness } from "@/lib/system/readiness";
 
 export async function runFounderWorkbenchDemo() {
-  const providerId = "seed-denver-memory-care";
+  const providerId = "seed-cottages-dayton-place";
   const eventId = "seed-denver-caregiver-workshop";
   const userKey = "founder-demo-user";
 

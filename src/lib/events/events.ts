@@ -5,7 +5,7 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 const seedEvents: EventRecord[] = [
   {
     id: "seed-denver-caregiver-workshop",
-    providerId: "seed-denver-memory-care",
+    providerId: "seed-cottages-dayton-place",
     title: "Denver Caregiver Planning Workshop",
     slug: "denver-caregiver-planning-workshop",
     description: "A free local workshop for families comparing care options and planning next steps.",

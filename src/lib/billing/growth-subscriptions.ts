@@ -49,7 +49,7 @@ const seedSubscriptions: ProviderGrowthSubscriptionRecord[] = [];
 const seedEntitlements: ProviderFeatureEntitlementRecord[] = [
   {
     id: "seed-entitlement-campaigns",
-    providerId: "seed-denver-memory-care",
+    providerId: "seed-cottages-dayton-place",
     subscriptionId: "seed-growth-pro-subscription",
     featureKey: "campaigns",
     status: "active",
@@ -59,7 +59,7 @@ const seedEntitlements: ProviderFeatureEntitlementRecord[] = [
   },
   {
     id: "seed-entitlement-event-promotions",
-    providerId: "seed-denver-memory-care",
+    providerId: "seed-cottages-dayton-place",
     subscriptionId: "seed-growth-pro-subscription",
     featureKey: "event_promotions",
     status: "active",
@@ -69,7 +69,7 @@ const seedEntitlements: ProviderFeatureEntitlementRecord[] = [
   },
   {
     id: "seed-entitlement-ai-seo",
-    providerId: "seed-denver-memory-care",
+    providerId: "seed-cottages-dayton-place",
     subscriptionId: "seed-growth-pro-subscription",
     featureKey: "ai_seo",
     status: "active",
@@ -79,7 +79,7 @@ const seedEntitlements: ProviderFeatureEntitlementRecord[] = [
   },
   {
     id: "seed-entitlement-ai-social",
-    providerId: "seed-denver-memory-care",
+    providerId: "seed-cottages-dayton-place",
     subscriptionId: "seed-growth-pro-subscription",
     featureKey: "ai_social",
     status: "active",
@@ -89,7 +89,7 @@ const seedEntitlements: ProviderFeatureEntitlementRecord[] = [
   },
   {
     id: "seed-entitlement-reviews",
-    providerId: "seed-denver-memory-care",
+    providerId: "seed-cottages-dayton-place",
     subscriptionId: "seed-growth-pro-subscription",
     featureKey: "reviews",
     status: "active",

@@ -116,7 +116,7 @@ export function AdminOperationsConsole() {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
-                  providerId: "seed-denver-memory-care",
+                  providerId: "seed-cottages-dayton-place",
                   recipient: "operator@example.com"
                 })
               })

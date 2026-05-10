@@ -6,10 +6,15 @@ export type ProviderRecord = {
   slug: string;
   status: ProviderStatus;
   categories: string[];
+  address?: string;
   city: string;
   state: string;
+  zip?: string;
   phone?: string;
   websiteUrl?: string;
+  imageUrl?: string;
+  priceLabel?: string;
+  summary?: string;
   confidenceScore: number;
   source: {
     name: string;
@@ -55,4 +60,3 @@ export type PolicyCheckResult = {
   requiredDisclosures: string[];
   nonOverridable: boolean;
 };
-

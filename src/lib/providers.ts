@@ -1,7 +1,8 @@
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import { seedProviders } from "@/lib/data/seed";
+import type { ProviderRecord } from "@/lib/domain/providers";
 
-export async function listProviders() {
+export async function listProviders(): Promise<ProviderRecord[]> {
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
@@ -32,10 +33,15 @@ export async function listProviders() {
       slug: provider.slug,
       status: provider.status,
       categories: [],
+      address: undefined,
       city: location?.city ?? "Unknown",
       state: location?.state ?? "US",
+      zip: undefined,
       phone: provider.phone ?? undefined,
       websiteUrl: provider.website_url ?? undefined,
+      imageUrl: undefined,
+      priceLabel: undefined,
+      summary: undefined,
       confidenceScore: Number(provider.confidence_score ?? 0),
       source: {
         name: sourceData?.name ?? "Provider inventory",
