@@ -218,6 +218,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/current-site-inventory/import": {
         post: { tags: ["Aggregation"], summary: "Run current Senior Guru inventory import into the staging pipeline" }
       },
+      "/api/v1/admin/aggregation-readiness": {
+        get: { tags: ["Aggregation"], summary: "Return launch import, crawler, source, and quality readiness summary" }
+      },
       "/api/v1/admin/crawl-jobs": {
         get: { tags: ["Aggregation"], summary: "List crawler jobs for approved data sources" },
         post: { tags: ["Aggregation"], summary: "Create a policy-gated crawler job for an approved data source" }

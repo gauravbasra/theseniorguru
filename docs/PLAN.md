@@ -65,6 +65,7 @@ Deliverables:
 - Extracted entity duplicate match scoring. Completed.
 - Import batch worker run API. Completed.
 - Crawl job create/list/run APIs and unresolved data quality queue API. Completed.
+- Aggregation launch readiness API and admin console action. Completed.
 - Provider claim outreach queue APIs. Completed.
 - Family inquiry, free listing, and operator demo intake APIs. Completed.
 - Admin lead intake queue API and operations console action. Completed.

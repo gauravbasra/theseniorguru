@@ -6,6 +6,7 @@ import {
   FileCheck2,
   GitMerge,
   Inbox,
+  ListChecks,
   Loader2,
   MessageSquareWarning,
   Radar,
@@ -138,6 +139,16 @@ export function AdminOperationsConsole() {
           label="Load lead queue"
           loading={loadingKey === "leads"}
           onClick={() => runOperation("Lead intake queue", "leads", () => fetch("/api/v1/admin/leads"))}
+        />
+        <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
+          label="Aggregation readiness"
+          loading={loadingKey === "aggregation-readiness"}
+          onClick={() =>
+            runOperation("Aggregation readiness", "aggregation-readiness", () =>
+              fetch("/api/v1/admin/aggregation-readiness")
+            )
+          }
         />
         <OpsButton
           icon={<MessageSquareWarning aria-hidden="true" />}
