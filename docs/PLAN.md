@@ -17,6 +17,8 @@ Deliverables:
 - Policy check API. Completed.
 - Aggregation queue schema. Completed.
 - Import batch API. Completed.
+- Provider claim API. Completed.
+- Claim/verification schema. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
