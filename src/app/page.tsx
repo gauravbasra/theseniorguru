@@ -21,6 +21,7 @@ export default async function HomePage() {
           <div className="actions">
             <Link className="button primary" href="/seniors">For seniors</Link>
             <Link className="button secondary" href="/operators">For operators</Link>
+            <Link className="button secondary" href="/workbench">Founder workbench</Link>
           </div>
         </div>
         <aside className="hero-media" aria-label="Senior family support preview">
@@ -89,6 +90,7 @@ export default async function HomePage() {
           <Link href="/api/v1/events">Events</Link>
           <Link href="/api/v1/ads/placements/web.discover.top">Ads</Link>
           <Link href="/api/v1/policy/check">Policy</Link>
+          <Link href="/workbench">Workbench</Link>
         </div>
       </section>
     </main>

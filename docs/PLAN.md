@@ -45,6 +45,7 @@ Deliverables:
 - AI newsroom schema. Completed.
 - News intake, article draft/publish, and social derivative APIs. Completed.
 - Open API catalog endpoint. Completed.
+- Founder workbench executable workflow UI and API. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.

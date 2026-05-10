@@ -24,6 +24,7 @@ export function getOpenApiCatalog() {
       { name: "Newsroom" },
       { name: "Aggregation" },
       { name: "System" },
+      { name: "Workbench" },
       { name: "Policy" }
     ],
     paths: {
@@ -158,6 +159,9 @@ export function getOpenApiCatalog() {
       },
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
+      },
+      "/api/v1/workbench/demo-run": {
+        post: { tags: ["Workbench"], summary: "Run an executable founder workflow across platform services" }
       },
       "/api/v1/policy/check": {
         post: { tags: ["Policy"], summary: "Run a policy guardrail check" }
