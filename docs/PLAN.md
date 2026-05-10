@@ -25,6 +25,8 @@ Deliverables:
 - Mobile app feed API. Completed.
 - Ad placement schema. Completed.
 - Ad placement/impression/click APIs. Completed.
+- Marketing campaign schema. Completed.
+- Campaign create/generate/publish APIs. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
