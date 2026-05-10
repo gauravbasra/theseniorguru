@@ -19,6 +19,7 @@ Deliverables:
 - Import batch API. Completed.
 - Provider claim API. Completed.
 - Claim/verification schema. Completed.
+- Verification attempt create/list/complete APIs. Completed.
 - Admin claim approve/reject workflow. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.
@@ -89,6 +90,7 @@ Deliverables:
 - Business email/domain verification.
 - Business phone verification.
 - License/document review.
+- Verification evidence and attempt workflow. Completed.
 - Profile completion assistant.
 - Provider visibility report.
 

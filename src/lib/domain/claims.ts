@@ -32,3 +32,40 @@ export type ProviderClaimDecisionInput = {
   adminNotes?: string;
   actorId?: string;
 };
+
+export type ProviderVerificationMethod =
+  | "business_email"
+  | "business_phone"
+  | "license_document"
+  | "domain_dns"
+  | "admin_manual";
+
+export type ProviderVerificationAttemptStatus = "pending" | "passed" | "failed" | "expired";
+
+export type ProviderVerificationAttemptRecord = {
+  id: string;
+  providerClaimId: string;
+  method: ProviderVerificationMethod;
+  status: ProviderVerificationAttemptStatus;
+  target?: string;
+  attemptPayload: Record<string, unknown>;
+  expiresAt?: string;
+  completedAt?: string;
+  createdAt: string;
+};
+
+export type CreateProviderVerificationAttemptInput = {
+  claimId: string;
+  method: ProviderVerificationMethod;
+  target?: string;
+  attemptPayload?: Record<string, unknown>;
+  expiresAt?: string;
+  actorId?: string;
+};
+
+export type CompleteProviderVerificationAttemptInput = {
+  attemptId: string;
+  status: Exclude<ProviderVerificationAttemptStatus, "pending">;
+  evidence?: Record<string, unknown>;
+  actorId?: string;
+};

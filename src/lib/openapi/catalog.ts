@@ -40,6 +40,13 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-claims/{id}/reject": {
         post: { tags: ["Claims"], summary: "Reject a provider claim with audit notes" }
       },
+      "/api/v1/admin/provider-claims/{id}/verification-attempts": {
+        get: { tags: ["Claims"], summary: "List verification attempts for a provider claim" },
+        post: { tags: ["Claims"], summary: "Create a policy-gated verification attempt for a provider claim" }
+      },
+      "/api/v1/admin/provider-verification-attempts/{id}/complete": {
+        post: { tags: ["Claims"], summary: "Complete a provider claim verification attempt with evidence" }
+      },
       "/api/v1/admin/provider-outreach": {
         get: { tags: ["Claims"], summary: "List provider claim outreach queue items" },
         post: { tags: ["Claims"], summary: "Create a policy-gated free-claim outreach sequence item" }
