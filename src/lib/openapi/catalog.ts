@@ -18,6 +18,7 @@ export function getOpenApiCatalog() {
       { name: "Events" },
       { name: "Community" },
       { name: "Ads" },
+      { name: "Billing" },
       { name: "Campaigns" },
       { name: "Reviews" },
       { name: "Newsroom" },
@@ -110,6 +111,16 @@ export function getOpenApiCatalog() {
       },
       "/api/v1/ads/click": {
         post: { tags: ["Ads"], summary: "Record an ad click" }
+      },
+      "/api/v1/provider/growth-plans": {
+        get: { tags: ["Billing"], summary: "List active provider growth plans and feature bundles" }
+      },
+      "/api/v1/provider/growth-subscriptions": {
+        get: { tags: ["Billing"], summary: "List provider growth subscriptions and active entitlements" },
+        post: { tags: ["Billing"], summary: "Create a contract-first provider growth subscription" }
+      },
+      "/api/v1/provider/growth-subscriptions/{id}/activate": {
+        post: { tags: ["Billing"], summary: "Activate a provider growth subscription and feature entitlements" }
       },
       "/api/v1/provider/campaigns": {
         get: { tags: ["Campaigns"], summary: "List provider campaigns" },

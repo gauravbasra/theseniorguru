@@ -37,8 +37,13 @@ These items require owner credentials, production access, or confirmation. Imple
 - Confirm Google Ad Manager or AdSense account access.
 - Confirm whether we use direct-sold campaigns first, Google backfill second.
 
+## Billing
+
+- Confirm whether provider growth subscriptions should launch with Stripe, invoices, ACH, or manual contracts first.
+- Confirm exact launch pricing for Growth Starter, Reputation Plus, Community Events, and Growth Pro.
+- Confirm who can activate a provider contract after signature.
+
 ## Mobile
 
 - Confirm iOS/Android developer account access.
 - Confirm app name, icon direction, and launch markets.
-
