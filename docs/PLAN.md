@@ -33,6 +33,7 @@ Deliverables:
 - Docker deployment scaffolding. Completed.
 - AI newsroom schema. Completed.
 - News intake, article draft/publish, and social derivative APIs. Completed.
+- Open API catalog endpoint. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
