@@ -24,3 +24,248 @@ a {
   color: inherit;
 }
 
+.home-shell,
+.discover-shell {
+  min-height: 100vh;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.75fr);
+  gap: 48px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 72px 24px 40px;
+  align-items: center;
+}
+
+.hero h1,
+.discover-header h1 {
+  max-width: 760px;
+  margin: 14px 0 0;
+  font-size: clamp(44px, 7vw, 86px);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lede {
+  max-width: 680px;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1.65;
+}
+
+.actions,
+.api-links,
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.button,
+.api-links a,
+.card-actions a,
+.search-panel button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 18px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.button.primary,
+.search-panel button {
+  background: var(--accent-strong);
+  color: white;
+}
+
+.button.secondary,
+.api-links a,
+.card-actions a {
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.phone-panel {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 34px;
+  background: #18261f;
+  color: white;
+  padding: 22px;
+  box-shadow: 0 30px 80px rgba(23, 32, 51, 0.18);
+}
+
+.phone-top {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+}
+
+.feed-stack {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.feed-card,
+.provider-card,
+.section-grid article,
+.api-proof,
+.ad-slot {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  padding: 22px;
+}
+
+.phone-panel .feed-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.feed-card h2,
+.section-grid h2,
+.api-proof h2,
+.provider-card h2 {
+  margin: 8px 0;
+}
+
+.feed-card p,
+.section-grid p,
+.provider-card p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.feed-type,
+.status,
+.ad-slot span {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trust-band,
+.section-grid,
+.api-proof,
+.discover-header,
+.provider-list,
+.ad-slot {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.trust-band {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding-top: 16px;
+  padding-bottom: 36px;
+}
+
+.trust-band span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 12px 14px;
+  text-align: center;
+  font-weight: 800;
+}
+
+.section-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  padding-top: 20px;
+  padding-bottom: 48px;
+}
+
+.api-proof {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 60px;
+}
+
+.discover-header {
+  padding-top: 64px;
+  padding-bottom: 20px;
+}
+
+.search-panel {
+  display: grid;
+  grid-template-columns: 1fr 220px auto;
+  gap: 10px;
+  margin-top: 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  padding: 10px;
+}
+
+.search-panel span {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  border-radius: 12px;
+  background: var(--background);
+  padding: 0 14px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.ad-slot {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  margin-bottom: 16px;
+}
+
+.provider-list {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 60px;
+}
+
+.provider-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+@media (max-width: 860px) {
+  .hero,
+  .section-grid,
+  .trust-band,
+  .search-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-panel {
+    min-width: 0;
+  }
+
+  .api-proof,
+  .provider-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
