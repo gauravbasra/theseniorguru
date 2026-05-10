@@ -30,3 +30,38 @@ export type CreateImportBatchInput = {
   estimatedRecords?: number;
 };
 
+export type ImportRecordInput = {
+  name?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  phone?: string;
+  websiteUrl?: string;
+  categories?: string[];
+  sourceUrl?: string;
+  sourceRecordId?: string;
+  confidenceScore?: number;
+  rawPayload?: Record<string, unknown>;
+  extractedFields?: Record<string, unknown>;
+};
+
+export type RunImportBatchInput = {
+  records: ImportRecordInput[];
+  actorId?: string;
+  dryRun?: boolean;
+};
+
+export type ImportBatchRunResult = {
+  batchId: string;
+  status: ImportBatchStatus;
+  totalRecords: number;
+  stagedRecords: number;
+  rejectedRecords: number;
+  errorRecords: number;
+  dryRun: boolean;
+  errors: Array<{
+    index: number;
+    reason: string;
+  }>;
+};

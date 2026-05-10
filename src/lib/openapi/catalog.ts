@@ -90,6 +90,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/{id}/duplicate": {
         post: { tags: ["Aggregation"], summary: "Mark an extracted entity as a duplicate of an existing provider" }
       },
+      "/api/v1/admin/import-batches/{id}/run": {
+        post: { tags: ["Aggregation"], summary: "Run a policy-gated import batch and stage extracted provider entities" }
+      },
       "/api/v1/policy/check": {
         post: { tags: ["Policy"], summary: "Run a policy guardrail check" }
       }
