@@ -19,6 +19,8 @@ Deliverables:
 - Import batch API. Completed.
 - Provider claim API. Completed.
 - Claim/verification schema. Completed.
+- Event marketplace schema. Completed.
+- Event publish and RSVP APIs. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
