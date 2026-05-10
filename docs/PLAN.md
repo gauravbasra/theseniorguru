@@ -48,6 +48,7 @@ Deliverables:
 - Founder workbench executable workflow UI and API. Completed.
 - Admin operations console for import, claim, outreach, and moderation workflows. Completed.
 - Senior family action panel for saved providers, care circles, members, and community posts. Completed.
+- Admin AI newsroom console for source ingestion, article drafting, publishing, derivatives, and policy checks. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.

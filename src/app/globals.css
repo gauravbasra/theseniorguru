@@ -750,11 +750,41 @@ a {
   padding: 0 24px 64px;
 }
 
+.newsroom-console {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px 72px;
+}
+
 .senior-action-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin: 14px 0;
+}
+
+.newsroom-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.newsroom-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.newsroom-state span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 8px 12px;
 }
 
 .console-header,
@@ -843,6 +873,7 @@ a {
   .dashboard-grid,
   .console-actions,
   .senior-action-grid,
+  .newsroom-grid,
   .audience-hero,
   .workbench-hero,
   .workbench-grid,

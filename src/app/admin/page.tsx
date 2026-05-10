@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
+import { NewsroomConsole } from "@/components/newsroom-console";
 import { getSystemReadiness } from "@/lib/system/readiness";
 
 export default function AdminPage() {
@@ -41,7 +42,7 @@ export default function AdminPage() {
       </section>
 
       <AdminOperationsConsole />
+      <NewsroomConsole />
     </main>
   );
 }
-
