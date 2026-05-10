@@ -21,6 +21,8 @@ Deliverables:
 - Claim/verification schema. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.
+- Community feed schema. Completed.
+- Mobile app feed API. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
