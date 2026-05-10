@@ -48,6 +48,7 @@ Deliverables:
 - AI newsroom schema. Completed.
 - News intake, article draft/publish, and social derivative APIs. Completed.
 - Open API catalog endpoint. Completed.
+- Open API client, key, webhook subscription, delivery queue, and audit schemas/APIs. Completed.
 - Browser-safe guard for internal API endpoints. Completed.
 - Founder workbench executable workflow UI and API. Completed.
 - Admin operations console for import, claim, outreach, and moderation workflows. Completed.

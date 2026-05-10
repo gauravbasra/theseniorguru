@@ -273,9 +273,18 @@ const productPillars: ProductPillar[] = [
     objective: "Expose approved partner APIs with versioning, docs, audit logs, and webhooks.",
     audience: "Providers, partners, data/event/ad integrations",
     status: "partial",
-    backendRoutes: ["GET /api/v1/openapi"],
+    backendRoutes: [
+      "GET /api/v1/openapi",
+      "GET /api/v1/admin/api-clients",
+      "POST /api/v1/admin/api-clients",
+      "POST /api/v1/admin/api-clients/{id}/keys",
+      "GET /api/v1/admin/webhook-subscriptions",
+      "POST /api/v1/admin/webhook-subscriptions",
+      "POST /api/v1/admin/webhook-deliveries",
+      "GET /api/v1/admin/api-audit-events"
+    ],
     requiredTables: ["api_clients", "api_keys", "webhook_subscriptions", "webhook_deliveries", "api_audit_events"],
-    nextBackendWork: ["API key auth", "Webhook subscription CRUD", "Rate limit tracking"]
+    nextBackendWork: ["API key middleware enforcement", "Webhook delivery worker", "Per-client rate limit counter"]
   }
 ];
 

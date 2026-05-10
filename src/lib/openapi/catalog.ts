@@ -191,6 +191,23 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/current-site-inventory/import": {
         post: { tags: ["Aggregation"], summary: "Run current Senior Guru inventory import into the staging pipeline" }
       },
+      "/api/v1/admin/api-clients": {
+        get: { tags: ["System"], summary: "List approved Open API clients" },
+        post: { tags: ["System"], summary: "Create a tenant-scoped Open API client" }
+      },
+      "/api/v1/admin/api-clients/{id}/keys": {
+        post: { tags: ["System"], summary: "Mint a signed API key and store only its hash" }
+      },
+      "/api/v1/admin/webhook-subscriptions": {
+        get: { tags: ["System"], summary: "List Open API webhook subscriptions" },
+        post: { tags: ["System"], summary: "Create a signed HTTPS webhook subscription" }
+      },
+      "/api/v1/admin/webhook-deliveries": {
+        post: { tags: ["System"], summary: "Queue webhook delivery records for matching active subscriptions" }
+      },
+      "/api/v1/admin/api-audit-events": {
+        get: { tags: ["System"], summary: "List Open API audit events" }
+      },
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
       },
