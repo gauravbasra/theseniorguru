@@ -21,6 +21,7 @@ export function getOpenApiCatalog() {
       { name: "Campaigns" },
       { name: "Reviews" },
       { name: "Newsroom" },
+      { name: "Aggregation" },
       { name: "Policy" }
     ],
     paths: {
@@ -69,6 +70,19 @@ export function getOpenApiCatalog() {
         get: { tags: ["Newsroom"], summary: "List newsroom source items" },
         post: { tags: ["Newsroom"], summary: "Create a newsroom source item" }
       },
+      "/api/v1/admin/extracted-entities": {
+        get: { tags: ["Aggregation"], summary: "List extracted provider entities awaiting review" },
+        post: { tags: ["Aggregation"], summary: "Stage an extracted provider entity for policy-gated review" }
+      },
+      "/api/v1/admin/extracted-entities/{id}/approve": {
+        post: { tags: ["Aggregation"], summary: "Approve an extracted entity and publish or update provider inventory" }
+      },
+      "/api/v1/admin/extracted-entities/{id}/reject": {
+        post: { tags: ["Aggregation"], summary: "Reject an extracted entity with audit context" }
+      },
+      "/api/v1/admin/extracted-entities/{id}/duplicate": {
+        post: { tags: ["Aggregation"], summary: "Mark an extracted entity as a duplicate of an existing provider" }
+      },
       "/api/v1/policy/check": {
         post: { tags: ["Policy"], summary: "Run a policy guardrail check" }
       }
@@ -89,4 +103,3 @@ export function getOpenApiCatalog() {
     }
   };
 }
-
