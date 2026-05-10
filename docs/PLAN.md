@@ -30,6 +30,8 @@ Deliverables:
 - Reviews/reputation schema. Completed.
 - Review submit/list and AI response draft APIs. Completed.
 - Docker deployment scaffolding. Completed.
+- AI newsroom schema. Completed.
+- News intake, article draft/publish, and social derivative APIs. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
