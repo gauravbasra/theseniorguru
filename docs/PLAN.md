@@ -15,6 +15,7 @@ Deliverables:
 - Source registry API. Completed.
 - Policy check API. Completed.
 - Aggregation queue schema. Completed.
+- Import batch API. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
