@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ProviderActionConsole } from "@/components/provider-action-console";
 import { getProviderDashboard } from "@/lib/provider-dashboard/dashboard";
 
 export default async function ProviderDashboardPage() {
@@ -62,7 +63,8 @@ export default async function ProviderDashboardPage() {
           </article>
         ))}
       </section>
+
+      <ProviderActionConsole providerId={dashboard.provider?.id} />
     </main>
   );
 }
-
