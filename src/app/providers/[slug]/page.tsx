@@ -25,14 +25,14 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
           <div className="actions">
             {provider.phone ? <a className="button primary" href={`tel:${provider.phone}`}>Call provider</a> : null}
             {provider.websiteUrl ? <a className="button secondary" href={provider.websiteUrl}>Visit website</a> : null}
-            <Link className="button secondary" href={`/api/v1/providers/${provider.id}`}>View API</Link>
+            <Link className="button secondary" href="/discover">Compare nearby options</Link>
           </div>
         </div>
         <aside className="claim-panel">
           <p className="eyebrow">Free listing</p>
           <h2>Claim this profile</h2>
           <p>Verify business ownership to update services, add events, manage reviews, and unlock growth campaigns.</p>
-          <Link className="button primary" href="/api/v1/openapi">Claim API docs</Link>
+          <Link className="button primary" href="/provider">Provider tools</Link>
         </aside>
       </section>
 
@@ -60,14 +60,14 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
           <p className="eyebrow">Reviews</p>
           <h2>{reviews.length ? `${reviews.length} published reviews` : "Reviews are being collected"}</h2>
           <p>First-party reviews enter moderation before publishing, and provider responses pass policy checks.</p>
-          <Link href={`/api/v1/providers/${provider.id}/reviews`}>Review API</Link>
+          <Link href="/operators">Reputation tools for providers</Link>
         </article>
 
         <article className="profile-card">
           <p className="eyebrow">Events</p>
           <h2>{events.length ? `${events.length} upcoming events` : "No upcoming events yet"}</h2>
           <p>Providers can publish education sessions, open houses, support groups, and local resource events.</p>
-          <Link href="/api/v1/events">Events API</Link>
+          <Link href="/operators">Promote local events</Link>
         </article>
       </section>
 

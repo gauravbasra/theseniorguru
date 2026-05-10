@@ -21,6 +21,8 @@ const routeContracts: LinkContract[] = [
   { label: "Admin", href: "/admin", method: "GET", owner: "admin" },
   { label: "OpenAPI", href: "/api/v1/openapi", method: "GET", owner: "admin" },
   { label: "Providers API", href: "/api/v1/providers", method: "GET", owner: "public" },
+  { label: "Categories API", href: "/api/v1/categories", method: "GET", owner: "public" },
+  { label: "Location search API", href: "/api/v1/locations/search", method: "GET", owner: "public" },
   { label: "Events API", href: "/api/v1/events", method: "GET", owner: "public" },
   { label: "App feed API", href: "/api/v1/app/feed", method: "GET", owner: "family" },
   { label: "Readiness API", href: "/api/v1/system/readiness", method: "GET", owner: "admin" },

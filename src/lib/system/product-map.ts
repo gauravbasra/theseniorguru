@@ -26,7 +26,9 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/providers/{id}",
       "POST /api/v1/providers/{id}/claim",
       "POST /api/v1/providers/{id}/contact",
-      "GET /api/v1/providers/{id}/reviews"
+      "GET /api/v1/providers/{id}/reviews",
+      "GET /api/v1/categories",
+      "GET /api/v1/locations/search"
     ],
     requiredTables: [
       "providers",
@@ -37,7 +39,6 @@ const productPillars: ProductPillar[] = [
       "provider_profile_audits"
     ],
     nextBackendWork: [
-      "Add category and location search endpoints",
       "Persist provider contacts in Supabase production",
       "Add provider profile edit approval workflow"
     ]

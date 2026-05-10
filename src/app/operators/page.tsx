@@ -15,7 +15,7 @@ export default async function OperatorsPage() {
           <p className="lede">{copy.subhead}</p>
           <div className="actions">
             <Link className="button primary" href="/provider">{copy.ctaPrimary}</Link>
-            <Link className="button secondary" href="/api/v1/provider/campaigns">{copy.ctaSecondary}</Link>
+            <Link className="button secondary" href="/discover">{copy.ctaSecondary}</Link>
           </div>
         </div>
         <div className="audience-panel">
@@ -48,4 +48,3 @@ export default async function OperatorsPage() {
     </main>
   );
 }
-

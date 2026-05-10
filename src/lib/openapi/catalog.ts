@@ -40,6 +40,12 @@ export function getOpenApiCatalog() {
       "/api/v1/providers/{id}/contact": {
         post: { tags: ["Providers"], summary: "Submit a consented provider contact intent" }
       },
+      "/api/v1/categories": {
+        get: { tags: ["Providers"], summary: "List provider categories with inventory counts and state coverage" }
+      },
+      "/api/v1/locations/search": {
+        get: { tags: ["Providers"], summary: "Search launch locations by query, state, and category" }
+      },
       "/api/v1/admin/provider-claims/{id}/approve": {
         post: { tags: ["Claims"], summary: "Approve a provider claim and mark provider claimed" }
       },

@@ -24,6 +24,20 @@ export type ProviderRecord = {
   };
 };
 
+export type ProviderCategoryRecord = {
+  key: string;
+  name: string;
+  providerCount: number;
+  states: string[];
+};
+
+export type LocationSearchResult = {
+  city: string;
+  state: string;
+  providerCount: number;
+  categories: string[];
+};
+
 export type DataSourceReviewStatus = "pending" | "approved" | "blocked" | "needs_legal_review";
 
 export type DataSourceRecord = {

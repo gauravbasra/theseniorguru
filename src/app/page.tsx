@@ -35,7 +35,6 @@ export default async function HomePage() {
           <Link href="/discover">Directory</Link>
           <Link href="/seniors">For Seniors</Link>
           <Link href="/operators">Operators</Link>
-          <Link href="/admin">Admin</Link>
         </div>
       </nav>
 
@@ -53,9 +52,9 @@ export default async function HomePage() {
             <Link className="button secondary" href="/operators">List your community</Link>
           </div>
           <div className="hero-stats" aria-label="Marketplace signals">
-            <span><strong>{providers.length}</strong> sample listings</span>
-            <span><strong>5</strong> core categories</span>
-            <span><strong>$0</strong> direct contact</span>
+            <span><strong>{providers.length}</strong> listed services</span>
+            <span><strong>5</strong> ways to start</span>
+            <span><strong>$0</strong> referral pressure</span>
           </div>
         </div>
         <aside className="hero-media" aria-label="Senior family support preview">
@@ -142,9 +141,9 @@ export default async function HomePage() {
           <p className="eyebrow">Why choose The Senior Guru?</p>
           <h2>Compassionate guidance, direct access, and a marketplace families can understand.</h2>
           <p>
-            The current Senior Guru promise is still the right one: make senior decisions less confusing. The new platform
-            keeps that heart, then adds mobile care circles, community questions, provider events, reviews, AI publishing,
-            and transparent advertising.
+            Senior care decisions are emotional, expensive, and often rushed. The Senior Guru is built to slow the moment
+            down: show the options, make contact easy, invite family into the conversation, and keep sponsored listings
+            clearly marked.
           </p>
           <div className="trust-band">
             {["Free listings", "Direct contact", "No referral fees", "Sponsored labels"].map((item) => (
@@ -173,16 +172,13 @@ export default async function HomePage() {
 
       <section className="api-proof">
         <div>
-          <p className="eyebrow">Backend live</p>
-          <h2>Every surface is API-backed from day one.</h2>
+          <p className="eyebrow">For local providers</p>
+          <h2>Be found before families are in crisis, and be trusted when they compare.</h2>
         </div>
         <div className="api-links">
-          <Link href="/api/v1/providers">Providers</Link>
-          <Link href="/api/v1/events">Events</Link>
-          <Link href="/api/v1/ads/placements/web.discover.top">Ads</Link>
-          <Link href="/api/v1/openapi">OpenAPI</Link>
-          <Link href="/workbench">Workbench</Link>
-          <Link href="/admin">Admin</Link>
+          <Link href="/operators">Grow your profile</Link>
+          <Link href="/provider">Provider tools</Link>
+          <Link href="/discover">See directory</Link>
         </div>
       </section>
     </main>

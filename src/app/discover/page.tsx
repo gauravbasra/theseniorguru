@@ -40,7 +40,7 @@ export default async function DiscoverPage() {
             <div className="card-actions">
               <a href={provider.websiteUrl}>Website</a>
               <a href={`/providers/${provider.slug}`}>Profile</a>
-              <a href={`/api/v1/providers/${provider.id}`}>API</a>
+              {provider.phone ? <a href={`tel:${provider.phone}`}>Call</a> : null}
             </div>
           </article>
         ))}
