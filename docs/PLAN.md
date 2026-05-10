@@ -6,12 +6,17 @@ Status: in progress
 
 Deliverables:
 
-- Clean Next.js project skeleton.
-- Repo-level execution guardrails.
-- Provider inventory schema.
-- Source/provenance schema.
-- Policy gate schema.
-- Public provider search/detail API.
+- Clean Next.js project skeleton. Completed.
+- Repo-level execution guardrails. Completed.
+- Provider inventory schema. Completed.
+- Source/provenance schema. Completed.
+- Policy gate schema. Completed.
+- Public provider search/detail API. Completed.
+- Source registry API. Completed.
+- Policy check API. Completed.
+- Aggregation queue schema. Completed.
+- Supabase project credentials. Parked for tomorrow.
+- Production hosting confirmation. Parked for tomorrow.
 
 Acceptance:
 
@@ -111,4 +116,3 @@ Deliverables:
 - Compliance review.
 - Social/newsletter/podcast derivatives.
 - Byline approval.
-

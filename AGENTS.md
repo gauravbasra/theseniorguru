@@ -11,6 +11,10 @@ The feature requirement document is the build bible:
 
 No UI-only work. Every feature must include backend routes/server actions, database persistence, business logic, integrations where relevant, error handling, analytics/audit behavior, policy guardrails, and verification.
 
+## Autonomy Rule
+
+Continue working until the current project phase is genuinely finished. Do not stop just because a dependency is missing. If a task depends on the owner, credentials, DNS authority, billing access, production secrets, app-store accounts, legal review, or server confirmation, park that dependency in `docs/parking-lot/` with the exact question/action needed for tomorrow, then continue on independent implementation work.
+
 ## Product North Star
 
 The Senior Guru is a community-first senior services network:
@@ -58,4 +62,3 @@ Before calling any feature done, document:
 - UI surface.
 - Policy/audit behavior.
 - Verification command and result.
-

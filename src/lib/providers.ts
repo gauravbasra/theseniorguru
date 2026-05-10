@@ -1,47 +1,53 @@
-export type ProviderStatus = "imported" | "verified_by_source" | "claimed" | "verified" | "growth_partner";
+import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
+import { seedProviders } from "@/lib/data/seed";
 
-export type ProviderRecord = {
-  id: string;
-  name: string;
-  slug: string;
-  status: ProviderStatus;
-  categories: string[];
-  city: string;
-  state: string;
-  phone?: string;
-  websiteUrl?: string;
-  source: {
-    name: string;
-    url?: string;
-    fetchedAt: string;
-    confidence: number;
-  };
-};
+export async function listProviders() {
+  const supabase = getSupabaseAdminClient();
 
-const seededProviders: ProviderRecord[] = [
-  {
-    id: "seed-denver-memory-care",
-    name: "Sample Denver Memory Care",
-    slug: "sample-denver-memory-care",
-    status: "verified_by_source",
-    categories: ["Memory Care", "Assisted Living"],
-    city: "Denver",
-    state: "CO",
-    phone: "303-555-0101",
-    websiteUrl: "https://example.com",
-    source: {
-      name: "Seed import placeholder",
-      fetchedAt: "2026-05-10T00:00:00.000Z",
-      confidence: 0.86
-    }
+  if (!supabase) {
+    return seedProviders;
   }
-];
 
-export function listProviders() {
-  return seededProviders;
+  const { data, error } = await supabase
+    .from("providers")
+    .select(
+      "id,name,slug,status,phone,website_url,confidence_score,provider_locations(city,state),provider_source_records(source_url,fetched_at,confidence_score,data_sources(name))"
+    )
+    .in("status", ["verified_by_source", "claimed", "verified", "growth_partner"])
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    throw new Error(`Provider query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map((provider) => {
+    const location = provider.provider_locations?.[0];
+    const source = provider.provider_source_records?.[0];
+    const sourceData = Array.isArray(source?.data_sources) ? source?.data_sources[0] : source?.data_sources;
+
+    return {
+      id: provider.id,
+      name: provider.name,
+      slug: provider.slug,
+      status: provider.status,
+      categories: [],
+      city: location?.city ?? "Unknown",
+      state: location?.state ?? "US",
+      phone: provider.phone ?? undefined,
+      websiteUrl: provider.website_url ?? undefined,
+      confidenceScore: Number(provider.confidence_score ?? 0),
+      source: {
+        name: sourceData?.name ?? "Provider inventory",
+        url: source?.source_url ?? undefined,
+        fetchedAt: source?.fetched_at ?? new Date().toISOString(),
+        confidence: Number(source?.confidence_score ?? provider.confidence_score ?? 0)
+      }
+    };
+  });
 }
 
-export function getProviderById(id: string) {
-  return seededProviders.find((provider) => provider.id === id || provider.slug === id) ?? null;
+export async function getProviderById(id: string) {
+  const providers = await listProviders();
+  return providers.find((provider) => provider.id === id || provider.slug === id) ?? null;
 }
-

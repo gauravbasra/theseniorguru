@@ -1,0 +1,58 @@
+export type ProviderStatus = "imported" | "verified_by_source" | "claimed" | "verified" | "growth_partner";
+
+export type ProviderRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  status: ProviderStatus;
+  categories: string[];
+  city: string;
+  state: string;
+  phone?: string;
+  websiteUrl?: string;
+  confidenceScore: number;
+  source: {
+    name: string;
+    url?: string;
+    fetchedAt: string;
+    confidence: number;
+  };
+};
+
+export type DataSourceReviewStatus = "pending" | "approved" | "blocked" | "needs_legal_review";
+
+export type DataSourceRecord = {
+  id: string;
+  name: string;
+  sourceType: "cms" | "state_license" | "provider_website" | "rss" | "manual" | "vendor";
+  baseUrl?: string;
+  jurisdiction?: string;
+  reviewStatus: DataSourceReviewStatus;
+  robotsStatus?: string;
+  termsNotes?: string;
+  approvedAt?: string;
+};
+
+export type PolicyDecision =
+  | "approved"
+  | "approved_with_disclosure"
+  | "needs_human_review"
+  | "needs_legal_review"
+  | "needs_expert_review"
+  | "blocked"
+  | "blocked_non_overridable";
+
+export type PolicyCheckRequest = {
+  subjectType: string;
+  subjectId?: string;
+  actionKey: string;
+  input: Record<string, unknown>;
+};
+
+export type PolicyCheckResult = {
+  decision: PolicyDecision;
+  reasons: string[];
+  requiredDisclosures: string[];
+  nonOverridable: boolean;
+};
+

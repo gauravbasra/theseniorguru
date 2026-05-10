@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { listProviders } from "@/lib/providers";
 
-export function GET() {
+export async function GET() {
+  const providers = await listProviders();
+
   return NextResponse.json({
-    data: listProviders(),
+    data: providers,
     meta: {
       source: "provider-inventory-service",
-      count: listProviders().length
+      count: providers.length
     }
   });
 }
-

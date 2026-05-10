@@ -1,7 +1,7 @@
 import { listProviders } from "@/lib/providers";
 
-export default function DiscoverPage() {
-  const providers = listProviders();
+export default async function DiscoverPage() {
+  const providers = await listProviders();
 
   return (
     <main className="discover-shell">
@@ -19,7 +19,7 @@ export default function DiscoverPage() {
             </p>
             <p>{provider.categories.join(" • ")}</p>
             <small>
-              Source: {provider.source.name} · Confidence {Math.round(provider.source.confidence * 100)}%
+              Source: {provider.source.name} · Confidence {Math.round(provider.confidenceScore * 100)}%
             </small>
           </article>
         ))}
@@ -27,4 +27,3 @@ export default function DiscoverPage() {
     </main>
   );
 }
-
