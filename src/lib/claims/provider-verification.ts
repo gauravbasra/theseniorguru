@@ -87,7 +87,7 @@ export async function createProviderVerificationAttempt(
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const attempt: ProviderVerificationAttemptRecord = {
       id: `pending-verification-${Date.now()}`,
       providerClaimId: input.claimId,
       method: input.method,
@@ -97,6 +97,8 @@ export async function createProviderVerificationAttempt(
       expiresAt: input.expiresAt,
       createdAt: now
     };
+    seedVerificationAttempts.unshift(attempt);
+    return attempt;
   }
 
   const { data, error } = await supabase
@@ -158,15 +160,23 @@ export async function completeProviderVerificationAttempt(
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const existing = seedVerificationAttempts.find((attempt) => attempt.id === input.attemptId);
+    const completed: ProviderVerificationAttemptRecord = {
       id: input.attemptId,
-      providerClaimId: "fallback-claim",
-      method: "admin_manual",
+      providerClaimId: existing?.providerClaimId ?? "fallback-claim",
+      method: existing?.method ?? "admin_manual",
       status: input.status,
-      attemptPayload: input.evidence ?? {},
+      target: existing?.target,
+      attemptPayload: { ...(existing?.attemptPayload ?? {}), completionEvidence: input.evidence ?? {} },
       completedAt: now,
-      createdAt: now
+      createdAt: existing?.createdAt ?? now
     };
+
+    if (existing) {
+      Object.assign(existing, completed);
+    }
+
+    return completed;
   }
 
   const { data: attempt, error: attemptError } = await supabase
@@ -226,4 +236,3 @@ export async function completeProviderVerificationAttempt(
 
   return mapVerificationAttempt(data);
 }
-

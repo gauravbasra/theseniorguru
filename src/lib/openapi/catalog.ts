@@ -66,6 +66,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-outreach/{id}/send": {
         post: { tags: ["Claims"], summary: "Mark provider outreach as sent and audit delivery metadata" }
       },
+      "/api/v1/provider-portal/claims/{id}/status": {
+        get: { tags: ["Claims"], summary: "Return provider-facing claim status, verification checklist, and next action" }
+      },
       "/api/v1/events": {
         get: { tags: ["Events"], summary: "List published events" }
       },

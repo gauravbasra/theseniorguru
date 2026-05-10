@@ -60,13 +60,15 @@ export async function submitProviderClaim(input: ProviderClaimInput): Promise<Pr
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const claim: ProviderClaimRecord = {
       id: `pending-claim-${Date.now()}`,
       ...input,
       status: nextStatus,
       verificationMethod: input.businessDomain ? "business_email" : "admin_manual",
       createdAt: new Date().toISOString()
     };
+    seedClaims.unshift(claim);
+    return claim;
   }
 
   const { data, error } = await supabase
@@ -167,4 +169,20 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
   });
 
   return mapProviderClaim(updatedClaim);
+}
+
+export async function getProviderClaimById(claimId: string): Promise<ProviderClaimRecord | null> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedClaims.find((claim) => claim.id === claimId) ?? null;
+  }
+
+  const { data, error } = await supabase.from("provider_claims").select("*").eq("id", claimId).maybeSingle();
+
+  if (error) {
+    throw new Error(`Provider claim lookup failed: ${error.message}`);
+  }
+
+  return data ? mapProviderClaim(data) : null;
 }

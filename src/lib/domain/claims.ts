@@ -69,3 +69,21 @@ export type CompleteProviderVerificationAttemptInput = {
   evidence?: Record<string, unknown>;
   actorId?: string;
 };
+
+export type ProviderClaimChecklistItem = {
+  key: string;
+  label: string;
+  status: "not_started" | "pending" | "passed" | "failed" | "expired" | "not_required";
+  method?: ProviderVerificationMethod;
+  target?: string;
+  attemptId?: string;
+  completedAt?: string;
+};
+
+export type ProviderClaimStatusSummary = {
+  claim: ProviderClaimRecord;
+  checklist: ProviderClaimChecklistItem[];
+  nextAction: string;
+  readyForAdminReview: boolean;
+  canEditProfile: boolean;
+};

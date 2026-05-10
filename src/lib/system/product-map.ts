@@ -29,7 +29,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/providers/{id}/reviews",
       "GET /api/v1/categories",
       "GET /api/v1/locations/search",
-      "PATCH /api/v1/provider-portal/providers/{id}"
+      "PATCH /api/v1/provider-portal/providers/{id}",
+      "GET /api/v1/provider-portal/claims/{id}/status"
     ],
     requiredTables: [
       "providers",

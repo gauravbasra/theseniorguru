@@ -20,6 +20,7 @@ Deliverables:
 - Provider claim API. Completed.
 - Claim/verification schema. Completed.
 - Verification attempt create/list/complete APIs. Completed.
+- Provider-facing claim status and verification checklist API. Completed.
 - Admin claim approve/reject workflow. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.
@@ -115,6 +116,7 @@ Deliverables:
 - Business phone verification.
 - License/document review.
 - Verification evidence and attempt workflow. Completed.
+- Provider-facing claim checklist/status API. Completed.
 - Profile completion assistant.
 - Provider visibility report.
 
