@@ -425,6 +425,56 @@ a {
   min-height: 100vh;
 }
 
+.audience-shell {
+  min-height: 100vh;
+}
+
+.audience-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 28px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 62px 24px 34px;
+  align-items: center;
+}
+
+.audience-hero h1 {
+  max-width: 820px;
+  margin: 12px 0 0;
+  font-size: clamp(34px, 5vw, 64px);
+  line-height: 1.02;
+}
+
+.audience-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--panel);
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(23, 32, 51, 0.09);
+}
+
+.audience-panel div {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  align-items: start;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.audience-panel div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.audience-panel span {
+  color: var(--accent-strong);
+  font-weight: 900;
+}
+
 .dashboard-grid,
 .task-list {
   max-width: 1180px;
@@ -454,7 +504,8 @@ a {
   .profile-hero,
   .profile-grid,
   .local-content-grid,
-  .dashboard-grid {
+  .dashboard-grid,
+  .audience-hero {
     grid-template-columns: 1fr;
   }
 

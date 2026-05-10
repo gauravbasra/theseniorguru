@@ -19,8 +19,8 @@ export default async function HomePage() {
             built around transparency.
           </p>
           <div className="actions">
-            <Link className="button primary" href="/discover">Explore local options</Link>
-            <Link className="button secondary" href="/api/v1/app/feed">View app feed API</Link>
+            <Link className="button primary" href="/seniors">For seniors</Link>
+            <Link className="button secondary" href="/operators">For operators</Link>
           </div>
         </div>
         <aside className="hero-media" aria-label="Senior family support preview">
