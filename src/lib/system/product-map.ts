@@ -1,0 +1,310 @@
+import { listDataSources } from "@/lib/data-sources";
+import { listImportBatches } from "@/lib/import-batches";
+import { getSystemReadiness } from "@/lib/system/readiness";
+import { getLinkHealthSummary } from "@/lib/system/link-health";
+
+type ProductPillar = {
+  key: string;
+  title: string;
+  objective: string;
+  audience: string;
+  status: "implemented" | "partial" | "planned" | "blocked";
+  backendRoutes: string[];
+  requiredTables: string[];
+  nextBackendWork: string[];
+};
+
+const productPillars: ProductPillar[] = [
+  {
+    key: "directory",
+    title: "Complete Senior Services Directory",
+    objective: "Give families every legitimate local option, with direct contact and source provenance.",
+    audience: "Seniors, family caregivers, providers, local experts",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/providers",
+      "GET /api/v1/providers/{id}",
+      "POST /api/v1/providers/{id}/claim",
+      "POST /api/v1/providers/{id}/contact",
+      "GET /api/v1/providers/{id}/reviews"
+    ],
+    requiredTables: [
+      "providers",
+      "provider_locations",
+      "provider_categories",
+      "provider_contacts",
+      "provider_source_records",
+      "provider_profile_audits"
+    ],
+    nextBackendWork: [
+      "Add category and location search endpoints",
+      "Persist provider contacts in Supabase production",
+      "Add provider profile edit approval workflow"
+    ]
+  },
+  {
+    key: "mobile",
+    title: "Mobile App Retention Layer",
+    objective: "Make the family/senior app sticky through saved providers, care circles, notes, and feed activity.",
+    audience: "Seniors and family caregivers",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/app/feed",
+      "GET /api/v1/app/saved-providers",
+      "POST /api/v1/app/saved-providers",
+      "GET /api/v1/app/care-circles",
+      "POST /api/v1/app/care-circles",
+      "POST /api/v1/app/care-circles/{id}/members"
+    ],
+    requiredTables: [
+      "consumer_profiles",
+      "care_circles",
+      "saved_providers",
+      "comparison_lists",
+      "care_notes",
+      "tour_plans",
+      "app_notification_preferences"
+    ],
+    nextBackendWork: ["Tour plans API", "Comparison list API", "Notification preferences API"]
+  },
+  {
+    key: "community",
+    title: "Community Network",
+    objective: "Build Nextdoor/Yelp-style local senior community with moderation and safety controls.",
+    audience: "Seniors, caregivers, providers, local experts, admins",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/app/feed",
+      "POST /api/v1/community/posts",
+      "GET /api/v1/community/posts/{id}/comments",
+      "POST /api/v1/community/posts/{id}/comments",
+      "POST /api/v1/community/reports",
+      "POST /api/v1/admin/community/posts/{id}/moderate"
+    ],
+    requiredTables: [
+      "communities",
+      "community_memberships",
+      "community_posts",
+      "community_comments",
+      "community_reports",
+      "moderation_cases",
+      "expert_profiles"
+    ],
+    nextBackendWork: ["Groups API", "Community membership API", "Expert profile verification"]
+  },
+  {
+    key: "events",
+    title: "Provider Events Marketplace",
+    objective: "Turn provider events into community value and monetizable promotion inventory.",
+    audience: "Providers, families, local experts",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/events",
+      "GET /api/v1/events/{id}",
+      "POST /api/v1/events/{id}/rsvp",
+      "POST /api/v1/provider/events",
+      "POST /api/v1/provider/events/{id}/promotions",
+      "GET /api/v1/provider/events/{id}/analytics"
+    ],
+    requiredTables: [
+      "events",
+      "event_hosts",
+      "event_rsvps",
+      "event_promotions",
+      "event_reminders",
+      "event_followups",
+      "event_attendance"
+    ],
+    nextBackendWork: ["Reminder jobs", "Follow-up campaigns", "Attendance capture"]
+  },
+  {
+    key: "growth",
+    title: "Marketing Growth Engine",
+    objective: "Monetize provider success with AI SEO, social, reviews, chat, voice, events, and campaigns.",
+    audience: "Providers and operators",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/provider/growth-plans",
+      "POST /api/v1/provider/growth-subscriptions",
+      "POST /api/v1/provider/entitlements/check",
+      "POST /api/v1/provider/campaigns",
+      "POST /api/v1/provider/campaigns/{id}/generate",
+      "POST /api/v1/provider/campaigns/{id}/publish"
+    ],
+    requiredTables: [
+      "marketing_campaigns",
+      "campaign_creatives",
+      "campaign_metrics",
+      "ai_generations",
+      "content_assets",
+      "social_posts",
+      "review_campaigns",
+      "voice_campaigns",
+      "chat_agents"
+    ],
+    nextBackendWork: ["Campaign metrics endpoint", "Review request campaigns", "AI voice assistant adapter"]
+  },
+  {
+    key: "ads",
+    title: "Advertising and Placement Engine",
+    objective: "Treat all site/app real estate as monetizable while preserving trust through disclosures.",
+    audience: "Providers, advertisers, admins",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/ads/placements/{key}",
+      "POST /api/v1/ads/impression",
+      "POST /api/v1/ads/click"
+    ],
+    requiredTables: [
+      "ad_placements",
+      "ad_inventory_slots",
+      "ad_campaigns",
+      "ad_creatives",
+      "ad_impressions",
+      "ad_clicks",
+      "google_ad_units"
+    ],
+    nextBackendWork: ["Admin ad placement CRUD", "Google Ad Manager sync", "Frequency caps"]
+  },
+  {
+    key: "aggregation",
+    title: "Data Aggregation and Inventory Engine",
+    objective: "Reach 5,000+ launch listings through compliant source registry, import, matching, and review.",
+    audience: "Platform admins and data operators",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/admin/data-sources",
+      "POST /api/v1/admin/data-sources",
+      "POST /api/v1/admin/import-batches/{id}/run",
+      "GET /api/v1/admin/extracted-entities",
+      "POST /api/v1/admin/extracted-entities/{id}/match",
+      "POST /api/v1/admin/extracted-entities/{id}/approve",
+      "POST /api/v1/admin/current-site-inventory/import"
+    ],
+    requiredTables: [
+      "data_sources",
+      "crawl_jobs",
+      "crawl_pages",
+      "extracted_entities",
+      "entity_matches",
+      "source_field_values",
+      "data_quality_flags",
+      "import_batches"
+    ],
+    nextBackendWork: ["CMS/state import adapters", "Crawler job API", "Data quality queue"]
+  },
+  {
+    key: "reviews",
+    title: "Reviews and Reputation",
+    objective: "Build trusted reviews and a paid reputation management add-on without fake/gated reviews.",
+    audience: "Families, providers, admins",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/providers/{id}/reviews",
+      "POST /api/v1/providers/{id}/reviews",
+      "POST /api/v1/provider/reviews/{id}/responses/generate"
+    ],
+    requiredTables: [
+      "reviews",
+      "review_requests",
+      "review_responses",
+      "review_moderation_cases",
+      "review_sentiment",
+      "reputation_scores",
+      "external_review_integrations"
+    ],
+    nextBackendWork: ["Review request campaign API", "Review response publish endpoint", "External review integrations"]
+  },
+  {
+    key: "newsroom",
+    title: "AI Newsroom and Publishing Engine",
+    objective: "Publish original senior-care authority content with sources, approvals, derivatives, and compliance checks.",
+    audience: "Founder/editorial team, providers, families, industry readers",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/admin/newsroom/inbox",
+      "POST /api/v1/admin/newsroom/inbox",
+      "POST /api/v1/admin/newsroom/articles",
+      "POST /api/v1/admin/newsroom/articles/{id}/publish",
+      "POST /api/v1/admin/newsroom/articles/{id}/generate-social"
+    ],
+    requiredTables: [
+      "content_sources",
+      "rss_feeds",
+      "news_items",
+      "article_drafts",
+      "published_articles",
+      "article_reviews",
+      "editorial_approvals",
+      "podcast_episodes",
+      "newsletter_editions"
+    ],
+    nextBackendWork: ["RSS feed API", "Podcast brief generator", "Article compliance approval endpoint"]
+  },
+  {
+    key: "policy",
+    title: "Policy Gate and Trust Center",
+    objective: "Make policy checks non-optional for publishing, ads, imports, outreach, reviews, and AI outputs.",
+    audience: "Admins, legal/compliance, providers",
+    status: "partial",
+    backendRoutes: ["POST /api/v1/policy/check", "GET /api/v1/system/link-health", "GET /api/v1/system/readiness"],
+    requiredTables: [
+      "policy_rules",
+      "policy_checks",
+      "policy_decisions",
+      "policy_approval_requests",
+      "policy_overrides",
+      "consent_records",
+      "audit_events"
+    ],
+    nextBackendWork: ["Policy queue API", "Approval/override APIs", "Immutable audit event browser"]
+  },
+  {
+    key: "open-api",
+    title: "Open API Platform",
+    objective: "Expose approved partner APIs with versioning, docs, audit logs, and webhooks.",
+    audience: "Providers, partners, data/event/ad integrations",
+    status: "partial",
+    backendRoutes: ["GET /api/v1/openapi"],
+    requiredTables: ["api_clients", "api_keys", "webhook_subscriptions", "webhook_deliveries", "api_audit_events"],
+    nextBackendWork: ["API key auth", "Webhook subscription CRUD", "Rate limit tracking"]
+  }
+];
+
+export async function getProductMap() {
+  const [dataSources, importBatches] = await Promise.all([listDataSources(), listImportBatches()]);
+  const readiness = getSystemReadiness();
+  const linkHealth = getLinkHealthSummary();
+
+  return {
+    generatedAt: new Date().toISOString(),
+    thesis:
+      "Community-first senior services network: free listings and direct contact, monetized through growth tools, events, advertising, reviews, AI newsroom, and APIs.",
+    slogans: {
+      consumer: "Find every senior care and senior life resource near you, not just paid referral partners.",
+      provider: "Your listing is free. Your growth engine is paid.",
+      market: "No referral commissions. No hidden pay-to-play recommendations. Sponsored content is labeled."
+    },
+    launchTargets: {
+      importedListings: 5000,
+      enrichedListings: 1000,
+      claimedListings: 100,
+      paidBetaProviders: "25-50"
+    },
+    operationalSummary: {
+      readinessStatus: readiness.overallStatus,
+      linkHealthStatus: linkHealth.status,
+      dataSources: dataSources.length,
+      importBatches: importBatches.length,
+      implementedPillars: productPillars.filter((pillar) => pillar.status === "implemented").length,
+      partialPillars: productPillars.filter((pillar) => pillar.status === "partial").length
+    },
+    pillars: productPillars,
+    readiness,
+    linkHealth: {
+      status: linkHealth.status,
+      total: linkHealth.total,
+      invalidCount: linkHealth.invalidCount
+    }
+  };
+}

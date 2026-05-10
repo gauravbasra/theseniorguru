@@ -166,6 +166,9 @@ export function getOpenApiCatalog() {
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
       },
+      "/api/v1/system/product-map": {
+        get: { tags: ["System"], summary: "Return FRD-aligned product pillars, backend routes, launch targets, and blockers" }
+      },
       "/api/v1/system/link-health": {
         get: { tags: ["System"], summary: "Validate internal route contracts and block placeholder links" }
       },

@@ -1,55 +1,122 @@
 import Link from "next/link";
-import { AdminOperationsConsole } from "@/components/admin-operations-console";
-import { NewsroomConsole } from "@/components/newsroom-console";
-import { getDeploymentStatus } from "@/lib/system/deployment";
-import { getSystemReadiness } from "@/lib/system/readiness";
+import { getProductMap } from "@/lib/system/product-map";
 
-export default function AdminPage() {
-  const readiness = getSystemReadiness();
-  const deployment = getDeploymentStatus();
+export default async function AdminPage() {
+  const product = await getProductMap();
+  const readinessGroups = Object.entries(product.readiness.groups);
 
   return (
     <main className="admin-shell">
       <section className="admin-hero">
         <div>
-          <p className="eyebrow">Admin operations</p>
-          <h1>Run launch workflows from one console.</h1>
-          <p className="lede">
-            This page is for inventory launch, claim verification, outreach, and community moderation. Every action calls
-            a backend route and shows the service response.
-          </p>
+          <p className="eyebrow">Platform command center</p>
+          <h1>Build and operate The Senior Guru from the FRD, not from random screens.</h1>
+          <p className="lede">{product.thesis}</p>
           <div className="actions">
-            <Link className="button secondary" href="/workbench">Founder workbench</Link>
-            <Link className="button secondary" href="/api/v1/system/readiness">Readiness JSON</Link>
-            <Link className="button secondary" href="/api/v1/system/deployment">Deployment JSON</Link>
+            <Link className="button primary" href="/api/v1/system/product-map">Product map API</Link>
+            <Link className="button secondary" href="/api/v1/system/link-health">Link health</Link>
+            <Link className="button secondary" href="/api/v1/openapi">OpenAPI</Link>
           </div>
         </div>
         <aside className="admin-status-card">
-          <p className="eyebrow">Production readiness</p>
-          <h2>{readiness.overallStatus.replaceAll("_", " ")}</h2>
+          <p className="eyebrow">Launch health</p>
+          <h2>{product.operationalSummary.readinessStatus.replaceAll("_", " ")}</h2>
           <p>
-            {deployment.activeDeploymentUrl
-              ? `Live on ${deployment.platform}; canonical DNS is tracked separately.`
-              : "Supabase, email, ads, DNS, and legal tasks remain visible without exposing secret values."}
+            Links: {product.linkHealth.status} · Data sources: {product.operationalSummary.dataSources} · Import
+            batches: {product.operationalSummary.importBatches}
           </p>
         </aside>
       </section>
 
-      <section className="ops-explain">
+      <section className="admin-promises">
         <article>
-          <p className="eyebrow">Inventory</p>
-          <h2>Validate imports before publishing</h2>
-          <p>Dry runs catch incomplete listings, duplicate scoring prevents messy inventory, and approval stays audited.</p>
+          <p className="eyebrow">Consumer promise</p>
+          <h2>{product.slogans.consumer}</h2>
         </article>
         <article>
-          <p className="eyebrow">Trust</p>
-          <h2>Claims and community need rails</h2>
-          <p>Verification attempts, outreach, reports, and moderation all route through policy-aware services.</p>
+          <p className="eyebrow">Provider promise</p>
+          <h2>{product.slogans.provider}</h2>
+        </article>
+        <article>
+          <p className="eyebrow">Market promise</p>
+          <h2>{product.slogans.market}</h2>
         </article>
       </section>
 
-      <AdminOperationsConsole />
-      <NewsroomConsole />
+      <section className="admin-metrics">
+        {[
+          ["Imported listings", product.launchTargets.importedListings],
+          ["Enriched listings", product.launchTargets.enrichedListings],
+          ["Claimed listings", product.launchTargets.claimedListings],
+          ["Paid beta providers", product.launchTargets.paidBetaProviders]
+        ].map(([label, value]) => (
+          <article className="profile-card" key={label}>
+            <p className="eyebrow">{label}</p>
+            <h2>{value}</h2>
+          </article>
+        ))}
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">FRD product pillars</p>
+            <h2>Every website surface must map to one of these backend workflows.</h2>
+          </div>
+        </div>
+        <div className="pillar-grid">
+          {product.pillars.map((pillar) => (
+            <article className="pillar-card" key={pillar.key}>
+              <div>
+                <span className={`status-pill ${pillar.status}`}>{pillar.status}</span>
+                <h3>{pillar.title}</h3>
+                <p>{pillar.objective}</p>
+                <small>{pillar.audience}</small>
+              </div>
+              <div>
+                <strong>Backend routes</strong>
+                <ul>
+                  {pillar.backendRoutes.slice(0, 6).map((route) => (
+                    <li key={route}>{route}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <strong>Next backend work</strong>
+                <ul>
+                  {pillar.nextBackendWork.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="admin-section readiness-section">
+        <div>
+          <p className="eyebrow">Readiness and blockers</p>
+          <h2>Owner-dependent work stays visible while backend development continues.</h2>
+        </div>
+        <div className="readiness-grid">
+          {readinessGroups.map(([name, group]) => (
+            <article className="profile-card" key={name}>
+              <p className="eyebrow">{name.replaceAll(/([A-Z])/g, " $1")}</p>
+              <h3>{group.status.replaceAll("_", " ")}</h3>
+              <ul>
+                {group.checks.map((check) => (
+                  <li key={check.key}>
+                    <strong>{check.label}</strong>
+                    <span>{check.status}</span>
+                    {check.action ? <small>{check.action}</small> : null}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }

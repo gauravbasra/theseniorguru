@@ -917,6 +917,128 @@ a {
   margin: 8px 0;
 }
 
+.admin-promises,
+.admin-metrics,
+.admin-section {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.admin-promises,
+.admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.admin-metrics {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.admin-promises article,
+.pillar-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 22px;
+}
+
+.admin-promises h2 {
+  margin: 8px 0 0;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.admin-section {
+  padding-top: 22px;
+  padding-bottom: 54px;
+}
+
+.pillar-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.pillar-card {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) 1fr 1fr;
+  gap: 18px;
+}
+
+.pillar-card h3 {
+  margin: 10px 0 8px;
+  font-size: 24px;
+}
+
+.pillar-card p,
+.pillar-card small,
+.pillar-card li,
+.readiness-grid li {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.pillar-card ul,
+.readiness-grid ul {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.status-pill {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #ece7dd;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.status-pill.partial {
+  background: #fff2d7;
+  color: #81510f;
+}
+
+.status-pill.implemented {
+  background: #dff1e7;
+  color: #1d5d43;
+}
+
+.status-pill.blocked {
+  background: #f8ddd8;
+  color: #8a3327;
+}
+
+.readiness-section {
+  display: grid;
+  grid-template-columns: 0.36fr 1fr;
+  gap: 22px;
+}
+
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.readiness-grid li {
+  display: grid;
+  gap: 3px;
+}
+
+.readiness-grid span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .ops-console {
   padding-bottom: 64px;
 }
@@ -1202,6 +1324,11 @@ a {
   .console-actions,
   .senior-action-grid,
   .newsroom-grid,
+  .admin-promises,
+  .admin-metrics,
+  .pillar-card,
+  .readiness-section,
+  .readiness-grid,
   .audience-hero,
   .workbench-hero,
   .workbench-grid,
