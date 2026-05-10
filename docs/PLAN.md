@@ -28,6 +28,8 @@ Deliverables:
 - Event analytics API. Completed.
 - Community feed schema. Completed.
 - Mobile app feed API. Completed.
+- Saved providers and care circle schema. Completed.
+- Saved providers and care circle APIs. Completed.
 - Ad placement schema. Completed.
 - Ad placement/impression/click APIs. Completed.
 - Marketing campaign schema. Completed.
@@ -119,6 +121,7 @@ Deliverables:
 - Reports/moderation.
 - App feed API.
 - Saved providers and care circles.
+- Saved provider and care circle APIs. Completed.
 
 ## Phase 6: Marketing Growth Engine
 

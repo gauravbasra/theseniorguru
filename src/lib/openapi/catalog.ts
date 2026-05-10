@@ -74,6 +74,18 @@ export function getOpenApiCatalog() {
       "/api/v1/app/feed": {
         get: { tags: ["Community"], summary: "Get unified app feed items" }
       },
+      "/api/v1/app/saved-providers": {
+        get: { tags: ["Community"], summary: "List saved providers for a senior or caregiver app user" },
+        post: { tags: ["Community"], summary: "Save a provider with optional notes and tags" }
+      },
+      "/api/v1/app/care-circles": {
+        get: { tags: ["Community"], summary: "List care circles for an app user" },
+        post: { tags: ["Community"], summary: "Create a care circle for collaborative senior-care planning" }
+      },
+      "/api/v1/app/care-circles/{id}/members": {
+        get: { tags: ["Community"], summary: "List members of a care circle" },
+        post: { tags: ["Community"], summary: "Invite or add a member to a care circle" }
+      },
       "/api/v1/ads/placements/{key}": {
         get: { tags: ["Ads"], summary: "Get ad placement metadata and creatives" }
       },
