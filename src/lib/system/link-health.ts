@@ -40,6 +40,8 @@ const routeContracts: LinkContract[] = [
   { label: "Partner providers API", href: "/api/v1/partner/providers", method: "GET", owner: "provider" },
   { label: "Partner events API", href: "/api/v1/partner/events", method: "GET", owner: "provider" },
   { label: "Provider claim status API", href: "/api/v1/provider-portal/claims/demo/status", method: "GET", owner: "provider" },
+  { label: "Review request campaigns API", href: "/api/v1/provider/review-request-campaigns", method: "GET", owner: "provider" },
+  { label: "Review requests API", href: "/api/v1/provider/review-requests", method: "GET", owner: "provider" },
   {
     label: "Current-site inventory import",
     href: "/api/v1/admin/current-site-inventory/import",

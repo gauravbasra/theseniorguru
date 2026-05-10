@@ -164,6 +164,13 @@ export function getOpenApiCatalog() {
         get: { tags: ["Campaigns"], summary: "List provider campaigns" },
         post: { tags: ["Campaigns"], summary: "Create a provider marketing campaign" }
       },
+      "/api/v1/provider/review-request-campaigns": {
+        get: { tags: ["Reviews"], summary: "List provider review request campaigns" },
+        post: { tags: ["Reviews"], summary: "Create a consent-gated review request campaign" }
+      },
+      "/api/v1/provider/review-requests": {
+        get: { tags: ["Reviews"], summary: "List review request recipients and statuses" }
+      },
       "/api/v1/providers/{id}/reviews": {
         get: { tags: ["Reviews"], summary: "List published reviews" },
         post: { tags: ["Reviews"], summary: "Submit a first-party review for moderation" }
