@@ -97,6 +97,25 @@ export function getOpenApiCatalog() {
         get: { tags: ["Community"], summary: "List members of a care circle" },
         post: { tags: ["Community"], summary: "Invite or add a member to a care circle" }
       },
+      "/api/v1/app/comparison-lists": {
+        get: { tags: ["Community"], summary: "List provider comparison lists for a senior or caregiver app user" },
+        post: { tags: ["Community"], summary: "Create a provider comparison list with optional starting providers" }
+      },
+      "/api/v1/app/comparison-lists/{id}/providers": {
+        post: { tags: ["Community"], summary: "Add a provider to a comparison list" }
+      },
+      "/api/v1/app/care-notes": {
+        get: { tags: ["Community"], summary: "List private or care-circle notes for an app user" },
+        post: { tags: ["Community"], summary: "Create a policy-gated care planning note" }
+      },
+      "/api/v1/app/tour-plans": {
+        get: { tags: ["Community"], summary: "List provider tour plans for an app user" },
+        post: { tags: ["Community"], summary: "Request or plan a provider tour" }
+      },
+      "/api/v1/me/notification-preferences": {
+        get: { tags: ["Community"], summary: "Get app notification preferences for a user" },
+        patch: { tags: ["Community"], summary: "Update app notification preferences for a user" }
+      },
       "/api/v1/community/posts": {
         post: { tags: ["Community"], summary: "Create a policy-gated community post" }
       },
@@ -131,6 +150,9 @@ export function getOpenApiCatalog() {
       },
       "/api/v1/provider/growth-subscriptions/{id}/activate": {
         post: { tags: ["Billing"], summary: "Activate a provider growth subscription and feature entitlements" }
+      },
+      "/api/v1/provider-portal/providers/{id}": {
+        patch: { tags: ["Providers"], summary: "Submit provider profile changes into the policy/audit review workflow" }
       },
       "/api/v1/provider/entitlements/check": {
         post: { tags: ["Billing"], summary: "Check whether a provider has access to a paid or free feature" }

@@ -38,6 +38,29 @@ export type LocationSearchResult = {
   categories: string[];
 };
 
+export type ProviderPortalUpdateInput = {
+  providerId: string;
+  actorId?: string;
+  displayName?: string;
+  phone?: string;
+  websiteUrl?: string;
+  summary?: string;
+  categories?: string[];
+  availability?: Record<string, unknown>;
+  pricing?: Record<string, unknown>;
+  attestationAccepted: boolean;
+};
+
+export type ProviderPortalUpdateResult = {
+  id: string;
+  providerId: string;
+  status: "pending_review" | "applied" | "blocked_by_policy";
+  changedFields: string[];
+  policyDecision: PolicyDecision;
+  requiredDisclosures: string[];
+  createdAt: string;
+};
+
 export type DataSourceReviewStatus = "pending" | "approved" | "blocked" | "needs_legal_review";
 
 export type DataSourceRecord = {

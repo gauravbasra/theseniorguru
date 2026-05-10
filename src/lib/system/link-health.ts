@@ -3,7 +3,7 @@ import { seedProviders } from "@/lib/data/seed";
 type LinkContract = {
   label: string;
   href: string;
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PATCH";
   owner: "public" | "admin" | "provider" | "family";
 };
 
@@ -25,6 +25,10 @@ const routeContracts: LinkContract[] = [
   { label: "Location search API", href: "/api/v1/locations/search", method: "GET", owner: "public" },
   { label: "Events API", href: "/api/v1/events", method: "GET", owner: "public" },
   { label: "App feed API", href: "/api/v1/app/feed", method: "GET", owner: "family" },
+  { label: "Comparison lists API", href: "/api/v1/app/comparison-lists", method: "GET", owner: "family" },
+  { label: "Care notes API", href: "/api/v1/app/care-notes", method: "GET", owner: "family" },
+  { label: "Tour plans API", href: "/api/v1/app/tour-plans", method: "GET", owner: "family" },
+  { label: "Notification preferences API", href: "/api/v1/me/notification-preferences", method: "GET", owner: "family" },
   { label: "Readiness API", href: "/api/v1/system/readiness", method: "GET", owner: "admin" },
   { label: "Deployment API", href: "/api/v1/system/deployment", method: "GET", owner: "admin" },
   {
@@ -41,6 +45,10 @@ function isInternalGetLink(link: LinkContract) {
 
 function isInternalPostLink(link: LinkContract) {
   return link.href.startsWith("/") && link.method === "POST";
+}
+
+function isInternalPatchLink(link: LinkContract) {
+  return link.href.startsWith("/") && link.method === "PATCH";
 }
 
 export function getLinkContracts(): LinkContract[] {
@@ -79,7 +87,7 @@ export function checkLinkContracts(): LinkHealthResult[] {
       return { ...link, status: "invalid", reason: "Placeholder links are not allowed in deliverables." };
     }
 
-    if (isInternalGetLink(link) || isInternalPostLink(link)) {
+    if (isInternalGetLink(link) || isInternalPostLink(link) || isInternalPatchLink(link)) {
       return { ...link, status: "valid" };
     }
 

@@ -30,6 +30,9 @@ Deliverables:
 - Mobile app feed API. Completed.
 - Saved providers and care circle schema. Completed.
 - Saved providers and care circle APIs. Completed.
+- Comparison lists, care notes, tour plans, and notification preference APIs. Completed.
+- Provider portal profile update audit API. Completed.
+- Mobile completion and provider profile audit schema. Completed.
 - Community post, comment, report, and moderation APIs. Completed.
 - Ad placement schema. Completed.
 - Ad placement/impression/click APIs. Completed.
@@ -45,6 +48,7 @@ Deliverables:
 - AI newsroom schema. Completed.
 - News intake, article draft/publish, and social derivative APIs. Completed.
 - Open API catalog endpoint. Completed.
+- Browser-safe guard for internal API endpoints. Completed.
 - Founder workbench executable workflow UI and API. Completed.
 - Admin operations console for import, claim, outreach, and moderation workflows. Completed.
 - Senior family action panel for saved providers, care circles, members, and community posts. Completed.
@@ -132,6 +136,7 @@ Deliverables:
 - App feed API.
 - Saved providers and care circles.
 - Saved provider and care circle APIs. Completed.
+- Comparison lists, care notes, tour plans, and notification preferences. Completed.
 
 ## Phase 6: Marketing Growth Engine
 

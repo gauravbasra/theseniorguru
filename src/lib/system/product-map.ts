@@ -28,7 +28,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/providers/{id}/contact",
       "GET /api/v1/providers/{id}/reviews",
       "GET /api/v1/categories",
-      "GET /api/v1/locations/search"
+      "GET /api/v1/locations/search",
+      "PATCH /api/v1/provider-portal/providers/{id}"
     ],
     requiredTables: [
       "providers",
@@ -38,10 +39,7 @@ const productPillars: ProductPillar[] = [
       "provider_source_records",
       "provider_profile_audits"
     ],
-    nextBackendWork: [
-      "Persist provider contacts in Supabase production",
-      "Add provider profile edit approval workflow"
-    ]
+    nextBackendWork: ["Persist provider contacts in Supabase production", "Claimed-provider edit approval UI"]
   },
   {
     key: "mobile",
@@ -55,7 +53,16 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/app/saved-providers",
       "GET /api/v1/app/care-circles",
       "POST /api/v1/app/care-circles",
-      "POST /api/v1/app/care-circles/{id}/members"
+      "POST /api/v1/app/care-circles/{id}/members",
+      "GET /api/v1/app/comparison-lists",
+      "POST /api/v1/app/comparison-lists",
+      "POST /api/v1/app/comparison-lists/{id}/providers",
+      "GET /api/v1/app/care-notes",
+      "POST /api/v1/app/care-notes",
+      "GET /api/v1/app/tour-plans",
+      "POST /api/v1/app/tour-plans",
+      "GET /api/v1/me/notification-preferences",
+      "PATCH /api/v1/me/notification-preferences"
     ],
     requiredTables: [
       "consumer_profiles",
@@ -66,7 +73,7 @@ const productPillars: ProductPillar[] = [
       "tour_plans",
       "app_notification_preferences"
     ],
-    nextBackendWork: ["Tour plans API", "Comparison list API", "Notification preferences API"]
+    nextBackendWork: ["Mobile auth/session binding", "Device registration and push tokens", "Family invite delivery jobs"]
   },
   {
     key: "community",
