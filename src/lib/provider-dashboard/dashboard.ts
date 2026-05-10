@@ -30,7 +30,7 @@ export async function getProviderDashboard() {
       {
         title: "Claim and verify your profile",
         status: providerClaims.length ? "started" : "recommended",
-        href: provider ? `/api/v1/providers/${provider.id}/claim` : "/api/v1/providers"
+        href: "/api/v1/openapi"
       },
       {
         title: "Publish a local education event",
@@ -50,4 +50,3 @@ export async function getProviderDashboard() {
     ]
   };
 }
-

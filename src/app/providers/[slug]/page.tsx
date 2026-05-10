@@ -32,7 +32,7 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
           <p className="eyebrow">Free listing</p>
           <h2>Claim this profile</h2>
           <p>Verify business ownership to update services, add events, manage reviews, and unlock growth campaigns.</p>
-          <Link className="button primary" href={`/api/v1/providers/${provider.id}/claim`}>Claim API</Link>
+          <Link className="button primary" href="/api/v1/openapi">Claim API docs</Link>
         </aside>
       </section>
 
@@ -79,4 +79,3 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
     </main>
   );
 }
-

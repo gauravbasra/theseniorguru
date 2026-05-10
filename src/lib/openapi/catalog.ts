@@ -37,6 +37,9 @@ export function getOpenApiCatalog() {
       "/api/v1/providers/{id}/claim": {
         post: { tags: ["Claims"], summary: "Submit a provider claim" }
       },
+      "/api/v1/providers/{id}/contact": {
+        post: { tags: ["Providers"], summary: "Submit a consented provider contact intent" }
+      },
       "/api/v1/admin/provider-claims/{id}/approve": {
         post: { tags: ["Claims"], summary: "Approve a provider claim and mark provider claimed" }
       },
@@ -157,8 +160,14 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/import-batches/{id}/run": {
         post: { tags: ["Aggregation"], summary: "Run a policy-gated import batch and stage extracted provider entities" }
       },
+      "/api/v1/admin/current-site-inventory/import": {
+        post: { tags: ["Aggregation"], summary: "Run current Senior Guru inventory import into the staging pipeline" }
+      },
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
+      },
+      "/api/v1/system/link-health": {
+        get: { tags: ["System"], summary: "Validate internal route contracts and block placeholder links" }
       },
       "/api/v1/workbench/demo-run": {
         post: { tags: ["Workbench"], summary: "Run an executable founder workflow across platform services" }

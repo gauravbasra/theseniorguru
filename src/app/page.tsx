@@ -180,7 +180,7 @@ export default async function HomePage() {
           <Link href="/api/v1/providers">Providers</Link>
           <Link href="/api/v1/events">Events</Link>
           <Link href="/api/v1/ads/placements/web.discover.top">Ads</Link>
-          <Link href="/api/v1/policy/check">Policy</Link>
+          <Link href="/api/v1/openapi">OpenAPI</Link>
           <Link href="/workbench">Workbench</Link>
           <Link href="/admin">Admin</Link>
         </div>
