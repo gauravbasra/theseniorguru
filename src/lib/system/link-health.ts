@@ -43,6 +43,12 @@ const routeContracts: LinkContract[] = [
   { label: "Review request campaigns API", href: "/api/v1/provider/review-request-campaigns", method: "GET", owner: "provider" },
   { label: "Review requests API", href: "/api/v1/provider/review-requests", method: "GET", owner: "provider" },
   {
+    label: "Review response publish API",
+    href: "/api/v1/provider-portal/reviews/demo/responses/publish",
+    method: "POST",
+    owner: "provider"
+  },
+  {
     label: "Current-site inventory import",
     href: "/api/v1/admin/current-site-inventory/import",
     method: "POST",

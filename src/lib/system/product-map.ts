@@ -140,7 +140,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/provider/campaigns/{id}/generate",
       "POST /api/v1/provider/campaigns/{id}/publish",
       "GET /api/v1/provider/review-request-campaigns",
-      "POST /api/v1/provider/review-request-campaigns"
+      "POST /api/v1/provider/review-request-campaigns",
+      "POST /api/v1/provider-portal/reviews/{id}/responses/publish"
     ],
     requiredTables: [
       "marketing_campaigns",
@@ -220,7 +221,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/provider/reviews/{id}/responses/generate",
       "GET /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider/review-request-campaigns",
-      "GET /api/v1/provider/review-requests"
+      "GET /api/v1/provider/review-requests",
+      "POST /api/v1/provider-portal/reviews/{id}/responses/publish"
     ],
     requiredTables: [
       "reviews",
@@ -231,7 +233,7 @@ const productPillars: ProductPillar[] = [
       "reputation_scores",
       "external_review_integrations"
     ],
-    nextBackendWork: ["Review request send worker", "Review response publish endpoint", "External review integrations"]
+    nextBackendWork: ["Review request send worker", "External review integrations", "Review moderation admin actions"]
   },
   {
     key: "newsroom",

@@ -171,6 +171,9 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/review-requests": {
         get: { tags: ["Reviews"], summary: "List review request recipients and statuses" }
       },
+      "/api/v1/provider-portal/reviews/{id}/responses/publish": {
+        post: { tags: ["Reviews"], summary: "Publish a policy-gated provider response to a review" }
+      },
       "/api/v1/providers/{id}/reviews": {
         get: { tags: ["Reviews"], summary: "List published reviews" },
         post: { tags: ["Reviews"], summary: "Submit a first-party review for moderation" }

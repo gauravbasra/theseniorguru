@@ -27,6 +27,25 @@ export type ReviewResponseDraft = {
   policyDecision: string;
 };
 
+export type ReviewResponseRecord = {
+  id: string;
+  reviewId: string;
+  providerId?: string;
+  body: string;
+  status: "draft" | "approved" | "published" | "blocked";
+  generatedByAi: boolean;
+  policyDecision?: string;
+  createdAt: string;
+  publishedAt?: string;
+};
+
+export type PublishReviewResponseInput = {
+  reviewId: string;
+  body: string;
+  generatedByAi?: boolean;
+  actorId?: string;
+};
+
 export type ReviewRequestCampaignStatus = "draft" | "queued" | "sent" | "blocked_by_policy" | "completed_with_errors";
 
 export type ReviewRequestRecipientInput = {
