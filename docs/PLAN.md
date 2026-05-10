@@ -36,6 +36,7 @@ Deliverables:
 - Open API catalog endpoint. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
+- Provider claim outreach queue APIs. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
@@ -56,7 +57,7 @@ Deliverables:
 - Confidence scoring.
 - Human review queue.
 - Extracted entity approval, rejection, duplicate, audit workflow. Completed.
-- Provider claim outreach queue.
+- Provider claim outreach queue. Completed.
 
 Launch target:
 

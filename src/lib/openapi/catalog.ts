@@ -40,6 +40,13 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-claims/{id}/reject": {
         post: { tags: ["Claims"], summary: "Reject a provider claim with audit notes" }
       },
+      "/api/v1/admin/provider-outreach": {
+        get: { tags: ["Claims"], summary: "List provider claim outreach queue items" },
+        post: { tags: ["Claims"], summary: "Create a policy-gated free-claim outreach sequence item" }
+      },
+      "/api/v1/admin/provider-outreach/{id}/send": {
+        post: { tags: ["Claims"], summary: "Mark provider outreach as sent and audit delivery metadata" }
+      },
       "/api/v1/events": {
         get: { tags: ["Events"], summary: "List published events" }
       },
