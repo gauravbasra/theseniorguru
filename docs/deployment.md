@@ -36,8 +36,8 @@ server {
 
 - Confirm target droplet.
 - Add production `.env`.
+- Check `/api/v1/system/readiness` after env installation; it should report Supabase, email, ads, and hosting readiness without exposing secret values.
 - Run Supabase migrations against production project.
 - Build and start Docker service.
 - Add nginx site and SSL.
 - Confirm `thevaulted.com` files/config are untouched.
-

@@ -22,6 +22,7 @@ export function getOpenApiCatalog() {
       { name: "Reviews" },
       { name: "Newsroom" },
       { name: "Aggregation" },
+      { name: "System" },
       { name: "Policy" }
     ],
     paths: {
@@ -102,6 +103,9 @@ export function getOpenApiCatalog() {
       },
       "/api/v1/admin/import-batches/{id}/run": {
         post: { tags: ["Aggregation"], summary: "Run a policy-gated import batch and stage extracted provider entities" }
+      },
+      "/api/v1/system/readiness": {
+        get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
       },
       "/api/v1/policy/check": {
         post: { tags: ["Policy"], summary: "Run a policy guardrail check" }
