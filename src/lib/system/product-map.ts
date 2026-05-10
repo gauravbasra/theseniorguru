@@ -280,13 +280,22 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/api-clients/{id}/keys",
       "GET /api/v1/admin/webhook-subscriptions",
       "POST /api/v1/admin/webhook-subscriptions",
+      "GET /api/v1/admin/webhook-deliveries",
       "POST /api/v1/admin/webhook-deliveries",
+      "POST /api/v1/admin/webhook-deliveries/run",
       "GET /api/v1/admin/api-audit-events",
       "GET /api/v1/partner/providers",
       "GET /api/v1/partner/events"
     ],
-    requiredTables: ["api_clients", "api_keys", "webhook_subscriptions", "webhook_deliveries", "api_audit_events"],
-    nextBackendWork: ["Webhook delivery worker", "Partner developer docs UI", "API key revocation endpoint"]
+    requiredTables: [
+      "api_clients",
+      "api_keys",
+      "webhook_subscriptions",
+      "webhook_deliveries",
+      "webhook_delivery_attempts",
+      "api_audit_events"
+    ],
+    nextBackendWork: ["Partner developer docs UI", "API key revocation endpoint", "Webhook retry scheduler"]
   }
 ];
 

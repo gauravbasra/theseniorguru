@@ -203,7 +203,11 @@ export function getOpenApiCatalog() {
         post: { tags: ["System"], summary: "Create a signed HTTPS webhook subscription" }
       },
       "/api/v1/admin/webhook-deliveries": {
+        get: { tags: ["System"], summary: "List webhook delivery records by status" },
         post: { tags: ["System"], summary: "Queue webhook delivery records for matching active subscriptions" }
+      },
+      "/api/v1/admin/webhook-deliveries/run": {
+        post: { tags: ["System"], summary: "Process queued webhook deliveries with signed payloads and attempt records" }
       },
       "/api/v1/admin/api-audit-events": {
         get: { tags: ["System"], summary: "List Open API audit events" }

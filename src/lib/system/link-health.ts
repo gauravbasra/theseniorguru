@@ -33,6 +33,7 @@ const routeContracts: LinkContract[] = [
   { label: "Deployment API", href: "/api/v1/system/deployment", method: "GET", owner: "admin" },
   { label: "API clients API", href: "/api/v1/admin/api-clients", method: "GET", owner: "admin" },
   { label: "Webhook subscriptions API", href: "/api/v1/admin/webhook-subscriptions", method: "GET", owner: "admin" },
+  { label: "Webhook deliveries API", href: "/api/v1/admin/webhook-deliveries", method: "GET", owner: "admin" },
   { label: "API audit events API", href: "/api/v1/admin/api-audit-events", method: "GET", owner: "admin" },
   { label: "Partner providers API", href: "/api/v1/partner/providers", method: "GET", owner: "provider" },
   { label: "Partner events API", href: "/api/v1/partner/events", method: "GET", owner: "provider" },

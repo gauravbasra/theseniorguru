@@ -90,7 +90,9 @@ export type WebhookDeliveryRecord = {
   payload: Record<string, unknown>;
   status: "queued" | "delivered" | "failed" | "blocked";
   attempts: number;
+  lastError?: string;
   createdAt: string;
+  deliveredAt?: string;
 };
 
 export type EnqueueWebhookDeliveryInput = {
@@ -120,3 +122,28 @@ export type ApiAuthenticationResult =
       error: string;
       retryAfterSeconds?: number;
     };
+
+export type WebhookDeliveryAttemptRecord = {
+  id: string;
+  deliveryId: string;
+  targetUrl: string;
+  status: "delivered" | "failed" | "blocked" | "dry_run";
+  statusCode?: number;
+  error?: string;
+  signaturePreview?: string;
+  createdAt: string;
+};
+
+export type ProcessWebhookDeliveriesInput = {
+  limit?: number;
+  dryRun?: boolean;
+};
+
+export type ProcessWebhookDeliveriesResult = {
+  processed: number;
+  delivered: number;
+  failed: number;
+  blocked: number;
+  dryRun: boolean;
+  attempts: WebhookDeliveryAttemptRecord[];
+};

@@ -11,6 +11,9 @@ import type {
   CreatedWebhookSubscriptionRecord,
   CreateWebhookSubscriptionInput,
   EnqueueWebhookDeliveryInput,
+  ProcessWebhookDeliveriesInput,
+  ProcessWebhookDeliveriesResult,
+  WebhookDeliveryAttemptRecord,
   WebhookDeliveryRecord,
   WebhookEventType,
   WebhookSubscriptionRecord
@@ -48,8 +51,18 @@ const seedApiKeys: ApiKeyRecord[] = [];
 const seedApiKeyHashes = new Map<string, string>();
 const seedWebhookSubscriptions: WebhookSubscriptionRecord[] = [];
 const seedWebhookDeliveries: WebhookDeliveryRecord[] = [];
+const seedWebhookDeliveryAttempts: WebhookDeliveryAttemptRecord[] = [];
 const seedApiAuditEvents: ApiAuditEventRecord[] = [];
 const seedRateCounters = new Map<string, { windowStart: number; count: number }>();
+
+type InternalWebhookSubscription = WebhookSubscriptionRecord & {
+  signingSecret?: string;
+  signingSecretHash?: string;
+};
+
+type InternalWebhookDelivery = WebhookDeliveryRecord & {
+  subscription?: InternalWebhookSubscription;
+};
 
 function previewSecret(secret: string) {
   return `${secret.slice(0, 8)}...${secret.slice(-4)}`;
@@ -103,6 +116,13 @@ function mapWebhookSubscription(row: Record<string, unknown>): WebhookSubscripti
   };
 }
 
+function mapInternalWebhookSubscription(row: Record<string, unknown>): InternalWebhookSubscription {
+  return {
+    ...mapWebhookSubscription(row),
+    signingSecretHash: row.signing_secret_hash ? String(row.signing_secret_hash) : undefined
+  };
+}
+
 function mapWebhookDelivery(row: Record<string, unknown>): WebhookDeliveryRecord {
   return {
     id: String(row.id),
@@ -112,6 +132,35 @@ function mapWebhookDelivery(row: Record<string, unknown>): WebhookDeliveryRecord
     payload: row.payload && typeof row.payload === "object" ? (row.payload as Record<string, unknown>) : {},
     status: row.status as WebhookDeliveryRecord["status"],
     attempts: Number(row.attempts ?? 0),
+    lastError: row.last_error ? String(row.last_error) : undefined,
+    createdAt: String(row.created_at),
+    deliveredAt: row.delivered_at ? String(row.delivered_at) : undefined
+  };
+}
+
+function mapInternalWebhookDelivery(row: Record<string, unknown>): InternalWebhookDelivery {
+  const subscriptionRow = Array.isArray(row.webhook_subscriptions)
+    ? row.webhook_subscriptions[0]
+    : row.webhook_subscriptions;
+
+  return {
+    ...mapWebhookDelivery(row),
+    subscription:
+      subscriptionRow && typeof subscriptionRow === "object"
+        ? mapInternalWebhookSubscription(subscriptionRow as Record<string, unknown>)
+        : undefined
+  };
+}
+
+function mapWebhookDeliveryAttempt(row: Record<string, unknown>): WebhookDeliveryAttemptRecord {
+  return {
+    id: String(row.id),
+    deliveryId: String(row.delivery_id),
+    targetUrl: String(row.target_url),
+    status: row.status as WebhookDeliveryAttemptRecord["status"],
+    statusCode: row.status_code ? Number(row.status_code) : undefined,
+    error: row.error ? String(row.error) : undefined,
+    signaturePreview: row.signature_preview ? String(row.signature_preview) : undefined,
     createdAt: String(row.created_at)
   };
 }
@@ -280,6 +329,15 @@ function validateWebhookInput(input: CreateWebhookSubscriptionInput) {
   if (unsupported.length) {
     throw new Error(`Unsupported webhook event type: ${unsupported.join(", ")}`);
   }
+}
+
+function signWebhookPayload(secretMaterial: string, timestamp: number, body: string) {
+  const digest = crypto.createHmac("sha256", secretMaterial).update(`${timestamp}.${body}`).digest("hex");
+  return `t=${timestamp},v1=${digest}`;
+}
+
+function previewSignature(signature: string) {
+  return `${signature.slice(0, 24)}...${signature.slice(-8)}`;
 }
 
 export async function listApiClients(): Promise<ApiClientRecord[]> {
@@ -467,6 +525,28 @@ export async function createWebhookSubscription(
   return { ...mapWebhookSubscription(data), signingSecret };
 }
 
+export async function listWebhookDeliveries(status?: WebhookDeliveryRecord["status"]): Promise<WebhookDeliveryRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return status ? seedWebhookDeliveries.filter((delivery) => delivery.status === status) : seedWebhookDeliveries;
+  }
+
+  let query = supabase.from("webhook_deliveries").select("*").order("created_at", { ascending: false }).limit(100);
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Webhook deliveries query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapWebhookDelivery);
+}
+
 export async function enqueueWebhookDeliveries(input: EnqueueWebhookDeliveryInput): Promise<WebhookDeliveryRecord[]> {
   const policy = await runPolicyCheck({
     subjectType: "webhook_delivery",
@@ -519,6 +599,266 @@ export async function enqueueWebhookDeliveries(input: EnqueueWebhookDeliveryInpu
   }
 
   return (data ?? []).map(mapWebhookDelivery);
+}
+
+async function listQueuedWebhookDeliveries(limit: number): Promise<InternalWebhookDelivery[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedWebhookDeliveries
+      .filter((delivery) => delivery.status === "queued")
+      .slice(0, limit)
+      .map((delivery) => ({
+        ...delivery,
+        subscription: seedWebhookSubscriptions.find((subscription) => subscription.id === delivery.subscriptionId) as
+          | InternalWebhookSubscription
+          | undefined
+      }));
+  }
+
+  const { data, error } = await supabase
+    .from("webhook_deliveries")
+    .select("*, webhook_subscriptions(*)")
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Queued webhook delivery query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapInternalWebhookDelivery);
+}
+
+async function recordWebhookDeliveryAttempt(input: {
+  deliveryId: string;
+  targetUrl: string;
+  status: WebhookDeliveryAttemptRecord["status"];
+  statusCode?: number;
+  error?: string;
+  signaturePreview?: string;
+}): Promise<WebhookDeliveryAttemptRecord> {
+  const createdAt = new Date().toISOString();
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const record: WebhookDeliveryAttemptRecord = {
+      id: `webhook-attempt-${crypto.randomUUID()}`,
+      deliveryId: input.deliveryId,
+      targetUrl: input.targetUrl,
+      status: input.status,
+      statusCode: input.statusCode,
+      error: input.error,
+      signaturePreview: input.signaturePreview,
+      createdAt
+    };
+    seedWebhookDeliveryAttempts.unshift(record);
+    return record;
+  }
+
+  const { data, error } = await supabase
+    .from("webhook_delivery_attempts")
+    .insert({
+      delivery_id: input.deliveryId,
+      target_url: input.targetUrl,
+      status: input.status,
+      status_code: input.statusCode,
+      error: input.error,
+      signature_preview: input.signaturePreview
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Webhook delivery attempt creation failed: ${error.message}`);
+  }
+
+  return mapWebhookDeliveryAttempt(data);
+}
+
+async function updateWebhookDeliveryStatus(input: {
+  deliveryId: string;
+  status: WebhookDeliveryRecord["status"];
+  error?: string;
+}) {
+  const deliveredAt = input.status === "delivered" ? new Date().toISOString() : undefined;
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const delivery = seedWebhookDeliveries.find((item) => item.id === input.deliveryId);
+
+    if (delivery) {
+      delivery.status = input.status;
+      delivery.attempts += 1;
+      delivery.lastError = input.error;
+      delivery.deliveredAt = deliveredAt;
+    }
+
+    return;
+  }
+
+  const { error } = await supabase
+    .from("webhook_deliveries")
+    .update({
+      status: input.status,
+      last_error: input.error,
+      delivered_at: deliveredAt
+    })
+    .eq("id", input.deliveryId);
+
+  if (error) {
+    throw new Error(`Webhook delivery update failed: ${error.message}`);
+  }
+
+  const { error: incrementError } = await supabase.rpc("increment_webhook_delivery_attempts", {
+    delivery_id_input: input.deliveryId
+  });
+
+  if (incrementError) {
+    throw new Error(`Webhook delivery attempt increment failed: ${incrementError.message}`);
+  }
+}
+
+export async function processWebhookDeliveries(
+  input: ProcessWebhookDeliveriesInput = {}
+): Promise<ProcessWebhookDeliveriesResult> {
+  const limit = Math.max(1, Math.min(input.limit ?? 10, 50));
+  const dryRun = input.dryRun ?? false;
+  const queued = await listQueuedWebhookDeliveries(limit);
+  const attempts: WebhookDeliveryAttemptRecord[] = [];
+
+  let delivered = 0;
+  let failed = 0;
+  let blocked = 0;
+
+  for (const delivery of queued) {
+    const subscription = delivery.subscription;
+
+    if (!subscription || subscription.status !== "active") {
+      blocked += 1;
+      attempts.push(
+        await recordWebhookDeliveryAttempt({
+          deliveryId: delivery.id,
+          targetUrl: subscription?.targetUrl ?? "unknown",
+          status: "blocked",
+          error: "Webhook subscription is missing or inactive"
+        })
+      );
+      await updateWebhookDeliveryStatus({
+        deliveryId: delivery.id,
+        status: "blocked",
+        error: "Webhook subscription is missing or inactive"
+      });
+      continue;
+    }
+
+    const secretMaterial = subscription.signingSecret ?? subscription.signingSecretHash;
+
+    if (!secretMaterial) {
+      blocked += 1;
+      attempts.push(
+        await recordWebhookDeliveryAttempt({
+          deliveryId: delivery.id,
+          targetUrl: subscription.targetUrl,
+          status: "blocked",
+          error: "Webhook signing material is unavailable"
+        })
+      );
+      await updateWebhookDeliveryStatus({
+        deliveryId: delivery.id,
+        status: "blocked",
+        error: "Webhook signing material is unavailable"
+      });
+      continue;
+    }
+
+    const body = JSON.stringify({
+      id: delivery.id,
+      eventType: delivery.eventType,
+      subjectId: delivery.subjectId,
+      payload: delivery.payload,
+      createdAt: delivery.createdAt
+    });
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = signWebhookPayload(secretMaterial, timestamp, body);
+    const signaturePreview = previewSignature(signature);
+
+    if (dryRun) {
+      attempts.push(
+        await recordWebhookDeliveryAttempt({
+          deliveryId: delivery.id,
+          targetUrl: subscription.targetUrl,
+          status: "dry_run",
+          statusCode: 200,
+          signaturePreview
+        })
+      );
+      continue;
+    }
+
+    try {
+      const response = await fetch(subscription.targetUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "user-agent": "TheSeniorGuru-Webhooks/0.1",
+          "x-senior-guru-event": delivery.eventType,
+          "x-senior-guru-signature": signature
+        },
+        body
+      });
+
+      if (response.ok) {
+        delivered += 1;
+        attempts.push(
+          await recordWebhookDeliveryAttempt({
+            deliveryId: delivery.id,
+            targetUrl: subscription.targetUrl,
+            status: "delivered",
+            statusCode: response.status,
+            signaturePreview
+          })
+        );
+        await updateWebhookDeliveryStatus({ deliveryId: delivery.id, status: "delivered" });
+      } else {
+        failed += 1;
+        const error = `Webhook target returned HTTP ${response.status}`;
+        attempts.push(
+          await recordWebhookDeliveryAttempt({
+            deliveryId: delivery.id,
+            targetUrl: subscription.targetUrl,
+            status: "failed",
+            statusCode: response.status,
+            error,
+            signaturePreview
+          })
+        );
+        await updateWebhookDeliveryStatus({ deliveryId: delivery.id, status: "failed", error });
+      }
+    } catch (error) {
+      failed += 1;
+      const message = error instanceof Error ? error.message : "Webhook delivery failed";
+      attempts.push(
+        await recordWebhookDeliveryAttempt({
+          deliveryId: delivery.id,
+          targetUrl: subscription.targetUrl,
+          status: "failed",
+          error: message,
+          signaturePreview
+        })
+      );
+      await updateWebhookDeliveryStatus({ deliveryId: delivery.id, status: "failed", error: message });
+    }
+  }
+
+  return {
+    processed: queued.length,
+    delivered,
+    failed,
+    blocked,
+    dryRun,
+    attempts
+  };
 }
 
 export async function listApiAuditEvents(apiClientId?: string): Promise<ApiAuditEventRecord[]> {
