@@ -1,5 +1,9 @@
 import Link from "next/link";
+import Image from "next/image";
 import { getAppFeed } from "@/lib/community/feed";
+
+const heroImage =
+  "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1600&q=85";
 
 export default async function HomePage() {
   const feed = await getAppFeed();
@@ -19,22 +23,36 @@ export default async function HomePage() {
             <Link className="button secondary" href="/api/v1/app/feed">View app feed API</Link>
           </div>
         </div>
-        <aside className="phone-panel" aria-label="Mobile app preview">
-          <div className="phone-top">
-            <span>Today near you</span>
-            <strong>Denver</strong>
-          </div>
-          <div className="feed-stack">
-            {feed.slice(0, 3).map((item) => (
-              <article className="feed-card" key={item.id}>
-                <span className="feed-type">{item.type.replaceAll("_", " ")}</span>
-                <h2>{item.title}</h2>
-                {item.subtitle ? <p>{item.subtitle}</p> : null}
-                <small>{item.city}, {item.state}</small>
-              </article>
-            ))}
+        <aside className="hero-media" aria-label="Senior family support preview">
+          <Image
+            src={heroImage}
+            alt="A senior adult walking outside with family support"
+            width={900}
+            height={1080}
+            priority
+          />
+          <div className="image-caption">
+            <strong>Find help with dignity.</strong>
+            <span>Local care, events, reviews, and community guidance in one place.</span>
           </div>
         </aside>
+      </section>
+
+      <section className="feed-preview">
+        <div>
+          <p className="eyebrow">Live app feed</p>
+          <h2>Care options, events, and community guidance should feel alive.</h2>
+        </div>
+        <div className="feed-row">
+          {feed.slice(0, 3).map((item) => (
+            <article className="feed-card" key={item.id}>
+              <span className="feed-type">{item.type.replaceAll("_", " ")}</span>
+              <h3>{item.title}</h3>
+              {item.subtitle ? <p>{item.subtitle}</p> : null}
+              <small>{item.city}, {item.state}</small>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="trust-band">
