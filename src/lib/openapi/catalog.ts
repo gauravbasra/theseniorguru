@@ -258,6 +258,9 @@ export function getOpenApiCatalog() {
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
       },
+      "/api/v1/system/supabase-schema": {
+        get: { tags: ["System"], summary: "Return Supabase migration manifest and live table readiness checks" }
+      },
       "/api/v1/system/product-map": {
         get: { tags: ["System"], summary: "Return FRD-aligned product pillars, backend routes, launch targets, and blockers" }
       },

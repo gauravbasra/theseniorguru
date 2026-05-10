@@ -274,7 +274,12 @@ const productPillars: ProductPillar[] = [
     objective: "Make policy checks non-optional for publishing, ads, imports, outreach, reviews, and AI outputs.",
     audience: "Admins, legal/compliance, providers",
     status: "partial",
-    backendRoutes: ["POST /api/v1/policy/check", "GET /api/v1/system/link-health", "GET /api/v1/system/readiness"],
+    backendRoutes: [
+      "POST /api/v1/policy/check",
+      "GET /api/v1/system/link-health",
+      "GET /api/v1/system/readiness",
+      "GET /api/v1/system/supabase-schema"
+    ],
     requiredTables: [
       "policy_rules",
       "policy_checks",

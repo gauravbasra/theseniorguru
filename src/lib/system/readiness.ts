@@ -41,6 +41,12 @@ export function getSystemReadiness() {
       label: "Supabase server service key",
       status: env.supabaseServiceRoleKey ? "ready" : "missing",
       action: env.supabaseServiceRoleKey ? undefined : "Provide server-only service role key for import/admin APIs."
+    },
+    {
+      key: "SUPABASE_SCHEMA_READINESS",
+      label: "Supabase schema readiness endpoint",
+      status: "ready",
+      action: "GET /api/v1/system/supabase-schema lists required migrations and checks live table coverage when credentials are configured."
     }
   ];
   const emailChecks: ReadinessCheck[] = [
