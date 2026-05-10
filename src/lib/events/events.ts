@@ -2,7 +2,26 @@ import type { CreateEventInput, EventRecord, EventRsvpInput, EventRsvpRecord } f
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
-const seedEvents: EventRecord[] = [];
+const seedEvents: EventRecord[] = [
+  {
+    id: "seed-denver-caregiver-workshop",
+    providerId: "seed-denver-memory-care",
+    title: "Denver Caregiver Planning Workshop",
+    slug: "denver-caregiver-planning-workshop",
+    description: "A free local workshop for families comparing care options and planning next steps.",
+    eventType: "workshop",
+    status: "published",
+    startsAt: "2026-06-15T16:00:00.000Z",
+    endsAt: "2026-06-15T17:30:00.000Z",
+    timezone: "America/Denver",
+    venueName: "Denver Community Resource Center",
+    city: "Denver",
+    state: "CO",
+    capacity: 40,
+    isFree: true,
+    registrationUrl: "https://example.com/events/denver-caregiver-workshop"
+  }
+];
 const seedRsvps: EventRsvpRecord[] = [];
 
 function slugify(value: string) {
@@ -171,4 +190,3 @@ export async function createEventRsvp(input: EventRsvpInput): Promise<EventRsvpR
     createdAt: data.created_at
   };
 }
-

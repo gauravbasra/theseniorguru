@@ -53,3 +53,33 @@ export type EventRsvpRecord = EventRsvpInput & {
   createdAt: string;
 };
 
+export type EventPromotionStatus = "draft" | "pending_policy" | "active" | "paused" | "completed" | "blocked";
+
+export type EventPromotionRecord = {
+  id: string;
+  eventId: string;
+  status: EventPromotionStatus;
+  placementKey: string;
+  budgetCents: number;
+  startsAt?: string;
+  endsAt?: string;
+  disclosureLabel: string;
+  policyCheckId?: string;
+  createdAt: string;
+};
+
+export type CreateEventPromotionInput = {
+  eventId: string;
+  placementKey?: string;
+  budgetCents?: number;
+  startsAt?: string;
+  endsAt?: string;
+  disclosureLabel?: string;
+  activate?: boolean;
+  actorId?: string;
+};
+
+export type ActivateEventPromotionInput = {
+  promotionId: string;
+  actorId?: string;
+};

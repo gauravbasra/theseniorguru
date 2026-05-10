@@ -23,6 +23,8 @@ Deliverables:
 - Admin claim approve/reject workflow. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.
+- Sponsored event promotion APIs. Completed.
+- Event promotion to ad creative activation workflow. Completed.
 - Community feed schema. Completed.
 - Mobile app feed API. Completed.
 - Ad placement schema. Completed.
@@ -102,6 +104,7 @@ Deliverables:
 - Provider event creation.
 - RSVP flow.
 - Event promotion products.
+- Sponsored event promotion creation and activation. Completed.
 - Reminder/follow-up automation.
 - Event analytics.
 
