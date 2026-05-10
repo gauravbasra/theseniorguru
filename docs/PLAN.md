@@ -21,6 +21,8 @@ Deliverables:
 - Claim/verification schema. Completed.
 - Verification attempt create/list/complete APIs. Completed.
 - Provider-facing claim status and verification checklist API. Completed.
+- Automatic initial verification attempt after claim submission. Completed.
+- Provider-facing claim evidence submission API and console action. Completed.
 - Admin claim approve/reject workflow. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.

@@ -1,4 +1,5 @@
 import type { ProviderClaimDecisionInput, ProviderClaimInput, ProviderClaimRecord } from "@/lib/domain/claims";
+import { createProviderVerificationAttempt } from "@/lib/claims/provider-verification";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -68,6 +69,13 @@ export async function submitProviderClaim(input: ProviderClaimInput): Promise<Pr
       createdAt: new Date().toISOString()
     };
     seedClaims.unshift(claim);
+    await createProviderVerificationAttempt({
+      claimId: claim.id,
+      method: claim.verificationMethod ?? "admin_manual",
+      target: claim.businessDomain ?? claim.claimantEmail,
+      attemptPayload: { source: "claim_submission", providerId: input.providerId },
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    });
     return claim;
   }
 
@@ -89,6 +97,14 @@ export async function submitProviderClaim(input: ProviderClaimInput): Promise<Pr
   if (error) {
     throw new Error(`Provider claim submission failed: ${error.message}`);
   }
+
+  await createProviderVerificationAttempt({
+    claimId: data.id,
+    method: input.businessDomain ? "business_email" : "admin_manual",
+    target: input.businessDomain ?? input.claimantEmail,
+    attemptPayload: { source: "claim_submission", providerId: input.providerId },
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  });
 
   return mapProviderClaim(data);
 }

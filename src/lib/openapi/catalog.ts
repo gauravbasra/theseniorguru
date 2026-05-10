@@ -83,6 +83,9 @@ export function getOpenApiCatalog() {
       "/api/v1/provider-portal/claims/{id}/status": {
         get: { tags: ["Claims"], summary: "Return provider-facing claim status, verification checklist, and next action" }
       },
+      "/api/v1/provider-portal/claims/{id}/verification-evidence": {
+        post: { tags: ["Claims"], summary: "Submit provider-facing claim verification evidence and move claim to admin review" }
+      },
       "/api/v1/events": {
         get: { tags: ["Events"], summary: "List published events" }
       },

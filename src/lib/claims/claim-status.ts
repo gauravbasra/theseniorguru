@@ -59,6 +59,10 @@ function getNextAction(checklist: ProviderClaimChecklistItem[], approved: boolea
     return `Resolve failed verification: ${failed.label}.`;
   }
 
+  if (checklist.some((item) => item.status === "passed")) {
+    return "Verification evidence received. Claim is ready for admin review.";
+  }
+
   const notStarted = checklist.find((item) => item.status === "not_started");
 
   if (notStarted) {

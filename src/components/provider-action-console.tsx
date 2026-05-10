@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarPlus, Megaphone, Send, ShieldCheck, Sparkles } from "lucide-react";
+import { CalendarPlus, FileCheck2, ListChecks, Megaphone, Send, ShieldCheck, Sparkles } from "lucide-react";
 
 type ActionResult = {
   label: string;
@@ -17,6 +17,7 @@ type ProviderActionConsoleProps = {
 export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps) {
   const [results, setResults] = useState<ActionResult[]>([]);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [claimId, setClaimId] = useState<string | null>(null);
   const disabled = !providerId;
   const tomorrow = useMemo(() => {
     const start = new Date();
@@ -41,6 +42,10 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
       },
       ...current.slice(0, 4)
     ]);
+
+    if (response.ok && key === "claim" && payload.data?.id) {
+      setClaimId(String(payload.data.id));
+    }
   }
 
   return (
@@ -69,6 +74,40 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
                   claimantEmail: "operator@example.com",
                   claimantRole: "Executive Director",
                   businessDomain: "example.com"
+                })
+              })
+            )
+          }
+        />
+        <ConsoleButton
+          icon={<ListChecks aria-hidden="true" />}
+          disabled={!claimId}
+          loading={loadingKey === "claim-status"}
+          label="Check claim status"
+          onClick={() =>
+            runAction("Check claim status", "claim-status", () =>
+              fetch(`/api/v1/provider-portal/claims/${claimId}/status`)
+            )
+          }
+        />
+        <ConsoleButton
+          icon={<FileCheck2 aria-hidden="true" />}
+          disabled={!claimId}
+          loading={loadingKey === "claim-evidence"}
+          label="Submit evidence"
+          onClick={() =>
+            runAction("Submit claim evidence", "claim-evidence", () =>
+              fetch(`/api/v1/provider-portal/claims/${claimId}/verification-evidence`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  evidence: {
+                    evidenceType: "business_email",
+                    submittedBy: "Demo Operator",
+                    emailDomain: "example.com",
+                    note: "Demo provider console evidence submission",
+                    attestationAccepted: true
+                  }
                 })
               })
             )
@@ -186,4 +225,3 @@ function ConsoleButton({
     </button>
   );
 }
-

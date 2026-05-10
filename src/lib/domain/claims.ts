@@ -70,6 +70,21 @@ export type CompleteProviderVerificationAttemptInput = {
   actorId?: string;
 };
 
+export type SubmitProviderClaimEvidenceInput = {
+  claimId: string;
+  method?: ProviderVerificationMethod;
+  evidence: {
+    evidenceType?: "business_email" | "business_phone" | "license_document" | "domain_dns" | "admin_attestation";
+    submittedBy?: string;
+    note?: string;
+    documentUrl?: string;
+    phoneLast4?: string;
+    emailDomain?: string;
+    attestationAccepted?: boolean;
+  };
+  actorId?: string;
+};
+
 export type ProviderClaimChecklistItem = {
   key: string;
   label: string;
