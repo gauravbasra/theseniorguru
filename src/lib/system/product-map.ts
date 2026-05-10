@@ -29,6 +29,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/providers/{id}/reviews",
       "GET /api/v1/categories",
       "GET /api/v1/locations/search",
+      "POST /api/v1/inquiries",
+      "POST /api/v1/operator/free-listing-requests",
       "PATCH /api/v1/provider-portal/providers/{id}",
       "GET /api/v1/provider-portal/claims/{id}/status"
     ],
@@ -37,10 +39,12 @@ const productPillars: ProductPillar[] = [
       "provider_locations",
       "provider_categories",
       "provider_contacts",
+      "family_inquiries",
+      "free_listing_requests",
       "provider_source_records",
       "provider_profile_audits"
     ],
-    nextBackendWork: ["Persist provider contacts in Supabase production", "Claimed-provider edit approval UI"]
+    nextBackendWork: ["Claimed-provider edit approval UI", "Owner verification delivery jobs"]
   },
   {
     key: "mobile",
@@ -137,6 +141,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/provider/growth-subscriptions",
       "POST /api/v1/provider/entitlements/check",
       "POST /api/v1/provider/campaigns",
+      "POST /api/v1/operator/demo-requests",
       "POST /api/v1/provider/campaigns/{id}/generate",
       "POST /api/v1/provider/campaigns/{id}/publish",
       "GET /api/v1/provider/review-request-campaigns",

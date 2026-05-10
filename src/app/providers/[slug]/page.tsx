@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ProviderInquiryForm } from "@/components/provider-inquiry-form";
 import { getProviderProfile } from "@/lib/profile/provider-profile";
 
 export default async function ProviderProfilePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -19,8 +20,8 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
           <p className="eyebrow">{provider.categories.join(" • ")}</p>
           <h1>{provider.name}</h1>
           <p className="lede">
-            {provider.city}, {provider.state} senior care listing with source provenance, free direct contact, reviews,
-            events, and claim controls.
+            {provider.city}, {provider.state} senior care listing with direct inquiries, reviews, events, pricing
+            context, and source transparency for families comparing local options.
           </p>
           <div className="actions">
             {provider.phone ? <a className="button primary" href={`tel:${provider.phone}`}>Call provider</a> : null}
@@ -32,8 +33,25 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
           <p className="eyebrow">Free listing</p>
           <h2>Claim this profile</h2>
           <p>Verify business ownership to update services, add events, manage reviews, and unlock growth campaigns.</p>
-          <Link className="button primary" href="/provider">Provider tools</Link>
+          <Link className="button primary" href="/operators/free-listing">Claim free listing</Link>
         </aside>
+      </section>
+
+      <section className="profile-conversion">
+        <ProviderInquiryForm providerId={provider.id} providerName={provider.name} />
+        <article className="profile-card">
+          <p className="eyebrow">What families compare</p>
+          <h2>Care level, availability, amenities, pricing, reviews, and location.</h2>
+          <p>
+            TheSeniorGuru listing template is built for the actual senior care decision journey: understand the fit,
+            ask questions, save options, and schedule next steps with the community.
+          </p>
+          <div className="trust-band inline">
+            {["Direct inquiry", "Reviews", "Events", "Source confidence"].map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+        </article>
       </section>
 
       <section className="profile-grid">

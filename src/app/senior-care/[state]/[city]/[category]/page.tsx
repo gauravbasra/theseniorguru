@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FamilyInquiryForm } from "@/components/family-inquiry-form";
 import { getLocalSeoPage } from "@/lib/seo/local-pages";
 
 export default async function LocalSeoPage({
@@ -42,6 +43,12 @@ export default async function LocalSeoPage({
           ))}
         </div>
         <aside className="local-sidebar">
+          <FamilyInquiryForm
+            compact
+            defaultCity={page.cityName}
+            defaultState={page.stateCode}
+            defaultCareType={page.categoryName}
+          />
           <article className="profile-card">
             <p className="eyebrow">Local events</p>
             <h2>{page.events.length ? `${page.events.length} nearby events` : "Events coming soon"}</h2>
@@ -61,4 +68,3 @@ export default async function LocalSeoPage({
     </main>
   );
 }
-

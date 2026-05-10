@@ -25,6 +25,7 @@ export function getOpenApiCatalog() {
       { name: "Aggregation" },
       { name: "System" },
       { name: "Workbench" },
+      { name: "Leads" },
       { name: "Policy" }
     ],
     paths: {
@@ -39,6 +40,15 @@ export function getOpenApiCatalog() {
       },
       "/api/v1/providers/{id}/contact": {
         post: { tags: ["Providers"], summary: "Submit a consented provider contact intent" }
+      },
+      "/api/v1/inquiries": {
+        post: { tags: ["Leads"], summary: "Submit a consented family senior-care discovery inquiry" }
+      },
+      "/api/v1/operator/free-listing-requests": {
+        post: { tags: ["Leads"], summary: "Submit a free community listing onboarding request" }
+      },
+      "/api/v1/operator/demo-requests": {
+        post: { tags: ["Leads"], summary: "Submit an operator demo request for occupancy growth tools" }
       },
       "/api/v1/categories": {
         get: { tags: ["Providers"], summary: "List provider categories with inventory counts and state coverage" }
