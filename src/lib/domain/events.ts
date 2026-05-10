@@ -83,3 +83,26 @@ export type ActivateEventPromotionInput = {
   promotionId: string;
   actorId?: string;
 };
+
+export type EventAnalyticsSummary = {
+  eventId: string;
+  rsvps: {
+    total: number;
+    confirmed: number;
+    waitlisted: number;
+    canceled: number;
+    attended: number;
+    noShow: number;
+  };
+  promotions: {
+    total: number;
+    active: number;
+    budgetCents: number;
+  };
+  ads: {
+    impressions: number;
+    clicks: number;
+    clickThroughRate: number;
+  };
+  generatedAt: string;
+};

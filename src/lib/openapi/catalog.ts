@@ -68,6 +68,9 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/event-promotions/{id}/activate": {
         post: { tags: ["Events"], summary: "Activate a sponsored event promotion and create labeled ad creative" }
       },
+      "/api/v1/provider/events/{id}/analytics": {
+        get: { tags: ["Events"], summary: "Get RSVP, promotion, impression, and click analytics for a provider event" }
+      },
       "/api/v1/app/feed": {
         get: { tags: ["Community"], summary: "Get unified app feed items" }
       },

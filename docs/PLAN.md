@@ -25,6 +25,7 @@ Deliverables:
 - Event publish and RSVP APIs. Completed.
 - Sponsored event promotion APIs. Completed.
 - Event promotion to ad creative activation workflow. Completed.
+- Event analytics API. Completed.
 - Community feed schema. Completed.
 - Mobile app feed API. Completed.
 - Ad placement schema. Completed.
@@ -106,7 +107,7 @@ Deliverables:
 - Event promotion products.
 - Sponsored event promotion creation and activation. Completed.
 - Reminder/follow-up automation.
-- Event analytics.
+- Event analytics. Completed.
 
 ## Phase 5: Community and Mobile API
 
