@@ -23,6 +23,8 @@ Deliverables:
 - Event publish and RSVP APIs. Completed.
 - Community feed schema. Completed.
 - Mobile app feed API. Completed.
+- Ad placement schema. Completed.
+- Ad placement/impression/click APIs. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
