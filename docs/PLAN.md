@@ -19,6 +19,7 @@ Deliverables:
 - Import batch API. Completed.
 - Provider claim API. Completed.
 - Claim/verification schema. Completed.
+- Admin claim approve/reject workflow. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.
 - Community feed schema. Completed.

@@ -26,3 +26,9 @@ export type ProviderClaimRecord = ProviderClaimInput & {
   updatedAt?: string;
 };
 
+export type ProviderClaimDecisionInput = {
+  claimId: string;
+  decision: "approved" | "rejected";
+  adminNotes?: string;
+  actorId?: string;
+};

@@ -1,4 +1,4 @@
-import type { ProviderClaimInput, ProviderClaimRecord } from "@/lib/domain/claims";
+import type { ProviderClaimDecisionInput, ProviderClaimInput, ProviderClaimRecord } from "@/lib/domain/claims";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -91,3 +91,80 @@ export async function submitProviderClaim(input: ProviderClaimInput): Promise<Pr
   return mapProviderClaim(data);
 }
 
+export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
+  const policy = await runPolicyCheck({
+    subjectType: "provider_claim",
+    subjectId: input.claimId,
+    actionKey: `${input.decision}_provider_claim`,
+    input
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Provider claim decision blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const now = new Date().toISOString();
+
+  if (!supabase) {
+    return {
+      id: input.claimId,
+      status: input.decision,
+      adminNotes: input.adminNotes,
+      decidedAt: now,
+      providerStatus: input.decision === "approved" ? "claimed" : undefined
+    };
+  }
+
+  const { data: claim, error: claimError } = await supabase
+    .from("provider_claims")
+    .select("*")
+    .eq("id", input.claimId)
+    .single();
+
+  if (claimError) {
+    throw new Error(`Provider claim lookup failed: ${claimError.message}`);
+  }
+
+  const updatePayload =
+    input.decision === "approved"
+      ? { status: "approved", admin_notes: input.adminNotes, approved_at: now, updated_at: now }
+      : { status: "rejected", admin_notes: input.adminNotes, rejected_at: now, updated_at: now };
+
+  const { data: updatedClaim, error: updateError } = await supabase
+    .from("provider_claims")
+    .update(updatePayload)
+    .eq("id", input.claimId)
+    .select("*")
+    .single();
+
+  if (updateError) {
+    throw new Error(`Provider claim update failed: ${updateError.message}`);
+  }
+
+  if (input.decision === "approved") {
+    const { error: providerError } = await supabase
+      .from("providers")
+      .update({ status: "claimed", claimed_at: now, updated_at: now })
+      .eq("id", claim.provider_id);
+
+    if (providerError) {
+      throw new Error(`Provider claim status update failed: ${providerError.message}`);
+    }
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: `provider_claim.${input.decision}`,
+    subject_type: "provider_claim",
+    subject_id: input.claimId,
+    payload: {
+      providerId: claim.provider_id,
+      adminNotes: input.adminNotes,
+      policyDecision: policy.decision
+    }
+  });
+
+  return mapProviderClaim(updatedClaim);
+}
