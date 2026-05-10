@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { getAppFeed } from "@/lib/community/feed";
 import { audienceMessaging } from "@/lib/messaging/audiences";
+import { listProviders } from "@/lib/providers";
+import { SeniorActionPanel } from "@/components/senior-action-panel";
 
 export default async function SeniorsPage() {
-  const feed = await getAppFeed();
+  const [feed, providers] = await Promise.all([getAppFeed(), listProviders()]);
   const copy = audienceMessaging.seniors;
+  const featuredProvider = providers[0];
 
   return (
     <main className="audience-shell">
@@ -43,7 +46,8 @@ export default async function SeniorsPage() {
           ))}
         </div>
       </section>
+
+      <SeniorActionPanel providerId={featuredProvider?.id} />
     </main>
   );
 }
-

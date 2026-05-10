@@ -744,6 +744,19 @@ a {
   padding: 0 24px 64px;
 }
 
+.senior-actions {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+}
+
+.senior-action-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 14px 0;
+}
+
 .console-header,
 .console-result {
   border: 1px solid var(--line);
@@ -829,6 +842,7 @@ a {
   .local-content-grid,
   .dashboard-grid,
   .console-actions,
+  .senior-action-grid,
   .audience-hero,
   .workbench-hero,
   .workbench-grid,
