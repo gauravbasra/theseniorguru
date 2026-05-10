@@ -108,3 +108,15 @@ export type ApiAuditEventRecord = {
   status: "allowed" | "blocked" | "rate_limited";
   createdAt: string;
 };
+
+export type ApiAuthenticationResult =
+  | {
+      ok: true;
+      client: ApiClientRecord;
+    }
+  | {
+      ok: false;
+      status: 401 | 403 | 429;
+      error: string;
+      retryAfterSeconds?: number;
+    };

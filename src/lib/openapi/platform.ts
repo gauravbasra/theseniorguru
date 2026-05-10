@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type {
   ApiAuditEventRecord,
+  ApiAuthenticationResult,
   ApiClientRecord,
   ApiClientScope,
   ApiKeyRecord,
@@ -44,9 +45,11 @@ const allowedApiScopes: ApiClientScope[] = [
 
 const seedApiClients: ApiClientRecord[] = [];
 const seedApiKeys: ApiKeyRecord[] = [];
+const seedApiKeyHashes = new Map<string, string>();
 const seedWebhookSubscriptions: WebhookSubscriptionRecord[] = [];
 const seedWebhookDeliveries: WebhookDeliveryRecord[] = [];
 const seedApiAuditEvents: ApiAuditEventRecord[] = [];
+const seedRateCounters = new Map<string, { windowStart: number; count: number }>();
 
 function previewSecret(secret: string) {
   return `${secret.slice(0, 8)}...${secret.slice(-4)}`;
@@ -123,6 +126,136 @@ function mapApiAuditEvent(row: Record<string, unknown>): ApiAuditEventRecord {
     status: row.status as ApiAuditEventRecord["status"],
     createdAt: String(row.created_at)
   };
+}
+
+function getRequestApiKey(request: Request) {
+  const explicit = request.headers.get("x-senior-guru-api-key");
+  const authorization = request.headers.get("authorization");
+
+  if (explicit) {
+    return explicit.trim();
+  }
+
+  if (authorization?.toLowerCase().startsWith("bearer ")) {
+    return authorization.slice(7).trim();
+  }
+
+  return null;
+}
+
+function nowMinusOneMinuteIso() {
+  return new Date(Date.now() - 60_000).toISOString();
+}
+
+async function recordApiAuditEvent(input: {
+  apiClientId?: string;
+  eventType: string;
+  subjectType?: string;
+  subjectId?: string;
+  status: ApiAuditEventRecord["status"];
+  requestMetadata?: Record<string, unknown>;
+}) {
+  const createdAt = new Date().toISOString();
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    seedApiAuditEvents.unshift({
+      id: `api-audit-${crypto.randomUUID()}`,
+      apiClientId: input.apiClientId,
+      eventType: input.eventType,
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      status: input.status,
+      createdAt
+    });
+    return;
+  }
+
+  const { error } = await supabase.from("api_audit_events").insert({
+    api_client_id: input.apiClientId,
+    event_type: input.eventType,
+    subject_type: input.subjectType,
+    subject_id: input.subjectId,
+    status: input.status,
+    request_metadata: input.requestMetadata ?? {}
+  });
+
+  if (error) {
+    throw new Error(`API audit event creation failed: ${error.message}`);
+  }
+}
+
+async function findClientByApiKey(secret: string): Promise<ApiClientRecord | null> {
+  const secretHash = sha256(secret);
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const apiKeyId = seedApiKeyHashes.get(secretHash);
+    const apiKey = apiKeyId ? seedApiKeys.find((key) => key.id === apiKeyId && key.status === "active") : null;
+
+    if (!apiKey) {
+      return null;
+    }
+
+    return seedApiClients.find((client) => client.id === apiKey.apiClientId && client.status === "active") ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from("api_keys")
+    .select("*, api_clients(*)")
+    .eq("key_hash", secretHash)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`API key lookup failed: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  if (data.expires_at && new Date(String(data.expires_at)).getTime() < Date.now()) {
+    return null;
+  }
+
+  const clientRow = Array.isArray(data.api_clients) ? data.api_clients[0] : data.api_clients;
+
+  if (!clientRow || clientRow.status !== "active") {
+    return null;
+  }
+
+  return mapClient(clientRow);
+}
+
+async function isRateLimited(client: ApiClientRecord) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const windowKey = client.id;
+    const existing = seedRateCounters.get(windowKey);
+    const now = Date.now();
+
+    if (!existing || now - existing.windowStart >= 60_000) {
+      seedRateCounters.set(windowKey, { windowStart: now, count: 1 });
+      return false;
+    }
+
+    existing.count += 1;
+    return existing.count > client.rateLimitPerMinute;
+  }
+
+  const { count, error } = await supabase
+    .from("api_audit_events")
+    .select("id", { count: "exact", head: true })
+    .eq("api_client_id", client.id)
+    .gte("created_at", nowMinusOneMinuteIso());
+
+  if (error) {
+    throw new Error(`API rate limit query failed: ${error.message}`);
+  }
+
+  return (count ?? 0) >= client.rateLimitPerMinute;
 }
 
 function validateWebhookInput(input: CreateWebhookSubscriptionInput) {
@@ -234,6 +367,7 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<CreatedApi
       expiresAt: input.expiresAt
     };
     seedApiKeys.unshift(record);
+    seedApiKeyHashes.set(secretHash, record.id);
     return record;
   }
 
@@ -407,4 +541,80 @@ export async function listApiAuditEvents(apiClientId?: string): Promise<ApiAudit
   }
 
   return (data ?? []).map(mapApiAuditEvent);
+}
+
+export async function authenticatePartnerApiRequest(
+  request: Request,
+  requiredScope: ApiClientScope,
+  options?: {
+    eventType?: string;
+    subjectType?: string;
+    subjectId?: string;
+  }
+): Promise<ApiAuthenticationResult> {
+  const eventType = options?.eventType ?? `partner.${requiredScope}`;
+  const secret = getRequestApiKey(request);
+
+  if (!secret) {
+    await recordApiAuditEvent({
+      eventType,
+      subjectType: options?.subjectType,
+      subjectId: options?.subjectId,
+      status: "blocked",
+      requestMetadata: { reason: "missing_api_key" }
+    });
+
+    return { ok: false, status: 401, error: "Missing API key" };
+  }
+
+  const client = await findClientByApiKey(secret);
+
+  if (!client) {
+    await recordApiAuditEvent({
+      eventType,
+      subjectType: options?.subjectType,
+      subjectId: options?.subjectId,
+      status: "blocked",
+      requestMetadata: { reason: "invalid_api_key" }
+    });
+
+    return { ok: false, status: 401, error: "Invalid API key" };
+  }
+
+  if (!client.scopes.includes(requiredScope)) {
+    await recordApiAuditEvent({
+      apiClientId: client.id,
+      eventType,
+      subjectType: options?.subjectType,
+      subjectId: options?.subjectId,
+      status: "blocked",
+      requestMetadata: { reason: "missing_scope", requiredScope }
+    });
+
+    return { ok: false, status: 403, error: `Missing required scope: ${requiredScope}` };
+  }
+
+  if (await isRateLimited(client)) {
+    await recordApiAuditEvent({
+      apiClientId: client.id,
+      eventType,
+      subjectType: options?.subjectType,
+      subjectId: options?.subjectId,
+      status: "rate_limited",
+      requestMetadata: { reason: "rate_limit_exceeded", limit: client.rateLimitPerMinute }
+    });
+
+    return { ok: false, status: 429, error: "Rate limit exceeded", retryAfterSeconds: 60 };
+  }
+
+  await recordApiAuditEvent({
+    apiClientId: client.id,
+    eventType,
+    subjectType: options?.subjectType,
+    subjectId: options?.subjectId,
+    status: "allowed",
+    requestMetadata: { requiredScope }
+  });
+
+  return { ok: true, client };
 }

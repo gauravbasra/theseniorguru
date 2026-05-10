@@ -208,6 +208,12 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/api-audit-events": {
         get: { tags: ["System"], summary: "List Open API audit events" }
       },
+      "/api/v1/partner/providers": {
+        get: { tags: ["Providers"], summary: "Partner provider directory API requiring providers:read scope" }
+      },
+      "/api/v1/partner/events": {
+        get: { tags: ["Events"], summary: "Partner events API requiring events:read scope" }
+      },
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
       },
