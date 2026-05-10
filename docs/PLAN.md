@@ -8,6 +8,7 @@ Deliverables:
 
 - Clean Next.js project skeleton. Completed.
 - Repo-level execution guardrails. Completed.
+- Repo-local FRD and research docs. Completed.
 - Provider inventory schema. Completed.
 - Source/provenance schema. Completed.
 - Policy gate schema. Completed.

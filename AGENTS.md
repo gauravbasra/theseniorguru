@@ -4,8 +4,8 @@ This repository is for **theseniorguru.com**.
 
 The feature requirement document is the build bible:
 
-- `/Users/gbpersonal/Documents/New project/docs/senior-community-growth-platform-frd.md`
-- `/Users/gbpersonal/Documents/New project/docs/senior-care-marketplace-research.md`
+- `docs/senior-community-growth-platform-frd.md`
+- `docs/senior-care-marketplace-research.md`
 
 ## Non-Negotiable Rule
 
