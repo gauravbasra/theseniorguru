@@ -23,6 +23,7 @@ function mapImportBatch(row: Record<string, unknown>): ImportBatchRecord {
     sourceKind: String(row.source_kind),
     totalRecords: Number(row.total_records ?? 0),
     importedRecords: Number(row.imported_records ?? 0),
+    skippedRecords: Number(row.skipped_records ?? 0),
     rejectedRecords: Number(row.rejected_records ?? 0),
     errorRecords: Number(row.error_records ?? 0),
     policyCheckId: row.policy_check_id ? String(row.policy_check_id) : undefined,
@@ -100,6 +101,7 @@ export async function completeImportBatch(input: {
   totalRecords: number;
   importedRecords: number;
   rejectedRecords: number;
+  skippedRecords?: number;
   errorRecords: number;
   completedAt: string;
   actorId?: string;
@@ -129,6 +131,7 @@ export async function completeImportBatch(input: {
       status: input.status,
       total_records: input.totalRecords,
       imported_records: input.importedRecords,
+      skipped_records: input.skippedRecords ?? 0,
       rejected_records: input.rejectedRecords,
       error_records: input.errorRecords,
       completed_at: input.completedAt
@@ -221,6 +224,7 @@ export async function createImportBatch(input: CreateImportBatchInput): Promise<
       sourceKind: input.sourceKind,
       totalRecords: input.estimatedRecords ?? 0,
       importedRecords: 0,
+      skippedRecords: 0,
       rejectedRecords: 0,
       errorRecords: 0,
       createdAt: new Date().toISOString()

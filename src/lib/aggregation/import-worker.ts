@@ -1,4 +1,4 @@
-import { createExtractedEntity } from "@/lib/aggregation/extracted-entities";
+import { createExtractedEntity, listExistingExtractedEntitySourceRecordIds } from "@/lib/aggregation/extracted-entities";
 import { seedDataSources } from "@/lib/data/seed";
 import type { ImportBatchRunResult, ImportRecordInput, RunImportBatchInput } from "@/lib/domain/imports";
 import { completeImportBatch, failImportBatch, markImportBatchRunning } from "@/lib/import-batches";
@@ -196,9 +196,17 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
   }
 
   let stagedRecords = 0;
+  let skippedRecords = 0;
   let rejectedRecords = 0;
   let errorRecords = 0;
   const errors: ImportBatchRunResult["errors"] = [];
+  const existingSourceRecordIds = dryRun
+    ? new Set<string>()
+    : await listExistingExtractedEntitySourceRecordIds(
+        input.records
+          .map((record) => record.sourceRecordId)
+          .filter((sourceRecordId): sourceRecordId is string => Boolean(sourceRecordId))
+      );
 
   for (const [index, record] of input.records.entries()) {
     const normalized = normalizeRecord(record);
@@ -207,6 +215,11 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
     if (validationError) {
       rejectedRecords += 1;
       errors.push({ index, reason: validationError });
+      continue;
+    }
+
+    if (normalized.sourceRecordId && existingSourceRecordIds.has(normalized.sourceRecordId)) {
+      skippedRecords += 1;
       continue;
     }
 
@@ -259,6 +272,10 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
         confidenceScore: normalized.confidenceScore
       });
       stagedRecords += 1;
+
+      if (normalized.sourceRecordId) {
+        existingSourceRecordIds.add(normalized.sourceRecordId);
+      }
     } catch (error) {
       errorRecords += 1;
       errors.push({ index, reason: error instanceof Error ? error.message : "Unknown import error" });
@@ -274,6 +291,7 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
       status,
       totalRecords: input.records.length,
       importedRecords: stagedRecords,
+      skippedRecords,
       rejectedRecords,
       errorRecords,
       completedAt,
@@ -288,6 +306,7 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
     status,
     totalRecords: input.records.length,
     stagedRecords,
+    skippedRecords,
     rejectedRecords,
     errorRecords,
     dryRun,

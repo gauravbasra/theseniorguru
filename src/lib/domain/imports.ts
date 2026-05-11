@@ -15,6 +15,7 @@ export type ImportBatchRecord = {
   sourceKind: string;
   totalRecords: number;
   importedRecords: number;
+  skippedRecords?: number;
   rejectedRecords: number;
   errorRecords: number;
   policyCheckId?: string;
@@ -76,6 +77,7 @@ export type ImportBatchRunResult = {
   status: ImportBatchStatus;
   totalRecords: number;
   stagedRecords: number;
+  skippedRecords: number;
   rejectedRecords: number;
   errorRecords: number;
   dryRun: boolean;

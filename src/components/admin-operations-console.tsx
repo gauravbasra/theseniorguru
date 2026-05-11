@@ -270,7 +270,7 @@ function summarizeOperation(key: string, data: unknown) {
   const record = isRecord(data) ? data : {};
 
   if (key === "import") {
-    return `${String(record.stagedRecords ?? 0)} listings staged, ${String(record.rejectedRecords ?? 0)} rejected, and ${String(record.totalRecords ?? 0)} reviewed.`;
+    return `${String(record.stagedRecords ?? 0)} listings staged, ${String(record.skippedRecords ?? 0)} skipped, ${String(record.rejectedRecords ?? 0)} rejected, and ${String(record.totalRecords ?? 0)} reviewed.`;
   }
 
   if (key === "current-preview") {
@@ -278,7 +278,7 @@ function summarizeOperation(key: string, data: unknown) {
   }
 
   if (key === "current-run") {
-    return `${String(record.stagedRecords ?? 0)} real listings staged, ${String(record.rejectedRecords ?? 0)} rejected, and ${String(record.errors ?? 0)} errors recorded.`;
+    return `${String(record.stagedRecords ?? 0)} real listings staged, ${String(record.skippedRecords ?? 0)} skipped as existing, ${String(record.rejectedRecords ?? 0)} rejected, and ${String(record.errorRecords ?? 0)} errors recorded.`;
   }
 
   if (key === "match") {

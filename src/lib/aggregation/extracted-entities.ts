@@ -121,6 +121,36 @@ export async function listExtractedEntities(status = "pending"): Promise<Extract
   return (data ?? []).map(mapExtractedEntity);
 }
 
+export async function listExistingExtractedEntitySourceRecordIds(sourceRecordIds: string[]): Promise<Set<string>> {
+  const uniqueIds = [...new Set(sourceRecordIds.map((id) => id.trim()).filter(Boolean))];
+
+  if (uniqueIds.length === 0) {
+    return new Set();
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return new Set(
+      seedExtractedEntities
+        .filter((entity) => entity.sourceRecordId && uniqueIds.includes(entity.sourceRecordId))
+        .map((entity) => entity.sourceRecordId as string)
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("extracted_entities")
+    .select("source_record_id")
+    .in("source_record_id", uniqueIds)
+    .neq("review_status", "rejected");
+
+  if (error) {
+    throw new Error(`Extracted entity source-record lookup failed: ${error.message}`);
+  }
+
+  return new Set((data ?? []).map((row) => String(row.source_record_id)).filter(Boolean));
+}
+
 function getImageCount(entity: ExtractedEntityRecord) {
   return Array.isArray(entity.imageAssets) ? entity.imageAssets.length : 0;
 }
@@ -347,7 +377,7 @@ export async function createExtractedEntity(input: CreateExtractedEntityInput): 
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const entity: ExtractedEntityRecord = {
       id: `pending-extracted-${Date.now()}`,
       importBatchId: input.importBatchId,
       crawlPageId: input.crawlPageId,
@@ -388,6 +418,10 @@ export async function createExtractedEntity(input: CreateExtractedEntityInput): 
       confidenceScore: input.confidenceScore ?? 0,
       createdAt: new Date().toISOString()
     };
+
+    seedExtractedEntities.unshift(entity);
+
+    return entity;
   }
 
   const { data, error } = await supabase

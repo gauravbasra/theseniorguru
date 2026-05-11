@@ -81,6 +81,7 @@ export type PublicSourceAcquisitionRunResult = {
   sourceCount: number;
   totalRecords: number;
   stagedRecords: number;
+  skippedRecords: number;
   rejectedRecords: number;
   errorRecords: number;
   imageCoverage: {
@@ -622,7 +623,7 @@ export async function runCurrentSiteRealListingAcquisition(input: {
     stagedRecords: run.stagedRecords,
     rejectedRecords: run.rejectedRecords,
     errorRecords: run.errorRecords,
-    skippedRecords: preview.skippedRecords,
+    skippedRecords: preview.skippedRecords + run.skippedRecords,
     imageCoverage: preview.imageCoverage,
     qualityGaps: preview.qualityGaps,
     sourcePolicies: preview.sourcePolicies,
@@ -783,6 +784,7 @@ export async function runPublicSourceSampleAcquisition(input: {
     sourceCount: adapters.length,
     totalRecords: run.totalRecords,
     stagedRecords: run.stagedRecords,
+    skippedRecords: run.skippedRecords,
     rejectedRecords: run.rejectedRecords,
     errorRecords: run.errorRecords,
     imageCoverage: {
