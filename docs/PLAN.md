@@ -53,6 +53,7 @@ Deliverables:
 - Secret-safe production readiness endpoint. Completed.
 - AI newsroom schema. Completed.
 - News intake, article draft/publish, and social derivative APIs. Completed.
+- Newsroom readiness and podcast brief APIs. Completed.
 - Open API catalog endpoint. Completed.
 - Open API client, key, webhook subscription, delivery queue, and audit schemas/APIs. Completed.
 - Partner API key authentication, scope enforcement, rate-limit audit, provider/events partner APIs. Completed.

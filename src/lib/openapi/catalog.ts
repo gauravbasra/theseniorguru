@@ -205,6 +205,21 @@ export function getOpenApiCatalog() {
         get: { tags: ["Newsroom"], summary: "List newsroom source items" },
         post: { tags: ["Newsroom"], summary: "Create a newsroom source item" }
       },
+      "/api/v1/admin/newsroom/articles": {
+        post: { tags: ["Newsroom"], summary: "Create a policy-gated AI-assisted article draft" }
+      },
+      "/api/v1/admin/newsroom/articles/{id}/publish": {
+        post: { tags: ["Newsroom"], summary: "Publish an approved article with policy checks" }
+      },
+      "/api/v1/admin/newsroom/articles/{id}/generate-social": {
+        post: { tags: ["Newsroom"], summary: "Generate social and newsletter derivatives for an article" }
+      },
+      "/api/v1/admin/newsroom/articles/{id}/generate-podcast-brief": {
+        post: { tags: ["Newsroom"], summary: "Generate a podcast/interview brief for an article" }
+      },
+      "/api/v1/admin/newsroom/readiness": {
+        get: { tags: ["Newsroom"], summary: "Return newsroom source, article, derivative, and policy readiness" }
+      },
       "/api/v1/admin/extracted-entities": {
         get: { tags: ["Aggregation"], summary: "List extracted provider entities awaiting review" },
         post: { tags: ["Aggregation"], summary: "Stage an extracted provider entity for policy-gated review" }

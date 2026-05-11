@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, FilePenLine, Megaphone, Newspaper, Radio, Send } from "lucide-react";
+import { Bot, FilePenLine, ListChecks, Megaphone, Mic2, Newspaper, Radio, Send } from "lucide-react";
 
 type NewsroomResult = {
   label: string;
@@ -139,6 +139,26 @@ export function NewsroomConsole() {
           onClick={() =>
             runNewsroomAction("Generate social derivatives", "social", () =>
               fetch(`/api/v1/admin/newsroom/articles/${activeArticleId}/generate-social`, { method: "POST" })
+            )
+          }
+        />
+        <NewsroomButton
+          icon={<Mic2 aria-hidden="true" />}
+          label="Podcast brief"
+          loading={loadingKey === "podcast"}
+          onClick={() =>
+            runNewsroomAction("Generate podcast brief", "podcast", () =>
+              fetch(`/api/v1/admin/newsroom/articles/${activeArticleId}/generate-podcast-brief`, { method: "POST" })
+            )
+          }
+        />
+        <NewsroomButton
+          icon={<ListChecks aria-hidden="true" />}
+          label="Readiness"
+          loading={loadingKey === "readiness"}
+          onClick={() =>
+            runNewsroomAction("Check newsroom readiness", "readiness", () =>
+              fetch("/api/v1/admin/newsroom/readiness")
             )
           }
         />

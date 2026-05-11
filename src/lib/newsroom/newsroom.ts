@@ -3,7 +3,8 @@ import type {
   ArticleRecord,
   CreateArticleInput,
   CreateNewsItemInput,
-  NewsItemRecord
+  NewsItemRecord,
+  NewsroomReadinessSummary
 } from "@/lib/domain/newsroom";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -20,6 +21,8 @@ const seedNewsItems: NewsItemRecord[] = [
     createdAt: "2026-05-10T00:00:00.000Z"
   }
 ];
+const seedArticles: ArticleRecord[] = [];
+const seedDerivatives: ArticleDerivativeRecord[] = [];
 
 function slugify(value: string) {
   return value
@@ -83,11 +86,11 @@ export async function createNewsItem(input: CreateNewsItemInput): Promise<NewsIt
     input
   });
 
-  const status = policy.decision.startsWith("blocked") ? "blocked_by_policy" : "new";
+  const status: NewsItemRecord["status"] = policy.decision.startsWith("blocked") ? "blocked_by_policy" : "new";
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const item = {
       id: `pending-news-${Date.now()}`,
       status,
       title: input.title,
@@ -98,6 +101,9 @@ export async function createNewsItem(input: CreateNewsItemInput): Promise<NewsIt
       topicTags: input.topicTags ?? [],
       createdAt: new Date().toISOString()
     };
+
+    seedNewsItems.unshift(item);
+    return item;
   }
 
   const { data, error } = await supabase
@@ -136,12 +142,12 @@ export async function createArticleDraft(input: CreateArticleInput): Promise<Art
     input: { ...input, body }
   });
 
-  const status = policy.decision.startsWith("blocked") ? "blocked_by_policy" : "pending_review";
+  const status: ArticleRecord["status"] = policy.decision.startsWith("blocked") ? "blocked_by_policy" : "pending_review";
   const slug = `${slugify(input.title)}-${Date.now().toString(36)}`;
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const article = {
       id: `pending-article-${Date.now()}`,
       newsItemId: input.newsItemId,
       status,
@@ -154,6 +160,9 @@ export async function createArticleDraft(input: CreateArticleInput): Promise<Art
       aiAssisted: true,
       createdAt: new Date().toISOString()
     };
+
+    seedArticles.unshift(article);
+    return article;
   }
 
   const { data, error } = await supabase
@@ -192,11 +201,28 @@ export async function publishArticle(articleId: string) {
   }
 
   const supabase = getSupabaseAdminClient();
+  const publishedAt = new Date().toISOString();
+
+  if (!supabase) {
+    const article = seedArticles.find((candidate) => candidate.id === articleId);
+
+    if (article) {
+      article.status = "published";
+      article.publishedAt = publishedAt;
+    }
+
+    return { id: articleId, status: "published", policyDecision: policy.decision };
+  }
+
   if (supabase) {
-    await supabase
+    const { error } = await supabase
       .from("published_articles")
-      .update({ status: "published", published_at: new Date().toISOString() })
+      .update({ status: "published", published_at: publishedAt })
       .eq("id", articleId);
+
+    if (error) {
+      throw new Error(`Article publish failed: ${error.message}`);
+    }
   }
 
   return { id: articleId, status: "published", policyDecision: policy.decision };
@@ -225,19 +251,182 @@ export async function generateArticleSocial(articleId: string): Promise<ArticleD
   ];
 
   const supabase = getSupabaseAdminClient();
-  if (supabase) {
-    await supabase.from("article_derivatives").insert(
-      derivatives.map((derivative) => ({
-        article_id: articleId,
-        derivative_type: derivative.derivativeType,
-        channel: derivative.channel,
-        title: derivative.title,
-        body: derivative.body,
-        payload: derivative.payload
-      }))
-    );
-  }
+  await persistDerivatives(derivatives, supabase);
 
   return derivatives;
 }
 
+export async function generateArticlePodcastBrief(articleId: string): Promise<ArticleDerivativeRecord> {
+  const policy = await runPolicyCheck({
+    subjectType: "article_derivative",
+    subjectId: articleId,
+    actionKey: "generate_podcast_brief",
+    input: { articleId, derivativeType: "podcast_brief" }
+  });
+
+  if (policy.decision.startsWith("blocked")) {
+    throw new Error(policy.reasons[0] ?? "Podcast brief blocked by policy");
+  }
+
+  const derivative: ArticleDerivativeRecord = {
+    id: `podcast-brief-${Date.now()}`,
+    articleId,
+    derivativeType: "podcast_brief",
+    channel: "podcast",
+    title: "Senior Guru conversation brief",
+    body:
+      "Opening: explain the family problem in plain language. Segment 1: what changed in the market. Segment 2: how families should evaluate local care options. Segment 3: what operators can do to build trust without referral pressure. Close with direct resources and transparent source links.",
+    payload: {
+      generatedBy: "newsroom-podcast-v1",
+      format: "interview-outline",
+      requiredApprovals: ["editorial", "byline-owner"]
+    }
+  };
+
+  const supabase = getSupabaseAdminClient();
+  await persistDerivatives([derivative], supabase);
+
+  return derivative;
+}
+
+export async function getNewsroomReadiness(): Promise<NewsroomReadinessSummary> {
+  const [sources, articles, derivatives] = await Promise.all([
+    listNewsItems(),
+    listArticles(),
+    listArticleDerivatives()
+  ]);
+  const newItems = sources.filter((item) => item.status === "new").length;
+  const triagedItems = sources.filter((item) => item.status === "triaged").length;
+  const blockedSources = sources.filter((item) => item.status === "blocked_by_policy").length;
+  const pendingReview = articles.filter((article) => article.status === "pending_review").length;
+  const approved = articles.filter((article) => article.status === "approved").length;
+  const published = articles.filter((article) => article.status === "published").length;
+  const blockedArticles = articles.filter((article) => article.status === "blocked_by_policy").length;
+  const socialPosts = derivatives.filter((derivative) => derivative.derivativeType === "social_post").length;
+  const newsletterBlurbs = derivatives.filter((derivative) => derivative.derivativeType === "newsletter_blurb").length;
+  const podcastBriefs = derivatives.filter((derivative) => derivative.derivativeType === "podcast_brief").length;
+  const appFeedPosts = derivatives.filter((derivative) => derivative.derivativeType === "app_feed_post").length;
+  const blockers: string[] = [];
+
+  if (!sources.length || (!newItems && !triagedItems)) {
+    blockers.push("No fresh or triaged source items are ready for editorial drafting.");
+  }
+
+  if (!pendingReview && !approved && !published) {
+    blockers.push("No AI-assisted article draft is waiting for review or publication.");
+  }
+
+  if (!published) {
+    blockers.push("No article has been published for SEO authority building.");
+  }
+
+  if (!socialPosts || !newsletterBlurbs) {
+    blockers.push("No social and newsletter derivatives have been generated.");
+  }
+
+  if (!podcastBriefs) {
+    blockers.push("No podcast/interview brief has been generated from the article pipeline.");
+  }
+
+  if (blockedSources || blockedArticles) {
+    blockers.push("One or more newsroom items are blocked by policy and need editorial review.");
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: blockedSources || blockedArticles ? "blocked" : blockers.length ? "action_required" : "ready",
+    sourceSummary: {
+      total: sources.length,
+      newItems,
+      triagedItems,
+      blockedByPolicy: blockedSources
+    },
+    articleSummary: {
+      total: articles.length,
+      pendingReview,
+      approved,
+      published,
+      blockedByPolicy: blockedArticles
+    },
+    derivativeSummary: {
+      total: derivatives.length,
+      socialPosts,
+      newsletterBlurbs,
+      podcastBriefs,
+      appFeedPosts
+    },
+    blockers,
+    nextActions: blockers.length ? blockers : ["Newsroom engine is ready for the next source-to-publication cycle."]
+  };
+}
+
+async function listArticles(): Promise<ArticleRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedArticles;
+  }
+
+  const { data, error } = await supabase.from("published_articles").select("*").order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Article query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapArticle);
+}
+
+function mapDerivative(row: Record<string, unknown>): ArticleDerivativeRecord {
+  return {
+    id: String(row.id),
+    articleId: String(row.article_id),
+    derivativeType: row.derivative_type as ArticleDerivativeRecord["derivativeType"],
+    channel: String(row.channel),
+    title: row.title ? String(row.title) : undefined,
+    body: row.body ? String(row.body) : undefined,
+    payload: row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+      ? row.payload as Record<string, unknown>
+      : {}
+  };
+}
+
+async function listArticleDerivatives(): Promise<ArticleDerivativeRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedDerivatives;
+  }
+
+  const { data, error } = await supabase.from("article_derivatives").select("*").order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Article derivative query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapDerivative);
+}
+
+async function persistDerivatives(
+  derivatives: ArticleDerivativeRecord[],
+  supabase: ReturnType<typeof getSupabaseAdminClient>
+) {
+  if (!supabase) {
+    seedDerivatives.unshift(...derivatives);
+    return;
+  }
+
+  const { error } = await supabase.from("article_derivatives").insert(
+    derivatives.map((derivative) => ({
+      article_id: derivative.articleId,
+      derivative_type: derivative.derivativeType,
+      channel: derivative.channel,
+      title: derivative.title,
+      body: derivative.body,
+      payload: derivative.payload
+    }))
+  );
+
+  if (error) {
+    throw new Error(`Article derivative creation failed: ${error.message}`);
+  }
+}

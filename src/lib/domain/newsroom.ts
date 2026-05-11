@@ -52,3 +52,29 @@ export type ArticleDerivativeRecord = {
   payload: Record<string, unknown>;
 };
 
+export type NewsroomReadinessSummary = {
+  generatedAt: string;
+  status: "ready" | "action_required" | "blocked";
+  sourceSummary: {
+    total: number;
+    newItems: number;
+    triagedItems: number;
+    blockedByPolicy: number;
+  };
+  articleSummary: {
+    total: number;
+    pendingReview: number;
+    approved: number;
+    published: number;
+    blockedByPolicy: number;
+  };
+  derivativeSummary: {
+    total: number;
+    socialPosts: number;
+    newsletterBlurbs: number;
+    podcastBriefs: number;
+    appFeedPosts: number;
+  };
+  blockers: string[];
+  nextActions: string[];
+};
