@@ -114,6 +114,9 @@ const routeContracts: LinkContract[] = [
     owner: "provider"
   },
   { label: "Review requests API", href: "/api/v1/provider/review-requests", method: "GET", owner: "provider" },
+  { label: "Review moderation queue API", href: "/api/v1/admin/reviews/moderation", method: "GET", owner: "admin" },
+  { label: "Review moderation action API", href: "/api/v1/admin/reviews/demo/moderate", method: "POST", owner: "admin" },
+  { label: "Review sentiment scoring API", href: "/api/v1/admin/reviews/demo/sentiment", method: "POST", owner: "admin" },
   {
     label: "Review response publish API",
     href: "/api/v1/provider-portal/reviews/demo/responses/publish",

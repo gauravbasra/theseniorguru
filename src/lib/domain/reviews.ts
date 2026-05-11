@@ -11,6 +11,40 @@ export type ReviewRecord = {
   createdAt: string;
 };
 
+export type ReviewModerationStatus = "published" | "hidden" | "removed";
+
+export type ReviewModerationInput = {
+  reviewId: string;
+  status: ReviewModerationStatus;
+  reason: string;
+  actorId?: string;
+  notes?: string;
+};
+
+export type ReviewModerationRecord = {
+  id: string;
+  reviewId: string;
+  providerId: string;
+  previousStatus: ReviewRecord["status"];
+  newStatus: ReviewRecord["status"];
+  reason: string;
+  notes?: string;
+  actorId?: string;
+  policyDecision: string;
+  createdAt: string;
+};
+
+export type ReviewSentimentRecord = {
+  id: string;
+  reviewId: string;
+  providerId: string;
+  sentiment: "positive" | "neutral" | "negative";
+  score: number;
+  themes: string[];
+  summary: string;
+  createdAt: string;
+};
+
 export type CreateReviewInput = {
   providerId: string;
   reviewerName: string;
@@ -118,6 +152,12 @@ export type ReputationReadinessSummary = {
     averageRating?: number;
     pendingModeration: number;
     blockedByPolicy: number;
+    sentiment: {
+      positive: number;
+      neutral: number;
+      negative: number;
+      averageScore?: number;
+    };
   };
   campaignSummary: {
     campaigns: number;

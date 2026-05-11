@@ -219,6 +219,15 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/review-requests": {
         get: { tags: ["Reviews"], summary: "List review request recipients and statuses" }
       },
+      "/api/v1/admin/reviews/moderation": {
+        get: { tags: ["Reviews"], summary: "List reviews awaiting moderation" }
+      },
+      "/api/v1/admin/reviews/{id}/moderate": {
+        post: { tags: ["Reviews"], summary: "Moderate a review with policy and audit context" }
+      },
+      "/api/v1/admin/reviews/{id}/sentiment": {
+        post: { tags: ["Reviews"], summary: "Score review sentiment for reputation analytics" }
+      },
       "/api/v1/provider-portal/reviews/{id}/responses/publish": {
         post: { tags: ["Reviews"], summary: "Publish a policy-gated provider response to a review" }
       },

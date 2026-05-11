@@ -1,7 +1,7 @@
 import type { ReputationReadinessSummary } from "@/lib/domain/reviews";
 import { getProviderById } from "@/lib/providers";
 import { listReviewRequestCampaigns, listReviewRequests } from "@/lib/reviews/review-campaigns";
-import { listProviderReviewPipeline } from "@/lib/reviews/reviews";
+import { listProviderReviewPipeline, listReviewSentiment } from "@/lib/reviews/reviews";
 
 function average(values: number[]) {
   if (!values.length) {
@@ -23,6 +23,7 @@ export async function getProviderReputationReadiness(providerId: string): Promis
     listReviewRequestCampaigns(provider.id),
     listReviewRequests(provider.id)
   ]);
+  const sentimentRecords = await listReviewSentiment(provider.id);
   const published = reviews.filter((review) => review.status === "published");
   const pendingModeration = reviews.filter((review) => review.status === "pending_moderation").length;
   const blockedByPolicy = reviews.filter((review) => review.status === "blocked_by_policy").length;
@@ -30,6 +31,9 @@ export async function getProviderReputationReadiness(providerId: string): Promis
   const blockedCampaigns = campaigns.filter((campaign) => campaign.status === "blocked_by_policy").length;
   const queuedRequests = requests.filter((request) => request.status === "queued").length;
   const blockedRequests = requests.filter((request) => request.status === "blocked_by_policy").length;
+  const positive = sentimentRecords.filter((record) => record.sentiment === "positive").length;
+  const neutral = sentimentRecords.filter((record) => record.sentiment === "neutral").length;
+  const negative = sentimentRecords.filter((record) => record.sentiment === "negative").length;
   const blockers: string[] = [];
 
   if (!campaigns.length) {
@@ -44,6 +48,10 @@ export async function getProviderReputationReadiness(providerId: string): Promis
     blockers.push("Review requests are queued but no published reviews exist yet.");
   }
 
+  if (published.length && !sentimentRecords.length) {
+    blockers.push("Published reviews exist but sentiment scoring has not been run.");
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     providerId: provider.id,
@@ -56,7 +64,13 @@ export async function getProviderReputationReadiness(providerId: string): Promis
       publishedReviews: published.length,
       averageRating: average(published.map((review) => review.rating)),
       pendingModeration,
-      blockedByPolicy
+      blockedByPolicy,
+      sentiment: {
+        positive,
+        neutral,
+        negative,
+        averageScore: average(sentimentRecords.map((record) => record.score))
+      }
     },
     campaignSummary: {
       campaigns: campaigns.length,

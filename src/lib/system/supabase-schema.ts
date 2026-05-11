@@ -46,7 +46,8 @@ const migrationManifest = [
   "20260510184500_open_api_platform.sql",
   "20260510193500_webhook_delivery_worker.sql",
   "20260510210500_review_request_campaigns.sql",
-  "20260510220000_dual_funnel_leads.sql"
+  "20260510220000_dual_funnel_leads.sql",
+  "20260511001000_review_moderation_sentiment.sql"
 ];
 
 const requiredTables: RequiredTable[] = [
@@ -72,6 +73,8 @@ const requiredTables: RequiredTable[] = [
   { table: "provider_growth_subscriptions", requiredFor: "Provider contract subscriptions", capability: "growth" },
   { table: "reviews", requiredFor: "Reviews and reputation", capability: "reviews" },
   { table: "review_request_campaigns", requiredFor: "Review request campaigns", capability: "reviews" },
+  { table: "review_moderation_cases", requiredFor: "Review moderation audit", capability: "reviews" },
+  { table: "review_sentiment", requiredFor: "Review sentiment scoring", capability: "reviews" },
   { table: "content_sources", requiredFor: "AI newsroom source intake", capability: "newsroom" },
   { table: "published_articles", requiredFor: "AI newsroom publishing", capability: "newsroom" },
   { table: "api_clients", requiredFor: "Open API clients", capability: "openApi" },
