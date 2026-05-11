@@ -289,6 +289,9 @@ const productPillars: ProductPillar[] = [
     status: "partial",
     backendRoutes: [
       "POST /api/v1/policy/check",
+      "POST /api/v1/auth/login",
+      "POST /api/v1/auth/logout",
+      "GET /api/v1/auth/session",
       "GET /api/v1/system/link-health",
       "GET /api/v1/system/readiness",
       "GET /api/v1/system/launch-checklist",

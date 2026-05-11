@@ -3,6 +3,8 @@ export type AppEnv = {
   supabaseUrl?: string;
   supabaseAnonKey?: string;
   supabaseServiceRoleKey?: string;
+  adminAccessCode?: string;
+  adminSessionSecret?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
   googleAdsClientId?: string;
@@ -19,6 +21,8 @@ export function getAppEnv(): AppEnv {
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    adminAccessCode: process.env.ADMIN_ACCESS_CODE,
+    adminSessionSecret: process.env.ADMIN_SESSION_SECRET,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     googleAdsClientId: process.env.GOOGLE_ADS_CLIENT_ID,

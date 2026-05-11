@@ -105,6 +105,20 @@ export function getSystemReadiness() {
       action: "Deployment docs isolate Senior Guru under /opt/theseniorguru and port 3051."
     }
   ];
+  const authChecks: ReadinessCheck[] = [
+    {
+      key: "ADMIN_ACCESS_CODE",
+      label: "Owner backend access code",
+      status: env.adminAccessCode ? "ready" : "partial",
+      action: env.adminAccessCode ? undefined : "Set ADMIN_ACCESS_CODE in Vercel to replace temporary launch access."
+    },
+    {
+      key: "ADMIN_SESSION_SECRET",
+      label: "Owner session signing secret",
+      status: env.adminSessionSecret ? "ready" : "partial",
+      action: env.adminSessionSecret ? undefined : "Set ADMIN_SESSION_SECRET in Vercel for durable signed admin sessions."
+    }
+  ];
   const parkedChecks: ReadinessCheck[] = [
     {
       key: "DNS_CONFIRMATION",
@@ -123,7 +137,7 @@ export function getSystemReadiness() {
   return {
     generatedAt: new Date().toISOString(),
     overallStatus:
-      [supabaseChecks, emailChecks, adsChecks, hostingChecks].every((checks) => groupStatus(checks) === "ready")
+      [supabaseChecks, emailChecks, adsChecks, hostingChecks, authChecks].every((checks) => groupStatus(checks) === "ready")
         ? "ready"
         : "action_required",
     groups: {
@@ -142,6 +156,10 @@ export function getSystemReadiness() {
       hosting: {
         status: groupStatus(hostingChecks),
         checks: hostingChecks
+      },
+      auth: {
+        status: groupStatus(authChecks),
+        checks: authChecks
       },
       parkedOwnerItems: {
         status: "parked",

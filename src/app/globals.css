@@ -127,10 +127,15 @@ a {
   gap: 12px;
 }
 
+.actions form {
+  margin: 0;
+}
+
 .button,
 .api-links a,
 .card-actions a,
 .search-panel button {
+  border: 0;
   display: inline-flex;
   min-height: 44px;
   align-items: center;
@@ -152,6 +157,7 @@ a {
 .card-actions a {
   background: var(--panel);
   border: 1px solid var(--line);
+  color: var(--foreground);
 }
 
 .hero-media {
@@ -1068,6 +1074,90 @@ a {
 
 .admin-shell {
   min-height: 100vh;
+}
+
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px 18px;
+  background:
+    linear-gradient(rgba(251, 248, 241, 0.72), rgba(251, 248, 241, 0.94)),
+    url("https://images.unsplash.com/photo-1581579438747-104c53d7fbc4?auto=format&fit=crop&w=1800&q=82") center/cover;
+}
+
+.login-panel {
+  display: grid;
+  width: min(100%, 520px);
+  gap: 24px;
+  border: 1px solid rgba(231, 221, 206, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 30px;
+  box-shadow: 0 30px 80px rgba(23, 32, 51, 0.18);
+}
+
+.login-panel h1 {
+  margin: 10px 0 0;
+  font-size: 38px;
+  line-height: 1.06;
+}
+
+.login-panel p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.login-form {
+  display: grid;
+  gap: 12px;
+}
+
+.login-form label {
+  font-weight: 900;
+}
+
+.login-form input {
+  min-height: 50px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--foreground);
+  font: inherit;
+  padding: 0 14px;
+}
+
+.login-form button {
+  width: 100%;
+  cursor: pointer;
+}
+
+.login-note {
+  margin: 0;
+  border: 1px solid #f0d8a8;
+  border-radius: 8px;
+  background: #fff7e5;
+  padding: 12px;
+  color: #70480e !important;
+  font-size: 14px;
+}
+
+.login-error {
+  margin: 0;
+  border: 1px solid #e5b6ac;
+  border-radius: 8px;
+  background: #fff4f1;
+  padding: 12px;
+  color: #8a2f20 !important;
+  font-size: 14px;
+}
+
+.login-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .workbench-hero,

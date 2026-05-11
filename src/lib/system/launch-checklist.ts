@@ -70,6 +70,7 @@ export async function getLaunchChecklist() {
         supabase: system.groups.supabase.status,
         email: system.groups.email.status,
         ads: system.groups.ads.status,
+        auth: system.groups.auth.status,
         hosting: system.groups.hosting.status
       }
     },

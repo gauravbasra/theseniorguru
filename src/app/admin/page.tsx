@@ -17,6 +17,9 @@ export default async function AdminPage() {
             <Link className="button primary" href="/api/v1/system/product-map">Product map API</Link>
             <Link className="button secondary" href="/api/v1/system/link-health">Link health</Link>
             <Link className="button secondary" href="/api/v1/openapi">OpenAPI</Link>
+            <form action="/api/v1/auth/logout" method="post">
+              <button className="button secondary" type="submit">Sign out</button>
+            </form>
           </div>
         </div>
         <aside className="admin-status-card">

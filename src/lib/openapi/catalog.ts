@@ -26,9 +26,19 @@ export function getOpenApiCatalog() {
       { name: "System" },
       { name: "Workbench" },
       { name: "Leads" },
-      { name: "Policy" }
+      { name: "Policy" },
+      { name: "Auth" }
     ],
     paths: {
+      "/api/v1/auth/login": {
+        post: { tags: ["Auth"], summary: "Create an owner admin session with a signed HttpOnly cookie" }
+      },
+      "/api/v1/auth/logout": {
+        post: { tags: ["Auth"], summary: "Clear the owner admin session" }
+      },
+      "/api/v1/auth/session": {
+        get: { tags: ["Auth"], summary: "Return current owner admin session status" }
+      },
       "/api/v1/providers": {
         get: { tags: ["Providers"], summary: "List published provider inventory" }
       },
