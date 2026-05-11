@@ -1,5 +1,6 @@
 import type { ProviderClaimDecisionInput, ProviderClaimInput, ProviderClaimRecord } from "@/lib/domain/claims";
 import { createProviderVerificationAttempt, listProviderVerificationAttempts } from "@/lib/claims/provider-verification";
+import { enqueueWebhookDeliveries } from "@/lib/openapi/platform";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -155,6 +156,21 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
     claim.status = input.decision;
     claim.updatedAt = now;
 
+    if (input.decision === "approved") {
+      await enqueueWebhookDeliveries({
+        eventType: "provider.claimed",
+        subjectId: claim.providerId,
+        payload: {
+          providerId: claim.providerId,
+          claimId: claim.id,
+          claimantEmail: claim.claimantEmail,
+          verificationMethod: claim.verificationMethod,
+          claimedAt: now,
+          adminNotes: input.adminNotes
+        }
+      });
+    }
+
     return decision;
   }
 
@@ -224,6 +240,21 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
       policyDecision: policy.decision
     }
   });
+
+  if (input.decision === "approved") {
+    await enqueueWebhookDeliveries({
+      eventType: "provider.claimed",
+      subjectId: claim.provider_id,
+      payload: {
+        providerId: claim.provider_id,
+        claimId: input.claimId,
+        claimantEmail: claim.claimant_email,
+        verificationMethod: claim.verification_method,
+        claimedAt: now,
+        adminNotes: input.adminNotes
+      }
+    });
+  }
 
   return mapProviderClaim(updatedClaim);
 }
