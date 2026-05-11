@@ -105,10 +105,13 @@ Deliverables:
 
 - Source registry.
 - Import batches.
+- Current live TheSeniorGuru listing crawler and staging adapter. Completed.
+- Current-site public JSON acquisition worker for real production listing records. Completed.
 - CMS/state/public-source import adapters.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.
+- Real current-site listing acquisition worker API for public TheSeniorGuru.com listings with session-aware import, robots metadata, structured fields, and enrichment-later image staging. Completed.
 - Extracted entity launch-quality audit worker for contact, taxonomy, confidence, image coverage, and rights-risk flags. Completed.
 - Crawl job control plane for approved sources. Completed.
 - Launch import wave planner for the 5,000-listing target. Completed.

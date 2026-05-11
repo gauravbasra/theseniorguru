@@ -333,10 +333,13 @@ export function getOpenApiCatalog() {
         post: { tags: ["Aggregation"], summary: "Optionally create queued launch import batches from the calculated plan" }
       },
       "/api/v1/admin/current-site-inventory/import": {
-        post: { tags: ["Aggregation"], summary: "Run current Senior Guru inventory import into the staging pipeline" }
+        post: { tags: ["Aggregation"], summary: "Crawl current TheSeniorGuru listing pages and stage real inventory records" }
       },
       "/api/v1/admin/public-source-acquisition/sample-run": {
         post: { tags: ["Aggregation"], summary: "Run a seeded public-source acquisition batch with provenance, image, and quality reporting" }
+      },
+      "/api/v1/admin/public-source-acquisition/current-site-run": {
+        post: { tags: ["Aggregation"], summary: "Run real current TheSeniorGuru.com listing acquisition with robots, provenance, image, and quality reporting" }
       },
       "/api/v1/admin/aggregation-readiness": {
         get: { tags: ["Aggregation"], summary: "Return launch import, crawler, source, and quality readiness summary" }

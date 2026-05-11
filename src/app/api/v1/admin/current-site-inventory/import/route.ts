@@ -6,7 +6,8 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const result = await runCurrentSiteInventoryImport({
       dryRun: body.dryRun ?? true,
-      actorId: body.actorId
+      actorId: body.actorId,
+      limit: body.limit
     });
 
     return NextResponse.json({ data: result });

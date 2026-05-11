@@ -3,13 +3,13 @@ import { runImportBatch } from "@/lib/aggregation/import-worker";
 import type { ImportRecordInput } from "@/lib/domain/imports";
 import type { StagedListingAuditEvent, StagedListingImageRecord } from "@/lib/domain/entities";
 
-type AdapterKind = "official_csv" | "official_api" | "open_directory_page" | "rss" | "manual_seed";
+type AdapterKind = "official_csv" | "official_api" | "open_directory_page" | "rss" | "manual_seed" | "current_site_json";
 
 type PublicSourcePolicy = {
   sourceName: string;
   sourceUrl: string;
   adapterKind: AdapterKind;
-  licenseTermsStatus: "approved_seed_sample" | "requires_owner_review" | "approved_open_data" | "blocked";
+  licenseTermsStatus: "approved_seed_sample" | "requires_owner_review" | "approved_open_data" | "owned_public_site" | "blocked";
   robotsDecision: "not_required_for_seeded_file" | "allowed" | "disallowed" | "requires_check";
   termsNotes: string;
 };
@@ -36,6 +36,30 @@ type PublicSourceListingSeed = {
   licenseFields?: Record<string, unknown>;
   accreditationFields?: Record<string, unknown>;
   imageUrls?: string[];
+};
+
+type SeniorGuruSearchListing = {
+  id?: number;
+  title?: string;
+  slug?: string;
+  email?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  zip?: string | null;
+  lati?: string | null;
+  longi?: string | null;
+  price?: string | number | null;
+  description?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  reviewcount?: number;
+  reviewsavg?: number;
+  files?: Array<{ id?: number; filename?: string; created_at?: string; updated_at?: string }>;
+  city?: { name?: string };
+  state?: { name?: string };
+  country?: { sortname?: string; name?: string };
+  categories?: Array<{ id?: number; name?: string; slug?: string; parent_id?: number | null }>;
 };
 
 type AcquisitionAdapter = {
@@ -69,6 +93,65 @@ export type PublicSourceAcquisitionRunResult = {
   importErrors: Array<{ index: number; reason: string }>;
   nextActions: string[];
 };
+
+const currentSiteBaseUrl = "https://theseniorguru.com";
+const userAgent = "TheSeniorGuruDataAcquisitionBot/0.1 (+https://theseniorguru.com)";
+const stateAbbreviations: Record<string, string> = {
+  Alabama: "AL",
+  Alaska: "AK",
+  Arizona: "AZ",
+  Arkansas: "AR",
+  California: "CA",
+  Colorado: "CO",
+  Connecticut: "CT",
+  Delaware: "DE",
+  Florida: "FL",
+  Georgia: "GA",
+  Hawaii: "HI",
+  Idaho: "ID",
+  Illinois: "IL",
+  Indiana: "IN",
+  Iowa: "IA",
+  Kansas: "KS",
+  Kentucky: "KY",
+  Louisiana: "LA",
+  Maine: "ME",
+  Maryland: "MD",
+  Massachusetts: "MA",
+  Michigan: "MI",
+  Minnesota: "MN",
+  Mississippi: "MS",
+  Missouri: "MO",
+  Montana: "MT",
+  Nebraska: "NE",
+  Nevada: "NV",
+  "New Hampshire": "NH",
+  "New Jersey": "NJ",
+  "New Mexico": "NM",
+  "New York": "NY",
+  "North Carolina": "NC",
+  "North Dakota": "ND",
+  Ohio: "OH",
+  Oklahoma: "OK",
+  Oregon: "OR",
+  Pennsylvania: "PA",
+  "Rhode Island": "RI",
+  "South Carolina": "SC",
+  "South Dakota": "SD",
+  Tennessee: "TN",
+  Texas: "TX",
+  Utah: "UT",
+  Vermont: "VT",
+  Virginia: "VA",
+  Washington: "WA",
+  "West Virginia": "WV",
+  Wisconsin: "WI",
+  Wyoming: "WY"
+};
+
+function nowIso() {
+  return new Date().toISOString();
+}
 
 const fetchedAt = "2026-05-11T00:00:00.000Z";
 
@@ -204,10 +287,6 @@ function qualityGapsFor(record: ImportRecordInput): QualityGap | null {
     gaps.push("missing_geo");
   }
 
-  if ((record.imageAssets?.length ?? 0) < 3) {
-    gaps.push("fewer_than_three_images");
-  }
-
   if (!record.licenseFields || Object.keys(record.licenseFields).length === 0) {
     gaps.push("missing_license_fields");
   }
@@ -223,6 +302,364 @@ function qualityGapsFor(record: ImportRecordInput): QualityGap | null {
         gaps
       }
     : null;
+}
+
+function decodeHtml(value: string) {
+  return value
+    .replaceAll("&amp;", "&")
+    .replaceAll("&nbsp;", " ")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&#039;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">");
+}
+
+function textFromHtml(value?: string | null) {
+  return decodeHtml(value ?? "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cookieHeaderFrom(response: Response) {
+  const headers = response.headers as Headers & { getSetCookie?: () => string[] };
+  const setCookies = headers.getSetCookie?.() ?? [];
+  const fallback = response.headers.get("set-cookie");
+  const cookieStrings = setCookies.length > 0 ? setCookies : fallback ? fallback.split(/,(?=[^;,]+=)/) : [];
+
+  return cookieStrings
+    .map((cookie) => cookie.split(";")[0]?.trim())
+    .filter(Boolean)
+    .join("; ");
+}
+
+function extractCsrfToken(html: string) {
+  return html.match(/"_token":\s*"([^"]+)"/)?.[1] ?? html.match(/name="_token"\s+value="([^"]+)"/)?.[1] ?? "";
+}
+
+async function fetchCurrentSiteRobotsDecision() {
+  const response = await fetch(`${currentSiteBaseUrl}/robots.txt`, {
+    headers: { "user-agent": userAgent },
+    cache: "no-store"
+  });
+  const text = await response.text();
+  const disallowedAll = /user-agent:\s*\*\s*disallow:\s*\/\s*(?:\n|$)/i.test(text);
+
+  return {
+    status: response.status,
+    text,
+    decision: response.ok && !disallowedAll ? "allowed" as const : "disallowed" as const
+  };
+}
+
+async function fetchCurrentSiteSearchSession() {
+  const response = await fetch(`${currentSiteBaseUrl}/search`, {
+    headers: { "user-agent": userAgent },
+    cache: "no-store"
+  });
+  const html = await response.text();
+  const csrfToken = extractCsrfToken(html);
+  const cookie = cookieHeaderFrom(response);
+
+  if (!response.ok || !csrfToken || !cookie) {
+    throw new Error("Unable to establish public Senior Guru search session for listing acquisition.");
+  }
+
+  return { csrfToken, cookie };
+}
+
+async function fetchCurrentSiteListingsPage(input: {
+  csrfToken: string;
+  cookie: string;
+  skip: number;
+  order: "asc" | "desc";
+}) {
+  const body = new URLSearchParams({
+    _token: input.csrfToken,
+    category: "",
+    location: "",
+    subcat: "",
+    keyword: "",
+    list_order: input.order,
+    skip: String(input.skip)
+  });
+  const response = await fetch(`${currentSiteBaseUrl}/search-listing`, {
+    method: "POST",
+    headers: {
+      "user-agent": userAgent,
+      "x-requested-with": "XMLHttpRequest",
+      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+      accept: "application/json",
+      cookie: input.cookie
+    },
+    body,
+    cache: "no-store"
+  });
+  const json = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Senior Guru search-listing request failed with ${response.status}`);
+  }
+
+  const values = Object.values((json as { listing?: Record<string, SeniorGuruSearchListing> }).listing ?? {});
+
+  return {
+    listings: values,
+    count: Number((json as { count?: number }).count ?? values.length),
+    totalCount: Number((json as { totalCount?: number }).totalCount ?? values.length)
+  };
+}
+
+function categorySlugFor(listing: SeniorGuruSearchListing) {
+  return [...(listing.categories ?? [])].reverse().find((category) => category.slug)?.slug ?? "listing";
+}
+
+function sourceUrlFor(listing: SeniorGuruSearchListing) {
+  return `${currentSiteBaseUrl}/listing/${categorySlugFor(listing)}/${listing.slug ?? listing.id}`;
+}
+
+function careTypesFor(listing: SeniorGuruSearchListing) {
+  const haystack = `${listing.title ?? ""} ${textFromHtml(listing.description)}`.toLowerCase();
+  const careTypePatterns: Array<[string, RegExp]> = [
+    ["Independent Living", /independent living/],
+    ["Assisted Living", /assisted living/],
+    ["Memory Care", /memory care|dementia|alzheimer/],
+    ["Home Care", /home care|companion care|caregiver/],
+    ["Home Health", /home health/],
+    ["Hospice", /hospice/],
+    ["Senior Apartments", /apartment|55 plus|55\+/],
+    ["Adult Day Care", /adult day/]
+  ];
+  const careTypes = careTypePatterns
+    .filter(([, pattern]) => pattern.test(haystack))
+    .map(([label]) => label);
+
+  return [...new Set(careTypes.length > 0 ? careTypes : (listing.categories ?? []).map((category) => category.name).filter(Boolean) as string[])];
+}
+
+function amenitiesFor(listing: SeniorGuruSearchListing) {
+  const text = textFromHtml(listing.description);
+  const candidates = [
+    "Dining",
+    "Transportation",
+    "Fitness",
+    "Salon",
+    "Spa",
+    "Outdoor",
+    "Garden",
+    "Movie theater",
+    "Cafe",
+    "Private dining",
+    "Daily programs",
+    "Medication",
+    "Meals"
+  ];
+
+  return candidates.filter((candidate) => text.toLowerCase().includes(candidate.toLowerCase()));
+}
+
+function mapCurrentSiteListing(listing: SeniorGuruSearchListing, policy: PublicSourcePolicy, acquiredAt: string): ImportRecordInput | null {
+  if (!listing.title || !listing.city?.name || !listing.state?.name) {
+    return null;
+  }
+
+  const sourceUrl = sourceUrlFor(listing);
+  const categories = (listing.categories ?? []).map((category) => category.name).filter(Boolean) as string[];
+  const imageAssets: StagedListingImageRecord[] = (listing.files ?? [])
+    .flatMap((file, index): StagedListingImageRecord[] => file.filename ? [{
+      url: file.filename,
+      sourceUrl,
+      fetchedAt: acquiredAt,
+      licenseTermsStatus: policy.licenseTermsStatus,
+      robotsDecision: policy.robotsDecision,
+      reviewStatus: "pending_review" as const,
+      storageStatus: "not_stored" as const,
+      altText: `${listing.title} source image ${index + 1}`,
+      ordinal: index + 1
+    }] : []);
+  const description = textFromHtml(listing.description);
+  const state = stateAbbreviations[listing.state.name] ?? listing.state.name;
+  const price = Number(listing.price ?? 0);
+
+  return {
+    name: listing.title,
+    categories: [...new Set(categories)],
+    careTypes: careTypesFor(listing),
+    addressLine1: listing.address ?? undefined,
+    city: listing.city.name,
+    state,
+    postalCode: listing.zip ?? undefined,
+    latitude: listing.lati ? Number(listing.lati) : undefined,
+    longitude: listing.longi ? Number(listing.longi) : undefined,
+    phone: listing.phone ?? undefined,
+    email: listing.email ?? undefined,
+    websiteUrl: listing.website ?? sourceUrl,
+    description,
+    amenities: amenitiesFor(listing),
+    services: careTypesFor(listing),
+    pricingSignals: {
+      monthlyStartingAt: price > 0 ? price : undefined,
+      currency: "USD",
+      sourceLabel: "current theseniorguru.com public listing"
+    },
+    licenseFields: {
+      sourceListingId: listing.id,
+      claimStatus: "source_public_listing",
+      sourceStatus: "active_public_listing"
+    },
+    accreditationFields: {
+      reviewsAverage: listing.reviewsavg ?? 0,
+      reviewsCount: listing.reviewcount ?? 0
+    },
+    sourceUrl,
+    sourceRecordId: listing.id ? `theseniorguru-current-${listing.id}` : sourceUrl,
+    fetchedAt: acquiredAt,
+    licenseTermsStatus: policy.licenseTermsStatus,
+    robotsDecision: policy.robotsDecision,
+    extractionConfidence: 0.91,
+    confidenceScore: 0.91,
+    duplicateMatchData: { sourceListingId: listing.id, slug: listing.slug, duplicateCheckKey: duplicateSignature({
+      sourceRecordId: String(listing.id ?? sourceUrl),
+      name: listing.title,
+      categories,
+      careTypes: careTypesFor(listing),
+      addressLine1: listing.address ?? "",
+      city: listing.city.name,
+      state,
+      postalCode: listing.zip ?? "",
+      county: "",
+      phone: listing.phone ?? undefined
+    }) },
+    imageAssets,
+    auditTrail: [
+      {
+        at: acquiredAt,
+        actor: "real-public-source-acquisition-worker",
+        action: "robots_checked",
+        notes: `robots=${policy.robotsDecision}`
+      },
+      {
+        at: acquiredAt,
+        actor: "real-public-source-acquisition-worker",
+        action: "public_listing_json_imported",
+        notes: "Imported from the public theseniorguru.com search-listing endpoint using a normal public session token."
+      },
+      {
+        at: acquiredAt,
+        actor: "real-public-source-acquisition-worker",
+        action: "images_marked_enrichment_later",
+        notes: "Image URLs are staged as source metadata only; storage/reuse review remains pending."
+      }
+    ],
+    rawPayload: {
+      adapterKind: policy.adapterKind,
+      sourceName: policy.sourceName,
+      listing
+    },
+    extractedFields: {
+      sourceName: policy.sourceName,
+      sourceUrl,
+      categorySlug: categorySlugFor(listing),
+      createdAt: listing.created_at,
+      updatedAt: listing.updated_at,
+      imageCount: imageAssets.length,
+      country: listing.country?.name,
+      countryCode: listing.country?.sortname
+    }
+  };
+}
+
+export async function runCurrentSiteRealListingAcquisition(input: {
+  actorId?: string;
+  dryRun?: boolean;
+  maxRecords?: number;
+  order?: "asc" | "desc";
+} = {}): Promise<PublicSourceAcquisitionRunResult & { discoveredListings: number; skippedRecords: number }> {
+  const maxRecords = Math.max(1, Math.min(Number(input.maxRecords ?? 18), 75));
+  const acquiredAt = nowIso();
+  const robots = await fetchCurrentSiteRobotsDecision();
+  const policy: PublicSourcePolicy = {
+    sourceName: "TheSeniorGuru.com current public listing index",
+    sourceUrl: `${currentSiteBaseUrl}/search`,
+    adapterKind: "current_site_json",
+    licenseTermsStatus: "owned_public_site",
+    robotsDecision: robots.decision,
+    termsNotes:
+      "Current TheSeniorGuru.com public listing pages and search-listing JSON. Images are staged for enrichment/storage review, not published by hotlinking."
+  };
+
+  if (robots.decision !== "allowed") {
+    throw new Error("Current TheSeniorGuru.com robots.txt does not allow public listing acquisition.");
+  }
+
+  const session = await fetchCurrentSiteSearchSession();
+  const listings: SeniorGuruSearchListing[] = [];
+  let skip = 0;
+  let totalCount = 0;
+
+  while (listings.length < maxRecords) {
+    const page = await fetchCurrentSiteListingsPage({
+      ...session,
+      skip,
+      order: input.order ?? "desc"
+    });
+
+    totalCount = page.totalCount;
+    listings.push(...page.listings);
+
+    if (page.count < 1 || page.listings.length < 1) {
+      break;
+    }
+
+    skip += page.count;
+  }
+
+  const records = listings
+    .slice(0, maxRecords)
+    .map((listing) => mapCurrentSiteListing(listing, policy, acquiredAt))
+    .filter((record): record is ImportRecordInput => Boolean(record));
+  const batch = await createImportBatch({
+    name: "Current TheSeniorGuru.com real public listing acquisition batch",
+    sourceKind: "manual",
+    estimatedRecords: records.length
+  });
+  const run = await runImportBatch(batch.id, {
+    records,
+    actorId: input.actorId,
+    dryRun: input.dryRun ?? false
+  });
+  const qualityGaps = records.map(qualityGapsFor).filter((gap): gap is QualityGap => Boolean(gap));
+  const totalImages = records.reduce((sum, record) => sum + (record.imageAssets?.length ?? 0), 0);
+  const listingsWithThreeImages = records.filter((record) => (record.imageAssets?.length ?? 0) >= 3).length;
+
+  return {
+    generatedAt: acquiredAt,
+    batchId: batch.id,
+    status: run.status,
+    dryRun: run.dryRun,
+    sourceCount: 1,
+    discoveredListings: totalCount,
+    totalRecords: run.totalRecords,
+    stagedRecords: run.stagedRecords,
+    rejectedRecords: run.rejectedRecords,
+    errorRecords: run.errorRecords,
+    skippedRecords: listings.slice(0, maxRecords).length - records.length,
+    imageCoverage: {
+      listingsWithThreeImages,
+      listingsMissingThreeImages: records.length - listingsWithThreeImages,
+      averageImagesPerListing: Number((totalImages / Math.max(records.length, 1)).toFixed(2))
+    },
+    qualityGaps,
+    sourcePolicies: [policy],
+    importErrors: run.errors,
+    nextActions: [
+      "Apply the public-source acquisition staging migration in production Supabase before live persisted runs.",
+      "Confirm owner policy for reusing/storing current-site media; until then image URLs remain pending enrichment-later metadata.",
+      "Add official state/CMS directory adapters after source terms/API approvals are confirmed."
+    ]
+  };
 }
 
 function duplicateSignature(seed: PublicSourceListingSeed) {

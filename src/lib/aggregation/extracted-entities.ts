@@ -166,9 +166,9 @@ function scoreEntityQuality(entity: ExtractedEntityRecord, minImages: number): E
 
   if (imageCount < minImages) {
     findings.push({
-      severity: imageCount === 0 ? "high" : "medium",
+      severity: "low",
       flagKey: "insufficient_images",
-      message: `Listing has ${imageCount} approved/staged image${imageCount === 1 ? "" : "s"}; launch target is at least ${minImages}.`
+      message: `Listing has ${imageCount} approved/staged image${imageCount === 1 ? "" : "s"}; launch target is at least ${minImages}. Save the source now and enrich images later.`
     });
   }
 
@@ -204,7 +204,7 @@ function scoreEntityQuality(entity: ExtractedEntityRecord, minImages: number): E
   }, 0);
   const qualityScore = Math.max(0, Number((1 - penalty).toFixed(2)));
   const recommendedStatus =
-    findings.some((finding) => finding.severity === "critical" || finding.severity === "high") || qualityScore < 0.72
+    findings.some((finding) => finding.severity === "critical" || finding.severity === "high") || qualityScore < 0.6
       ? "needs_human_review"
       : entity.reviewStatus;
 

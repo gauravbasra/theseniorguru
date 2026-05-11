@@ -36,6 +36,7 @@ These items require owner credentials, production access, or confirmation. Imple
 - Approve each production public-source acquisition source before live ingestion, including source URL, license/terms status, robots decision, allowed adapter type, attribution requirements, and refresh cadence.
 - Confirm image handling policy for sourced listing images: storage workflow, review owner, attribution display, rejection rules, and whether any source permits reuse beyond staging.
 - Provide any official directory/API credentials or data use agreements required for CMS, state licensing, county agency, provider registry, or open data imports.
+- Confirm production run limits and refresh cadence for current TheSeniorGuru.com public listing acquisition; current worker honors robots and stages image URLs as enrichment-later metadata pending owner media policy.
 
 ## Google Ads/Publishing
 
