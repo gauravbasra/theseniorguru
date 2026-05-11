@@ -47,7 +47,8 @@ const migrationManifest = [
   "20260510193500_webhook_delivery_worker.sql",
   "20260510210500_review_request_campaigns.sql",
   "20260510220000_dual_funnel_leads.sql",
-  "20260511001000_review_moderation_sentiment.sql"
+  "20260511001000_review_moderation_sentiment.sql",
+  "20260511010000_public_source_acquisition_staging.sql"
 ];
 
 const requiredTables: RequiredTable[] = [

@@ -132,6 +132,12 @@ const routeContracts: LinkContract[] = [
     href: "/api/v1/admin/current-site-inventory/import",
     method: "POST",
     owner: "admin"
+  },
+  {
+    label: "Public-source acquisition sample run",
+    href: "/api/v1/admin/public-source-acquisition/sample-run",
+    method: "POST",
+    owner: "admin"
   }
 ];
 
