@@ -107,6 +107,7 @@ Deliverables:
 - Import batches.
 - Current live TheSeniorGuru listing crawler and staging adapter. Completed.
 - Current-site public JSON acquisition worker for real production listing records. Completed.
+- Current-site parsed record preview/export API. Completed.
 - CMS/state/public-source import adapters.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.

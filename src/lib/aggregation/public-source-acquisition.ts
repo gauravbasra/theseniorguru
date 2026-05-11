@@ -94,6 +94,19 @@ export type PublicSourceAcquisitionRunResult = {
   nextActions: string[];
 };
 
+export type CurrentSiteRealListingPreviewResult = {
+  generatedAt: string;
+  sourceCount: number;
+  discoveredListings: number;
+  requestedRecords: number;
+  parsedRecords: number;
+  skippedRecords: number;
+  imageCoverage: PublicSourceAcquisitionRunResult["imageCoverage"];
+  qualityGaps: QualityGap[];
+  sourcePolicies: PublicSourcePolicy[];
+  records: ImportRecordInput[];
+};
+
 const currentSiteBaseUrl = "https://theseniorguru.com";
 const userAgent = "TheSeniorGuruDataAcquisitionBot/0.1 (+https://theseniorguru.com)";
 const stateAbbreviations: Record<string, string> = {
@@ -577,7 +590,56 @@ export async function runCurrentSiteRealListingAcquisition(input: {
   maxRecords?: number;
   order?: "asc" | "desc";
 } = {}): Promise<PublicSourceAcquisitionRunResult & { discoveredListings: number; skippedRecords: number }> {
-  const maxRecords = Math.max(1, Math.min(Number(input.maxRecords ?? 18), 75));
+  const preview = await previewCurrentSiteRealListings({
+    maxRecords: input.maxRecords,
+    order: input.order
+  });
+  const records = preview.records;
+  const [policy] = preview.sourcePolicies;
+
+  if (!policy || policy.robotsDecision !== "allowed") {
+    throw new Error("Current TheSeniorGuru.com robots.txt does not allow public listing acquisition.");
+  }
+  const batch = await createImportBatch({
+    name: "Current TheSeniorGuru.com real public listing acquisition batch",
+    sourceKind: "manual",
+    estimatedRecords: records.length
+  });
+  const run = await runImportBatch(batch.id, {
+    records,
+    actorId: input.actorId,
+    dryRun: input.dryRun ?? false
+  });
+
+  return {
+    generatedAt: preview.generatedAt,
+    batchId: batch.id,
+    status: run.status,
+    dryRun: run.dryRun,
+    sourceCount: 1,
+    discoveredListings: preview.discoveredListings,
+    totalRecords: run.totalRecords,
+    stagedRecords: run.stagedRecords,
+    rejectedRecords: run.rejectedRecords,
+    errorRecords: run.errorRecords,
+    skippedRecords: preview.skippedRecords,
+    imageCoverage: preview.imageCoverage,
+    qualityGaps: preview.qualityGaps,
+    sourcePolicies: preview.sourcePolicies,
+    importErrors: run.errors,
+    nextActions: [
+      "Apply the public-source acquisition staging migration in production Supabase before live persisted runs.",
+      "Confirm owner policy for reusing/storing current-site media; until then image URLs remain pending enrichment-later metadata.",
+      "Add official state/CMS directory adapters after source terms/API approvals are confirmed."
+    ]
+  };
+}
+
+export async function previewCurrentSiteRealListings(input: {
+  maxRecords?: number;
+  order?: "asc" | "desc";
+} = {}): Promise<CurrentSiteRealListingPreviewResult> {
+  const maxRecords = Math.max(1, Math.min(Number(input.maxRecords ?? 50), 250));
   const acquiredAt = nowIso();
   const robots = await fetchCurrentSiteRobotsDecision();
   const policy: PublicSourcePolicy = {
@@ -616,36 +678,21 @@ export async function runCurrentSiteRealListingAcquisition(input: {
     skip += page.count;
   }
 
-  const records = listings
-    .slice(0, maxRecords)
+  const requested = listings.slice(0, maxRecords);
+  const records = requested
     .map((listing) => mapCurrentSiteListing(listing, policy, acquiredAt))
     .filter((record): record is ImportRecordInput => Boolean(record));
-  const batch = await createImportBatch({
-    name: "Current TheSeniorGuru.com real public listing acquisition batch",
-    sourceKind: "manual",
-    estimatedRecords: records.length
-  });
-  const run = await runImportBatch(batch.id, {
-    records,
-    actorId: input.actorId,
-    dryRun: input.dryRun ?? false
-  });
   const qualityGaps = records.map(qualityGapsFor).filter((gap): gap is QualityGap => Boolean(gap));
   const totalImages = records.reduce((sum, record) => sum + (record.imageAssets?.length ?? 0), 0);
   const listingsWithThreeImages = records.filter((record) => (record.imageAssets?.length ?? 0) >= 3).length;
 
   return {
     generatedAt: acquiredAt,
-    batchId: batch.id,
-    status: run.status,
-    dryRun: run.dryRun,
     sourceCount: 1,
     discoveredListings: totalCount,
-    totalRecords: run.totalRecords,
-    stagedRecords: run.stagedRecords,
-    rejectedRecords: run.rejectedRecords,
-    errorRecords: run.errorRecords,
-    skippedRecords: listings.slice(0, maxRecords).length - records.length,
+    requestedRecords: requested.length,
+    parsedRecords: records.length,
+    skippedRecords: requested.length - records.length,
     imageCoverage: {
       listingsWithThreeImages,
       listingsMissingThreeImages: records.length - listingsWithThreeImages,
@@ -653,12 +700,7 @@ export async function runCurrentSiteRealListingAcquisition(input: {
     },
     qualityGaps,
     sourcePolicies: [policy],
-    importErrors: run.errors,
-    nextActions: [
-      "Apply the public-source acquisition staging migration in production Supabase before live persisted runs.",
-      "Confirm owner policy for reusing/storing current-site media; until then image URLs remain pending enrichment-later metadata.",
-      "Add official state/CMS directory adapters after source terms/API approvals are confirmed."
-    ]
+    records
   };
 }
 

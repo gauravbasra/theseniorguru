@@ -338,6 +338,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/public-source-acquisition/sample-run": {
         post: { tags: ["Aggregation"], summary: "Run a seeded public-source acquisition batch with provenance, image, and quality reporting" }
       },
+      "/api/v1/admin/public-source-acquisition/current-site-preview": {
+        post: { tags: ["Aggregation"], summary: "Preview/export parsed real current-site listing records before staging" }
+      },
       "/api/v1/admin/public-source-acquisition/current-site-run": {
         post: { tags: ["Aggregation"], summary: "Run real current TheSeniorGuru.com listing acquisition with robots, provenance, image, and quality reporting" }
       },
