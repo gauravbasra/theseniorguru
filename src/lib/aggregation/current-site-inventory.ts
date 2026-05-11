@@ -36,6 +36,11 @@ export type CurrentSiteInventoryImportResult = ImportBatchRunResult & {
     listingUrl: string;
     reason: string;
   }>;
+  validationErrorRecords: Array<{
+    listingUrl?: string;
+    index: number;
+    reason: string;
+  }>;
   listingUrls: string[];
   nextActions: string[];
 };
@@ -341,6 +346,11 @@ export async function runCurrentSiteInventoryImport(input: {
     imageReadyRecords: records.filter((record) => (record.imageAssets?.length ?? 0) >= 3).length,
     parseErrorRecords: parseErrors.length,
     failedListingUrls: parseErrors,
+    validationErrorRecords: result.errors.map((error) => ({
+      listingUrl: records[error.index]?.listingUrl,
+      index: error.index,
+      reason: error.reason
+    })),
     listingUrls: records.map((record) => record.listingUrl),
     nextActions: [
       result.dryRun
@@ -349,6 +359,9 @@ export async function runCurrentSiteInventoryImport(input: {
       parseErrors.length
         ? "Review failedListingUrls and improve parser coverage for pages with changed markup or source fetch failures."
         : "Parser covered every discovered listing URL in this run.",
+      result.errors.length
+        ? "Review validationErrorRecords and enrich missing launch-quality fields before persisted import."
+        : "Every parsed record passed launch-quality validation.",
       records.some((record) => (record.imageAssets?.length ?? 0) < 3)
         ? "Save source image URLs now and enrich missing listing photos later; image gaps do not block inventory staging."
         : "Every parsed listing includes at least three source image references."
