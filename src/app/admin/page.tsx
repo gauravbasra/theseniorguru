@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import { AcquisitionPipelineConsole } from "@/components/acquisition-pipeline-console";
 import { SourceGovernanceConsole } from "@/components/source-governance-console";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
+import { listCrawlJobs } from "@/lib/aggregation/crawl-jobs";
 import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
 import { getAdminDashboardMetrics } from "@/lib/admin/dashboard-metrics";
 import { listAdPlacements } from "@/lib/ads/ads";
@@ -31,7 +33,8 @@ export default async function AdminPage() {
     adPlacements,
     reviewQueue,
     dataSources,
-    scheduledRuns
+    scheduledRuns,
+    crawlJobs
   ] = await Promise.all([
     getLaunchChecklist(),
     getAdminDashboardMetrics(),
@@ -43,7 +46,8 @@ export default async function AdminPage() {
     listAdPlacements(),
     listReviewModerationQueue({ status: "pending_moderation" }),
     listDataSources(),
-    listScheduledWorkerRuns({ limit: 20 })
+    listScheduledWorkerRuns({ limit: 20 }),
+    listCrawlJobs()
   ]);
   const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
   const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
@@ -248,6 +252,20 @@ export default async function AdminPage() {
           </div>
         </div>
         <SourceGovernanceConsole initialSources={dataSources} initialRuns={scheduledRuns} />
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Acquisition execution</p>
+            <h2>Run approved inventory jobs</h2>
+          </div>
+        </div>
+        <AcquisitionPipelineConsole
+          initialSources={dataSources}
+          initialBatches={importBatches}
+          initialCrawlJobs={crawlJobs}
+        />
       </section>
 
       <section className="admin-section">
