@@ -1469,6 +1469,14 @@ a {
   grid-column: span 2;
 }
 
+.operations-health-panel {
+  grid-column: span 2;
+}
+
+.workflow-chart-panel {
+  grid-column: span 2;
+}
+
 .listing-preview-table {
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -3038,6 +3046,14 @@ button.open-api-row {
   align-items: end;
 }
 
+.wide-column-chart {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  min-height: 158px;
+  gap: 12px;
+  align-items: end;
+}
+
 .vertical-bar {
   display: grid;
   min-width: 0;
@@ -3695,6 +3711,16 @@ button.open-api-row {
   .ops-explain,
   .ops-grid {
     grid-template-columns: 1fr;
+  }
+
+  .operations-health-panel,
+  .workflow-chart-panel,
+  .source-quality-panel {
+    grid-column: auto;
+  }
+
+  .wide-column-chart {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .dashboard-primary,

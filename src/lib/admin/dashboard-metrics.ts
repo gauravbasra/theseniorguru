@@ -1,7 +1,14 @@
 import { getAdCampaignReporting } from "@/lib/ads/ads";
 import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
+import { listProviderClaims } from "@/lib/claims/provider-claims";
+import { listCommunityPosts } from "@/lib/community/feed";
+import { listExpertProfiles } from "@/lib/community/experts";
+import { listCommunityGroups } from "@/lib/community/groups";
+import { listEvents } from "@/lib/events/events";
 import { listLeadQueue } from "@/lib/leads";
+import { listApiAuditEvents, listApiClients, listWebhookDeliveries, listWebhookSubscriptions } from "@/lib/openapi/platform";
 import { listProviders } from "@/lib/providers";
+import { listReviewModerationQueue } from "@/lib/reviews/reviews";
 import { listScheduledWorkerRuns } from "@/lib/scheduler/runs";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
 import { getProductMap } from "@/lib/system/product-map";
@@ -24,14 +31,42 @@ function parseRangeTarget(value: string | number) {
 }
 
 export async function getAdminDashboardMetrics() {
-  const [product, launchChecklist, leadQueue, adReporting, providers, listingPreview, scheduledRuns] = await Promise.all([
+  const [
+    product,
+    launchChecklist,
+    leadQueue,
+    adReporting,
+    providers,
+    listingPreview,
+    scheduledRuns,
+    claims,
+    reviewQueue,
+    events,
+    communityGroups,
+    communityPosts,
+    verifiedExperts,
+    apiClients,
+    webhookSubscriptions,
+    webhookDeliveries,
+    apiAuditEvents
+  ] = await Promise.all([
     getProductMap(),
     getLaunchChecklist(),
     listLeadQueue(),
     getAdCampaignReporting(),
     listProviders(),
     previewCurrentSiteRealListings({ maxRecords: 25 }),
-    listScheduledWorkerRuns({ limit: 10 })
+    listScheduledWorkerRuns({ limit: 10 }),
+    listProviderClaims(),
+    listReviewModerationQueue({ status: "pending_moderation" }),
+    listEvents(),
+    listCommunityGroups(),
+    listCommunityPosts(),
+    listExpertProfiles({ status: "verified" }),
+    listApiClients(),
+    listWebhookSubscriptions(),
+    listWebhookDeliveries(),
+    listApiAuditEvents()
   ]);
   const readinessStatusCounts = launchChecklist.checklist.reduce(
     (counts, item) => ({
@@ -79,6 +114,26 @@ export async function getAdminDashboardMetrics() {
     { label: "Impressions", value: adReporting.totals.impressions, tone: "gold" },
     { label: "Clicks", value: adReporting.totals.clicks, tone: "rose" }
   ];
+  const openClaims = claims.filter((claim) => !["approved", "rejected"].includes(claim.status)).length;
+  const workerFailures = scheduledRuns.filter((run) => run.status === "failed").length;
+  const operationalEngines: ChartDatum[] = [
+    { label: "Open claims", value: openClaims, total: Math.max(claims.length, 1), tone: openClaims ? "gold" : "green" },
+    { label: "Reviews waiting", value: reviewQueue.length, total: Math.max(reviewQueue.length, 1), tone: reviewQueue.length ? "gold" : "green" },
+    { label: "Published events", value: events.filter((event) => ["published", "featured"].includes(event.status)).length, total: Math.max(events.length, 1), tone: "blue" },
+    { label: "Community posts", value: communityPosts.length, total: Math.max(communityPosts.length, 1), tone: "green" },
+    { label: "Verified experts", value: verifiedExperts.length, total: Math.max(verifiedExperts.length, 1), tone: "blue" },
+    { label: "API clients", value: apiClients.filter((client) => client.status === "active").length, total: Math.max(apiClients.length, 1), tone: "green" },
+    { label: "Webhooks", value: webhookSubscriptions.filter((subscription) => subscription.status === "active").length, total: Math.max(webhookSubscriptions.length, 1), tone: "blue" },
+    { label: "Worker failures", value: workerFailures, total: Math.max(scheduledRuns.length, 1), tone: workerFailures ? "rose" : "green" }
+  ];
+  const workflowHealth: ChartDatum[] = [
+    { label: "Claims", value: claims.length, tone: openClaims ? "gold" : "green" },
+    { label: "Reviews", value: reviewQueue.length, tone: reviewQueue.length ? "gold" : "green" },
+    { label: "Events", value: events.length, tone: "blue" },
+    { label: "Groups", value: communityGroups.length, tone: "green" },
+    { label: "Posts", value: communityPosts.length, tone: "gold" },
+    { label: "API audit", value: apiAuditEvents.length, tone: "rose" }
+  ];
   const routeHealth = {
     valid: product.linkHealth.total - product.linkHealth.invalidCount,
     invalid: product.linkHealth.invalidCount,
@@ -93,8 +148,11 @@ export async function getAdminDashboardMetrics() {
     leadFunnel,
     productEngines,
     monetization,
+    operationalEngines,
+    workflowHealth,
     sourceCoverage: listingPreview.sourceCoverage,
     scheduledRuns,
+    webhookDeliveries,
     routeHealth,
     headlineNumbers: {
       totalProviders: providers.length,

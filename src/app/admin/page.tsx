@@ -210,6 +210,43 @@ export default async function AdminPage() {
             </div>
           </article>
 
+          <article className="dashboard-panel operations-health-panel">
+            <div className="panel-title-row">
+              <div>
+                <p className="eyebrow">Operations health</p>
+                <h2>Backend engines</h2>
+              </div>
+              <strong className="panel-stat">{dashboardMetrics.operationalEngines.length}</strong>
+            </div>
+            <div className="compact-bars">
+              {dashboardMetrics.operationalEngines.map((item) => (
+                <HorizontalBar
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                  total={item.total ?? 1}
+                  tone={item.tone}
+                />
+              ))}
+            </div>
+          </article>
+
+          <article className="dashboard-panel workflow-chart-panel">
+            <p className="eyebrow">Workflow volume</p>
+            <h2>Claims, reviews, events, community, APIs</h2>
+            <div className="wide-column-chart">
+              {dashboardMetrics.workflowHealth.map((item) => (
+                <VerticalBar
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                  total={Math.max(...dashboardMetrics.workflowHealth.map((row) => row.value), 1)}
+                  tone={item.tone}
+                />
+              ))}
+            </div>
+          </article>
+
           <article className="dashboard-panel source-quality-panel">
             <div className="panel-title-row">
               <div>
