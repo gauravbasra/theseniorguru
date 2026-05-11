@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { expireProviderVerificationAttempts } from "@/lib/claims/provider-verification";
 import { isAuthorizedCronRequest } from "@/lib/cron/auth";
+import { runEventReminderAutomation } from "@/lib/events/event-automation";
 import { processWebhookDeliveries } from "@/lib/openapi/platform";
 import { recordScheduledWorkerRun } from "@/lib/scheduler/runs";
 
@@ -14,13 +15,16 @@ export async function GET(request: Request) {
   const startedAt = new Date().toISOString();
 
   try {
-    const [verificationExpiry, webhookDelivery] = await Promise.all([
+    const [verificationExpiry, webhookDelivery, eventAutomation] = await Promise.all([
       expireProviderVerificationAttempts({
         actorId: "cron:operations",
         limit: 50
       }),
       processWebhookDeliveries({
         limit: 25
+      }),
+      runEventReminderAutomation({
+        actorId: "cron:operations"
       })
     ]);
     const run = await recordScheduledWorkerRun({
@@ -32,7 +36,10 @@ export async function GET(request: Request) {
         webhookProcessed: webhookDelivery.processed,
         webhookDelivered: webhookDelivery.delivered,
         webhookFailed: webhookDelivery.failed,
-        webhookBlocked: webhookDelivery.blocked
+        webhookBlocked: webhookDelivery.blocked,
+        eventRemindersQueued: eventAutomation.remindersQueued,
+        eventFollowupsQueued: eventAutomation.followupsQueued,
+        eventAutomationSkippedExisting: eventAutomation.skippedExisting
       }
     });
 
@@ -41,7 +48,8 @@ export async function GET(request: Request) {
         ranAt: run.finishedAt,
         run,
         verificationExpiry,
-        webhookDelivery
+        webhookDelivery,
+        eventAutomation
       }
     });
   } catch (error) {

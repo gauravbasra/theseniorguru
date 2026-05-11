@@ -137,7 +137,9 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/events/{id}/rsvp",
       "POST /api/v1/provider/events",
       "POST /api/v1/provider/events/{id}/promotions",
-      "GET /api/v1/provider/events/{id}/analytics"
+      "GET /api/v1/provider/events/{id}/analytics",
+      "POST /api/v1/admin/event-automation/run",
+      "GET /api/cron/operations"
     ],
     requiredTables: [
       "events",
@@ -148,7 +150,7 @@ const productPillars: ProductPillar[] = [
       "event_followups",
       "event_attendance"
     ],
-    nextBackendWork: ["Reminder jobs", "Follow-up campaigns", "Attendance capture"]
+    nextBackendWork: ["Attendance capture", "Provider-facing event reminder reporting"]
   },
   {
     key: "growth",

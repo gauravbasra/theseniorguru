@@ -74,7 +74,8 @@ const migrationManifest = [
   "20260511111500_api_key_last_used.sql",
   "20260511134452_add_webhook_signing_ciphertext.sql",
   "20260511141401_scheduled_worker_runs.sql",
-  "20260511142434_approved_current_site_source.sql"
+  "20260511142434_approved_current_site_source.sql",
+  "20260511202000_event_reminder_followups.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -193,6 +194,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511142434_approved_current_site_source.sql": {
     capability: "aggregation",
     summary: "Approved owner-controlled current-site public listing source for policy-gated acquisition."
+  },
+  "20260511202000_event_reminder_followups.sql": {
+    capability: "events",
+    summary: "Event reminder and post-event follow-up queues for provider event retention automation."
   }
 };
 
@@ -213,6 +218,9 @@ const requiredTables: RequiredTable[] = [
   { table: "provider_verification_attempts", requiredFor: "Claim verification workflow", capability: "claims" },
   { table: "provider_outreach_sequences", requiredFor: "Claim outreach queue", capability: "claims" },
   { table: "events", requiredFor: "Provider events marketplace", capability: "events" },
+  { table: "event_rsvps", requiredFor: "Family event RSVP capture", capability: "events" },
+  { table: "event_reminders", requiredFor: "Event reminder automation", capability: "events" },
+  { table: "event_followups", requiredFor: "Post-event follow-up automation", capability: "events" },
   { table: "communities", requiredFor: "Local community groups", capability: "community" },
   { table: "community_memberships", requiredFor: "Local community membership graph", capability: "community" },
   { table: "community_invitations", requiredFor: "Community invitation delivery", capability: "community" },

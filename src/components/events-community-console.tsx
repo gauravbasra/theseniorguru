@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarPlus, CheckCircle2, Loader2, Megaphone, Send, UsersRound } from "lucide-react";
+import { BellRing, CalendarPlus, CheckCircle2, Loader2, Megaphone, Send, UsersRound } from "lucide-react";
 import type { CommunityGroupRecord, CommunityInvitationRecord, CommunityPostRecord, ExpertProfileRecord } from "@/lib/domain/community";
-import type { EventAnalyticsSummary, EventPromotionRecord, EventRecord } from "@/lib/domain/events";
+import type { EventAnalyticsSummary, EventAutomationRunSummary, EventPromotionRecord, EventRecord } from "@/lib/domain/events";
 
 type EventsCommunityConsoleProps = {
   initialEvents: EventRecord[];
@@ -29,6 +29,7 @@ export function EventsCommunityConsole({
   const [selectedEventId, setSelectedEventId] = useState(initialEvents[0]?.id ?? "");
   const [promotions, setPromotions] = useState<EventPromotionRecord[]>([]);
   const [analytics, setAnalytics] = useState<EventAnalyticsSummary | null>(null);
+  const [automation, setAutomation] = useState<EventAutomationRunSummary | null>(null);
   const [groups, setGroups] = useState(initialGroups);
   const [selectedGroupId, setSelectedGroupId] = useState(initialGroups[0]?.id ?? "");
   const [invitations, setInvitations] = useState<CommunityInvitationRecord[]>([]);
@@ -189,6 +190,25 @@ export function EventsCommunityConsole({
     );
 
     if (data) setAnalytics(data);
+  }
+
+  async function runEventAutomation() {
+    const data = await runAction<EventAutomationRunSummary>(
+      "event-automation",
+      () => fetch("/api/v1/admin/event-automation/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          reminderWindowHours: 72,
+          followupWindowHours: 72,
+          deliveryProvider: "internal_notification_queue",
+          actorId
+        })
+      }),
+      (summary) => `${summary.remindersQueued} reminders and ${summary.followupsQueued} follow-ups queued.`
+    );
+
+    if (data) setAutomation(data);
   }
 
   async function createGroup() {
@@ -376,7 +396,7 @@ export function EventsCommunityConsole({
         <div className="events-community-status-grid">
           <div><strong>{dashboardStats.events}</strong><span>Events</span></div>
           <div><strong>{analytics?.rsvps.total ?? 0}</strong><span>RSVP guests</span></div>
-          <div><strong>{promotions.length}</strong><span>Promotions</span></div>
+          <div><strong>{automation ? automation.remindersQueued + automation.followupsQueued : promotions.length}</strong><span>{automation ? "Queued" : "Promotions"}</span></div>
           <div><strong>{analytics?.promotions.budgetCents ? `$${analytics.promotions.budgetCents / 100}` : "$0"}</strong><span>Budget</span></div>
         </div>
 
@@ -408,7 +428,19 @@ export function EventsCommunityConsole({
           <button className="small-action approve" type="button" disabled={!promotions.some((promotion) => promotion.status !== "active") || Boolean(loadingKey)} onClick={activatePromotion}>
             Activate
           </button>
+          <button className="small-action" type="button" disabled={Boolean(loadingKey)} onClick={runEventAutomation}>
+            {loadingKey === "event-automation" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <BellRing aria-hidden="true" />}
+            Reminders
+          </button>
         </div>
+
+        {automation ? (
+          <div className="event-automation-summary">
+            <span>{automation.scannedEvents} events scanned</span>
+            <span>{automation.scannedRsvps} RSVPs checked</span>
+            <span>{automation.skippedExisting} already queued</span>
+          </div>
+        ) : null}
 
         <div className="events-community-list">
           {events.slice(0, 6).map((event) => (

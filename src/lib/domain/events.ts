@@ -106,3 +106,55 @@ export type EventAnalyticsSummary = {
   };
   generatedAt: string;
 };
+
+export type EventReminderStatus = "queued" | "sent" | "blocked";
+
+export type EventReminderRecord = {
+  id: string;
+  eventId: string;
+  rsvpId: string;
+  reminderType: "event_reminder_48h";
+  status: EventReminderStatus;
+  scheduledFor: string;
+  recipientEmail: string;
+  deliveryProvider?: string;
+  deliveryPayload: Record<string, unknown>;
+  sentAt?: string;
+  createdAt: string;
+};
+
+export type EventFollowupRecord = {
+  id: string;
+  eventId: string;
+  rsvpId: string;
+  followupType: "post_event_review";
+  status: EventReminderStatus;
+  scheduledFor: string;
+  recipientEmail: string;
+  deliveryProvider?: string;
+  deliveryPayload: Record<string, unknown>;
+  sentAt?: string;
+  createdAt: string;
+};
+
+export type EventAutomationRunInput = {
+  now?: string;
+  reminderWindowHours?: number;
+  followupWindowHours?: number;
+  deliveryProvider?: string;
+  actorId?: string;
+};
+
+export type EventAutomationRunSummary = {
+  reminderWindowHours: number;
+  followupWindowHours: number;
+  scannedEvents: number;
+  scannedRsvps: number;
+  remindersQueued: number;
+  followupsQueued: number;
+  skippedExisting: number;
+  deliveryProvider: string;
+  ranAt: string;
+  reminders: EventReminderRecord[];
+  followups: EventFollowupRecord[];
+};

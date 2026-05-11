@@ -169,7 +169,7 @@ Deliverables:
 - RSVP flow.
 - Event promotion products.
 - Sponsored event promotion creation and activation. Completed.
-- Reminder/follow-up automation.
+- Reminder/follow-up automation. Completed.
 - Event analytics. Completed.
 
 ## Phase 5: Community and Mobile API
