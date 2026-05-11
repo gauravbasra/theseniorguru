@@ -12,6 +12,15 @@ type SchemaTableCheck = {
   error?: string;
 };
 
+type SchemaColumnCheck = {
+  table: string;
+  column: string;
+  requiredFor: string;
+  capability: SupabaseCapabilityKey;
+  status: "ready" | "missing" | "unchecked";
+  error?: string;
+};
+
 type SupabaseCapabilityKey =
   | "directory"
   | "leadIntake"
@@ -30,6 +39,10 @@ type RequiredTable = {
   table: string;
   requiredFor: string;
   capability: SupabaseCapabilityKey;
+};
+
+type RequiredColumn = RequiredTable & {
+  column: string;
 };
 
 const migrationManifest = [
@@ -213,8 +226,20 @@ const requiredTables: RequiredTable[] = [
   { table: "audit_events", requiredFor: "Operational audit trail", capability: "policy" }
 ];
 
-function summarizeCapabilities(tableChecks: SchemaTableCheck[]) {
-  return requiredTables.reduce(
+const requiredColumns: RequiredColumn[] = [
+  { table: "import_batches", column: "skipped_records", requiredFor: "Idempotent import batch accounting", capability: "aggregation" },
+  { table: "provider_verification_attempts", column: "expires_at", requiredFor: "Claim verification expiry worker", capability: "claims" },
+  { table: "provider_verification_attempts", column: "attempt_payload", requiredFor: "Claim verification evidence audit", capability: "claims" },
+  { table: "ad_impressions", column: "request_id", requiredFor: "Ad impression dedupe", capability: "ads" },
+  { table: "ad_clicks", column: "request_id", requiredFor: "Ad click dedupe", capability: "ads" },
+  { table: "news_items", column: "source_url", requiredFor: "RSS source URL dedupe", capability: "newsroom" },
+  { table: "published_articles", column: "approval_payload", requiredFor: "Editorial approval audit", capability: "newsroom" },
+  { table: "api_keys", column: "last_used_at", requiredFor: "Partner API key usage monitoring", capability: "openApi" },
+  { table: "review_responses", column: "provider_id", requiredFor: "Provider-owned review responses", capability: "reviews" }
+];
+
+function summarizeCapabilities(tableChecks: SchemaTableCheck[], columnChecks: SchemaColumnCheck[]) {
+  const tableSummary = requiredTables.reduce(
     (summary, table) => {
       const check = tableChecks.find((item) => item.table === table.table);
       const current = summary[table.capability] ?? {
@@ -224,6 +249,10 @@ function summarizeCapabilities(tableChecks: SchemaTableCheck[]) {
         readyTables: 0,
         missingTables: [],
         uncheckedTables: [],
+        requiredColumns: 0,
+        readyColumns: 0,
+        missingColumns: [],
+        uncheckedColumns: [],
         totalRows: 0
       };
 
@@ -252,10 +281,46 @@ function summarizeCapabilities(tableChecks: SchemaTableCheck[]) {
         readyTables: number;
         missingTables: string[];
         uncheckedTables: string[];
+        requiredColumns: number;
+        readyColumns: number;
+        missingColumns: string[];
+        uncheckedColumns: string[];
         totalRows: number;
       }
     >
   );
+
+  return requiredColumns.reduce((summary, column) => {
+    const check = columnChecks.find((item) => item.table === column.table && item.column === column.column);
+    const current = summary[column.capability] ?? {
+      key: column.capability,
+      status: "ready" as const,
+      requiredTables: 0,
+      readyTables: 0,
+      missingTables: [],
+      uncheckedTables: [],
+      requiredColumns: 0,
+      readyColumns: 0,
+      missingColumns: [],
+      uncheckedColumns: [],
+      totalRows: 0
+    };
+
+    current.requiredColumns += 1;
+
+    if (check?.status === "ready") {
+      current.readyColumns += 1;
+    } else if (check?.status === "missing") {
+      current.status = "schema_action_required";
+      current.missingColumns.push(`${column.table}.${column.column}`);
+    } else {
+      current.status = current.status === "schema_action_required" ? current.status : "unchecked";
+      current.uncheckedColumns.push(`${column.table}.${column.column}`);
+    }
+
+    summary[column.capability] = current;
+    return summary;
+  }, tableSummary);
 }
 
 async function checkTable({ table, requiredFor, capability }: RequiredTable): Promise<SchemaTableCheck> {
@@ -274,20 +339,41 @@ async function checkTable({ table, requiredFor, capability }: RequiredTable): Pr
   return { table, requiredFor, capability, status: "ready", rowCount: count ?? 0 };
 }
 
+async function checkColumn({ table, column, requiredFor, capability }: RequiredColumn): Promise<SchemaColumnCheck> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return { table, column, requiredFor, capability, status: "unchecked" };
+  }
+
+  const { error } = await supabase.from(table).select(column, { head: true }).limit(0);
+
+  if (error) {
+    return { table, column, requiredFor, capability, status: "missing", error: error.message };
+  }
+
+  return { table, column, requiredFor, capability, status: "ready" };
+}
+
 export async function getSupabaseSchemaReadiness() {
   const env = getAppEnv();
   const configured = Boolean(env.supabaseUrl && env.supabaseServiceRoleKey);
-  const tableChecks = await Promise.all(requiredTables.map((item) => checkTable(item)));
+  const [tableChecks, columnChecks] = await Promise.all([
+    Promise.all(requiredTables.map((item) => checkTable(item))),
+    Promise.all(requiredColumns.map((item) => checkColumn(item)))
+  ]);
   const missing = tableChecks.filter((item) => item.status === "missing");
   const unchecked = tableChecks.filter((item) => item.status === "unchecked");
-  const capabilitySummary = summarizeCapabilities(tableChecks);
+  const missingColumns = columnChecks.filter((item) => item.status === "missing");
+  const uncheckedColumns = columnChecks.filter((item) => item.status === "unchecked");
+  const capabilitySummary = summarizeCapabilities(tableChecks, columnChecks);
   const blockedCapabilities = Object.values(capabilitySummary)
     .filter((capability) => capability.status === "schema_action_required")
     .map((capability) => capability.key);
 
   return {
     generatedAt: new Date().toISOString(),
-    status: !configured ? "not_configured" : missing.length ? "schema_action_required" : "ready",
+    status: !configured ? "not_configured" : missing.length || missingColumns.length ? "schema_action_required" : "ready",
     configured,
     connection: {
       hasUrl: Boolean(env.supabaseUrl),
@@ -303,9 +389,16 @@ export async function getSupabaseSchemaReadiness() {
       unchecked: unchecked.length,
       totalRows: tableChecks.reduce((sum, item) => sum + (item.rowCount ?? 0), 0)
     },
+    columnSummary: {
+      required: columnChecks.length,
+      ready: columnChecks.filter((item) => item.status === "ready").length,
+      missing: missingColumns.length,
+      unchecked: uncheckedColumns.length
+    },
     capabilitySummary,
     blockedCapabilities,
     tableChecks,
+    columnChecks,
     nextActions: !configured
       ? [
           "Set NEXT_PUBLIC_SUPABASE_URL in Vercel and local env.",
@@ -313,7 +406,7 @@ export async function getSupabaseSchemaReadiness() {
           "Set SUPABASE_SERVICE_ROLE_KEY as a server-only secret.",
           "Run Supabase migrations before public launch."
         ]
-      : missing.length
+      : missing.length || missingColumns.length
         ? ["Apply pending migrations or repair missing tables before launch.", "Re-run this endpoint after migration."]
         : []
   };
@@ -377,9 +470,11 @@ export async function getSupabaseMigrationPlan() {
     generatedAt: new Date().toISOString(),
     status: missingFiles.length
       ? "missing_migration_files"
-      : schema.status === "ready"
-        ? "ready"
-        : "apply_migrations",
+      : !schema.configured
+        ? "not_configured"
+        : schema.status === "ready"
+          ? "ready"
+          : "apply_migrations",
     configured: schema.configured,
     connection: schema.connection,
     migrationCount: migrations.length,
