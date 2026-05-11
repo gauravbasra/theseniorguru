@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { AcquisitionPipelineConsole } from "@/components/acquisition-pipeline-console";
+import { AdRevenueConsole } from "@/components/ad-revenue-console";
 import { ClaimVerificationConsole } from "@/components/claim-verification-console";
 import { NewsroomConsole } from "@/components/newsroom-console";
 import { ReviewReputationConsole } from "@/components/review-reputation-console";
@@ -302,6 +303,16 @@ export default async function AdminPage() {
           </div>
         </div>
         <ReviewReputationConsole initialProviders={providers} initialReviews={reviewQueue} />
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Advertising revenue</p>
+            <h2>Operate sponsored placements and ad reporting</h2>
+          </div>
+        </div>
+        <AdRevenueConsole initialPlacements={adPlacements} initialProviders={providers} />
       </section>
 
       <section className="admin-section">
