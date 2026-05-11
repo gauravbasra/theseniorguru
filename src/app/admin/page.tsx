@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { AcquisitionPipelineConsole } from "@/components/acquisition-pipeline-console";
+import { ClaimVerificationConsole } from "@/components/claim-verification-console";
 import { SourceGovernanceConsole } from "@/components/source-governance-console";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { listCrawlJobs } from "@/lib/aggregation/crawl-jobs";
@@ -266,6 +267,16 @@ export default async function AdminPage() {
           initialBatches={importBatches}
           initialCrawlJobs={crawlJobs}
         />
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Claim verification</p>
+            <h2>Move operators from claim to approved profile</h2>
+          </div>
+        </div>
+        <ClaimVerificationConsole initialClaims={claims} />
       </section>
 
       <section className="admin-section">
