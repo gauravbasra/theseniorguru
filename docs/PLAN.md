@@ -173,6 +173,7 @@ Deliverables:
 - Sponsored listing/event/native placements.
 - Google Ad Manager/AdSense hooks.
 - Impression/click tracking.
+- Direct-sold and Google backfill ad readiness API plus admin console action. Completed.
 - Frequency caps and disclosures.
 
 ## Phase 8: AI Newsroom

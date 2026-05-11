@@ -155,6 +155,9 @@ export function getOpenApiCatalog() {
       "/api/v1/ads/placements/{key}": {
         get: { tags: ["Ads"], summary: "Get ad placement metadata and creatives" }
       },
+      "/api/v1/admin/ad-readiness": {
+        get: { tags: ["Ads"], summary: "Return direct-sold and Google backfill advertising readiness" }
+      },
       "/api/v1/ads/impression": {
         post: { tags: ["Ads"], summary: "Record an ad impression" }
       },

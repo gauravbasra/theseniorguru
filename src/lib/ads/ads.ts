@@ -1,4 +1,11 @@
-import type { AdCreativeRecord, AdEventInput, AdPlacementResponse } from "@/lib/domain/ads";
+import type {
+  AdCreativeRecord,
+  AdEventInput,
+  AdPlacementReadinessItem,
+  AdPlacementResponse,
+  AdReadinessSummary
+} from "@/lib/domain/ads";
+import { getAppEnv } from "@/lib/env";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedPlacements: Record<string, AdPlacementResponse> = {
@@ -21,6 +28,12 @@ const seedPlacements: Record<string, AdPlacementResponse> = {
     creatives: []
   }
 };
+
+const requiredPlacementKeys: Array<{ key: string; surface: AdPlacementReadinessItem["surface"] }> = [
+  { key: "web.discover.top", surface: "web" },
+  { key: "app.feed.inline", surface: "mobile" },
+  { key: "events.featured.local", surface: "web_mobile" }
+];
 
 export async function getAdPlacement(placementKey: string): Promise<AdPlacementResponse> {
   const supabase = getSupabaseAdminClient();
@@ -104,3 +117,70 @@ export async function recordAdClick(input: AdEventInput) {
   return { recorded: true };
 }
 
+export async function getAdReadinessSummary(): Promise<AdReadinessSummary> {
+  const env = getAppEnv();
+  const placements = await Promise.all(
+    requiredPlacementKeys.map(async ({ key, surface }): Promise<AdPlacementReadinessItem> => {
+      try {
+        const placement = await getAdPlacement(key);
+        const blockers: string[] = [];
+
+        if (placement.disclosureRequired && !placement.disclosureLabel) {
+          blockers.push("Sponsored disclosure label is required.");
+        }
+
+        if (!placement.creatives.length) {
+          blockers.push("No active direct-sold creative is assigned.");
+        }
+
+        return {
+          placementKey: key,
+          surface,
+          status: blockers.length ? "empty" : "ready",
+          disclosureRequired: placement.disclosureRequired,
+          disclosureLabel: placement.disclosureLabel,
+          activeCreatives: placement.creatives.length,
+          blockers
+        };
+      } catch (error) {
+        return {
+          placementKey: key,
+          surface,
+          status: "missing",
+          disclosureRequired: true,
+          disclosureLabel: "Sponsored",
+          activeCreatives: 0,
+          blockers: [error instanceof Error ? error.message : "Placement lookup failed."]
+        };
+      }
+    })
+  );
+  const googleBackfillConfigured = Boolean(
+    env.googleAdsClientId && env.googleAdsClientSecret && env.googleAdsDeveloperToken
+  );
+  const placementBlockers = placements.flatMap((placement) =>
+    placement.blockers.map((blocker) => `${placement.placementKey}: ${blocker}`)
+  );
+  const blockers = [
+    ...placementBlockers,
+    ...(googleBackfillConfigured ? [] : ["Google Ads/Ad Manager credentials are not configured; launch direct-sold only."])
+  ];
+  const directSoldPlacementsReady = placements.filter((placement) => placement.status === "ready").length;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: googleBackfillConfigured && !placementBlockers.length
+      ? "ready"
+      : directSoldPlacementsReady > 0
+        ? "direct_sold_ready"
+        : "action_required",
+    googleBackfillConfigured,
+    directSoldPlacementsReady,
+    totalPlacements: placements.length,
+    placements,
+    blockers,
+    nextActions: blockers.length
+      ? blockers
+      : ["Direct-sold placements and Google backfill are ready for launch monitoring."]
+  };
+}

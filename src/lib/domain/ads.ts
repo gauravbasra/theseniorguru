@@ -24,3 +24,23 @@ export type AdEventInput = {
   userContext?: Record<string, unknown>;
 };
 
+export type AdPlacementReadinessItem = {
+  placementKey: string;
+  surface: "web" | "mobile" | "web_mobile" | "unknown";
+  status: "ready" | "empty" | "missing";
+  disclosureRequired: boolean;
+  disclosureLabel: string;
+  activeCreatives: number;
+  blockers: string[];
+};
+
+export type AdReadinessSummary = {
+  generatedAt: string;
+  status: "ready" | "direct_sold_ready" | "action_required";
+  googleBackfillConfigured: boolean;
+  directSoldPlacementsReady: number;
+  totalPlacements: number;
+  placements: AdPlacementReadinessItem[];
+  blockers: string[];
+  nextActions: string[];
+};

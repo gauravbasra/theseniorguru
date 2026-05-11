@@ -11,6 +11,7 @@ import {
   MessageSquareWarning,
   Radar,
   Send,
+  SquareStack,
   ShieldAlert
 } from "lucide-react";
 
@@ -149,6 +150,12 @@ export function AdminOperationsConsole() {
               fetch("/api/v1/admin/aggregation-readiness")
             )
           }
+        />
+        <OpsButton
+          icon={<SquareStack aria-hidden="true" />}
+          label="Ad readiness"
+          loading={loadingKey === "ad-readiness"}
+          onClick={() => runOperation("Ad readiness", "ad-readiness", () => fetch("/api/v1/admin/ad-readiness"))}
         />
         <OpsButton
           icon={<MessageSquareWarning aria-hidden="true" />}

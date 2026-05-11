@@ -172,6 +172,7 @@ const productPillars: ProductPillar[] = [
     status: "partial",
     backendRoutes: [
       "GET /api/v1/ads/placements/{key}",
+      "GET /api/v1/admin/ad-readiness",
       "POST /api/v1/ads/impression",
       "POST /api/v1/ads/click"
     ],
