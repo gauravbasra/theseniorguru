@@ -147,6 +147,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/operator/demo-requests",
       "POST /api/v1/provider/campaigns/{id}/generate",
       "POST /api/v1/provider/campaigns/{id}/publish",
+      "GET /api/v1/provider/reputation-readiness",
       "GET /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider-portal/reviews/{id}/responses/publish"
@@ -231,6 +232,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/provider/reviews/{id}/responses/generate",
       "GET /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider/review-request-campaigns",
+      "GET /api/v1/provider/reputation-readiness",
       "GET /api/v1/provider/review-requests",
       "POST /api/v1/provider-portal/reviews/{id}/responses/publish"
     ],

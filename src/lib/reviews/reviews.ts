@@ -77,6 +77,26 @@ export async function listProviderReviews(providerId: string): Promise<ReviewRec
   return (data ?? []).map(mapReview);
 }
 
+export async function listProviderReviewPipeline(providerId: string): Promise<ReviewRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedReviews.filter((review) => review.providerId === providerId);
+  }
+
+  const { data, error } = await supabase
+    .from("reviews")
+    .select("*")
+    .eq("provider_id", providerId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Review pipeline query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapReview);
+}
+
 export async function createProviderReview(input: CreateReviewInput): Promise<ReviewRecord> {
   const provider = await getProviderById(input.providerId);
 

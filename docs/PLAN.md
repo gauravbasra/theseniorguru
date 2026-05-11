@@ -47,6 +47,7 @@ Deliverables:
 - Reviews/reputation schema. Completed.
 - Review submit/list and AI response draft APIs. Completed.
 - Consent-gated review request campaign APIs. Completed.
+- Provider reputation readiness API and provider console action. Completed.
 - Policy-gated review response publish API. Completed.
 - Docker deployment scaffolding. Completed.
 - Secret-safe production readiness endpoint. Completed.

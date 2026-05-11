@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarPlus, FileCheck2, ListChecks, Megaphone, Send, ShieldCheck, Sparkles } from "lucide-react";
+import { CalendarPlus, FileCheck2, ListChecks, Megaphone, Send, ShieldCheck, Sparkles, Star } from "lucide-react";
 
 type ActionResult = {
   label: string;
@@ -155,6 +155,17 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
                   contractPayload: { source: "provider_console" }
                 })
               })
+            )
+          }
+        />
+        <ConsoleButton
+          icon={<Star aria-hidden="true" />}
+          disabled={disabled}
+          loading={loadingKey === "reputation"}
+          label="Check reputation"
+          onClick={() =>
+            runAction("Check reputation readiness", "reputation", () =>
+              fetch(`/api/v1/provider/reputation-readiness?providerId=${providerId}`)
             )
           }
         />

@@ -89,3 +89,24 @@ export type ReviewRequestCampaignRecord = {
   policyDecision: string;
   createdAt: string;
 };
+
+export type ReputationReadinessSummary = {
+  generatedAt: string;
+  providerId: string;
+  status: "ready" | "action_required" | "blocked";
+  reviewSummary: {
+    publishedReviews: number;
+    averageRating?: number;
+    pendingModeration: number;
+    blockedByPolicy: number;
+  };
+  campaignSummary: {
+    campaigns: number;
+    queuedCampaigns: number;
+    blockedCampaigns: number;
+    queuedRequests: number;
+    blockedRequests: number;
+  };
+  blockers: string[];
+  nextActions: string[];
+};

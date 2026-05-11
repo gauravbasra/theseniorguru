@@ -188,6 +188,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Reviews"], summary: "List provider review request campaigns" },
         post: { tags: ["Reviews"], summary: "Create a consent-gated review request campaign" }
       },
+      "/api/v1/provider/reputation-readiness": {
+        get: { tags: ["Reviews"], summary: "Return provider reputation workflow readiness, review health, campaigns, and blockers" }
+      },
       "/api/v1/provider/review-requests": {
         get: { tags: ["Reviews"], summary: "List review request recipients and statuses" }
       },
