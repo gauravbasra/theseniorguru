@@ -116,6 +116,16 @@ function mapArticle(row: Record<string, unknown>): ArticleRecord {
   };
 }
 
+function normalizeNewsItemKey(input: { sourceUrl?: string; sourceName?: string; title: string }) {
+  const url = input.sourceUrl?.trim().toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
+
+  if (url) {
+    return `url:${url}`;
+  }
+
+  return `title:${input.sourceName?.trim().toLowerCase() ?? "unknown"}:${slugify(input.title)}`;
+}
+
 export async function listContentSources(): Promise<ContentSourceRecord[]> {
   const supabase = getSupabaseAdminClient();
 
@@ -265,6 +275,13 @@ export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRs
   }
 
   const rssItems = (input.items?.length ? input.items : await fetchRssItems(feedUrl as string)).slice(0, limit);
+  const existingKeys = new Set(
+    (await listNewsItems()).map((item) => normalizeNewsItemKey({
+      sourceUrl: item.sourceUrl,
+      sourceName: item.sourceName,
+      title: item.title
+    }))
+  );
   const createdItems: NewsItemRecord[] = [];
   const policyDecisions: string[] = [];
   let blocked = 0;
@@ -272,6 +289,17 @@ export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRs
 
   for (const rssItem of rssItems) {
     if (!rssItem.title?.trim()) {
+      skipped += 1;
+      continue;
+    }
+
+    const itemKey = normalizeNewsItemKey({
+      sourceUrl: rssItem.link,
+      sourceName,
+      title: rssItem.title
+    });
+
+    if (existingKeys.has(itemKey)) {
       skipped += 1;
       continue;
     }
@@ -296,7 +324,7 @@ export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRs
     }
 
     if (input.dryRun) {
-      createdItems.push({
+      const item: NewsItemRecord = {
         id: `dry-run-rss-${createdItems.length + 1}`,
         contentSourceId: source?.id,
         status: policy.decision.startsWith("blocked") ? "blocked_by_policy" : "new",
@@ -307,7 +335,10 @@ export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRs
         audience: input.audience ?? ["families", "providers"],
         topicTags: input.topicTags ?? ["senior-care", "industry-news"],
         createdAt: new Date().toISOString()
-      });
+      };
+
+      createdItems.push(item);
+      existingKeys.add(itemKey);
       continue;
     }
 
@@ -320,6 +351,7 @@ export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRs
       audience: input.audience ?? ["families", "providers"],
       topicTags: input.topicTags ?? ["senior-care", "industry-news"]
     }));
+    existingKeys.add(itemKey);
   }
 
   return {
