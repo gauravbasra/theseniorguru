@@ -71,7 +71,8 @@ const migrationManifest = [
   "20260511104000_claim_verification_operations.sql",
   "20260511105000_ad_event_idempotency.sql",
   "20260511110000_newsroom_rss_idempotency.sql",
-  "20260511111500_api_key_last_used.sql"
+  "20260511111500_api_key_last_used.sql",
+  "20260511134452_add_webhook_signing_ciphertext.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -178,6 +179,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511111500_api_key_last_used.sql": {
     capability: "openApi",
     summary: "Partner API key last-used tracking for integration monitoring and security review."
+  },
+  "20260511134452_add_webhook_signing_ciphertext.sql": {
+    capability: "openApi",
+    summary: "Encrypted webhook signing secret storage for deliverable partner webhooks."
   }
 };
 
@@ -235,6 +240,7 @@ const requiredColumns: RequiredColumn[] = [
   { table: "news_items", column: "source_url", requiredFor: "RSS source URL dedupe", capability: "newsroom" },
   { table: "published_articles", column: "approval_payload", requiredFor: "Editorial approval audit", capability: "newsroom" },
   { table: "api_keys", column: "last_used_at", requiredFor: "Partner API key usage monitoring", capability: "openApi" },
+  { table: "webhook_subscriptions", column: "signing_secret_ciphertext", requiredFor: "Partner webhook request signing", capability: "openApi" },
   { table: "review_responses", column: "provider_id", requiredFor: "Provider-owned review responses", capability: "reviews" }
 ];
 

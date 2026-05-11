@@ -127,6 +127,15 @@ export function getSystemReadiness() {
       label: "Owner session signing secret",
       status: env.adminSessionSecret ? "ready" : "partial",
       action: env.adminSessionSecret ? undefined : "Set ADMIN_SESSION_SECRET in Vercel for durable signed admin sessions."
+    },
+    {
+      key: "WEBHOOK_SIGNING_ENCRYPTION_KEY",
+      label: "Webhook signing secret encryption",
+      status: env.webhookSigningEncryptionKey || env.adminSessionSecret ? "ready" : "partial",
+      action:
+        env.webhookSigningEncryptionKey || env.adminSessionSecret
+          ? undefined
+          : "Set WEBHOOK_SIGNING_ENCRYPTION_KEY or ADMIN_SESSION_SECRET before enabling partner webhooks on Supabase."
     }
   ];
   const parkedChecks: ReadinessCheck[] = [

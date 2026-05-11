@@ -60,6 +60,7 @@ const seedRateCounters = new Map<string, { windowStart: number; count: number }>
 type InternalWebhookSubscription = WebhookSubscriptionRecord & {
   signingSecret?: string;
   signingSecretHash?: string;
+  signingSecretCiphertext?: string;
 };
 
 type InternalWebhookDelivery = WebhookDeliveryRecord & {
@@ -77,6 +78,69 @@ function previewSecret(secret: string) {
 
 function sha256(value: string) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function getWebhookSigningEncryptionMaterial() {
+  return (
+    process.env.WEBHOOK_SIGNING_ENCRYPTION_KEY ??
+    process.env.ADMIN_SESSION_SECRET ??
+    process.env.ADMIN_ACCESS_CODE ??
+    (process.env.NODE_ENV === "production" ? undefined : "local-webhook-signing-secret")
+  );
+}
+
+function getWebhookSigningEncryptionKey() {
+  const material = getWebhookSigningEncryptionMaterial();
+
+  if (!material) {
+    return null;
+  }
+
+  return crypto.createHash("sha256").update(material).digest();
+}
+
+function encryptWebhookSigningSecret(secret: string) {
+  const key = getWebhookSigningEncryptionKey();
+
+  if (!key) {
+    throw new Error("WEBHOOK_SIGNING_ENCRYPTION_KEY or ADMIN_SESSION_SECRET is required for webhook delivery signing");
+  }
+
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  return ["v1", iv.toString("base64url"), tag.toString("base64url"), ciphertext.toString("base64url")].join(".");
+}
+
+function decryptWebhookSigningSecret(ciphertext?: string) {
+  if (!ciphertext) {
+    return null;
+  }
+
+  const key = getWebhookSigningEncryptionKey();
+
+  if (!key) {
+    return null;
+  }
+
+  const [version, encodedIv, encodedTag, encodedCiphertext] = ciphertext.split(".");
+
+  if (version !== "v1" || !encodedIv || !encodedTag || !encodedCiphertext) {
+    return null;
+  }
+
+  try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(encodedIv, "base64url"));
+    decipher.setAuthTag(Buffer.from(encodedTag, "base64url"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(encodedCiphertext, "base64url")),
+      decipher.final()
+    ]).toString("utf8");
+  } catch {
+    return null;
+  }
 }
 
 function createSecret(prefix: string) {
@@ -138,9 +202,13 @@ function mapWebhookSubscription(row: Record<string, unknown>): WebhookSubscripti
 }
 
 function mapInternalWebhookSubscription(row: Record<string, unknown>): InternalWebhookSubscription {
+  const signingSecretCiphertext = row.signing_secret_ciphertext ? String(row.signing_secret_ciphertext) : undefined;
+
   return {
     ...mapWebhookSubscription(row),
-    signingSecretHash: row.signing_secret_hash ? String(row.signing_secret_hash) : undefined
+    signingSecretHash: row.signing_secret_hash ? String(row.signing_secret_hash) : undefined,
+    signingSecretCiphertext,
+    signingSecret: decryptWebhookSigningSecret(signingSecretCiphertext) ?? undefined
   };
 }
 
@@ -631,6 +699,7 @@ export async function createWebhookSubscription(
       target_url: input.targetUrl,
       event_types: input.eventTypes,
       signing_secret_hash: sha256(signingSecret),
+      signing_secret_ciphertext: encryptWebhookSigningSecret(signingSecret),
       signing_secret_preview: record.signingSecretPreview
     })
     .select("*")
@@ -1003,7 +1072,7 @@ export async function processWebhookDeliveries(
       continue;
     }
 
-    const secretMaterial = subscription.signingSecret ?? subscription.signingSecretHash;
+    const secretMaterial = subscription.signingSecret;
 
     if (!secretMaterial) {
       blocked += 1;
@@ -1012,13 +1081,13 @@ export async function processWebhookDeliveries(
           deliveryId: delivery.id,
           targetUrl: subscription.targetUrl,
           status: "blocked",
-          error: "Webhook signing material is unavailable"
+          error: "Webhook signing secret is unavailable or cannot be decrypted"
         })
       );
       await updateWebhookDeliveryStatus({
         deliveryId: delivery.id,
         status: "blocked",
-        error: "Webhook signing material is unavailable"
+        error: "Webhook signing secret is unavailable or cannot be decrypted"
       });
       continue;
     }

@@ -5,6 +5,7 @@ export type AppEnv = {
   supabaseServiceRoleKey?: string;
   adminAccessCode?: string;
   adminSessionSecret?: string;
+  webhookSigningEncryptionKey?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
   googleAdsClientId?: string;
@@ -23,6 +24,7 @@ export function getAppEnv(): AppEnv {
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
     adminAccessCode: process.env.ADMIN_ACCESS_CODE,
     adminSessionSecret: process.env.ADMIN_SESSION_SECRET,
+    webhookSigningEncryptionKey: process.env.WEBHOOK_SIGNING_ENCRYPTION_KEY,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     googleAdsClientId: process.env.GOOGLE_ADS_CLIENT_ID,
