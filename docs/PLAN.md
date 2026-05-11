@@ -52,6 +52,7 @@ Deliverables:
 - Policy-gated review response publish API. Completed.
 - Docker deployment scaffolding. Completed.
 - Secret-safe production readiness endpoint. Completed.
+- Launch go/no-go checklist API across config, schema, links, aggregation, ads, newsroom, onboarding, and owner items. Completed.
 - AI newsroom schema. Completed.
 - News intake, article draft/publish, and social derivative APIs. Completed.
 - Newsroom readiness and podcast brief APIs. Completed.

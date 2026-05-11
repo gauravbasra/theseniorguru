@@ -291,6 +291,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/policy/check",
       "GET /api/v1/system/link-health",
       "GET /api/v1/system/readiness",
+      "GET /api/v1/system/launch-checklist",
       "GET /api/v1/system/supabase-schema"
     ],
     requiredTables: [

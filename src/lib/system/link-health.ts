@@ -55,6 +55,7 @@ const routeContracts: LinkContract[] = [
   { label: "Tour plans API", href: "/api/v1/app/tour-plans", method: "GET", owner: "family" },
   { label: "Notification preferences API", href: "/api/v1/me/notification-preferences", method: "GET", owner: "family" },
   { label: "Readiness API", href: "/api/v1/system/readiness", method: "GET", owner: "admin" },
+  { label: "Launch checklist API", href: "/api/v1/system/launch-checklist", method: "GET", owner: "admin" },
   { label: "Supabase schema API", href: "/api/v1/system/supabase-schema", method: "GET", owner: "admin" },
   { label: "Deployment API", href: "/api/v1/system/deployment", method: "GET", owner: "admin" },
   { label: "Aggregation readiness API", href: "/api/v1/admin/aggregation-readiness", method: "GET", owner: "admin" },
