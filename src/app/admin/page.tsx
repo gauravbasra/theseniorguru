@@ -1,14 +1,21 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { LaunchChecklistPanel } from "@/components/launch-checklist-panel";
+import { getAdminDashboardMetrics } from "@/lib/admin/dashboard-metrics";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
 import { getProductMap } from "@/lib/system/product-map";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  const [product, launchChecklist] = await Promise.all([getProductMap(), getLaunchChecklist()]);
+  const [product, launchChecklist, dashboardMetrics] = await Promise.all([
+    getProductMap(),
+    getLaunchChecklist(),
+    getAdminDashboardMetrics()
+  ]);
   const readinessGroups = Object.entries(product.readiness.groups);
+  const maxEngineRoutes = Math.max(...dashboardMetrics.productEngines.map((item) => item.routes), 1);
 
   return (
     <main className="admin-shell">
@@ -56,16 +63,128 @@ export default async function AdminPage() {
 
       <section className="admin-metrics">
         {[
-          ["Imported listings", product.launchTargets.importedListings],
-          ["Enriched listings", product.launchTargets.enrichedListings],
-          ["Claimed listings", product.launchTargets.claimedListings],
-          ["Paid beta providers", product.launchTargets.paidBetaProviders]
+          ["Live providers", dashboardMetrics.headlineNumbers.totalProviders],
+          ["Lead queue", dashboardMetrics.headlineNumbers.totalLeads],
+          ["Backend workflows", dashboardMetrics.headlineNumbers.backendRoutes],
+          ["Required tables", dashboardMetrics.headlineNumbers.requiredTables]
         ].map(([label, value]) => (
           <article className="profile-card" key={label}>
             <p className="eyebrow">{label}</p>
             <h2>{value}</h2>
           </article>
         ))}
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Visual command center</p>
+            <h2>Charts for launch readiness, inventory growth, leads, and monetization.</h2>
+          </div>
+          <Link className="button secondary" href="/api/v1/admin/dashboard-metrics">Metrics API</Link>
+        </div>
+        <div className="admin-chart-grid">
+          <article className="chart-panel chart-panel-large">
+            <div className="chart-panel-header">
+              <div>
+                <p className="eyebrow">Launch readiness</p>
+                <h3>{launchChecklist.status.replaceAll("_", " ")}</h3>
+              </div>
+              <DonutChart
+                label={`${dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0}/${dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0)}`}
+                value={dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0}
+                total={dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0)}
+              />
+            </div>
+            <div className="stacked-bars">
+              {dashboardMetrics.readiness.map((item) => (
+                <HorizontalBar
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                  total={dashboardMetrics.readiness.reduce((sum, row) => sum + row.value, 0)}
+                  tone={item.tone}
+                />
+              ))}
+            </div>
+          </article>
+
+          <article className="chart-panel">
+            <div className="chart-panel-header">
+              <div>
+                <p className="eyebrow">Route health</p>
+                <h3>{dashboardMetrics.routeHealth.percentValid}% valid</h3>
+              </div>
+              <DonutChart
+                label={`${dashboardMetrics.routeHealth.valid}/${dashboardMetrics.routeHealth.total}`}
+                value={dashboardMetrics.routeHealth.valid}
+                total={dashboardMetrics.routeHealth.total}
+              />
+            </div>
+            <p className="chart-note">{dashboardMetrics.routeHealth.invalid} invalid links or API contracts.</p>
+          </article>
+
+          <article className="chart-panel chart-panel-wide">
+            <p className="eyebrow">5,000-listing launch target</p>
+            <h3>Inventory pipeline</h3>
+            <div className="progress-list">
+              {dashboardMetrics.inventoryProgress.map((item) => (
+                <HorizontalBar
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                  total={item.total ?? 1}
+                  tone={item.tone}
+                />
+              ))}
+            </div>
+          </article>
+
+          <article className="chart-panel">
+            <p className="eyebrow">Lead funnel</p>
+            <h3>Inbound demand by audience</h3>
+            <div className="mini-column-chart">
+              {dashboardMetrics.leadFunnel.map((item) => (
+                <VerticalBar
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                  total={Math.max(...dashboardMetrics.leadFunnel.map((row) => row.value), 1)}
+                  tone={item.tone}
+                />
+              ))}
+            </div>
+          </article>
+
+          <article className="chart-panel">
+            <p className="eyebrow">Advertising</p>
+            <h3>Monetization activity</h3>
+            <div className="metric-chip-grid">
+              {dashboardMetrics.monetization.map((item) => (
+                <span className={`metric-chip ${item.tone}`} key={item.label}>
+                  <strong>{item.value}</strong>
+                  {item.label}
+                </span>
+              ))}
+            </div>
+          </article>
+
+          <article className="chart-panel chart-panel-full">
+            <p className="eyebrow">Backend engine depth</p>
+            <h3>Routes and tables by product pillar</h3>
+            <div className="engine-chart">
+              {dashboardMetrics.productEngines.map((item) => (
+                <div className="engine-row" key={item.label}>
+                  <span>{item.label}</span>
+                  <div>
+                    <i style={{ "--value": `${percentOf(item.routes, maxEngineRoutes)}%` } as CSSProperties} />
+                    <b>{item.routes} workflows · {item.tables} tables</b>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+        </div>
       </section>
 
       <section className="admin-section">
@@ -144,6 +263,64 @@ export default async function AdminPage() {
       </section>
     </main>
   );
+}
+
+function HorizontalBar({
+  label,
+  value,
+  total,
+  tone
+}: {
+  label: string;
+  value: number;
+  total: number;
+  tone: string;
+}) {
+  return (
+    <div className={`horizontal-bar ${tone}`}>
+      <div>
+        <span>{label}</span>
+        <strong>{value}{total > value ? ` / ${total}` : ""}</strong>
+      </div>
+      <i style={{ "--value": `${percentOf(value, total)}%` } as CSSProperties} />
+    </div>
+  );
+}
+
+function VerticalBar({
+  label,
+  value,
+  total,
+  tone
+}: {
+  label: string;
+  value: number;
+  total: number;
+  tone: string;
+}) {
+  return (
+    <div className={`vertical-bar ${tone}`}>
+      <i style={{ "--value": `${Math.max(percentOf(value, total), value > 0 ? 8 : 2)}%` } as CSSProperties} />
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function DonutChart({ label, value, total }: { label: string; value: number; total: number }) {
+  return (
+    <div
+      className="donut-chart"
+      style={{ "--value": `${percentOf(value, total)}%` } as CSSProperties}
+      aria-label={`${label} ready`}
+    >
+      <strong>{label}</strong>
+    </div>
+  );
+}
+
+function percentOf(value: number, total: number) {
+  return total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
 }
 
 function uniqueCapabilities(routes: string[]) {

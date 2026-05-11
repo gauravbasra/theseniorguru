@@ -96,6 +96,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Leads"], summary: "List family inquiry, free listing, and operator demo intake queue" },
         patch: { tags: ["Leads"], summary: "Update a lead intake status after admin review" }
       },
+      "/api/v1/admin/dashboard-metrics": {
+        get: { tags: ["System"], summary: "Return chart-ready owner dashboard metrics for launch, inventory, leads, ads, and backend engines" }
+      },
       "/api/v1/provider-portal/claims/{id}/status": {
         get: { tags: ["Claims"], summary: "Return provider-facing claim status, verification checklist, and next action" }
       },
