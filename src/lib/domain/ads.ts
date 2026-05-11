@@ -26,6 +26,14 @@ export type AdPlacementResponse = {
   disclosureRequired: boolean;
   disclosureLabel: string;
   creatives: AdCreativeRecord[];
+  delivery?: {
+    eligibleCreatives: number;
+    suppressedCreatives: number;
+    frequencyCap: {
+      maxImpressions: number;
+      windowHours: number;
+    };
+  };
 };
 
 export type UpsertAdPlacementInput = {
@@ -70,6 +78,8 @@ export type AdEventRecordResult = {
   placementKey: string;
   requestId?: string;
   recordedAt?: string;
+  suppressed?: boolean;
+  suppressionReason?: string;
 };
 
 export type AdCampaignReportingInput = {

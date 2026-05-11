@@ -44,6 +44,10 @@ type FallbackAdEvent = AdEventInput & {
 };
 
 const fallbackAdEvents: FallbackAdEvent[] = [];
+const defaultFrequencyCap = {
+  maxImpressions: 3,
+  windowHours: 24
+};
 
 const requiredPlacementKeys: Array<{ key: string; surface: AdPlacementReadinessItem["surface"] }> = [
   { key: "web.discover.top", surface: "web" },
@@ -74,6 +78,80 @@ function mapPlacement(row: Record<string, unknown>): AdPlacementRecord {
     isActive: Boolean(row.is_active),
     createdAt: String(row.created_at)
   };
+}
+
+function visitorKeyFromContext(userContext?: Record<string, unknown>) {
+  const value = userContext?.visitorKey ?? userContext?.sessionKey ?? userContext?.anonymousId;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function frequencyWindowStart() {
+  return new Date(Date.now() - defaultFrequencyCap.windowHours * 60 * 60 * 1000).toISOString();
+}
+
+function fallbackImpressionCount(input: {
+  placementKey: string;
+  adCreativeId?: string;
+  visitorKey?: string;
+}) {
+  if (!input.visitorKey) return 0;
+  const start = new Date(frequencyWindowStart()).getTime();
+
+  return fallbackAdEvents.filter((event) => {
+    const eventVisitor = visitorKeyFromContext(event.userContext);
+    return (
+      event.type === "impression" &&
+      event.placementKey === input.placementKey &&
+      event.adCreativeId === input.adCreativeId &&
+      eventVisitor === input.visitorKey &&
+      new Date(event.recordedAt).getTime() >= start
+    );
+  }).length;
+}
+
+async function getCreativeImpressionCount(input: {
+  placementKey: string;
+  adCreativeId?: string;
+  visitorKey?: string;
+}) {
+  if (!input.visitorKey) return 0;
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return fallbackImpressionCount(input);
+  }
+
+  let query = supabase
+    .from("ad_impressions")
+    .select("id", { count: "exact", head: true })
+    .eq("placement_key", input.placementKey)
+    .gte("created_at", frequencyWindowStart())
+    .contains("user_context", { visitorKey: input.visitorKey });
+
+  query = input.adCreativeId ? query.eq("ad_creative_id", input.adCreativeId) : query.is("ad_creative_id", null);
+
+  const { count, error } = await query;
+
+  if (error) {
+    throw new Error(`Ad frequency-cap lookup failed: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+async function isFrequencyCapped(input: AdEventInput) {
+  if (!input.adCreativeId) return false;
+  const visitorKey = visitorKeyFromContext(input.userContext);
+
+  if (!visitorKey) return false;
+
+  const impressions = await getCreativeImpressionCount({
+    placementKey: input.placementKey,
+    adCreativeId: input.adCreativeId,
+    visitorKey
+  });
+
+  return impressions >= defaultFrequencyCap.maxImpressions;
 }
 
 export async function getAdPlacement(placementKey: string): Promise<AdPlacementResponse> {
@@ -124,6 +202,47 @@ export async function getAdPlacement(placementKey: string): Promise<AdPlacementR
       disclosureLabel: creative.disclosure_label,
       payload: creative.creative_payload ?? {}
     }))
+  };
+}
+
+export async function getAdPlacementForContext(
+  placementKey: string,
+  userContext: Record<string, unknown> = {}
+): Promise<AdPlacementResponse> {
+  const placement = await getAdPlacement(placementKey);
+  const visitorKey = visitorKeyFromContext(userContext);
+
+  if (!visitorKey || !placement.creatives.length) {
+    return {
+      ...placement,
+      delivery: {
+        eligibleCreatives: placement.creatives.length,
+        suppressedCreatives: 0,
+        frequencyCap: defaultFrequencyCap
+      }
+    };
+  }
+
+  const checks = await Promise.all(
+    placement.creatives.map(async (creative) => ({
+      creative,
+      capped: (await getCreativeImpressionCount({
+        placementKey,
+        adCreativeId: creative.id,
+        visitorKey
+      })) >= defaultFrequencyCap.maxImpressions
+    }))
+  );
+  const eligibleCreatives = checks.filter((check) => !check.capped).map((check) => check.creative);
+
+  return {
+    ...placement,
+    creatives: eligibleCreatives,
+    delivery: {
+      eligibleCreatives: eligibleCreatives.length,
+      suppressedCreatives: checks.length - eligibleCreatives.length,
+      frequencyCap: defaultFrequencyCap
+    }
   };
 }
 
@@ -350,20 +469,32 @@ async function hasSupabaseAdEvent(input: AdEventInput, type: FallbackAdEvent["ty
   return (count ?? 0) > 0;
 }
 
-function adEventResult(input: AdEventInput, eventType: FallbackAdEvent["type"], recorded: boolean, recordedAt?: string): AdEventRecordResult {
+function adEventResult(
+  input: AdEventInput,
+  eventType: FallbackAdEvent["type"],
+  recorded: boolean,
+  recordedAt?: string,
+  suppressionReason?: string
+): AdEventRecordResult {
   return {
     recorded,
-    duplicate: !recorded,
+    duplicate: !recorded && !suppressionReason,
     eventType,
     placementKey: input.placementKey,
     requestId: input.requestId,
-    recordedAt
+    recordedAt,
+    suppressed: Boolean(suppressionReason),
+    suppressionReason
   };
 }
 
 export async function recordAdImpression(input: AdEventInput): Promise<AdEventRecordResult> {
   if (await hasSupabaseAdEvent(input, "impression")) {
     return adEventResult(input, "impression", false);
+  }
+
+  if (await isFrequencyCapped(input)) {
+    return adEventResult(input, "impression", false, undefined, "frequency_cap_exceeded");
   }
 
   const recordedAt = new Date().toISOString();
@@ -622,7 +753,10 @@ export async function getAdReadinessSummary(): Promise<AdReadinessSummary> {
     placements,
     blockers,
     nextActions: blockers.length
-      ? blockers
-      : ["Direct-sold placements and Google backfill are ready for launch monitoring."]
+      ? [
+          ...blockers,
+          "Frequency caps are enforced when visitorKey, sessionKey, or anonymousId is supplied with ad placement/impression calls."
+        ]
+      : ["Direct-sold placements, Google backfill, disclosures, and frequency caps are ready for launch monitoring."]
   };
 }
