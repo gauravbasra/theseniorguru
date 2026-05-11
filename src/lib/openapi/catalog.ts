@@ -175,6 +175,17 @@ export function getOpenApiCatalog() {
         get: { tags: ["Community"], summary: "List community group members" },
         post: { tags: ["Community"], summary: "Join a local community group with policy and role controls" }
       },
+      "/api/v1/community/groups/{id}/invitations": {
+        get: { tags: ["Community"], summary: "List invitation delivery records for a community group" },
+        post: { tags: ["Community"], summary: "Create a policy-gated community invitation" }
+      },
+      "/api/v1/admin/community/invitations/{id}/send": {
+        post: { tags: ["Community"], summary: "Process a community invitation delivery with audit metadata" }
+      },
+      "/api/v1/community/topic-subscriptions": {
+        get: { tags: ["Community"], summary: "List local community topic subscriptions" },
+        post: { tags: ["Community"], summary: "Subscribe a user to a local senior-care topic" }
+      },
       "/api/v1/community/experts": {
         get: { tags: ["Community"], summary: "List verified local senior-care experts" },
         post: { tags: ["Community"], summary: "Submit a local expert profile for verification review" }

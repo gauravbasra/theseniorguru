@@ -52,7 +52,8 @@ const migrationManifest = [
   "20260511001000_review_moderation_sentiment.sql",
   "20260511010000_public_source_acquisition_staging.sql",
   "20260511020000_community_memberships.sql",
-  "20260511030000_expert_profiles.sql"
+  "20260511030000_expert_profiles.sql",
+  "20260511033000_community_invitations_topics.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -135,6 +136,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511030000_expert_profiles.sql": {
     capability: "community",
     summary: "Verified local expert profile submission, review, and public discovery."
+  },
+  "20260511033000_community_invitations_topics.sql": {
+    capability: "community",
+    summary: "Community invitation delivery queue and local topic subscriptions."
   }
 };
 
@@ -157,6 +162,8 @@ const requiredTables: RequiredTable[] = [
   { table: "events", requiredFor: "Provider events marketplace", capability: "events" },
   { table: "communities", requiredFor: "Local community groups", capability: "community" },
   { table: "community_memberships", requiredFor: "Local community membership graph", capability: "community" },
+  { table: "community_invitations", requiredFor: "Community invitation delivery", capability: "community" },
+  { table: "community_topic_subscriptions", requiredFor: "Local topic subscriptions", capability: "community" },
   { table: "community_posts", requiredFor: "Community feed", capability: "community" },
   { table: "expert_profiles", requiredFor: "Verified local expert profiles", capability: "community" },
   { table: "ad_placements", requiredFor: "Advertising inventory", capability: "ads" },

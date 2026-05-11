@@ -61,6 +61,14 @@ const routeContracts: LinkContract[] = [
   { label: "Notification preferences API", href: "/api/v1/me/notification-preferences", method: "GET", owner: "family" },
   { label: "Community groups API", href: "/api/v1/community/groups", method: "GET", owner: "family" },
   { label: "Community group membership API", href: "/api/v1/community/groups/seed-denver-caregivers/members", method: "GET", owner: "family" },
+  {
+    label: "Community invitations API",
+    href: "/api/v1/community/groups/seed-denver-caregivers/invitations",
+    method: "GET",
+    owner: "family"
+  },
+  { label: "Community invitation delivery API", href: "/api/v1/admin/community/invitations/demo/send", method: "POST", owner: "admin" },
+  { label: "Community topic subscriptions API", href: "/api/v1/community/topic-subscriptions", method: "GET", owner: "family" },
   { label: "Community experts API", href: "/api/v1/community/experts", method: "GET", owner: "family" },
   { label: "Community expert verification API", href: "/api/v1/admin/community/experts/demo/verify", method: "POST", owner: "admin" },
   { label: "Readiness API", href: "/api/v1/system/readiness", method: "GET", owner: "admin" },

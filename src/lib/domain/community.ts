@@ -49,6 +49,61 @@ export type JoinCommunityGroupInput = {
   actorId?: string;
 };
 
+export type CommunityInvitationRecord = {
+  id: string;
+  communityId: string;
+  inviterUserKey: string;
+  recipientEmail: string;
+  recipientName?: string;
+  role: CommunityMembershipRecord["role"];
+  status: "queued" | "sent" | "accepted" | "declined" | "blocked";
+  deliveryChannel: "email" | "sms" | "manual";
+  deliveryProvider?: "mailjet" | "google" | "manual" | "pending";
+  deliveryId?: string;
+  sentAt?: string;
+  createdAt: string;
+};
+
+export type CreateCommunityInvitationInput = {
+  communityId: string;
+  inviterUserKey: string;
+  recipientEmail: string;
+  recipientName?: string;
+  role?: CommunityMembershipRecord["role"];
+  deliveryChannel?: CommunityInvitationRecord["deliveryChannel"];
+  actorId?: string;
+};
+
+export type SendCommunityInvitationInput = {
+  invitationId: string;
+  deliveryChannel?: CommunityInvitationRecord["deliveryChannel"];
+  deliveryProvider?: CommunityInvitationRecord["deliveryProvider"];
+  deliveryId?: string;
+  actorId?: string;
+};
+
+export type CommunityTopicSubscriptionRecord = {
+  id: string;
+  userKey: string;
+  topicKey: string;
+  topicLabel?: string;
+  city?: string;
+  state?: string;
+  status: "active" | "paused" | "removed";
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type UpsertCommunityTopicSubscriptionInput = {
+  userKey: string;
+  topicKey: string;
+  topicLabel?: string;
+  city?: string;
+  state?: string;
+  status?: CommunityTopicSubscriptionRecord["status"];
+  actorId?: string;
+};
+
 export type ExpertProfileRecord = {
   id: string;
   userKey: string;
