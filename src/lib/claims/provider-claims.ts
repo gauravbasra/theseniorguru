@@ -1,5 +1,5 @@
 import type { ProviderClaimDecisionInput, ProviderClaimInput, ProviderClaimRecord } from "@/lib/domain/claims";
-import { createProviderVerificationAttempt } from "@/lib/claims/provider-verification";
+import { createProviderVerificationAttempt, listProviderVerificationAttempts } from "@/lib/claims/provider-verification";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -126,6 +126,24 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
 
   if (!supabase) {
     const claim = seedClaims.find((item) => item.id === input.claimId);
+
+    if (!claim) {
+      throw new Error("Provider claim not found");
+    }
+
+    if (claim.status === "approved" || claim.status === "rejected") {
+      throw new Error("Provider claim is already decided");
+    }
+
+    if (input.decision === "approved") {
+      const attempts = await listProviderVerificationAttempts(input.claimId);
+      const passedAttempt = attempts.find((attempt) => attempt.status === "passed");
+
+      if (!passedAttempt) {
+        throw new Error("Provider claim requires a passed verification attempt before approval");
+      }
+    }
+
     const decision = {
       id: input.claimId,
       status: input.decision,
@@ -134,10 +152,8 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
       providerStatus: input.decision === "approved" ? "claimed" : undefined
     };
 
-    if (claim) {
-      claim.status = input.decision;
-      claim.updatedAt = now;
-    }
+    claim.status = input.decision;
+    claim.updatedAt = now;
 
     return decision;
   }
@@ -150,6 +166,23 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
 
   if (claimError) {
     throw new Error(`Provider claim lookup failed: ${claimError.message}`);
+  }
+
+  if (!claim) {
+    throw new Error("Provider claim not found");
+  }
+
+  if (claim.status === "approved" || claim.status === "rejected") {
+    throw new Error("Provider claim is already decided");
+  }
+
+  if (input.decision === "approved") {
+    const attempts = await listProviderVerificationAttempts(input.claimId);
+    const passedAttempt = attempts.find((attempt) => attempt.status === "passed");
+
+    if (!passedAttempt) {
+      throw new Error("Provider claim requires a passed verification attempt before approval");
+    }
   }
 
   const updatePayload =

@@ -15,7 +15,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     return NextResponse.json({ data: decision });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const status = message.includes("requires a passed verification") || message.includes("already decided") ? 409 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
-
