@@ -1,5 +1,6 @@
 export type NewsItemRecord = {
   id: string;
+  contentSourceId?: string;
   status: "new" | "triaged" | "assigned" | "drafted" | "ignored" | "blocked_by_policy";
   title: string;
   sourceUrl?: string;
@@ -11,12 +12,62 @@ export type NewsItemRecord = {
 };
 
 export type CreateNewsItemInput = {
+  contentSourceId?: string;
   title: string;
   sourceUrl?: string;
   sourceName?: string;
   summary?: string;
   audience?: string[];
   topicTags?: string[];
+};
+
+export type ContentSourceRecord = {
+  id: string;
+  name: string;
+  sourceType: "rss" | "manual_url" | "interview" | "regulatory" | "platform_data";
+  url?: string;
+  reviewStatus: "pending" | "approved" | "blocked" | "needs_legal_review";
+  copyrightNotes?: string;
+  createdAt: string;
+};
+
+export type CreateContentSourceInput = {
+  name: string;
+  sourceType: ContentSourceRecord["sourceType"];
+  url?: string;
+  reviewStatus?: ContentSourceRecord["reviewStatus"];
+  copyrightNotes?: string;
+};
+
+export type RssFeedItemInput = {
+  title: string;
+  link?: string;
+  summary?: string;
+  publishedAt?: string;
+};
+
+export type ImportRssFeedInput = {
+  contentSourceId?: string;
+  feedUrl?: string;
+  sourceName?: string;
+  audience?: string[];
+  topicTags?: string[];
+  limit?: number;
+  dryRun?: boolean;
+  items?: RssFeedItemInput[];
+};
+
+export type ImportRssFeedResult = {
+  sourceId?: string;
+  sourceName: string;
+  feedUrl?: string;
+  dryRun: boolean;
+  processed: number;
+  staged: number;
+  blocked: number;
+  skipped: number;
+  items: NewsItemRecord[];
+  policyDecisions: string[];
 };
 
 export type ArticleRecord = {
@@ -60,6 +111,14 @@ export type NewsroomReadinessSummary = {
     newItems: number;
     triagedItems: number;
     blockedByPolicy: number;
+  };
+  sourceRegistrySummary: {
+    total: number;
+    approved: number;
+    pending: number;
+    needsLegalReview: number;
+    blocked: number;
+    rss: number;
   };
   articleSummary: {
     total: number;

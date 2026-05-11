@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     }
 
     const item = await createNewsItem({
+      contentSourceId: body.contentSourceId,
       title: body.title,
       sourceUrl: body.sourceUrl,
       sourceName: body.sourceName,
@@ -31,4 +32,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
 }
-

@@ -58,6 +58,7 @@ Deliverables:
 - Signed-in admin launch checklist panel with refresh against protected backend readiness API. Completed.
 - AI newsroom schema. Completed.
 - News intake, article draft/publish, and social derivative APIs. Completed.
+- Editorial content source registry and RSS import API with policy-gated inbox staging. Completed.
 - Newsroom readiness and podcast brief APIs. Completed.
 - Public article SEO API and guide pages. Completed.
 - Dynamic sitemap, robots policy, and canonical metadata. Completed.

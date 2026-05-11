@@ -138,6 +138,8 @@ export async function getLaunchChecklist(): Promise<LaunchChecklist> {
       blockers: newsroom.blockers,
       nextActions: newsroom.nextActions,
       metrics: {
+        approvedContentSources: newsroom.sourceRegistrySummary.approved,
+        rssSources: newsroom.sourceRegistrySummary.rss,
         sources: newsroom.sourceSummary.total,
         published: newsroom.articleSummary.published,
         derivatives: newsroom.derivativeSummary.total

@@ -1,8 +1,12 @@
 import type {
   ArticleDerivativeRecord,
   ArticleRecord,
+  ContentSourceRecord,
   CreateArticleInput,
+  CreateContentSourceInput,
   CreateNewsItemInput,
+  ImportRssFeedInput,
+  ImportRssFeedResult,
   NewsItemRecord,
   NewsroomReadinessSummary
 } from "@/lib/domain/newsroom";
@@ -48,6 +52,17 @@ const seedArticles: ArticleRecord[] = [
   }
 ];
 const seedDerivatives: ArticleDerivativeRecord[] = [];
+const seedContentSources: ContentSourceRecord[] = [
+  {
+    id: "seed-content-source-senior-care-news",
+    name: "Senior care editorial watchlist",
+    sourceType: "rss",
+    url: "https://example.com/senior-care-news/rss.xml",
+    reviewStatus: "approved",
+    copyrightNotes: "Use for source awareness only. Add original Senior Guru analysis and link attribution.",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  }
+];
 
 function slugify(value: string) {
   return value
@@ -60,6 +75,7 @@ function slugify(value: string) {
 function mapNewsItem(row: Record<string, unknown>): NewsItemRecord {
   return {
     id: String(row.id),
+    contentSourceId: row.content_source_id ? String(row.content_source_id) : undefined,
     status: row.status as NewsItemRecord["status"],
     title: String(row.title),
     sourceUrl: row.source_url ? String(row.source_url) : undefined,
@@ -67,6 +83,18 @@ function mapNewsItem(row: Record<string, unknown>): NewsItemRecord {
     summary: row.summary ? String(row.summary) : undefined,
     audience: Array.isArray(row.audience) ? row.audience.map(String) : [],
     topicTags: Array.isArray(row.topic_tags) ? row.topic_tags.map(String) : [],
+    createdAt: String(row.created_at)
+  };
+}
+
+function mapContentSource(row: Record<string, unknown>): ContentSourceRecord {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    sourceType: row.source_type as ContentSourceRecord["sourceType"],
+    url: row.url ? String(row.url) : undefined,
+    reviewStatus: row.review_status as ContentSourceRecord["reviewStatus"],
+    copyrightNotes: row.copyright_notes ? String(row.copyright_notes) : undefined,
     createdAt: String(row.created_at)
   };
 }
@@ -86,6 +114,71 @@ function mapArticle(row: Record<string, unknown>): ArticleRecord {
     publishedAt: row.published_at ? String(row.published_at) : undefined,
     createdAt: String(row.created_at)
   };
+}
+
+export async function listContentSources(): Promise<ContentSourceRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedContentSources;
+  }
+
+  const { data, error } = await supabase
+    .from("content_sources")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Newsroom source query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapContentSource);
+}
+
+export async function createContentSource(input: CreateContentSourceInput): Promise<ContentSourceRecord> {
+  const policy = await runPolicyCheck({
+    subjectType: "content_source",
+    actionKey: "create_content_source",
+    input
+  });
+  const reviewStatus: ContentSourceRecord["reviewStatus"] = policy.decision.startsWith("blocked")
+    ? "blocked"
+    : policy.decision === "needs_legal_review"
+      ? "needs_legal_review"
+      : input.reviewStatus ?? "pending";
+  const source: ContentSourceRecord = {
+    id: `content-source-${Date.now()}`,
+    name: input.name,
+    sourceType: input.sourceType,
+    url: input.url,
+    reviewStatus,
+    copyrightNotes: input.copyrightNotes,
+    createdAt: new Date().toISOString()
+  };
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    seedContentSources.unshift(source);
+    return source;
+  }
+
+  const { data, error } = await supabase
+    .from("content_sources")
+    .insert({
+      name: input.name,
+      source_type: input.sourceType,
+      url: input.url,
+      review_status: reviewStatus,
+      copyright_notes: input.copyrightNotes
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Newsroom source creation failed: ${error.message}`);
+  }
+
+  return mapContentSource(data);
 }
 
 export async function listNewsItems(): Promise<NewsItemRecord[]> {
@@ -117,6 +210,7 @@ export async function createNewsItem(input: CreateNewsItemInput): Promise<NewsIt
   if (!supabase) {
     const item = {
       id: `pending-news-${Date.now()}`,
+      contentSourceId: input.contentSourceId,
       status,
       title: input.title,
       sourceUrl: input.sourceUrl,
@@ -134,6 +228,7 @@ export async function createNewsItem(input: CreateNewsItemInput): Promise<NewsIt
   const { data, error } = await supabase
     .from("news_items")
     .insert({
+      content_source_id: input.contentSourceId,
       status,
       title: input.title,
       source_url: input.sourceUrl,
@@ -150,6 +245,95 @@ export async function createNewsItem(input: CreateNewsItemInput): Promise<NewsIt
   }
 
   return mapNewsItem(data);
+}
+
+export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRssFeedResult> {
+  const limit = Math.min(Math.max(input.limit ?? 10, 1), 25);
+  const sources = await listContentSources();
+  const source = input.contentSourceId
+    ? sources.find((candidate) => candidate.id === input.contentSourceId)
+    : sources.find((candidate) => candidate.url === input.feedUrl);
+  const sourceName = source?.name ?? input.sourceName ?? input.feedUrl ?? "Editorial RSS source";
+  const feedUrl = input.feedUrl ?? source?.url;
+
+  if (source && source.reviewStatus !== "approved") {
+    throw new Error("RSS source must be approved before import.");
+  }
+
+  if (!source && !feedUrl && !input.items?.length) {
+    throw new Error("feedUrl or items are required for RSS import.");
+  }
+
+  const rssItems = (input.items?.length ? input.items : await fetchRssItems(feedUrl as string)).slice(0, limit);
+  const createdItems: NewsItemRecord[] = [];
+  const policyDecisions: string[] = [];
+  let blocked = 0;
+  let skipped = 0;
+
+  for (const rssItem of rssItems) {
+    if (!rssItem.title?.trim()) {
+      skipped += 1;
+      continue;
+    }
+
+    const policy = await runPolicyCheck({
+      subjectType: "news_item",
+      actionKey: "import_rss_item",
+      input: {
+        sourceName,
+        feedUrl,
+        title: rssItem.title,
+        summary: rssItem.summary
+      }
+    });
+    policyDecisions.push(policy.decision);
+
+    if (policy.decision.startsWith("blocked")) {
+      blocked += 1;
+      if (input.dryRun) {
+        continue;
+      }
+    }
+
+    if (input.dryRun) {
+      createdItems.push({
+        id: `dry-run-rss-${createdItems.length + 1}`,
+        contentSourceId: source?.id,
+        status: policy.decision.startsWith("blocked") ? "blocked_by_policy" : "new",
+        title: rssItem.title,
+        sourceUrl: rssItem.link,
+        sourceName,
+        summary: rssItem.summary,
+        audience: input.audience ?? ["families", "providers"],
+        topicTags: input.topicTags ?? ["senior-care", "industry-news"],
+        createdAt: new Date().toISOString()
+      });
+      continue;
+    }
+
+    createdItems.push(await createNewsItem({
+      contentSourceId: source?.id,
+      title: rssItem.title,
+      sourceUrl: rssItem.link,
+      sourceName,
+      summary: rssItem.summary,
+      audience: input.audience ?? ["families", "providers"],
+      topicTags: input.topicTags ?? ["senior-care", "industry-news"]
+    }));
+  }
+
+  return {
+    sourceId: source?.id,
+    sourceName,
+    feedUrl,
+    dryRun: Boolean(input.dryRun),
+    processed: rssItems.length,
+    staged: createdItems.filter((item) => item.status !== "blocked_by_policy").length,
+    blocked,
+    skipped,
+    items: createdItems,
+    policyDecisions
+  };
 }
 
 export async function createArticleDraft(input: CreateArticleInput): Promise<ArticleRecord> {
@@ -315,11 +499,17 @@ export async function generateArticlePodcastBrief(articleId: string): Promise<Ar
 }
 
 export async function getNewsroomReadiness(): Promise<NewsroomReadinessSummary> {
-  const [sources, articles, derivatives] = await Promise.all([
+  const [contentSources, sources, articles, derivatives] = await Promise.all([
+    listContentSources(),
     listNewsItems(),
     listArticles(),
     listArticleDerivatives()
   ]);
+  const approvedContentSources = contentSources.filter((source) => source.reviewStatus === "approved").length;
+  const pendingContentSources = contentSources.filter((source) => source.reviewStatus === "pending").length;
+  const legalReviewContentSources = contentSources.filter((source) => source.reviewStatus === "needs_legal_review").length;
+  const blockedContentSources = contentSources.filter((source) => source.reviewStatus === "blocked").length;
+  const rssContentSources = contentSources.filter((source) => source.sourceType === "rss").length;
   const newItems = sources.filter((item) => item.status === "new").length;
   const triagedItems = sources.filter((item) => item.status === "triaged").length;
   const blockedSources = sources.filter((item) => item.status === "blocked_by_policy").length;
@@ -332,6 +522,14 @@ export async function getNewsroomReadiness(): Promise<NewsroomReadinessSummary> 
   const podcastBriefs = derivatives.filter((derivative) => derivative.derivativeType === "podcast_brief").length;
   const appFeedPosts = derivatives.filter((derivative) => derivative.derivativeType === "app_feed_post").length;
   const blockers: string[] = [];
+
+  if (!approvedContentSources) {
+    blockers.push("No approved editorial source is ready for RSS/news intake.");
+  }
+
+  if (!rssContentSources) {
+    blockers.push("No RSS source has been registered for daily industry monitoring.");
+  }
 
   if (!sources.length || (!newItems && !triagedItems)) {
     blockers.push("No fresh or triaged source items are ready for editorial drafting.");
@@ -353,18 +551,26 @@ export async function getNewsroomReadiness(): Promise<NewsroomReadinessSummary> 
     blockers.push("No podcast/interview brief has been generated from the article pipeline.");
   }
 
-  if (blockedSources || blockedArticles) {
-    blockers.push("One or more newsroom items are blocked by policy and need editorial review.");
+  if (blockedContentSources || blockedSources || blockedArticles) {
+    blockers.push("One or more newsroom sources or items are blocked by policy and need editorial review.");
   }
 
   return {
     generatedAt: new Date().toISOString(),
-    status: blockedSources || blockedArticles ? "blocked" : blockers.length ? "action_required" : "ready",
+    status: blockedContentSources || blockedSources || blockedArticles ? "blocked" : blockers.length ? "action_required" : "ready",
     sourceSummary: {
       total: sources.length,
       newItems,
       triagedItems,
       blockedByPolicy: blockedSources
+    },
+    sourceRegistrySummary: {
+      total: contentSources.length,
+      approved: approvedContentSources,
+      pending: pendingContentSources,
+      needsLegalReview: legalReviewContentSources,
+      blocked: blockedContentSources,
+      rss: rssContentSources
     },
     articleSummary: {
       total: articles.length,
@@ -424,6 +630,58 @@ export async function getPublishedArticleBySlug(slug: string): Promise<ArticleRe
   }
 
   return data ? mapArticle(data) : null;
+}
+
+async function fetchRssItems(feedUrl: string) {
+  const response = await fetch(feedUrl, {
+    headers: {
+      accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+      "user-agent": "TheSeniorGuru-NewsroomBot/0.1 (+https://theseniorguru.com)"
+    },
+    next: { revalidate: 900 }
+  });
+
+  if (!response.ok) {
+    throw new Error(`RSS feed fetch failed with status ${response.status}`);
+  }
+
+  return parseRssXml(await response.text());
+}
+
+function parseRssXml(xml: string) {
+  const itemBlocks = Array.from(xml.matchAll(/<item\b[\s\S]*?<\/item>/gi), (match) => match[0]);
+  const entryBlocks = itemBlocks.length
+    ? itemBlocks
+    : Array.from(xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi), (match) => match[0]);
+
+  return entryBlocks.map((block) => ({
+    title: readXmlText(block, "title") ?? "Untitled senior care update",
+    link: readXmlLink(block),
+    summary: readXmlText(block, "description") ?? readXmlText(block, "summary") ?? readXmlText(block, "content"),
+    publishedAt: readXmlText(block, "pubDate") ?? readXmlText(block, "updated") ?? readXmlText(block, "published")
+  }));
+}
+
+function readXmlText(block: string, tag: string) {
+  const match = block.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match?.[1] ? decodeXml(match[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]+>/g, " ").trim()) : undefined;
+}
+
+function readXmlLink(block: string) {
+  const hrefMatch = block.match(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/i);
+  return hrefMatch?.[1] ? decodeXml(hrefMatch[1]) : readXmlText(block, "link");
+}
+
+function decodeXml(value: string) {
+  return value
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&#39;", "'")
+    .replaceAll("&apos;", "'")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function listArticles(): Promise<ArticleRecord[]> {

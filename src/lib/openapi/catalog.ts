@@ -230,6 +230,13 @@ export function getOpenApiCatalog() {
         get: { tags: ["Newsroom"], summary: "List newsroom source items" },
         post: { tags: ["Newsroom"], summary: "Create a newsroom source item" }
       },
+      "/api/v1/admin/newsroom/sources": {
+        get: { tags: ["Newsroom"], summary: "List approved and pending editorial content sources" },
+        post: { tags: ["Newsroom"], summary: "Create a policy-gated editorial content source" }
+      },
+      "/api/v1/admin/newsroom/rss/import": {
+        post: { tags: ["Newsroom"], summary: "Import RSS feed items into the policy-gated newsroom inbox" }
+      },
       "/api/v1/admin/newsroom/articles": {
         post: { tags: ["Newsroom"], summary: "Create a policy-gated AI-assisted article draft" }
       },
