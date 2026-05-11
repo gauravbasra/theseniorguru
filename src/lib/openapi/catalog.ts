@@ -175,6 +175,13 @@ export function getOpenApiCatalog() {
         get: { tags: ["Community"], summary: "List community group members" },
         post: { tags: ["Community"], summary: "Join a local community group with policy and role controls" }
       },
+      "/api/v1/community/experts": {
+        get: { tags: ["Community"], summary: "List verified local senior-care experts" },
+        post: { tags: ["Community"], summary: "Submit a local expert profile for verification review" }
+      },
+      "/api/v1/admin/community/experts/{id}/verify": {
+        post: { tags: ["Community"], summary: "Verify, reject, or suspend a local expert profile with policy audit" }
+      },
       "/api/v1/community/posts/{id}/comments": {
         get: { tags: ["Community"], summary: "List published comments for a community post" },
         post: { tags: ["Community"], summary: "Create a policy-gated community comment" }

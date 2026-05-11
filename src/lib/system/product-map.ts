@@ -98,6 +98,9 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/community/groups",
       "GET /api/v1/community/groups/{id}/members",
       "POST /api/v1/community/groups/{id}/members",
+      "GET /api/v1/community/experts",
+      "POST /api/v1/community/experts",
+      "POST /api/v1/admin/community/experts/{id}/verify",
       "POST /api/v1/community/posts",
       "GET /api/v1/community/posts/{id}/comments",
       "POST /api/v1/community/posts/{id}/comments",
@@ -113,7 +116,7 @@ const productPillars: ProductPillar[] = [
       "moderation_cases",
       "expert_profiles"
     ],
-    nextBackendWork: ["Expert profile verification", "Community invitation delivery", "Local topic subscriptions"]
+    nextBackendWork: ["Community invitation delivery", "Local topic subscriptions", "Expert answer ranking"]
   },
   {
     key: "events",

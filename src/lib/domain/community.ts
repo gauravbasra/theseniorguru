@@ -49,6 +49,47 @@ export type JoinCommunityGroupInput = {
   actorId?: string;
 };
 
+export type ExpertProfileRecord = {
+  id: string;
+  userKey: string;
+  displayName: string;
+  email?: string;
+  organization?: string;
+  title?: string;
+  specialty: string;
+  city?: string;
+  state?: string;
+  bio?: string;
+  websiteUrl?: string;
+  credentialSummary?: string;
+  status: "pending_review" | "verified" | "rejected" | "suspended";
+  verifiedAt?: string;
+  createdAt: string;
+};
+
+export type SubmitExpertProfileInput = {
+  userKey: string;
+  displayName: string;
+  email?: string;
+  organization?: string;
+  title?: string;
+  specialty: string;
+  city?: string;
+  state?: string;
+  bio?: string;
+  websiteUrl?: string;
+  credentialSummary?: string;
+  evidenceUrls?: string[];
+  actorId?: string;
+};
+
+export type VerifyExpertProfileInput = {
+  expertProfileId: string;
+  decision: "verified" | "rejected" | "suspended";
+  adminNotes?: string;
+  actorId?: string;
+};
+
 export type CommunityPostRecord = {
   id: string;
   communityId?: string;

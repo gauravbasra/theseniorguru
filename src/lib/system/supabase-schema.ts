@@ -51,7 +51,8 @@ const migrationManifest = [
   "20260510220000_dual_funnel_leads.sql",
   "20260511001000_review_moderation_sentiment.sql",
   "20260511010000_public_source_acquisition_staging.sql",
-  "20260511020000_community_memberships.sql"
+  "20260511020000_community_memberships.sql",
+  "20260511030000_expert_profiles.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -130,6 +131,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511020000_community_memberships.sql": {
     capability: "community",
     summary: "Local community memberships, roles, and active member discovery."
+  },
+  "20260511030000_expert_profiles.sql": {
+    capability: "community",
+    summary: "Verified local expert profile submission, review, and public discovery."
   }
 };
 
@@ -153,6 +158,7 @@ const requiredTables: RequiredTable[] = [
   { table: "communities", requiredFor: "Local community groups", capability: "community" },
   { table: "community_memberships", requiredFor: "Local community membership graph", capability: "community" },
   { table: "community_posts", requiredFor: "Community feed", capability: "community" },
+  { table: "expert_profiles", requiredFor: "Verified local expert profiles", capability: "community" },
   { table: "ad_placements", requiredFor: "Advertising inventory", capability: "ads" },
   { table: "ad_campaigns", requiredFor: "Direct-sold ad campaigns", capability: "ads" },
   { table: "ad_creatives", requiredFor: "Sponsored ad creative", capability: "ads" },
