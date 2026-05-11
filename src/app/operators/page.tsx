@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FreeListingForm } from "@/components/free-listing-form";
 import { OperatorDemoForm } from "@/components/operator-demo-form";
+import { ProductVisual } from "@/components/product-visual";
 import { getProviderDashboard } from "@/lib/provider-dashboard/dashboard";
 
 export default async function OperatorsPage() {
@@ -21,19 +22,26 @@ export default async function OperatorsPage() {
             <Link className="button secondary" href="/operators/ai-occupancy-platform">See AI occupancy platform</Link>
           </div>
         </div>
-        <div className="audience-panel">
-          {[
-            "Free public listing and direct inquiry capture",
-            "Inquiry analytics before upsell pressure",
-            "AI engagement trial for missed opportunities",
-            "Reviews, SEO, events, and campaign automation"
-          ].map((item) => (
-            <div key={item}>
-              <span>✓</span>
-              <strong>{item}</strong>
-            </div>
-          ))}
-        </div>
+        <ProductVisual
+          className="audience-visual"
+          src="/assets/seniorguru/operator-occupancy-response.svg"
+          alt="Senior living operator occupancy response board with missed calls, new inquiries, and tour opportunity analytics"
+          eyebrow="Occupancy response"
+          title="Show the missed opportunity, then route the next action."
+          copy="Free listings feed inquiry analytics before operators upgrade into chat, voice, tours, reviews, and campaigns."
+          priority
+        />
+      </section>
+
+      <section className="principle-strip">
+        {[
+          "Free public listing and direct inquiry capture",
+          "Inquiry analytics before upsell pressure",
+          "AI engagement trial for missed opportunities",
+          "Reviews, SEO, events, and campaign automation"
+        ].map((item) => (
+          <span key={item}>{item}</span>
+        ))}
       </section>
 
       <section className="operator-funnel">

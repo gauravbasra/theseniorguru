@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ProductVisual } from "@/components/product-visual";
 import { getAppFeed } from "@/lib/community/feed";
 import { audienceMessaging } from "@/lib/messaging/audiences";
 
@@ -18,14 +19,21 @@ export default async function SeniorsPage() {
             <Link className="button secondary" href="/discover">{copy.ctaSecondary}</Link>
           </div>
         </div>
-        <div className="audience-panel">
-          {copy.principles.map((item) => (
-            <div key={item}>
-              <span>✓</span>
-              <strong>{item}</strong>
-            </div>
-          ))}
-        </div>
+        <ProductVisual
+          className="audience-visual"
+          src="/assets/seniorguru/care-circle-mobile-app.svg"
+          alt="Senior-friendly mobile care circle with saved tours, family notes, and shared next steps"
+          eyebrow="Senior-friendly mobile"
+          title="Saved providers, family notes, and local events stay together."
+          copy="The consumer app keeps the care circle organized after the first search."
+          priority
+        />
+      </section>
+
+      <section className="principle-strip">
+        {copy.principles.map((item) => (
+          <span key={item}>{item}</span>
+        ))}
       </section>
 
       <section className="feed-preview">

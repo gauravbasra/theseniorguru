@@ -24,6 +24,7 @@ Deliverables:
 - Automatic initial verification attempt after claim submission. Completed.
 - Provider-facing claim evidence submission API and console action. Completed.
 - Provider onboarding readiness API across claim, verification, outreach, reputation, and growth. Completed.
+- Provider visibility report API and dashboard panel for profile completion, discovery, reputation, growth readiness, missing fields, entitlements, and next-best-actions. Completed.
 - Admin claim approve/reject workflow. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.
@@ -158,7 +159,7 @@ Deliverables:
 - Provider-facing claim checklist/status API. Completed.
 - Policy-gated verification delivery worker and audit payload. Completed.
 - Profile completion assistant.
-- Provider visibility report.
+- Provider visibility report. Completed.
 
 ## Phase 4: Events Marketplace
 

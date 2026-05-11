@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { OperatorDemoForm } from "@/components/operator-demo-form";
+import { ProductVisual } from "@/components/product-visual";
 
 const reputationFlow = [
   "Request reviews from families and residents with consent",
@@ -25,14 +26,21 @@ export default function ReputationPage() {
             <Link className="button secondary" href="/operators/ai-occupancy-platform">AI engagement platform</Link>
           </div>
         </div>
-        <div className="audience-panel">
-          {reputationFlow.map((item) => (
-            <div key={item}>
-              <span>✓</span>
-              <strong>{item}</strong>
-            </div>
-          ))}
-        </div>
+        <ProductVisual
+          className="audience-visual"
+          src="/assets/seniorguru/reputation-local-search.svg"
+          alt="Local senior care search listing with review sentiment, sponsored disclosure, organic trust signals, and reputation workflow"
+          eyebrow="Trust signals"
+          title="Reviews become search confidence."
+          copy="Reputation work connects review requests, moderation, sentiment, and profile trust signals families can understand."
+          priority
+        />
+      </section>
+
+      <section className="principle-strip">
+        {reputationFlow.map((item) => (
+          <span key={item}>{item}</span>
+        ))}
       </section>
 
       <section className="split-cta">

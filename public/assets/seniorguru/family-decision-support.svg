@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="690" viewBox="0 0 920 690" role="img" aria-labelledby="title desc">
+  <title id="title">Family decision support visual for The Senior Guru</title>
+  <desc id="desc">A family care circle comparing senior living options, notes, reviews, and next steps.</desc>
+  <rect width="920" height="690" fill="#F7F1E7"/>
+  <rect x="56" y="60" width="808" height="570" rx="34" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="3"/>
+  <circle cx="196" cy="194" r="64" fill="#F2D5B7"/>
+  <circle cx="184" cy="174" r="22" fill="#6F463E"/>
+  <path d="M145 255c15-42 87-42 102 0" fill="#2F766D"/>
+  <circle cx="274" cy="224" r="48" fill="#EBC9C3"/>
+  <circle cx="272" cy="207" r="17" fill="#39465B"/>
+  <path d="M240 267c12-31 56-31 68 0" fill="#BF7D2A"/>
+  <circle cx="165" cy="301" r="42" fill="#DDECE8"/>
+  <circle cx="164" cy="287" r="15" fill="#174F49"/>
+  <path d="M136 337c11-26 46-26 57 0" fill="#9F5244"/>
+  <rect x="382" y="116" width="350" height="74" rx="18" fill="#174F49"/>
+  <text x="414" y="151" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">Care shortlist</text>
+  <text x="414" y="176" fill="#CFE8E2" font-family="Arial, Helvetica, sans-serif" font-size="15">Assisted living near Denver</text>
+  <rect x="382" y="222" width="388" height="78" rx="16" fill="#FBF8F1" stroke="#E7DDCE" stroke-width="2"/>
+  <rect x="406" y="244" width="88" height="34" rx="17" fill="#DDECE8"/>
+  <text x="522" y="253" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Tour ready</text>
+  <text x="522" y="277" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="15">Memory care, meals, availability</text>
+  <rect x="382" y="326" width="388" height="78" rx="16" fill="#FBF8F1" stroke="#E7DDCE" stroke-width="2"/>
+  <rect x="406" y="348" width="88" height="34" rx="17" fill="#F4E4C4"/>
+  <text x="522" y="357" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Family notes</text>
+  <text x="522" y="381" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="15">Budget, timeline, safety concerns</text>
+  <rect x="382" y="430" width="388" height="78" rx="16" fill="#FBF8F1" stroke="#E7DDCE" stroke-width="2"/>
+  <rect x="406" y="452" width="88" height="34" rx="17" fill="#F1DBD6"/>
+  <text x="522" y="461" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Direct inquiry</text>
+  <text x="522" y="485" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="15">Send questions without referral gatekeeping</text>
+  <path d="M196 384c78 70 129 70 186 47" fill="none" stroke="#2F766D" stroke-width="9" stroke-linecap="round"/>
+  <path d="M377 407l24 19-28 12" fill="none" stroke="#2F766D" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="96" y="558" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="800">Guidance for the whole care circle</text>
+  <text x="96" y="592" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="18">Compare communities, save priorities, and move from stress to a useful next step.</text>
+</svg>

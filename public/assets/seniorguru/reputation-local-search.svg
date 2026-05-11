@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="690" viewBox="0 0 920 690" role="img" aria-labelledby="title desc">
+  <title id="title">Reputation and local search visual</title>
+  <desc id="desc">A local search listing with review sentiment, sponsored disclosure, and trust signals.</desc>
+  <rect width="920" height="690" fill="#FBF8F1"/>
+  <rect x="72" y="72" width="776" height="546" rx="28" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="3"/>
+  <rect x="124" y="126" width="670" height="66" rx="33" fill="#F7F1E7" stroke="#E7DDCE" stroke-width="2"/>
+  <circle cx="163" cy="159" r="18" fill="#2F766D"/>
+  <path d="M176 173l22 22" stroke="#2F766D" stroke-width="8" stroke-linecap="round"/>
+  <text x="220" y="166" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="800">memory care near Scottsdale</text>
+  <rect x="124" y="234" width="420" height="216" rx="20" fill="#FBF8F1" stroke="#E7DDCE" stroke-width="2"/>
+  <text x="154" y="274" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="900">Verified community profile</text>
+  <text x="154" y="306" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="16">Direct phone, website, tour request, source confidence.</text>
+  <text x="154" y="354" fill="#BF7D2A" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900">4.7</text>
+  <text x="212" y="351" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800">review sentiment</text>
+  <text x="212" y="376" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="15">Cleanliness, staff response, resident activities</text>
+  <rect x="154" y="402" width="150" height="28" rx="14" fill="#DDECE8"/>
+  <text x="176" y="422" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800">Organic result</text>
+  <rect x="592" y="234" width="202" height="216" rx="20" fill="#174F49"/>
+  <text x="620" y="278" fill="#CFE8E2" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800">SPONSORED</text>
+  <text x="620" y="320" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="900">Clear labels</text>
+  <text x="620" y="352" fill="#CFE8E2" font-family="Arial, Helvetica, sans-serif" font-size="16">Paid placement never hides organic trust signals.</text>
+  <rect x="124" y="486" width="670" height="64" rx="18" fill="#F4E4C4"/>
+  <text x="154" y="524" fill="#70480E" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="800">Reviews feed local discovery, profile confidence, and family comparison workflows.</text>
+  <text x="124" y="588" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="900">Trust is part of the search result</text>
+</svg>

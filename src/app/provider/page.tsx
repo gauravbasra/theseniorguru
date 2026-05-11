@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { ProviderActionConsole } from "@/components/provider-action-console";
 import { getProviderDashboard } from "@/lib/provider-dashboard/dashboard";
 
@@ -48,6 +49,39 @@ export default async function ProviderDashboardPage() {
           <p>Events create community value and monetizable local promotion inventory.</p>
         </article>
       </section>
+
+      {dashboard.visibilityReport ? (
+        <section className="visibility-report">
+          <div className="visibility-score-card">
+            <p className="eyebrow">Visibility report</p>
+            <h2>{dashboard.visibilityReport.overallScore}%</h2>
+            <p>
+              Search readiness, family trust, reputation, and growth signals for {dashboard.visibilityReport.providerName}.
+            </p>
+          </div>
+          <div className="visibility-metrics">
+            {dashboard.visibilityReport.metrics.map((metric) => (
+              <article className={`visibility-metric ${metric.status}`} key={metric.label}>
+                <div>
+                  <span>{metric.label}</span>
+                  <strong>{metric.value}/{metric.total}</strong>
+                </div>
+                <i style={{ "--value": `${Math.round((metric.value / Math.max(metric.total, 1)) * 100)}%` } as CSSProperties} />
+              </article>
+            ))}
+          </div>
+          <div className="visibility-actions">
+            <p className="eyebrow">Next best actions</p>
+            {dashboard.visibilityReport.nextBestActions.map((action) => (
+              <Link className={`visibility-action ${action.priority}`} href={action.href} key={action.label}>
+                <span>{action.priority}</span>
+                <strong>{action.label}</strong>
+                <small>{action.reason}</small>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="task-list">
         <p className="eyebrow">Recommended growth path</p>

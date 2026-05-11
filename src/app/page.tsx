@@ -3,10 +3,8 @@ import Link from "next/link";
 import { FamilyInquiryForm } from "@/components/family-inquiry-form";
 import { FreeListingForm } from "@/components/free-listing-form";
 import { OperatorDemoForm } from "@/components/operator-demo-form";
+import { ProductVisual } from "@/components/product-visual";
 import { listProviders } from "@/lib/providers";
-
-const heroImage =
-  "https://images.unsplash.com/photo-1576765608866-5b51f0049b2c?auto=format&fit=crop&w=1800&q=86";
 
 const careTypes = [
   "Assisted Living",
@@ -91,19 +89,15 @@ export default async function HomePage() {
             <span><strong>24/7</strong> AI engagement path</span>
           </div>
         </div>
-        <aside className="hero-media" aria-label="Family senior care guidance preview">
-          <Image
-            src={heroImage}
-            alt="A caregiver helping an older adult with warmth and patience"
-            width={900}
-            height={1080}
-            priority
-          />
-          <div className="image-caption">
-            <strong>Trusted guidance for families.</strong>
-            <span>Local senior care discovery, direct inquiries, reviews, and clear sponsored labels.</span>
-          </div>
-        </aside>
+        <ProductVisual
+          className="hero-visual"
+          src="/assets/seniorguru/family-decision-support.svg"
+          alt="Family care circle comparing senior living communities, tour notes, reviews, and direct inquiries in The Senior Guru"
+          eyebrow="Family decision support"
+          title="From stressful search to a shared shortlist."
+          copy="Families compare care type, budget, reviews, notes, and direct next steps without a referral-fee wall."
+          priority
+        />
       </section>
 
       <section className="trust-section">
@@ -156,6 +150,23 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className="visual-story-section">
+        <ProductVisual
+          src="/assets/seniorguru/senior-living-tour.svg"
+          alt="Senior living tour plan with checklist for meals, safety questions, pricing, availability, and family notes"
+          eyebrow="Tour preparation"
+          title="Families arrive with the right questions."
+          copy="Saved priorities turn search results into prepared community visits, clearer follow-up, and less guesswork."
+        />
+        <ProductVisual
+          src="/assets/seniorguru/care-circle-mobile-app.svg"
+          alt="Senior-friendly mobile care circle showing saved tours, notes, and shared family planning"
+          eyebrow="Care circle app"
+          title="The decision stays organized after the first search."
+          copy="A mobile-friendly care circle keeps seniors and caregivers aligned around saved communities, events, and next steps."
+        />
+      </section>
+
       <section className="featured-listings">
         <div className="section-heading">
           <div>
@@ -195,6 +206,14 @@ export default async function HomePage() {
             <Link href={href} key={label}>{label}</Link>
           ))}
         </div>
+        <ProductVisual
+          className="local-search-visual"
+          src="/assets/seniorguru/local-search-map.svg"
+          alt="Local senior care search map with assisted living, memory care, sponsored event labels, and direct contact paths"
+          eyebrow="Local discovery"
+          title="City and care pages with honest labels."
+          copy="Organic listings, sponsored placements, and direct contact stay visually distinct for family trust."
+        />
       </section>
 
       <section className="split-cta">
@@ -239,6 +258,14 @@ export default async function HomePage() {
             <span key={item}>{item}</span>
           ))}
         </div>
+        <ProductVisual
+          className="occupancy-response-visual"
+          src="/assets/seniorguru/operator-occupancy-response.svg"
+          alt="Senior living operator dashboard routing missed calls and family inquiries into admissions follow-up and tour opportunities"
+          eyebrow="Operator response"
+          title="Missed inquiries become visible recovery work."
+          copy="Operators see the occupancy impact of slow response and can route families to the right next step."
+        />
       </section>
 
       <section className="growth-section">
