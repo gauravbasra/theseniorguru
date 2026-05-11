@@ -100,6 +100,12 @@ const routeContracts: LinkContract[] = [
   },
   { label: "Review request campaigns API", href: "/api/v1/provider/review-request-campaigns", method: "GET", owner: "provider" },
   {
+    label: "Review request send API",
+    href: "/api/v1/provider/review-request-campaigns/demo/send",
+    method: "POST",
+    owner: "provider"
+  },
+  {
     label: "Reputation readiness API",
     href: "/api/v1/provider/reputation-readiness?providerId=seed-cottages-dayton-place",
     method: "GET",

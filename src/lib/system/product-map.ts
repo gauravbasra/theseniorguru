@@ -153,6 +153,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/provider/reputation-readiness",
       "GET /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider/review-request-campaigns",
+      "POST /api/v1/provider/review-request-campaigns/{id}/send",
       "POST /api/v1/provider-portal/reviews/{id}/responses/publish"
     ],
     requiredTables: [
@@ -166,7 +167,7 @@ const productPillars: ProductPillar[] = [
       "voice_campaigns",
       "chat_agents"
     ],
-    nextBackendWork: ["Campaign metrics endpoint", "AI voice assistant adapter", "Review request send worker"]
+    nextBackendWork: ["Campaign metrics endpoint", "AI voice assistant adapter", "Review request delivery provider adapter"]
   },
   {
     key: "ads",
@@ -238,6 +239,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/provider/reviews/{id}/responses/generate",
       "GET /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider/review-request-campaigns",
+      "POST /api/v1/provider/review-request-campaigns/{id}/send",
       "GET /api/v1/provider/reputation-readiness",
       "GET /api/v1/provider/review-requests",
       "POST /api/v1/provider-portal/reviews/{id}/responses/publish"
@@ -251,7 +253,7 @@ const productPillars: ProductPillar[] = [
       "reputation_scores",
       "external_review_integrations"
     ],
-    nextBackendWork: ["Review request send worker", "External review integrations", "Review moderation admin actions"]
+    nextBackendWork: ["External review integrations", "Review moderation admin actions", "Review sentiment scoring"]
   },
   {
     key: "newsroom",

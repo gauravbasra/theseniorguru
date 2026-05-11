@@ -1,7 +1,9 @@
 import type {
   ReviewRequestCampaignInput,
   ReviewRequestCampaignRecord,
-  ReviewRequestRecord
+  ReviewRequestRecord,
+  SendReviewRequestCampaignInput,
+  SendReviewRequestCampaignResult
 } from "@/lib/domain/reviews";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
@@ -49,6 +51,26 @@ function hasConsent(consentPayload: Record<string, unknown>) {
   return Boolean(consentPayload.consentSource && consentPayload.consentAt);
 }
 
+function findSeedCampaign(campaignId: string) {
+  return seedReviewCampaigns.find((campaign) => campaign.id === campaignId);
+}
+
+function campaignRequests(campaignId: string) {
+  return seedReviewRequests.filter((request) => request.campaignId === campaignId);
+}
+
+function calculateCampaignStatus(requests: ReviewRequestRecord[]) {
+  if (requests.some((request) => request.status === "failed" || request.status === "blocked_by_policy")) {
+    return "completed_with_errors" as const;
+  }
+
+  if (requests.length && requests.every((request) => request.status === "sent")) {
+    return "sent" as const;
+  }
+
+  return "queued" as const;
+}
+
 export async function listReviewRequestCampaigns(providerId?: string): Promise<ReviewRequestCampaignRecord[]> {
   const supabase = getSupabaseAdminClient();
 
@@ -93,6 +115,112 @@ export async function listReviewRequests(providerId?: string): Promise<ReviewReq
   }
 
   return (data ?? []).map(mapReviewRequest);
+}
+
+async function getReviewRequestCampaign(campaignId: string): Promise<ReviewRequestCampaignRecord | null> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return findSeedCampaign(campaignId) ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from("review_request_campaigns")
+    .select("*")
+    .eq("id", campaignId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Review request campaign lookup failed: ${error.message}`);
+  }
+
+  return data ? mapReviewCampaign(data) : null;
+}
+
+async function listCampaignReviewRequests(campaignId: string): Promise<ReviewRequestRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return campaignRequests(campaignId);
+  }
+
+  const { data, error } = await supabase
+    .from("review_requests")
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Review campaign request query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapReviewRequest);
+}
+
+async function updateReviewRequestStatus(input: {
+  requestId: string;
+  status: ReviewRequestRecord["status"];
+  sentAt?: string;
+}) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const request = seedReviewRequests.find((item) => item.id === input.requestId);
+
+    if (request) {
+      request.status = input.status;
+      request.sentAt = input.sentAt;
+    }
+
+    return;
+  }
+
+  const { error } = await supabase
+    .from("review_requests")
+    .update({
+      status: input.status,
+      sent_at: input.sentAt ?? null
+    })
+    .eq("id", input.requestId);
+
+  if (error) {
+    throw new Error(`Review request status update failed: ${error.message}`);
+  }
+}
+
+async function updateReviewRequestCampaignRollup(input: {
+  campaignId: string;
+  status: ReviewRequestCampaignRecord["status"];
+  requests: ReviewRequestRecord[];
+}) {
+  const queuedRequests = input.requests.filter((request) => request.status === "queued").length;
+  const blockedRequests = input.requests.filter((request) => request.status === "blocked_by_policy").length;
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const campaign = findSeedCampaign(input.campaignId);
+
+    if (campaign) {
+      campaign.status = input.status;
+      campaign.queuedRequests = queuedRequests;
+      campaign.blockedRequests = blockedRequests;
+    }
+
+    return;
+  }
+
+  const { error } = await supabase
+    .from("review_request_campaigns")
+    .update({
+      status: input.status,
+      queued_requests: queuedRequests,
+      blocked_requests: blockedRequests
+    })
+    .eq("id", input.campaignId);
+
+  if (error) {
+    throw new Error(`Review request campaign rollup update failed: ${error.message}`);
+  }
 }
 
 export async function createReviewRequestCampaign(
@@ -198,4 +326,113 @@ export async function createReviewRequestCampaign(
   }
 
   return { campaign, requests: (requestData ?? []).map(mapReviewRequest) };
+}
+
+export async function sendReviewRequestCampaign(
+  input: SendReviewRequestCampaignInput
+): Promise<SendReviewRequestCampaignResult> {
+  const campaign = await getReviewRequestCampaign(input.campaignId);
+
+  if (!campaign) {
+    throw new Error("Review request campaign not found");
+  }
+
+  if (campaign.status === "blocked_by_policy") {
+    throw new Error("Blocked review request campaigns cannot be sent");
+  }
+
+  const limit = Math.max(1, Math.min(input.limit ?? 25, 100));
+  const dryRun = input.dryRun ?? false;
+  const requests = await listCampaignReviewRequests(input.campaignId);
+  const queued = requests.filter((request) => request.status === "queued").slice(0, limit);
+  const processedRequests: ReviewRequestRecord[] = [];
+  const now = new Date().toISOString();
+
+  let sent = 0;
+  let failed = 0;
+  let blocked = 0;
+
+  for (const request of queued) {
+    const policy = await runPolicyCheck({
+      subjectType: "review_request",
+      subjectId: request.id,
+      actionKey: "send_review_request",
+      input: {
+        campaignId: input.campaignId,
+        providerId: request.providerId,
+        recipientEmail: request.recipientEmail,
+        channel: request.channel,
+        consentPayload: request.consentPayload,
+        deliveryProvider: input.deliveryProvider ?? "pending"
+      }
+    });
+
+    const nextRequest = { ...request };
+
+    if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+      blocked += 1;
+      nextRequest.status = "blocked_by_policy";
+    } else if (request.channel === "email" && !request.recipientEmail) {
+      failed += 1;
+      nextRequest.status = "failed";
+    } else {
+      sent += 1;
+      nextRequest.status = "sent";
+      nextRequest.sentAt = now;
+    }
+
+    processedRequests.push(nextRequest);
+
+    if (!dryRun) {
+      await updateReviewRequestStatus({
+        requestId: request.id,
+        status: nextRequest.status,
+        sentAt: nextRequest.sentAt
+      });
+    }
+  }
+
+  const updatedRequests = dryRun ? requests : await listCampaignReviewRequests(input.campaignId);
+  const rollupRequests = dryRun
+    ? requests.map((request) => processedRequests.find((processed) => processed.id === request.id) ?? request)
+    : updatedRequests;
+  const status = calculateCampaignStatus(rollupRequests);
+
+  if (!dryRun) {
+    await updateReviewRequestCampaignRollup({
+      campaignId: input.campaignId,
+      status,
+      requests: rollupRequests
+    });
+
+    const supabase = getSupabaseAdminClient();
+
+    if (supabase) {
+      await supabase.from("audit_events").insert({
+        actor_id: input.actorId,
+        actor_type: input.actorId ? "provider" : "system",
+        event_type: "review_request_campaign.sent",
+        subject_type: "review_request_campaign",
+        subject_id: input.campaignId,
+        payload: {
+          processed: processedRequests.length,
+          sent,
+          failed,
+          blocked,
+          deliveryProvider: input.deliveryProvider ?? "pending"
+        }
+      });
+    }
+  }
+
+  return {
+    campaignId: input.campaignId,
+    status,
+    processed: processedRequests.length,
+    sent,
+    failed,
+    blocked,
+    dryRun,
+    requests: processedRequests
+  };
 }

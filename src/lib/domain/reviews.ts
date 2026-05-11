@@ -90,6 +90,25 @@ export type ReviewRequestCampaignRecord = {
   createdAt: string;
 };
 
+export type SendReviewRequestCampaignInput = {
+  campaignId: string;
+  actorId?: string;
+  limit?: number;
+  dryRun?: boolean;
+  deliveryProvider?: "mailjet" | "google" | "manual" | "pending";
+};
+
+export type SendReviewRequestCampaignResult = {
+  campaignId: string;
+  status: ReviewRequestCampaignStatus;
+  processed: number;
+  sent: number;
+  failed: number;
+  blocked: number;
+  dryRun: boolean;
+  requests: ReviewRequestRecord[];
+};
+
 export type ReputationReadinessSummary = {
   generatedAt: string;
   providerId: string;
