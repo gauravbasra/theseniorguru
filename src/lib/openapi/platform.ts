@@ -66,6 +66,11 @@ type InternalWebhookDelivery = WebhookDeliveryRecord & {
   subscription?: InternalWebhookSubscription;
 };
 
+type ApiKeyLookupResult = {
+  client: ApiClientRecord;
+  apiKeyId: string;
+};
+
 function previewSecret(secret: string) {
   return `${secret.slice(0, 8)}...${secret.slice(-4)}`;
 }
@@ -102,7 +107,8 @@ function mapApiKey(row: Record<string, unknown>): ApiKeyRecord {
     keyPreview: String(row.key_preview),
     status: row.status as ApiKeyRecord["status"],
     createdAt: String(row.created_at),
-    expiresAt: row.expires_at ? String(row.expires_at) : undefined
+    expiresAt: row.expires_at ? String(row.expires_at) : undefined,
+    lastUsedAt: row.last_used_at ? String(row.last_used_at) : undefined
   };
 }
 
@@ -114,7 +120,8 @@ function redactApiKey(record: ApiKeyRecord | CreatedApiKeyRecord): ApiKeyRecord 
     keyPreview: record.keyPreview,
     status: record.status,
     createdAt: record.createdAt,
-    expiresAt: record.expiresAt
+    expiresAt: record.expiresAt,
+    lastUsedAt: record.lastUsedAt
   };
 }
 
@@ -248,7 +255,7 @@ async function recordApiAuditEvent(input: {
   }
 }
 
-async function findClientByApiKey(secret: string): Promise<ApiClientRecord | null> {
+async function findClientByApiKey(secret: string): Promise<ApiKeyLookupResult | null> {
   const secretHash = sha256(secret);
   const supabase = getSupabaseAdminClient();
 
@@ -260,7 +267,14 @@ async function findClientByApiKey(secret: string): Promise<ApiClientRecord | nul
       return null;
     }
 
-    return seedApiClients.find((client) => client.id === apiKey.apiClientId && client.status === "active") ?? null;
+    const client = seedApiClients.find((record) => record.id === apiKey.apiClientId && record.status === "active") ?? null;
+
+    if (!client) {
+      return null;
+    }
+
+    apiKey.lastUsedAt = new Date().toISOString();
+    return { client, apiKeyId: apiKey.id };
   }
 
   const { data, error } = await supabase
@@ -288,7 +302,10 @@ async function findClientByApiKey(secret: string): Promise<ApiClientRecord | nul
     return null;
   }
 
-  return mapClient(clientRow);
+  const now = new Date().toISOString();
+  await supabase.from("api_keys").update({ last_used_at: now }).eq("id", data.id);
+
+  return { client: mapClient(clientRow), apiKeyId: String(data.id) };
 }
 
 async function isRateLimited(client: ApiClientRecord) {
@@ -1141,9 +1158,9 @@ export async function authenticatePartnerApiRequest(
     return { ok: false, status: 401, error: "Missing API key" };
   }
 
-  const client = await findClientByApiKey(secret);
+  const keyLookup = await findClientByApiKey(secret);
 
-  if (!client) {
+  if (!keyLookup) {
     await recordApiAuditEvent({
       eventType,
       subjectType: options?.subjectType,
@@ -1155,6 +1172,8 @@ export async function authenticatePartnerApiRequest(
     return { ok: false, status: 401, error: "Invalid API key" };
   }
 
+  const { client, apiKeyId } = keyLookup;
+
   if (!client.scopes.includes(requiredScope)) {
     await recordApiAuditEvent({
       apiClientId: client.id,
@@ -1162,7 +1181,7 @@ export async function authenticatePartnerApiRequest(
       subjectType: options?.subjectType,
       subjectId: options?.subjectId,
       status: "blocked",
-      requestMetadata: { reason: "missing_scope", requiredScope }
+      requestMetadata: { reason: "missing_scope", requiredScope, apiKeyId }
     });
 
     return { ok: false, status: 403, error: `Missing required scope: ${requiredScope}` };
@@ -1175,7 +1194,7 @@ export async function authenticatePartnerApiRequest(
       subjectType: options?.subjectType,
       subjectId: options?.subjectId,
       status: "rate_limited",
-      requestMetadata: { reason: "rate_limit_exceeded", limit: client.rateLimitPerMinute }
+      requestMetadata: { reason: "rate_limit_exceeded", limit: client.rateLimitPerMinute, apiKeyId }
     });
 
     return { ok: false, status: 429, error: "Rate limit exceeded", retryAfterSeconds: 60 };
@@ -1187,8 +1206,16 @@ export async function authenticatePartnerApiRequest(
     subjectType: options?.subjectType,
     subjectId: options?.subjectId,
     status: "allowed",
-    requestMetadata: { requiredScope }
+    requestMetadata: { requiredScope, apiKeyId }
   });
 
-  return { ok: true, client };
+  return {
+    ok: true,
+    client,
+    apiKeyId,
+    rateLimit: {
+      limit: client.rateLimitPerMinute,
+      windowSeconds: 60
+    }
+  };
 }

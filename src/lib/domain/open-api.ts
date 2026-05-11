@@ -36,6 +36,7 @@ export type ApiKeyRecord = {
   status: "active" | "revoked";
   createdAt: string;
   expiresAt?: string;
+  lastUsedAt?: string;
 };
 
 export type CreateApiKeyInput = {
@@ -115,6 +116,11 @@ export type ApiAuthenticationResult =
   | {
       ok: true;
       client: ApiClientRecord;
+      apiKeyId?: string;
+      rateLimit: {
+        limit: number;
+        windowSeconds: number;
+      };
     }
   | {
       ok: false;

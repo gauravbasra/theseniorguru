@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { listEvents } from "@/lib/events/events";
 import { authenticatePartnerApiRequest } from "@/lib/openapi/platform";
-import { partnerAuthErrorResponse } from "@/lib/openapi/responses";
+import { partnerAuthErrorResponse, partnerSuccessHeaders } from "@/lib/openapi/responses";
 
 export async function GET(request: Request) {
   try {
@@ -16,14 +16,17 @@ export async function GET(request: Request) {
 
     const events = await listEvents();
 
-    return NextResponse.json({
-      data: events,
-      meta: {
-        apiClientId: auth.client.id,
-        sandboxMode: auth.client.sandboxMode,
-        count: events.length
-      }
-    });
+    return NextResponse.json(
+      {
+        data: events,
+        meta: {
+          apiClientId: auth.client.id,
+          sandboxMode: auth.client.sandboxMode,
+          count: events.length
+        }
+      },
+      { headers: partnerSuccessHeaders(auth) }
+    );
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticatePartnerApiRequest } from "@/lib/openapi/platform";
-import { partnerAuthErrorResponse } from "@/lib/openapi/responses";
+import { partnerAuthErrorResponse, partnerSuccessHeaders } from "@/lib/openapi/responses";
 import { listProviders } from "@/lib/providers";
 
 export async function GET(request: Request) {
@@ -16,14 +16,17 @@ export async function GET(request: Request) {
 
     const providers = await listProviders();
 
-    return NextResponse.json({
-      data: providers,
-      meta: {
-        apiClientId: auth.client.id,
-        sandboxMode: auth.client.sandboxMode,
-        count: providers.length
-      }
-    });
+    return NextResponse.json(
+      {
+        data: providers,
+        meta: {
+          apiClientId: auth.client.id,
+          sandboxMode: auth.client.sandboxMode,
+          count: providers.length
+        }
+      },
+      { headers: partnerSuccessHeaders(auth) }
+    );
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }

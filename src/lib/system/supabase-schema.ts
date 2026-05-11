@@ -57,7 +57,8 @@ const migrationManifest = [
   "20260511102000_import_idempotency.sql",
   "20260511104000_claim_verification_operations.sql",
   "20260511105000_ad_event_idempotency.sql",
-  "20260511110000_newsroom_rss_idempotency.sql"
+  "20260511110000_newsroom_rss_idempotency.sql",
+  "20260511111500_api_key_last_used.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -160,6 +161,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511110000_newsroom_rss_idempotency.sql": {
     capability: "newsroom",
     summary: "RSS inbox dedupe indexes for source URLs and source-title review."
+  },
+  "20260511111500_api_key_last_used.sql": {
+    capability: "openApi",
+    summary: "Partner API key last-used tracking for integration monitoring and security review."
   }
 };
 
