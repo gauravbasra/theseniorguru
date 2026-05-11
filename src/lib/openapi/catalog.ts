@@ -328,6 +328,16 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/quality-audit": {
         post: { tags: ["Aggregation"], summary: "Run launch-quality checks and flag staged provider records" }
       },
+      "/api/v1/admin/data-sources": {
+        get: { tags: ["Aggregation"], summary: "List source registry entries with approval, robots, and terms status" },
+        post: { tags: ["Aggregation"], summary: "Register a source before import or crawling" }
+      },
+      "/api/v1/admin/data-sources/{id}/approve": {
+        post: { tags: ["Aggregation"], summary: "Approve a registered data source with robots and terms evidence" }
+      },
+      "/api/v1/admin/data-sources/{id}/block": {
+        post: { tags: ["Aggregation"], summary: "Block a registered data source from import and crawling" }
+      },
       "/api/v1/admin/import-batches/{id}/run": {
         post: { tags: ["Aggregation"], summary: "Run a policy-gated import batch and stage extracted provider entities" }
       },

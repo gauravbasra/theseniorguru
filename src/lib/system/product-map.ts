@@ -223,6 +223,8 @@ const productPillars: ProductPillar[] = [
     backendRoutes: [
       "GET /api/v1/admin/data-sources",
       "POST /api/v1/admin/data-sources",
+      "POST /api/v1/admin/data-sources/{id}/approve",
+      "POST /api/v1/admin/data-sources/{id}/block",
       "POST /api/v1/admin/import-batches/{id}/run",
       "POST /api/v1/admin/import-batches/{id}/requeue",
       "GET /api/v1/admin/extracted-entities",
