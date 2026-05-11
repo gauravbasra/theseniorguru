@@ -11,8 +11,11 @@ import {
 import { runPolicyCheck } from "@/lib/policy";
 
 function latestPendingAttempt(attempts: ProviderVerificationAttemptRecord[], method?: string) {
+  const now = Date.now();
+
   return attempts
     .filter((attempt) => attempt.status === "pending")
+    .filter((attempt) => !attempt.expiresAt || Date.parse(attempt.expiresAt) > now)
     .filter((attempt) => !method || attempt.method === method)
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
 }

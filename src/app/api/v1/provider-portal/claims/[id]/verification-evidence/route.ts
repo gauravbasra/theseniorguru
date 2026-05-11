@@ -20,7 +20,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ data: result }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    const status = message === "Provider claim not found" ? 404 : message.includes("must be true") ? 422 : 500;
+    const status = message === "Provider claim not found"
+      ? 404
+      : message.includes("must be true")
+        ? 422
+        : message.includes("already completed") || message.includes("has expired")
+          ? 409
+          : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

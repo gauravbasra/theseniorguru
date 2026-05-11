@@ -19,7 +19,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       })
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const status = message === "Provider verification attempt not found"
+      ? 404
+      : message.includes("already completed") || message.includes("has expired")
+        ? 409
+        : 500;
+
+    return NextResponse.json({ error: message }, { status });
   }
 }
-

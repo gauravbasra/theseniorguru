@@ -13,6 +13,7 @@ import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedVerificationAttempts: ProviderVerificationAttemptRecord[] = [];
+const verificationTtlMs = 7 * 24 * 60 * 60 * 1000;
 
 function methodToClaimStatus(method: ProviderVerificationMethod): ProviderClaimStatus {
   if (method === "business_email" || method === "domain_dns") {
@@ -62,6 +63,20 @@ function buildVerificationActionUrl(attempt: ProviderVerificationAttemptRecord) 
 
 function isExpiredPendingAttempt(attempt: ProviderVerificationAttemptRecord, now = new Date()) {
   return attempt.status === "pending" && Boolean(attempt.expiresAt) && Date.parse(attempt.expiresAt as string) <= now.getTime();
+}
+
+function defaultExpiresAt(now = new Date()) {
+  return new Date(now.getTime() + verificationTtlMs).toISOString();
+}
+
+function assertAttemptCanBeCompleted(attempt: ProviderVerificationAttemptRecord, now = new Date()) {
+  if (attempt.status !== "pending") {
+    throw new Error("Provider verification attempt is already completed");
+  }
+
+  if (isExpiredPendingAttempt(attempt, now)) {
+    throw new Error("Provider verification attempt has expired; create a new verification attempt");
+  }
 }
 
 function nonExpiredPendingAttempt(attempts: ProviderVerificationAttemptRecord[], input: CreateProviderVerificationAttemptInput) {
@@ -142,6 +157,7 @@ export async function createProviderVerificationAttempt(
 
   const supabase = getSupabaseAdminClient();
   const now = new Date().toISOString();
+  const expiresAt = input.expiresAt ?? defaultExpiresAt(new Date(now));
 
   if (!supabase) {
     const existing = nonExpiredPendingAttempt(seedVerificationAttempts, input);
@@ -157,7 +173,7 @@ export async function createProviderVerificationAttempt(
       status: "pending",
       target: input.target,
       attemptPayload: input.attemptPayload ?? {},
-      expiresAt: input.expiresAt,
+      expiresAt,
       createdAt: now
     };
     seedVerificationAttempts.unshift(attempt);
@@ -191,7 +207,7 @@ export async function createProviderVerificationAttempt(
       status: "pending",
       target: input.target,
       attempt_payload: input.attemptPayload ?? {},
-      expires_at: input.expiresAt
+      expires_at: expiresAt
     })
     .select("*")
     .single();
@@ -338,20 +354,26 @@ export async function completeProviderVerificationAttempt(
 
   if (!supabase) {
     const existing = seedVerificationAttempts.find((attempt) => attempt.id === input.attemptId);
+
+    if (!existing) {
+      throw new Error("Provider verification attempt not found");
+    }
+
+    assertAttemptCanBeCompleted(existing, new Date(now));
+
     const completed: ProviderVerificationAttemptRecord = {
       id: input.attemptId,
-      providerClaimId: existing?.providerClaimId ?? "fallback-claim",
-      method: existing?.method ?? "admin_manual",
+      providerClaimId: existing.providerClaimId,
+      method: existing.method,
       status: input.status,
-      target: existing?.target,
-      attemptPayload: { ...(existing?.attemptPayload ?? {}), completionEvidence: input.evidence ?? {} },
+      target: existing.target,
+      attemptPayload: { ...existing.attemptPayload, completionEvidence: input.evidence ?? {} },
+      expiresAt: existing.expiresAt,
       completedAt: now,
-      createdAt: existing?.createdAt ?? now
+      createdAt: existing.createdAt
     };
 
-    if (existing) {
-      Object.assign(existing, completed);
-    }
+    Object.assign(existing, completed);
 
     return completed;
   }
@@ -365,6 +387,9 @@ export async function completeProviderVerificationAttempt(
   if (attemptError) {
     throw new Error(`Provider verification attempt lookup failed: ${attemptError.message}`);
   }
+
+  const mappedAttempt = mapVerificationAttempt(attempt);
+  assertAttemptCanBeCompleted(mappedAttempt, new Date(now));
 
   const attemptPayload = {
     ...mapJson(attempt.attempt_payload),
