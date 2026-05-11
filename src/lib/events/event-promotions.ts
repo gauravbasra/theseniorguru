@@ -73,7 +73,7 @@ export async function createEventPromotion(input: CreateEventPromotionInput): Pr
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const promotion: EventPromotionRecord = {
       id: `pending-event-promotion-${Date.now()}`,
       eventId: input.eventId,
       status,
@@ -84,6 +84,8 @@ export async function createEventPromotion(input: CreateEventPromotionInput): Pr
       disclosureLabel: input.disclosureLabel ?? "Sponsored",
       createdAt: now
     };
+    seedPromotions.unshift(promotion);
+    return promotion;
   }
 
   const { data, error } = await supabase
@@ -149,15 +151,14 @@ export async function activateEventPromotion(input: ActivateEventPromotionInput)
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
-      id: input.promotionId,
-      eventId: "fallback-event",
-      status: "active",
-      placementKey: "events.featured.local",
-      budgetCents: 0,
-      disclosureLabel: "Sponsored",
-      createdAt: now
-    };
+    const promotion = seedPromotions.find((item) => item.id === input.promotionId);
+
+    if (!promotion) {
+      throw new Error("Event promotion not found");
+    }
+
+    promotion.status = "active";
+    return promotion;
   }
 
   const { data: promotion, error: promotionError } = await supabase

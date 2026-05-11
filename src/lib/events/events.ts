@@ -91,7 +91,7 @@ export async function createEvent(input: CreateEventInput): Promise<EventRecord>
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const event: EventRecord = {
       id: `pending-event-${Date.now()}`,
       providerId: input.providerId,
       title: input.title,
@@ -109,6 +109,8 @@ export async function createEvent(input: CreateEventInput): Promise<EventRecord>
       isFree: input.isFree ?? true,
       registrationUrl: input.registrationUrl
     };
+    seedEvents.unshift(event);
+    return event;
   }
 
   const { data, error } = await supabase
@@ -152,13 +154,15 @@ export async function createEventRsvp(input: EventRsvpInput): Promise<EventRsvpR
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const rsvp: EventRsvpRecord = {
       id: `pending-rsvp-${Date.now()}`,
       ...input,
       partySize: input.partySize ?? 1,
       status: "confirmed",
       createdAt: new Date().toISOString()
     };
+    seedRsvps.unshift(rsvp);
+    return rsvp;
   }
 
   const { data, error } = await supabase
@@ -189,4 +193,34 @@ export async function createEventRsvp(input: EventRsvpInput): Promise<EventRsvpR
     consentPayload: data.consent_payload ?? {},
     createdAt: data.created_at
   };
+}
+
+export async function listEventRsvps(eventId: string): Promise<EventRsvpRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedRsvps.filter((rsvp) => rsvp.eventId === eventId);
+  }
+
+  const { data, error } = await supabase
+    .from("event_rsvps")
+    .select("*")
+    .eq("event_id", eventId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Event RSVP list failed: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    eventId: row.event_id,
+    attendeeName: row.attendee_name,
+    attendeeEmail: row.attendee_email,
+    attendeePhone: row.attendee_phone ?? undefined,
+    partySize: row.party_size,
+    status: row.status,
+    consentPayload: row.consent_payload ?? {},
+    createdAt: row.created_at
+  }));
 }

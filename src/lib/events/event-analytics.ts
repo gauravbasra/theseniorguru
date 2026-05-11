@@ -1,5 +1,6 @@
 import type { EventAnalyticsSummary } from "@/lib/domain/events";
-import { getEventById } from "@/lib/events/events";
+import { listEventPromotions } from "@/lib/events/event-promotions";
+import { getEventById, listEventRsvps } from "@/lib/events/events";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 function emptyAnalytics(eventId: string): EventAnalyticsSummary {
@@ -37,16 +38,21 @@ export async function getEventAnalytics(eventId: string): Promise<EventAnalytics
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
+    const rsvps = await listEventRsvps(event.id);
+    const promotions = await listEventPromotions(event.id);
+
     return {
       ...emptyAnalytics(eventId),
-      rsvps: {
-        total: 0,
-        confirmed: 0,
-        waitlisted: 0,
-        canceled: 0,
-        attended: 0,
-        noShow: 0
-      }
+      rsvps: summarizeRsvps(rsvps.map((rsvp) => ({ status: rsvp.status, party_size: rsvp.partySize }))),
+      promotions: promotions.reduce(
+        (summary, promotion) => {
+          summary.total += 1;
+          summary.budgetCents += promotion.budgetCents;
+          if (promotion.status === "active") summary.active += 1;
+          return summary;
+        },
+        { total: 0, active: 0, budgetCents: 0 }
+      )
     };
   }
 
@@ -86,28 +92,7 @@ export async function getEventAnalytics(eventId: string): Promise<EventAnalytics
     throw new Error(`Event click analytics query failed: ${clickResult.error.message}`);
   }
 
-  const rsvpSummary = (rsvps ?? []).reduce(
-    (summary, rsvp) => {
-      const partySize = Number(rsvp.party_size ?? 1);
-      summary.total += partySize;
-
-      if (rsvp.status === "confirmed") summary.confirmed += partySize;
-      if (rsvp.status === "waitlisted") summary.waitlisted += partySize;
-      if (rsvp.status === "canceled") summary.canceled += partySize;
-      if (rsvp.status === "attended") summary.attended += partySize;
-      if (rsvp.status === "no_show") summary.noShow += partySize;
-
-      return summary;
-    },
-    {
-      total: 0,
-      confirmed: 0,
-      waitlisted: 0,
-      canceled: 0,
-      attended: 0,
-      noShow: 0
-    }
-  );
+  const rsvpSummary = summarizeRsvps(rsvps ?? []);
   const promotionSummary = (promotions ?? []).reduce(
     (summary, promotion) => {
       summary.total += 1;
@@ -133,3 +118,27 @@ export async function getEventAnalytics(eventId: string): Promise<EventAnalytics
   };
 }
 
+function summarizeRsvps(rsvps: Array<{ status: unknown; party_size?: unknown }>) {
+  return rsvps.reduce(
+    (summary, rsvp) => {
+      const partySize = Number(rsvp.party_size ?? 1);
+      summary.total += partySize;
+
+      if (rsvp.status === "confirmed") summary.confirmed += partySize;
+      if (rsvp.status === "waitlisted") summary.waitlisted += partySize;
+      if (rsvp.status === "canceled") summary.canceled += partySize;
+      if (rsvp.status === "attended") summary.attended += partySize;
+      if (rsvp.status === "no_show") summary.noShow += partySize;
+
+      return summary;
+    },
+    {
+      total: 0,
+      confirmed: 0,
+      waitlisted: 0,
+      canceled: 0,
+      attended: 0,
+      noShow: 0
+    }
+  );
+}

@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { AcquisitionPipelineConsole } from "@/components/acquisition-pipeline-console";
 import { AdRevenueConsole } from "@/components/ad-revenue-console";
 import { ClaimVerificationConsole } from "@/components/claim-verification-console";
+import { EventsCommunityConsole } from "@/components/events-community-console";
 import { NewsroomConsole } from "@/components/newsroom-console";
 import { OpenApiConsole } from "@/components/open-api-console";
 import { ReviewReputationConsole } from "@/components/review-reputation-console";
@@ -14,10 +15,14 @@ import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-
 import { getAdminDashboardMetrics } from "@/lib/admin/dashboard-metrics";
 import { listAdPlacements } from "@/lib/ads/ads";
 import { listProviderClaims } from "@/lib/claims/provider-claims";
+import { listCommunityPosts } from "@/lib/community/feed";
+import { listExpertProfiles } from "@/lib/community/experts";
+import { listCommunityGroups } from "@/lib/community/groups";
 import { listDataSources } from "@/lib/data-sources";
 import type { ProviderClaimRecord } from "@/lib/domain/claims";
 import type { ImportRecordInput } from "@/lib/domain/imports";
 import type { LeadQueueSummary } from "@/lib/domain/leads";
+import { listEvents } from "@/lib/events/events";
 import { listImportBatches } from "@/lib/import-batches";
 import { listLeadQueue } from "@/lib/leads";
 import { listNewsItems } from "@/lib/newsroom/newsroom";
@@ -49,7 +54,11 @@ export default async function AdminPage() {
     apiClients,
     webhookSubscriptions,
     webhookDeliveries,
-    apiAuditEvents
+    apiAuditEvents,
+    events,
+    communityGroups,
+    expertProfiles,
+    communityPosts
   ] = await Promise.all([
     getLaunchChecklist(),
     getAdminDashboardMetrics(),
@@ -68,7 +77,11 @@ export default async function AdminPage() {
     listApiClients(),
     listWebhookSubscriptions(),
     listWebhookDeliveries(),
-    listApiAuditEvents()
+    listApiAuditEvents(),
+    listEvents(),
+    listCommunityGroups(),
+    listExpertProfiles({ status: "verified" }),
+    listCommunityPosts()
   ]);
   const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
   const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
@@ -337,6 +350,21 @@ export default async function AdminPage() {
           </div>
         </div>
         <AdRevenueConsole initialPlacements={adPlacements} initialProviders={providers} />
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Events and community</p>
+            <h2>Run provider events, local groups, expert trust, and moderation</h2>
+          </div>
+        </div>
+        <EventsCommunityConsole
+          initialEvents={events}
+          initialGroups={communityGroups}
+          initialExperts={expertProfiles}
+          initialPosts={communityPosts}
+        />
       </section>
 
       <section className="admin-section">

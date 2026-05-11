@@ -30,6 +30,7 @@ Deliverables:
 - Sponsored event promotion APIs. Completed.
 - Event promotion to ad creative activation workflow. Completed.
 - Event analytics API. Completed.
+- Admin events/community operations console for event publishing, RSVPs, promotions, analytics, groups, invites, experts, and moderation. Completed.
 - Community feed schema. Completed.
 - Mobile app feed API. Completed.
 - Saved providers and care circle schema. Completed.
