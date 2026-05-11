@@ -72,6 +72,7 @@ Deliverables:
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.
 - Admin Open API operations console for clients, scoped keys, webhooks, dry-run delivery, retries, and audit visibility. Completed.
 - Admin operations health charts backed by dashboard metrics for claims, reviews, events, community, APIs, and workers. Completed.
+- Admin acquisition health API and console panel for 5,000-listing launch readiness, source coverage, image backlog, import queues, crawl queues, blockers, and next actions. Completed.
 - Webhook delivery retry API with policy-gated requeue and audit trail. Completed.
 - Supabase schema readiness by product capability with live row counts and blocked capability summaries. Completed.
 - Browser-safe guard for internal API endpoints. Completed.

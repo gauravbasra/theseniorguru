@@ -1908,7 +1908,7 @@ a {
 
 .acquisition-console {
   display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(340px, 0.9fr) repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -1979,6 +1979,91 @@ a {
 .run-job-strip:disabled {
   cursor: wait;
   opacity: 0.7;
+}
+
+.acquisition-health-panel {
+  grid-column: span 3;
+}
+
+.acquisition-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.acquisition-health-grid div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.acquisition-health-grid strong {
+  color: var(--foreground);
+  font-size: 27px;
+  line-height: 1;
+}
+
+.acquisition-health-grid span,
+.acquisition-health-bar span,
+.acquisition-health-bar strong {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.acquisition-health-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.acquisition-health-bar {
+  display: grid;
+  gap: 7px;
+}
+
+.acquisition-health-bar div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.acquisition-health-bar i {
+  display: block;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf0e8;
+}
+
+.acquisition-health-bar i::before {
+  display: block;
+  width: var(--value);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-strong);
+  content: "";
+}
+
+.acquisition-next-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.acquisition-next-actions span {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--gold);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .batch-status-grid {
@@ -3729,6 +3814,7 @@ button.open-api-row {
   .chart-panel-large,
   .chart-panel-wide,
   .chart-panel-full,
+  .acquisition-health-panel,
   .workbench-runner,
   .workbench-wide {
     grid-column: auto;
@@ -3743,6 +3829,7 @@ button.open-api-row {
   .supabase-status-grid,
   .open-api-status-grid,
   .events-community-status-grid,
+  .acquisition-health-grid,
   .acquisition-action-row,
   .review-actions-grid,
   .review-moderation-grid,

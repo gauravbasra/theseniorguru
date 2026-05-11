@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { DatabaseZap, Loader2, Play, RefreshCw, RotateCcw } from "lucide-react";
+import type { AcquisitionHealthSummary } from "@/lib/aggregation/acquisition-health";
 import type { CrawlJobRecord, ImportBatchRecord, ImportBatchStatus } from "@/lib/domain/imports";
 import type { DataSourceRecord } from "@/lib/domain/providers";
 
@@ -9,6 +11,7 @@ type AcquisitionPipelineConsoleProps = {
   initialSources: DataSourceRecord[];
   initialBatches: ImportBatchRecord[];
   initialCrawlJobs: CrawlJobRecord[];
+  initialHealth: AcquisitionHealthSummary;
 };
 
 type ActionState = {
@@ -28,11 +31,13 @@ const batchStatuses: ImportBatchStatus[] = [
 export function AcquisitionPipelineConsole({
   initialSources,
   initialBatches,
-  initialCrawlJobs
+  initialCrawlJobs,
+  initialHealth
 }: AcquisitionPipelineConsoleProps) {
   const approvedSources = initialSources.filter((source) => source.reviewStatus === "approved");
   const [batches, setBatches] = useState(initialBatches);
   const [crawlJobs, setCrawlJobs] = useState(initialCrawlJobs);
+  const [health, setHealth] = useState(initialHealth);
   const [selectedSourceId, setSelectedSourceId] = useState(approvedSources[0]?.id ?? "");
   const [seedUrl, setSeedUrl] = useState(approvedSources[0]?.baseUrl ?? "https://theseniorguru.com/search");
   const [maxPages, setMaxPages] = useState(5);
@@ -75,6 +80,22 @@ export function AcquisitionPipelineConsole({
     setActionState({
       ok: batchResponse.ok && crawlResponse.ok,
       message: batchResponse.ok && crawlResponse.ok ? "Acquisition queues refreshed." : "Queue refresh hit an API error."
+    });
+  }
+
+  async function refreshHealth() {
+    setLoadingKey("refresh-health");
+    const response = await fetch("/api/v1/admin/acquisition-health");
+    const payload = await response.json().catch(() => ({}));
+    setLoadingKey(null);
+
+    if (response.ok && payload.data) {
+      setHealth(payload.data);
+    }
+
+    setActionState({
+      ok: response.ok,
+      message: response.ok ? "Acquisition health refreshed from backend metrics." : payload.error ?? "Health refresh failed."
     });
   }
 
@@ -150,6 +171,7 @@ export function AcquisitionPipelineConsole({
 
     if (response.ok) {
       await refreshQueues();
+      await refreshHealth();
     }
 
     setActionState({
@@ -249,6 +271,35 @@ export function AcquisitionPipelineConsole({
         {actionState ? <p className={actionState.ok ? "governance-message ok" : "governance-message error"}>{actionState.message}</p> : null}
       </article>
 
+      <article className="acquisition-panel acquisition-health-panel">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Launch inventory health</p>
+            <h3>{health.discoveredListings} discovered listings</h3>
+          </div>
+          <button className="icon-text-button" type="button" disabled={loadingKey === "refresh-health"} onClick={refreshHealth}>
+            {loadingKey === "refresh-health" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}
+            Health
+          </button>
+        </div>
+        <div className="acquisition-health-grid">
+          <HealthStat label="Target" value={health.targetListings} />
+          <HealthStat label="Staged" value={health.stagedRecords} />
+          <HealthStat label="Imported" value={health.importedRecords} />
+          <HealthStat label="Remaining" value={health.remainingListings} />
+        </div>
+        <div className="acquisition-health-bars">
+          <HealthBar label="Production-grade preview" value={health.productionGradeRecords} total={Math.max(health.productionGradeRecords + health.imageBacklogRecords, 1)} />
+          <HealthBar label="Image ready" value={health.imageReadyRecords} total={Math.max(health.imageReadyRecords + health.imageBacklogRecords, 1)} />
+          <HealthBar label="Approved sources" value={health.approvedSources} total={Math.max(health.approvedSources + health.pendingSources + health.blockedSources, 1)} />
+        </div>
+        <div className="acquisition-next-actions">
+          {(health.blockers.length ? health.blockers : health.nextActions).slice(0, 3).map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+        </div>
+      </article>
+
       <article className="acquisition-panel">
         <p className="eyebrow">Import batches</p>
         <h3>Status mix</h3>
@@ -311,6 +362,29 @@ export function AcquisitionPipelineConsole({
           ) : null}
         </div>
       </article>
+    </div>
+  );
+}
+
+function HealthStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function HealthBar({ label, value, total }: { label: string; value: number; total: number }) {
+  const width = total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
+
+  return (
+    <div className="acquisition-health-bar">
+      <div>
+        <span>{label}</span>
+        <strong>{value} / {total}</strong>
+      </div>
+      <i style={{ "--value": `${width}%` } as CSSProperties} />
     </div>
   );
 }

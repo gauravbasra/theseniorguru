@@ -10,6 +10,7 @@ import { ReviewReputationConsole } from "@/components/review-reputation-console"
 import { SourceGovernanceConsole } from "@/components/source-governance-console";
 import { SupabaseReadinessConsole } from "@/components/supabase-readiness-console";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
+import { getAcquisitionHealth } from "@/lib/aggregation/acquisition-health";
 import { listCrawlJobs } from "@/lib/aggregation/crawl-jobs";
 import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
 import { getAdminDashboardMetrics } from "@/lib/admin/dashboard-metrics";
@@ -58,7 +59,8 @@ export default async function AdminPage() {
     events,
     communityGroups,
     expertProfiles,
-    communityPosts
+    communityPosts,
+    acquisitionHealth
   ] = await Promise.all([
     getLaunchChecklist(),
     getAdminDashboardMetrics(),
@@ -81,7 +83,8 @@ export default async function AdminPage() {
     listEvents(),
     listCommunityGroups(),
     listExpertProfiles({ status: "verified" }),
-    listCommunityPosts()
+    listCommunityPosts(),
+    getAcquisitionHealth()
   ]);
   const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
   const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
@@ -346,6 +349,7 @@ export default async function AdminPage() {
           initialSources={dataSources}
           initialBatches={importBatches}
           initialCrawlJobs={crawlJobs}
+          initialHealth={acquisitionHealth}
         />
       </section>
 
