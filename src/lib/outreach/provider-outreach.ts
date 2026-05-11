@@ -87,7 +87,7 @@ export async function createProviderOutreach(input: CreateProviderOutreachInput)
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const outreach: ProviderOutreachRecord = {
       id: `pending-outreach-${Date.now()}`,
       providerId: input.providerId,
       sequenceKey: input.sequenceKey ?? "claim_invite_v1",
@@ -99,6 +99,9 @@ export async function createProviderOutreach(input: CreateProviderOutreachInput)
       scheduledFor: input.scheduledFor,
       createdAt: new Date().toISOString()
     };
+
+    seedOutreach.unshift(outreach);
+    return outreach;
   }
 
   const { data, error } = await supabase
@@ -139,15 +142,27 @@ export async function sendProviderOutreach(input: SendProviderOutreachInput): Pr
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const existing = seedOutreach.find((item) => item.id === input.outreachId);
+    const outreach: ProviderOutreachRecord = {
       id: input.outreachId,
-      providerId: "fallback-provider",
-      sequenceKey: "claim_invite_v1",
+      providerId: existing?.providerId ?? "fallback-provider",
+      sequenceKey: existing?.sequenceKey ?? "claim_invite_v1",
       status: "sent",
-      channel: "manual",
+      channel: existing?.channel ?? "manual",
+      recipient: existing?.recipient,
+      subject: existing?.subject,
+      body: existing?.body,
       sentAt: now,
-      createdAt: now
+      createdAt: existing?.createdAt ?? now
     };
+
+    if (existing) {
+      Object.assign(existing, outreach);
+    } else {
+      seedOutreach.unshift(outreach);
+    }
+
+    return outreach;
   }
 
   const { data, error } = await supabase
@@ -177,4 +192,3 @@ export async function sendProviderOutreach(input: SendProviderOutreachInput): Pr
 
   return mapProviderOutreach(data);
 }
-

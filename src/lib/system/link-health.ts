@@ -70,6 +70,12 @@ const routeContracts: LinkContract[] = [
   { label: "Newsroom readiness API", href: "/api/v1/admin/newsroom/readiness", method: "GET", owner: "admin" },
   { label: "Partner providers API", href: "/api/v1/partner/providers", method: "GET", owner: "provider" },
   { label: "Partner events API", href: "/api/v1/partner/events", method: "GET", owner: "provider" },
+  {
+    label: "Provider onboarding readiness API",
+    href: "/api/v1/admin/provider-onboarding-readiness?providerId=seed-cottages-dayton-place",
+    method: "GET",
+    owner: "admin"
+  },
   { label: "Provider claim status API", href: "/api/v1/provider-portal/claims/demo/status", method: "GET", owner: "provider" },
   {
     label: "Provider claim evidence API",

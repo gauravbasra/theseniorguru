@@ -143,6 +143,16 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<ListChecks aria-hidden="true" />}
+          label="Provider onboarding"
+          loading={loadingKey === "provider-onboarding"}
+          onClick={() =>
+            runOperation("Provider onboarding readiness", "provider-onboarding", () =>
+              fetch("/api/v1/admin/provider-onboarding-readiness?providerId=seed-cottages-dayton-place")
+            )
+          }
+        />
+        <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
           label="Aggregation readiness"
           loading={loadingKey === "aggregation-readiness"}
           onClick={() =>

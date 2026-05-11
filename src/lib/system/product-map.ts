@@ -32,6 +32,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/inquiries",
       "POST /api/v1/operator/free-listing-requests",
       "GET /api/v1/admin/leads",
+      "GET /api/v1/admin/provider-onboarding-readiness",
       "PATCH /api/v1/provider-portal/providers/{id}",
       "GET /api/v1/provider-portal/claims/{id}/status",
       "POST /api/v1/provider-portal/claims/{id}/verification-evidence"
@@ -147,6 +148,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/operator/demo-requests",
       "POST /api/v1/provider/campaigns/{id}/generate",
       "POST /api/v1/provider/campaigns/{id}/publish",
+      "GET /api/v1/admin/provider-onboarding-readiness",
       "GET /api/v1/provider/reputation-readiness",
       "GET /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider/review-request-campaigns",

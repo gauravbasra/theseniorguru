@@ -250,7 +250,7 @@ export async function createGrowthSubscription(
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const subscription: ProviderGrowthSubscriptionRecord = {
       id: `pending-growth-subscription-${Date.now()}`,
       providerId: input.providerId,
       growthPlanId: plan.id,
@@ -262,6 +262,9 @@ export async function createGrowthSubscription(
       createdAt: now,
       updatedAt: now
     };
+
+    seedSubscriptions.unshift(subscription);
+    return subscription;
   }
 
   const { data, error } = await supabase
@@ -323,21 +326,31 @@ export async function activateGrowthSubscription(
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const existing = seedSubscriptions.find((subscription) => subscription.id === input.subscriptionId);
+    const termMonths = existing?.termMonths ?? 3;
+    const activated: ProviderGrowthSubscriptionRecord = {
       id: input.subscriptionId,
-      providerId: "fallback-provider",
-      growthPlanId: "fallback-plan",
+      providerId: existing?.providerId ?? "fallback-provider",
+      growthPlanId: existing?.growthPlanId ?? "fallback-plan",
       status: "active",
-      termMonths: 3,
-      monthlyPriceCents: 10000,
-      autoRenews: true,
-      contractPayload: {},
+      termMonths,
+      monthlyPriceCents: existing?.monthlyPriceCents ?? 10000,
+      autoRenews: existing?.autoRenews ?? true,
+      contractPayload: existing?.contractPayload ?? {},
       startsAt: startsAt.toISOString(),
-      endsAt: addMonths(startsAt, 3).toISOString(),
+      endsAt: addMonths(startsAt, termMonths).toISOString(),
       activatedAt: now,
-      createdAt: now,
+      createdAt: existing?.createdAt ?? now,
       updatedAt: now
     };
+
+    if (existing) {
+      Object.assign(existing, activated);
+    } else {
+      seedSubscriptions.unshift(activated);
+    }
+
+    return activated;
   }
 
   const { data: subscription, error: subscriptionError } = await supabase

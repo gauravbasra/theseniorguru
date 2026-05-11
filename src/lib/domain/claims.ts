@@ -102,3 +102,52 @@ export type ProviderClaimStatusSummary = {
   readyForAdminReview: boolean;
   canEditProfile: boolean;
 };
+
+export type ProviderOnboardingReadinessSummary = {
+  generatedAt: string;
+  providerId: string;
+  providerName: string;
+  status: "ready" | "action_required" | "blocked";
+  stages: {
+    listing: {
+      status: "ready" | "action_required";
+      providerStatus: string;
+      sourceConfidence: number;
+    };
+    outreach: {
+      status: "not_started" | "queued" | "sent" | "blocked";
+      total: number;
+      queued: number;
+      sent: number;
+      blocked: number;
+    };
+    claim: {
+      status: ProviderClaimStatus | "not_started";
+      total: number;
+      latestClaimId?: string;
+      readyForAdminReview: boolean;
+      canEditProfile: boolean;
+    };
+    verification: {
+      total: number;
+      pending: number;
+      passed: number;
+      failed: number;
+      expired: number;
+    };
+    reputation: {
+      status: "ready" | "action_required" | "blocked";
+      publishedReviews: number;
+      queuedRequests: number;
+      blockers: string[];
+    };
+    growth: {
+      status: "not_started" | "pending_contract" | "active" | "blocked";
+      subscriptions: number;
+      activeSubscriptions: number;
+      activeEntitlements: string[];
+    };
+  };
+  blockers: string[];
+  nextActions: string[];
+};

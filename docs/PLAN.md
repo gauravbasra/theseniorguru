@@ -23,6 +23,7 @@ Deliverables:
 - Provider-facing claim status and verification checklist API. Completed.
 - Automatic initial verification attempt after claim submission. Completed.
 - Provider-facing claim evidence submission API and console action. Completed.
+- Provider onboarding readiness API across claim, verification, outreach, reputation, and growth. Completed.
 - Admin claim approve/reject workflow. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.

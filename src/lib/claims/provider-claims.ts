@@ -125,13 +125,21 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const claim = seedClaims.find((item) => item.id === input.claimId);
+    const decision = {
       id: input.claimId,
       status: input.decision,
       adminNotes: input.adminNotes,
       decidedAt: now,
       providerStatus: input.decision === "approved" ? "claimed" : undefined
     };
+
+    if (claim) {
+      claim.status = input.decision;
+      claim.updatedAt = now;
+    }
+
+    return decision;
   }
 
   const { data: claim, error: claimError } = await supabase
