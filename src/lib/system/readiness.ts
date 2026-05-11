@@ -1,5 +1,6 @@
 import { getAppEnv } from "@/lib/env";
 import { getDeploymentStatus } from "@/lib/system/deployment";
+import { getPersistenceStatus } from "@/lib/system/persistence";
 
 type ReadinessCheck = {
   key: string;
@@ -23,7 +24,16 @@ function groupStatus(checks: ReadinessCheck[]) {
 export function getSystemReadiness() {
   const env = getAppEnv();
   const deployment = getDeploymentStatus();
+  const persistence = getPersistenceStatus();
   const supabaseChecks: ReadinessCheck[] = [
+    {
+      key: "PERSISTENCE_MODE",
+      label: "Persistent backend storage",
+      status: persistence.durableAcrossDeploys ? "ready" : "missing",
+      action: persistence.durableAcrossDeploys
+        ? "Supabase persistence is active."
+        : "Supabase is not configured; API writes use fallback memory and do not survive deployments."
+    },
     {
       key: "NEXT_PUBLIC_SUPABASE_URL",
       label: "Supabase project URL",
@@ -136,6 +146,7 @@ export function getSystemReadiness() {
 
   return {
     generatedAt: new Date().toISOString(),
+    persistence,
     overallStatus:
       [supabaseChecks, emailChecks, adsChecks, hostingChecks, authChecks].every((checks) => groupStatus(checks) === "ready")
         ? "ready"

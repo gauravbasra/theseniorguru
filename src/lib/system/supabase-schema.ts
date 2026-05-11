@@ -53,7 +53,8 @@ const migrationManifest = [
   "20260511010000_public_source_acquisition_staging.sql",
   "20260511020000_community_memberships.sql",
   "20260511030000_expert_profiles.sql",
-  "20260511033000_community_invitations_topics.sql"
+  "20260511033000_community_invitations_topics.sql",
+  "20260511102000_import_idempotency.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -140,6 +141,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511033000_community_invitations_topics.sql": {
     capability: "community",
     summary: "Community invitation delivery queue and local topic subscriptions."
+  },
+  "20260511102000_import_idempotency.sql": {
+    capability: "aggregation",
+    summary: "Skipped-record accounting and source-record indexes for idempotent listing imports."
   }
 };
 

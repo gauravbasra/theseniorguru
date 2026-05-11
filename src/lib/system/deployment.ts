@@ -1,4 +1,5 @@
 import { getAppEnv } from "@/lib/env";
+import { getPersistenceStatus } from "@/lib/system/persistence";
 
 export type DeploymentStatus = {
   generatedAt: string;
@@ -8,6 +9,7 @@ export type DeploymentStatus = {
   environment: string;
   commitSha?: string;
   domainStatus: "canonical_ready" | "vercel_preview_ready" | "local_only";
+  persistenceMode: "supabase_persistent" | "fallback_memory";
   ownerActions: string[];
 };
 
@@ -25,6 +27,7 @@ export function getDeploymentStatus(): DeploymentStatus {
   const canonicalUrl = env.appUrl;
   const isCanonicalReady = canonicalUrl.includes("theseniorguru.com");
   const isVercelReady = Boolean(activeDeploymentUrl && env.vercelEnv === "production");
+  const persistence = getPersistenceStatus();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -34,8 +37,10 @@ export function getDeploymentStatus(): DeploymentStatus {
     environment: env.vercelEnv ?? "local",
     commitSha: env.vercelGitCommitSha,
     domainStatus: isCanonicalReady ? "canonical_ready" : isVercelReady ? "vercel_preview_ready" : "local_only",
+    persistenceMode: persistence.mode,
     ownerActions: [
       ...(isCanonicalReady ? [] : ["Set NEXT_PUBLIC_APP_URL to https://theseniorguru.com in production."]),
+      ...persistence.ownerActions,
       "Approve theseniorguru.com DNS cutover before changing A/CNAME records.",
       "Add production Supabase, Mailjet, and ads credentials in the deployment environment."
     ]
