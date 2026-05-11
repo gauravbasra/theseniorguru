@@ -82,6 +82,7 @@ Deliverables:
 - Aggregation launch readiness API and admin console action. Completed.
 - Launch import wave planning API and admin console action. Completed.
 - Provider claim outreach queue APIs. Completed.
+- Provider outreach requeue API for blocked or bounced claim invites. Completed.
 - Family inquiry, free listing, and operator demo intake APIs. Completed.
 - Admin lead intake queue API and operations console action. Completed.
 - Supabase migration manifest and live table readiness API. Completed.

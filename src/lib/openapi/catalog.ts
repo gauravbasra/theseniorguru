@@ -86,6 +86,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-outreach/{id}/send": {
         post: { tags: ["Claims"], summary: "Mark provider outreach as sent and audit delivery metadata" }
       },
+      "/api/v1/admin/provider-outreach/{id}/requeue": {
+        post: { tags: ["Claims"], summary: "Requeue blocked or bounced provider claim outreach with policy audit" }
+      },
       "/api/v1/admin/provider-onboarding-readiness": {
         get: { tags: ["Claims"], summary: "Return provider claim, verification, outreach, reputation, and growth onboarding readiness" }
       },

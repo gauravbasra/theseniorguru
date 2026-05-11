@@ -91,6 +91,7 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   { label: "Provider claim status API", href: "/api/v1/provider-portal/claims/demo/status", method: "GET", owner: "provider" },
+  { label: "Provider outreach requeue API", href: "/api/v1/admin/provider-outreach/demo/requeue", method: "POST", owner: "admin" },
   {
     label: "Provider claim evidence API",
     href: "/api/v1/provider-portal/claims/demo/verification-evidence",

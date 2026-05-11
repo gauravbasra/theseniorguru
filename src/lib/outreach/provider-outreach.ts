@@ -1,6 +1,9 @@
 import type {
   CreateProviderOutreachInput,
   ProviderOutreachRecord,
+  ProviderOutreachStatus,
+  RequeueProviderOutreachInput,
+  RequeueProviderOutreachResult,
   SendProviderOutreachInput
 } from "@/lib/domain/outreach";
 import { runPolicyCheck } from "@/lib/policy";
@@ -8,6 +11,10 @@ import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedOutreach: ProviderOutreachRecord[] = [];
+
+function findSeedOutreach(outreachId: string) {
+  return seedOutreach.find((item) => item.id === outreachId);
+}
 
 function defaultSubject(providerName: string) {
   return `Confirm your free Senior Guru listing for ${providerName}`;
@@ -57,6 +64,26 @@ export async function listProviderOutreach(status = "queued"): Promise<ProviderO
   }
 
   return (data ?? []).map(mapProviderOutreach);
+}
+
+export async function getProviderOutreach(outreachId: string): Promise<ProviderOutreachRecord | null> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return findSeedOutreach(outreachId) ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from("provider_outreach_sequences")
+    .select("*")
+    .eq("id", outreachId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Provider outreach lookup failed: ${error.message}`);
+  }
+
+  return data ? mapProviderOutreach(data) : null;
 }
 
 export async function createProviderOutreach(input: CreateProviderOutreachInput): Promise<ProviderOutreachRecord> {
@@ -124,6 +151,77 @@ export async function createProviderOutreach(input: CreateProviderOutreachInput)
   }
 
   return mapProviderOutreach(data);
+}
+
+export async function requeueProviderOutreach(
+  input: RequeueProviderOutreachInput
+): Promise<RequeueProviderOutreachResult> {
+  const outreach = await getProviderOutreach(input.outreachId);
+
+  if (!outreach) {
+    throw new Error("Provider outreach not found");
+  }
+
+  const retryableStatuses: ProviderOutreachStatus[] = ["blocked", "bounced"];
+
+  if (!retryableStatuses.includes(outreach.status)) {
+    throw new Error("Only blocked or bounced provider outreach can be requeued");
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "provider_outreach",
+    subjectId: input.outreachId,
+    actionKey: "requeue_provider_claim_outreach",
+    input: {
+      outreachId: input.outreachId,
+      providerId: outreach.providerId,
+      previousStatus: outreach.status,
+      channel: outreach.channel,
+      recipient: outreach.recipient,
+      reason: input.reason,
+      actorId: input.actorId
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Provider outreach requeue blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const previousStatus = outreach.status;
+
+  if (!supabase) {
+    outreach.status = "queued";
+    outreach.sentAt = undefined;
+    return { outreach, previousStatus, status: "queued" };
+  }
+
+  const { data, error } = await supabase
+    .from("provider_outreach_sequences")
+    .update({ status: "queued", sent_at: null })
+    .eq("id", input.outreachId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Provider outreach requeue failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: "provider_outreach.requeued",
+    subject_type: "provider_outreach",
+    subject_id: input.outreachId,
+    payload: {
+      providerId: outreach.providerId,
+      previousStatus,
+      reason: input.reason,
+      policyDecision: policy.decision
+    }
+  });
+
+  return { outreach: mapProviderOutreach(data), previousStatus, status: "queued" };
 }
 
 export async function sendProviderOutreach(input: SendProviderOutreachInput): Promise<ProviderOutreachRecord> {

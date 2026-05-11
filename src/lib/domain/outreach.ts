@@ -42,3 +42,14 @@ export type SendProviderOutreachInput = {
   deliveryId?: string;
 };
 
+export type RequeueProviderOutreachInput = {
+  outreachId: string;
+  actorId?: string;
+  reason?: string;
+};
+
+export type RequeueProviderOutreachResult = {
+  outreach: ProviderOutreachRecord;
+  previousStatus: ProviderOutreachStatus;
+  status: "queued";
+};
