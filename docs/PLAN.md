@@ -66,6 +66,7 @@ Deliverables:
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.
 - Webhook delivery retry API with policy-gated requeue and audit trail. Completed.
+- Supabase schema readiness by product capability with live row counts and blocked capability summaries. Completed.
 - Browser-safe guard for internal API endpoints. Completed.
 - Founder workbench executable workflow UI and API. Completed.
 - Admin operations console for import, claim, outreach, and moderation workflows. Completed.

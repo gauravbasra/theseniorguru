@@ -4,8 +4,30 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 type SchemaTableCheck = {
   table: string;
   requiredFor: string;
+  capability: SupabaseCapabilityKey;
   status: "ready" | "missing" | "unchecked";
+  rowCount?: number;
   error?: string;
+};
+
+type SupabaseCapabilityKey =
+  | "directory"
+  | "leadIntake"
+  | "aggregation"
+  | "claims"
+  | "events"
+  | "community"
+  | "ads"
+  | "growth"
+  | "reviews"
+  | "newsroom"
+  | "openApi"
+  | "policy";
+
+type RequiredTable = {
+  table: string;
+  requiredFor: string;
+  capability: SupabaseCapabilityKey;
 };
 
 const migrationManifest = [
@@ -27,61 +49,110 @@ const migrationManifest = [
   "20260510220000_dual_funnel_leads.sql"
 ];
 
-const requiredTables = [
-  { table: "providers", requiredFor: "Directory inventory" },
-  { table: "provider_locations", requiredFor: "Local SEO and search" },
-  { table: "provider_categories", requiredFor: "Care-type search" },
-  { table: "provider_source_records", requiredFor: "Source provenance" },
-  { table: "provider_claims", requiredFor: "Free listing claim workflow" },
-  { table: "provider_verification_attempts", requiredFor: "Claim verification workflow" },
-  { table: "provider_outreach_sequences", requiredFor: "Claim outreach queue" },
-  { table: "family_inquiries", requiredFor: "Family inquiry capture" },
-  { table: "free_listing_requests", requiredFor: "Operator free listing onboarding" },
-  { table: "operator_demo_requests", requiredFor: "Operator demo funnel" },
-  { table: "import_batches", requiredFor: "Aggregation import jobs" },
-  { table: "crawl_jobs", requiredFor: "Crawler control plane" },
-  { table: "extracted_entities", requiredFor: "Inventory staging review" },
-  { table: "entity_match_candidates", requiredFor: "Duplicate detection" },
-  { table: "events", requiredFor: "Provider events marketplace" },
-  { table: "community_posts", requiredFor: "Community feed" },
-  { table: "ad_placements", requiredFor: "Advertising inventory" },
-  { table: "marketing_campaigns", requiredFor: "Growth engine campaigns" },
-  { table: "growth_plans", requiredFor: "Paid plan catalog" },
-  { table: "provider_growth_subscriptions", requiredFor: "Provider contract subscriptions" },
-  { table: "reviews", requiredFor: "Reviews and reputation" },
-  { table: "review_request_campaigns", requiredFor: "Review request campaigns" },
-  { table: "content_sources", requiredFor: "AI newsroom source intake" },
-  { table: "published_articles", requiredFor: "AI newsroom publishing" },
-  { table: "api_clients", requiredFor: "Open API clients" },
-  { table: "webhook_subscriptions", requiredFor: "Open API webhooks" },
-  { table: "webhook_deliveries", requiredFor: "Webhook delivery queue" },
-  { table: "webhook_delivery_attempts", requiredFor: "Webhook retry evidence" },
-  { table: "policy_checks", requiredFor: "Policy guardrail audit" },
-  { table: "audit_events", requiredFor: "Operational audit trail" }
+const requiredTables: RequiredTable[] = [
+  { table: "providers", requiredFor: "Directory inventory", capability: "directory" },
+  { table: "provider_locations", requiredFor: "Local SEO and search", capability: "directory" },
+  { table: "provider_categories", requiredFor: "Care-type search", capability: "directory" },
+  { table: "provider_source_records", requiredFor: "Source provenance", capability: "directory" },
+  { table: "family_inquiries", requiredFor: "Family inquiry capture", capability: "leadIntake" },
+  { table: "free_listing_requests", requiredFor: "Operator free listing onboarding", capability: "leadIntake" },
+  { table: "operator_demo_requests", requiredFor: "Operator demo funnel", capability: "leadIntake" },
+  { table: "import_batches", requiredFor: "Aggregation import jobs", capability: "aggregation" },
+  { table: "crawl_jobs", requiredFor: "Crawler control plane", capability: "aggregation" },
+  { table: "extracted_entities", requiredFor: "Inventory staging review", capability: "aggregation" },
+  { table: "entity_match_candidates", requiredFor: "Duplicate detection", capability: "aggregation" },
+  { table: "provider_claims", requiredFor: "Free listing claim workflow", capability: "claims" },
+  { table: "provider_verification_attempts", requiredFor: "Claim verification workflow", capability: "claims" },
+  { table: "provider_outreach_sequences", requiredFor: "Claim outreach queue", capability: "claims" },
+  { table: "events", requiredFor: "Provider events marketplace", capability: "events" },
+  { table: "community_posts", requiredFor: "Community feed", capability: "community" },
+  { table: "ad_placements", requiredFor: "Advertising inventory", capability: "ads" },
+  { table: "marketing_campaigns", requiredFor: "Growth engine campaigns", capability: "growth" },
+  { table: "growth_plans", requiredFor: "Paid plan catalog", capability: "growth" },
+  { table: "provider_growth_subscriptions", requiredFor: "Provider contract subscriptions", capability: "growth" },
+  { table: "reviews", requiredFor: "Reviews and reputation", capability: "reviews" },
+  { table: "review_request_campaigns", requiredFor: "Review request campaigns", capability: "reviews" },
+  { table: "content_sources", requiredFor: "AI newsroom source intake", capability: "newsroom" },
+  { table: "published_articles", requiredFor: "AI newsroom publishing", capability: "newsroom" },
+  { table: "api_clients", requiredFor: "Open API clients", capability: "openApi" },
+  { table: "webhook_subscriptions", requiredFor: "Open API webhooks", capability: "openApi" },
+  { table: "webhook_deliveries", requiredFor: "Webhook delivery queue", capability: "openApi" },
+  { table: "webhook_delivery_attempts", requiredFor: "Webhook retry evidence", capability: "openApi" },
+  { table: "policy_checks", requiredFor: "Policy guardrail audit", capability: "policy" },
+  { table: "audit_events", requiredFor: "Operational audit trail", capability: "policy" }
 ];
 
-async function checkTable(table: string, requiredFor: string): Promise<SchemaTableCheck> {
+function summarizeCapabilities(tableChecks: SchemaTableCheck[]) {
+  return requiredTables.reduce(
+    (summary, table) => {
+      const check = tableChecks.find((item) => item.table === table.table);
+      const current = summary[table.capability] ?? {
+        key: table.capability,
+        status: "ready",
+        requiredTables: 0,
+        readyTables: 0,
+        missingTables: [],
+        uncheckedTables: [],
+        totalRows: 0
+      };
+
+      current.requiredTables += 1;
+
+      if (check?.status === "ready") {
+        current.readyTables += 1;
+        current.totalRows += check.rowCount ?? 0;
+      } else if (check?.status === "missing") {
+        current.status = "schema_action_required";
+        current.missingTables.push(table.table);
+      } else {
+        current.status = current.status === "schema_action_required" ? current.status : "unchecked";
+        current.uncheckedTables.push(table.table);
+      }
+
+      summary[table.capability] = current;
+      return summary;
+    },
+    {} as Record<
+      SupabaseCapabilityKey,
+      {
+        key: SupabaseCapabilityKey;
+        status: "ready" | "schema_action_required" | "unchecked";
+        requiredTables: number;
+        readyTables: number;
+        missingTables: string[];
+        uncheckedTables: string[];
+        totalRows: number;
+      }
+    >
+  );
+}
+
+async function checkTable({ table, requiredFor, capability }: RequiredTable): Promise<SchemaTableCheck> {
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return { table, requiredFor, status: "unchecked" };
+    return { table, requiredFor, capability, status: "unchecked" };
   }
 
-  const { error } = await supabase.from(table).select("*", { count: "exact", head: true }).limit(0);
+  const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }).limit(0);
 
   if (error) {
-    return { table, requiredFor, status: "missing", error: error.message };
+    return { table, requiredFor, capability, status: "missing", error: error.message };
   }
 
-  return { table, requiredFor, status: "ready" };
+  return { table, requiredFor, capability, status: "ready", rowCount: count ?? 0 };
 }
 
 export async function getSupabaseSchemaReadiness() {
   const env = getAppEnv();
   const configured = Boolean(env.supabaseUrl && env.supabaseServiceRoleKey);
-  const tableChecks = await Promise.all(requiredTables.map((item) => checkTable(item.table, item.requiredFor)));
+  const tableChecks = await Promise.all(requiredTables.map((item) => checkTable(item)));
   const missing = tableChecks.filter((item) => item.status === "missing");
   const unchecked = tableChecks.filter((item) => item.status === "unchecked");
+  const capabilitySummary = summarizeCapabilities(tableChecks);
+  const blockedCapabilities = Object.values(capabilitySummary)
+    .filter((capability) => capability.status === "schema_action_required")
+    .map((capability) => capability.key);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -98,8 +169,11 @@ export async function getSupabaseSchemaReadiness() {
       required: tableChecks.length,
       ready: tableChecks.filter((item) => item.status === "ready").length,
       missing: missing.length,
-      unchecked: unchecked.length
+      unchecked: unchecked.length,
+      totalRows: tableChecks.reduce((sum, item) => sum + (item.rowCount ?? 0), 0)
     },
+    capabilitySummary,
+    blockedCapabilities,
     tableChecks,
     nextActions: !configured
       ? [

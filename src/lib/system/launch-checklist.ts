@@ -89,7 +89,11 @@ export async function getLaunchChecklist(): Promise<LaunchChecklist> {
       status: normalizeStatus(schema.status),
       blockers: schema.nextActions,
       nextActions: schema.nextActions,
-      metrics: schema.tableSummary
+      metrics: {
+        ...schema.tableSummary,
+        blockedCapabilities: schema.blockedCapabilities.length,
+        readyCapabilities: Object.values(schema.capabilitySummary).filter((capability) => capability.status === "ready").length
+      }
     },
     {
       key: "link_health",
