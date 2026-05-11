@@ -283,7 +283,11 @@ export function getOpenApiCatalog() {
         post: { tags: ["System"], summary: "Create a tenant-scoped Open API client" }
       },
       "/api/v1/admin/api-clients/{id}/keys": {
+        get: { tags: ["System"], summary: "List API keys for an Open API client without exposing secrets" },
         post: { tags: ["System"], summary: "Mint a signed API key and store only its hash" }
+      },
+      "/api/v1/admin/api-clients/{id}/keys/{keyId}/revoke": {
+        post: { tags: ["System"], summary: "Revoke an Open API key and write an audit event" }
       },
       "/api/v1/admin/webhook-subscriptions": {
         get: { tags: ["System"], summary: "List Open API webhook subscriptions" },

@@ -68,6 +68,13 @@ const routeContracts: LinkContract[] = [
   { label: "Crawl jobs API", href: "/api/v1/admin/crawl-jobs", method: "GET", owner: "admin" },
   { label: "Data quality flags API", href: "/api/v1/admin/data-quality-flags", method: "GET", owner: "admin" },
   { label: "API clients API", href: "/api/v1/admin/api-clients", method: "GET", owner: "admin" },
+  { label: "API client keys API", href: "/api/v1/admin/api-clients/demo/keys", method: "GET", owner: "admin" },
+  {
+    label: "API key revocation API",
+    href: "/api/v1/admin/api-clients/demo/keys/demo-key/revoke",
+    method: "POST",
+    owner: "admin"
+  },
   { label: "Webhook subscriptions API", href: "/api/v1/admin/webhook-subscriptions", method: "GET", owner: "admin" },
   { label: "Webhook deliveries API", href: "/api/v1/admin/webhook-deliveries", method: "GET", owner: "admin" },
   { label: "API audit events API", href: "/api/v1/admin/api-audit-events", method: "GET", owner: "admin" },

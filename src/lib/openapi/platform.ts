@@ -104,6 +104,18 @@ function mapApiKey(row: Record<string, unknown>): ApiKeyRecord {
   };
 }
 
+function redactApiKey(record: ApiKeyRecord | CreatedApiKeyRecord): ApiKeyRecord {
+  return {
+    id: record.id,
+    apiClientId: record.apiClientId,
+    name: record.name,
+    keyPreview: record.keyPreview,
+    status: record.status,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt
+  };
+}
+
 function mapWebhookSubscription(row: Record<string, unknown>): WebhookSubscriptionRecord {
   return {
     id: String(row.id),
@@ -446,6 +458,93 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<CreatedApi
   }
 
   return { ...mapApiKey(data), secret };
+}
+
+export async function listApiKeys(apiClientId: string): Promise<ApiKeyRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedApiKeys.filter((key) => key.apiClientId === apiClientId).map(redactApiKey);
+  }
+
+  const { data, error } = await supabase
+    .from("api_keys")
+    .select("*")
+    .eq("api_client_id", apiClientId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`API keys query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapApiKey);
+}
+
+export async function revokeApiKey(input: {
+  apiClientId: string;
+  apiKeyId: string;
+  reason?: string;
+  actorId?: string;
+}): Promise<ApiKeyRecord> {
+  const policy = await runPolicyCheck({
+    subjectType: "api_key",
+    subjectId: input.apiKeyId,
+    actionKey: "revoke_api_key",
+    input
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "API key revocation blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const key = seedApiKeys.find((record) => record.id === input.apiKeyId && record.apiClientId === input.apiClientId);
+
+    if (!key) {
+      throw new Error("API key not found for client");
+    }
+
+    key.status = "revoked";
+    await recordApiAuditEvent({
+      apiClientId: input.apiClientId,
+      eventType: "api_key.revoked",
+      subjectType: "api_key",
+      subjectId: input.apiKeyId,
+      status: "allowed",
+      requestMetadata: { reason: input.reason, actorId: input.actorId }
+    });
+
+    return redactApiKey(key);
+  }
+
+  const { data, error } = await supabase
+    .from("api_keys")
+    .update({ status: "revoked" })
+    .eq("id", input.apiKeyId)
+    .eq("api_client_id", input.apiClientId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`API key revocation failed: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("API key not found for client");
+  }
+
+  await recordApiAuditEvent({
+    apiClientId: input.apiClientId,
+    eventType: "api_key.revoked",
+    subjectType: "api_key",
+    subjectId: input.apiKeyId,
+    status: "allowed",
+    requestMetadata: { reason: input.reason, actorId: input.actorId }
+  });
+
+  return mapApiKey(data);
 }
 
 export async function listWebhookSubscriptions(apiClientId?: string): Promise<WebhookSubscriptionRecord[]> {
