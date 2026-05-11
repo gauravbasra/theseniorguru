@@ -75,6 +75,7 @@ export type ReviewResponseRecord = {
 
 export type PublishReviewResponseInput = {
   reviewId: string;
+  providerId: string;
   body: string;
   generatedByAi?: boolean;
   actorId?: string;

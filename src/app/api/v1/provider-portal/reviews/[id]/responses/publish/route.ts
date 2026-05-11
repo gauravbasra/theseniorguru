@@ -6,14 +6,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const { id } = await context.params;
     const body = await request.json();
 
-    if (!body.body) {
-      return NextResponse.json({ error: "body is required" }, { status: 422 });
+    if (!body.body || !body.providerId) {
+      return NextResponse.json({ error: "body and providerId are required" }, { status: 422 });
     }
 
     return NextResponse.json(
       {
         data: await publishReviewResponse({
           reviewId: id,
+          providerId: body.providerId,
           body: body.body,
           generatedByAi: body.generatedByAi,
           actorId: body.actorId
@@ -23,6 +24,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: message === "Review not found" ? 404 : 500 });
+    const status =
+      message === "Review not found" || message === "Provider not found"
+        ? 404
+        : message.includes("provider mismatch")
+          ? 403
+          : message.includes("must be published")
+            ? 409
+            : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

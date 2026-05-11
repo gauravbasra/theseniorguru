@@ -413,12 +413,27 @@ export async function publishReviewResponse(input: PublishReviewResponseInput): 
     throw new Error("Review not found");
   }
 
+  if (input.providerId !== review.providerId) {
+    throw new Error("Review response provider mismatch");
+  }
+
+  if (review.status !== "published") {
+    throw new Error("Review must be published before a provider response can be published");
+  }
+
+  const provider = await getProviderById(input.providerId);
+
+  if (!provider) {
+    throw new Error("Provider not found");
+  }
+
   const policy = await runPolicyCheck({
     subjectType: "review_response",
     subjectId: input.reviewId,
     actionKey: "publish_review_response",
     input: {
       review,
+      providerId: input.providerId,
       body: input.body,
       generatedByAi: input.generatedByAi ?? false
     }
