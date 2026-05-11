@@ -1637,6 +1637,267 @@ a {
   font-weight: 800;
 }
 
+.governance-console {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
+  gap: 14px;
+}
+
+.governance-panel {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-height: 390px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 16px;
+}
+
+.governance-panel h3 {
+  margin: 5px 0 0;
+  color: var(--foreground);
+  font-size: 22px;
+  line-height: 1.12;
+}
+
+.panel-stat.small {
+  font-size: 30px;
+}
+
+.icon-text-button,
+.small-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.icon-text-button {
+  min-height: 40px;
+  padding: 0 12px;
+}
+
+.small-action {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.icon-text-button svg,
+.small-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-text-button:disabled,
+.small-action:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.governance-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.governance-status-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.governance-status-card strong {
+  color: var(--foreground);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.governance-status-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.governance-status-card.approved {
+  border-color: #b7d9c3;
+  background: #f1fbf5;
+}
+
+.governance-status-card.blocked {
+  border-color: #efc4bd;
+  background: #fff4f1;
+}
+
+.governance-status-card.needs_legal_review {
+  border-color: #edd89b;
+  background: #fff9e8;
+}
+
+.source-review-list,
+.worker-run-list {
+  display: grid;
+  gap: 10px;
+}
+
+.source-review-row,
+.worker-run-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.source-review-row strong,
+.source-review-row span,
+.source-review-row small,
+.worker-run-row strong,
+.worker-run-row small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-review-row span,
+.source-review-row small,
+.worker-run-row small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.source-review-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.small-action.approve {
+  border-color: #b7d9c3;
+  color: #17603e;
+}
+
+.small-action.block {
+  border-color: #efc4bd;
+  color: #9d2f24;
+}
+
+.governance-message {
+  margin: 0;
+  border-radius: 8px;
+  padding: 11px 12px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.governance-message.ok {
+  background: #f1fbf5;
+  color: #17603e;
+}
+
+.governance-message.error {
+  background: #fff4f1;
+  color: #9d2f24;
+}
+
+.empty-governance-state {
+  display: grid;
+  min-height: 150px;
+  place-items: center;
+  gap: 8px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-governance-state svg {
+  color: var(--accent-strong);
+}
+
+.empty-governance-state strong {
+  color: var(--foreground);
+}
+
+.empty-governance-state.compact {
+  min-height: 116px;
+}
+
+.worker-health-chart {
+  display: grid;
+  gap: 12px;
+}
+
+.worker-health-chart div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 42px;
+  gap: 12px;
+  align-items: center;
+}
+
+.worker-health-chart span,
+.worker-health-chart strong {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.worker-health-chart i {
+  display: block;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9dfd1;
+}
+
+.worker-health-chart i::before {
+  display: block;
+  width: var(--value);
+  height: 100%;
+  border-radius: inherit;
+  background: #173b36;
+  content: "";
+}
+
+.worker-run-row b {
+  border-radius: 999px;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1;
+  text-transform: capitalize;
+}
+
+.worker-run-row.succeeded b {
+  background: #f1fbf5;
+  color: #17603e;
+}
+
+.worker-run-row.failed b {
+  background: #fff4f1;
+  color: #9d2f24;
+}
+
 .admin-chart-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -2404,6 +2665,7 @@ a {
   .command-screen-grid,
   .admin-live-grid,
   .admin-chart-grid,
+  .governance-console,
   .pillar-card,
   .readiness-section,
   .readiness-grid,
@@ -2428,6 +2690,20 @@ a {
   .workbench-runner,
   .workbench-wide {
     grid-column: auto;
+  }
+
+  .governance-status-grid,
+  .source-review-row,
+  .worker-run-row {
+    grid-template-columns: 1fr;
+  }
+
+  .source-review-actions {
+    justify-content: stretch;
+  }
+
+  .source-review-actions .small-action {
+    flex: 1;
   }
 
   .result-table div,

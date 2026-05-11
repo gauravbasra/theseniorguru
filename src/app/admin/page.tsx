@@ -1,10 +1,12 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import { SourceGovernanceConsole } from "@/components/source-governance-console";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
 import { getAdminDashboardMetrics } from "@/lib/admin/dashboard-metrics";
 import { listAdPlacements } from "@/lib/ads/ads";
 import { listProviderClaims } from "@/lib/claims/provider-claims";
+import { listDataSources } from "@/lib/data-sources";
 import type { ProviderClaimRecord } from "@/lib/domain/claims";
 import type { ImportRecordInput } from "@/lib/domain/imports";
 import type { LeadQueueSummary } from "@/lib/domain/leads";
@@ -12,6 +14,7 @@ import { listImportBatches } from "@/lib/import-batches";
 import { listLeadQueue } from "@/lib/leads";
 import { listNewsItems } from "@/lib/newsroom/newsroom";
 import { listReviewModerationQueue } from "@/lib/reviews/reviews";
+import { listScheduledWorkerRuns } from "@/lib/scheduler/runs";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +29,9 @@ export default async function AdminPage() {
     importBatches,
     newsroomItems,
     adPlacements,
-    reviewQueue
+    reviewQueue,
+    dataSources,
+    scheduledRuns
   ] = await Promise.all([
     getLaunchChecklist(),
     getAdminDashboardMetrics(),
@@ -36,7 +41,9 @@ export default async function AdminPage() {
     listImportBatches(),
     listNewsItems(),
     listAdPlacements(),
-    listReviewModerationQueue({ status: "pending_moderation" })
+    listReviewModerationQueue({ status: "pending_moderation" }),
+    listDataSources(),
+    listScheduledWorkerRuns({ limit: 20 })
   ]);
   const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
   const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
@@ -231,6 +238,16 @@ export default async function AdminPage() {
           <ReviewQueuePanel reviews={reviewQueue} />
           <AdPlacementPanel placements={adPlacements} />
         </div>
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Governed automation</p>
+            <h2>Source approvals and scheduled workers</h2>
+          </div>
+        </div>
+        <SourceGovernanceConsole initialSources={dataSources} initialRuns={scheduledRuns} />
       </section>
 
       <section className="admin-section">
