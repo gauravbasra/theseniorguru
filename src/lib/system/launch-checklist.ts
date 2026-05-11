@@ -6,15 +6,24 @@ import { getLinkHealthSummary } from "@/lib/system/link-health";
 import { getSystemReadiness } from "@/lib/system/readiness";
 import { getSupabaseSchemaReadiness } from "@/lib/system/supabase-schema";
 
-type LaunchChecklistStatus = "ready" | "action_required" | "blocked" | "parked";
+export type LaunchChecklistStatus = "ready" | "action_required" | "blocked" | "parked";
 
-type LaunchChecklistItem = {
+export type LaunchChecklistItem = {
   key: string;
   label: string;
   status: LaunchChecklistStatus;
   blockers: string[];
   nextActions: string[];
   metrics?: Record<string, unknown>;
+};
+
+export type LaunchChecklist = {
+  generatedAt: string;
+  status: "ready" | "action_required" | "blocked";
+  checklist: LaunchChecklistItem[];
+  blockers: string[];
+  nextActions: string[];
+  ownerParkedItems: string[];
 };
 
 function normalizeStatus(status: string): LaunchChecklistStatus {
@@ -37,7 +46,7 @@ function uniq(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-export async function getLaunchChecklist() {
+export async function getLaunchChecklist(): Promise<LaunchChecklist> {
   const [
     system,
     schema,

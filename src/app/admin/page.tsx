@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
+import { LaunchChecklistPanel } from "@/components/launch-checklist-panel";
+import { getLaunchChecklist } from "@/lib/system/launch-checklist";
 import { getProductMap } from "@/lib/system/product-map";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminPage() {
-  const product = await getProductMap();
+  const [product, launchChecklist] = await Promise.all([getProductMap(), getLaunchChecklist()]);
   const readinessGroups = Object.entries(product.readiness.groups);
 
   return (
@@ -59,6 +63,10 @@ export default async function AdminPage() {
             <h2>{value}</h2>
           </article>
         ))}
+      </section>
+
+      <section className="admin-section">
+        <LaunchChecklistPanel initialChecklist={launchChecklist} />
       </section>
 
       <section className="admin-section">
