@@ -14,6 +14,8 @@ export type LinkHealthResult = LinkContract & {
 
 const routeContracts: LinkContract[] = [
   { label: "Home", href: "/", method: "GET", owner: "public" },
+  { label: "Robots", href: "/robots.txt", method: "GET", owner: "public" },
+  { label: "Sitemap", href: "/sitemap.xml", method: "GET", owner: "public" },
   { label: "Discover", href: "/discover", method: "GET", owner: "public" },
   { label: "Seniors", href: "/seniors", method: "GET", owner: "family" },
   { label: "Operators", href: "/operators", method: "GET", owner: "provider" },
