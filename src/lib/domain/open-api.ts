@@ -147,3 +147,17 @@ export type ProcessWebhookDeliveriesResult = {
   dryRun: boolean;
   attempts: WebhookDeliveryAttemptRecord[];
 };
+
+export type RetryWebhookDeliveriesInput = {
+  deliveryIds?: string[];
+  status?: Extract<WebhookDeliveryRecord["status"], "failed" | "blocked">;
+  limit?: number;
+  reason?: string;
+  actorId?: string;
+};
+
+export type RetryWebhookDeliveriesResult = {
+  requeued: number;
+  deliveryIds: string[];
+  status: "queued";
+};

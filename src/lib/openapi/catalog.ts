@@ -300,6 +300,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/webhook-deliveries/run": {
         post: { tags: ["System"], summary: "Process queued webhook deliveries with signed payloads and attempt records" }
       },
+      "/api/v1/admin/webhook-deliveries/retry": {
+        post: { tags: ["System"], summary: "Requeue failed or blocked webhook deliveries for another signed attempt" }
+      },
       "/api/v1/admin/api-audit-events": {
         get: { tags: ["System"], summary: "List Open API audit events" }
       },

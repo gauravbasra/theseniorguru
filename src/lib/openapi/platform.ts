@@ -13,6 +13,8 @@ import type {
   EnqueueWebhookDeliveryInput,
   ProcessWebhookDeliveriesInput,
   ProcessWebhookDeliveriesResult,
+  RetryWebhookDeliveriesInput,
+  RetryWebhookDeliveriesResult,
   WebhookDeliveryAttemptRecord,
   WebhookDeliveryRecord,
   WebhookEventType,
@@ -698,6 +700,139 @@ export async function enqueueWebhookDeliveries(input: EnqueueWebhookDeliveryInpu
   }
 
   return (data ?? []).map(mapWebhookDelivery);
+}
+
+export async function retryWebhookDeliveries(
+  input: RetryWebhookDeliveriesInput = {}
+): Promise<RetryWebhookDeliveriesResult> {
+  const retryableStatuses: WebhookDeliveryRecord["status"][] = ["failed", "blocked"];
+  const status = input.status ?? "failed";
+  const deliveryIds = Array.from(new Set(input.deliveryIds?.map((id) => String(id).trim()).filter(Boolean) ?? []));
+  const requestedLimit = input.limit ?? (deliveryIds.length || 10);
+  const limit = Math.max(1, Math.min(requestedLimit, 50));
+
+  if (!retryableStatuses.includes(status)) {
+    throw new Error("Only failed or blocked webhook deliveries can be retried");
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "webhook_delivery",
+    actionKey: "retry_webhook_delivery",
+    input: {
+      deliveryIds,
+      status,
+      limit,
+      reason: input.reason,
+      actorId: input.actorId
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Webhook delivery retry blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const candidates = seedWebhookDeliveries
+      .filter((delivery) => retryableStatuses.includes(delivery.status))
+      .filter((delivery) => (deliveryIds.length ? deliveryIds.includes(delivery.id) : delivery.status === status))
+      .slice(0, limit);
+
+    for (const delivery of candidates) {
+      delivery.status = "queued";
+      delivery.lastError = undefined;
+      delivery.deliveredAt = undefined;
+    }
+
+    await recordApiAuditEvent({
+      eventType: "webhook_delivery.retried",
+      subjectType: "webhook_delivery",
+      subjectId: candidates.map((delivery) => delivery.id).join(",") || undefined,
+      status: "allowed",
+      requestMetadata: {
+        reason: input.reason,
+        actorId: input.actorId,
+        previousStatus: status,
+        requeued: candidates.length
+      }
+    });
+
+    return {
+      requeued: candidates.length,
+      deliveryIds: candidates.map((delivery) => delivery.id),
+      status: "queued"
+    };
+  }
+
+  let selectedIds = deliveryIds;
+
+  if (!selectedIds.length) {
+    const { data: candidates, error: selectError } = await supabase
+      .from("webhook_deliveries")
+      .select("id")
+      .eq("status", status)
+      .order("created_at", { ascending: true })
+      .limit(limit);
+
+    if (selectError) {
+      throw new Error(`Webhook delivery retry selection failed: ${selectError.message}`);
+    }
+
+    selectedIds = (candidates ?? []).map((candidate) => String(candidate.id));
+  }
+
+  if (!selectedIds.length) {
+    await recordApiAuditEvent({
+      eventType: "webhook_delivery.retried",
+      subjectType: "webhook_delivery",
+      status: "allowed",
+      requestMetadata: {
+        reason: input.reason,
+        actorId: input.actorId,
+        previousStatus: status,
+        requeued: 0
+      }
+    });
+
+    return { requeued: 0, deliveryIds: [], status: "queued" };
+  }
+
+  const { data, error } = await supabase
+    .from("webhook_deliveries")
+    .update({
+      status: "queued",
+      last_error: null,
+      delivered_at: null
+    })
+    .in("id", selectedIds.slice(0, limit))
+    .in("status", retryableStatuses)
+    .select("*");
+
+  if (error) {
+    throw new Error(`Webhook delivery retry update failed: ${error.message}`);
+  }
+
+  const updatedIds = (data ?? []).map((delivery) => String(delivery.id));
+
+  await recordApiAuditEvent({
+    eventType: "webhook_delivery.retried",
+    subjectType: "webhook_delivery",
+    subjectId: updatedIds.join(",") || undefined,
+    status: "allowed",
+    requestMetadata: {
+      reason: input.reason,
+      actorId: input.actorId,
+      previousStatus: status,
+      requeued: updatedIds.length
+    }
+  });
+
+  return {
+    requeued: updatedIds.length,
+    deliveryIds: updatedIds,
+    status: "queued"
+  };
 }
 
 async function listQueuedWebhookDeliveries(limit: number): Promise<InternalWebhookDelivery[]> {
