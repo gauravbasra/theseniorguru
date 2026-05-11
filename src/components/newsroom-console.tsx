@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, FilePenLine, ListChecks, Megaphone, Mic2, Newspaper, Radio, Send } from "lucide-react";
+import { Bot, CheckCircle2, FilePenLine, ListChecks, Megaphone, Mic2, Newspaper, Radio, Send } from "lucide-react";
 
 type NewsroomResult = {
   label: string;
@@ -18,7 +18,11 @@ type NewsItemPayload = {
 
 type ArticlePayload = {
   id?: string;
+  status?: string;
+  title?: string;
 };
+
+type ArticleListPayload = ArticlePayload[];
 
 const sourcePayload = {
   title: "Local families need clearer guidance on memory care tours",
@@ -48,6 +52,12 @@ export function NewsroomConsole() {
 
     if (response.ok && key === "draft") {
       setArticleId((payload.data as ArticlePayload | undefined)?.id);
+    }
+
+    if (response.ok && key === "articles") {
+      const articles = payload.data as ArticleListPayload | undefined;
+      const actionableArticle = articles?.find((article) => article.status !== "published") ?? articles?.[0];
+      setArticleId(actionableArticle?.id);
     }
 
     setResults((current) => [
@@ -103,6 +113,16 @@ export function NewsroomConsole() {
         />
         <NewsroomButton
           icon={<Bot aria-hidden="true" />}
+          label="Load articles"
+          loading={loadingKey === "articles"}
+          onClick={() =>
+            runNewsroomAction("Load article pipeline", "articles", () =>
+              fetch("/api/v1/admin/newsroom/articles")
+            )
+          }
+        />
+        <NewsroomButton
+          icon={<Bot aria-hidden="true" />}
           label="Draft article"
           loading={loadingKey === "draft"}
           onClick={() =>
@@ -119,6 +139,23 @@ export function NewsroomConsole() {
                   sourceLinks: sourcePayload.sourceUrl
                     ? [{ title: sourcePayload.sourceName, url: sourcePayload.sourceUrl }]
                     : []
+                })
+              })
+            )
+          }
+        />
+        <NewsroomButton
+          icon={<CheckCircle2 aria-hidden="true" />}
+          label="Approve article"
+          loading={loadingKey === "approve"}
+          onClick={() =>
+            runNewsroomAction("Approve article", "approve", () =>
+              fetch(`/api/v1/admin/newsroom/articles/${activeArticleId}/approve`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "00000000-0000-4000-8000-000000000001",
+                  notes: "Approved from admin newsroom publishing console."
                 })
               })
             )
@@ -231,6 +268,15 @@ function summarizeNewsroomAction(key: string, data: unknown) {
 
   if (key === "draft") {
     return `Article draft created with source attribution and approval guardrails.`;
+  }
+
+  if (key === "articles") {
+    const count = Array.isArray(data) ? data.length : 0;
+    return `${count} article drafts, approvals, and published guides loaded.`;
+  }
+
+  if (key === "approve") {
+    return `Article passed editorial approval and is ready for publishing.`;
   }
 
   if (key === "publish") {

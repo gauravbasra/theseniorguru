@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { AcquisitionPipelineConsole } from "@/components/acquisition-pipeline-console";
 import { ClaimVerificationConsole } from "@/components/claim-verification-console";
+import { NewsroomConsole } from "@/components/newsroom-console";
 import { SourceGovernanceConsole } from "@/components/source-governance-console";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { listCrawlJobs } from "@/lib/aggregation/crawl-jobs";
@@ -277,6 +278,16 @@ export default async function AdminPage() {
           </div>
         </div>
         <ClaimVerificationConsole initialClaims={claims} />
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Authority engine</p>
+            <h2>Run newsroom publishing and repurposing</h2>
+          </div>
+        </div>
+        <NewsroomConsole />
       </section>
 
       <section className="admin-section">

@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { createArticleDraft } from "@/lib/newsroom/newsroom";
+import { createArticleDraft, listArticles } from "@/lib/newsroom/newsroom";
+
+export async function GET() {
+  try {
+    return NextResponse.json({ data: await listArticles() });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -22,4 +30,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
 }
-

@@ -885,7 +885,7 @@ function decodeXml(value: string) {
     .trim();
 }
 
-async function listArticles(): Promise<ArticleRecord[]> {
+export async function listArticles(): Promise<ArticleRecord[]> {
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
