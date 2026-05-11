@@ -1,6 +1,6 @@
 import { createImportBatch } from "@/lib/import-batches";
 import { runImportBatch } from "@/lib/aggregation/import-worker";
-import type { ImportRecordInput } from "@/lib/domain/imports";
+import type { ImportBatchSourceCoverage, ImportRecordInput } from "@/lib/domain/imports";
 import type { StagedListingAuditEvent, StagedListingImageRecord } from "@/lib/domain/entities";
 
 type AdapterKind = "official_csv" | "official_api" | "open_directory_page" | "rss" | "manual_seed" | "current_site_json";
@@ -84,6 +84,7 @@ export type PublicSourceAcquisitionRunResult = {
   skippedRecords: number;
   rejectedRecords: number;
   errorRecords: number;
+  sourceCoverage: ImportBatchSourceCoverage;
   imageCoverage: {
     listingsWithThreeImages: number;
     listingsMissingThreeImages: number;
@@ -623,6 +624,7 @@ export async function runCurrentSiteRealListingAcquisition(input: {
     stagedRecords: run.stagedRecords,
     rejectedRecords: run.rejectedRecords,
     errorRecords: run.errorRecords,
+    sourceCoverage: run.sourceCoverage,
     skippedRecords: preview.skippedRecords + run.skippedRecords,
     imageCoverage: preview.imageCoverage,
     qualityGaps: preview.qualityGaps,
@@ -787,6 +789,7 @@ export async function runPublicSourceSampleAcquisition(input: {
     skippedRecords: run.skippedRecords,
     rejectedRecords: run.rejectedRecords,
     errorRecords: run.errorRecords,
+    sourceCoverage: run.sourceCoverage,
     imageCoverage: {
       listingsWithThreeImages,
       listingsMissingThreeImages: records.length - listingsWithThreeImages,

@@ -72,6 +72,19 @@ export type RunImportBatchInput = {
   dryRun?: boolean;
 };
 
+export type ImportBatchSourceCoverage = {
+  totalRecords: number;
+  withSourceUrl: number;
+  withSourceRecordId: number;
+  withFetchedAt: number;
+  withLicenseTermsStatus: number;
+  withRobotsDecision: number;
+  imageReadyRecords: number;
+  imageBacklogRecords: number;
+  sourcePolicyBlockedRecords: number;
+  productionGradeRecords: number;
+};
+
 export type ImportBatchRunResult = {
   batchId: string;
   status: ImportBatchStatus;
@@ -81,6 +94,7 @@ export type ImportBatchRunResult = {
   rejectedRecords: number;
   errorRecords: number;
   dryRun: boolean;
+  sourceCoverage: ImportBatchSourceCoverage;
   errors: Array<{
     index: number;
     reason: string;

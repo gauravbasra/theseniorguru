@@ -1,6 +1,11 @@
 import { createExtractedEntity, listExistingExtractedEntitySourceRecordIds } from "@/lib/aggregation/extracted-entities";
 import { seedDataSources } from "@/lib/data/seed";
-import type { ImportBatchRunResult, ImportRecordInput, RunImportBatchInput } from "@/lib/domain/imports";
+import type {
+  ImportBatchRunResult,
+  ImportBatchSourceCoverage,
+  ImportRecordInput,
+  RunImportBatchInput
+} from "@/lib/domain/imports";
 import { completeImportBatch, failImportBatch, markImportBatchRunning } from "@/lib/import-batches";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -83,7 +88,55 @@ function validateRecord(record: ReturnType<typeof normalizeRecord>) {
     return "websiteUrl must be an absolute URL";
   }
 
+  if (!record.sourceUrl) {
+    return "sourceUrl is required for production-grade inventory provenance";
+  }
+
+  if (!record.sourceUrl.startsWith("http") && !record.sourceUrl.startsWith("seed://")) {
+    return "sourceUrl must be an absolute URL or approved seed:// source";
+  }
+
+  if (!record.sourceRecordId) {
+    return "sourceRecordId is required for import idempotency and source audit";
+  }
+
+  if (!record.fetchedAt || Number.isNaN(new Date(record.fetchedAt).getTime())) {
+    return "fetchedAt is required and must be a valid timestamp";
+  }
+
+  if (["blocked", "prohibited", "disallowed"].includes(record.licenseTermsStatus.toLowerCase())) {
+    return "license terms block this record from staging";
+  }
+
+  if (["blocked", "disallowed"].includes(record.robotsDecision.toLowerCase())) {
+    return "robots policy blocks this record from staging";
+  }
+
   return null;
+}
+
+function isSourcePolicyBlocked(record: ReturnType<typeof normalizeRecord>) {
+  return (
+    ["blocked", "prohibited", "disallowed"].includes(record.licenseTermsStatus.toLowerCase()) ||
+    ["blocked", "disallowed"].includes(record.robotsDecision.toLowerCase())
+  );
+}
+
+function buildSourceCoverage(records: Array<ReturnType<typeof normalizeRecord>>): ImportBatchSourceCoverage {
+  const validRecords = records.filter((record) => validateRecord(record) === null);
+
+  return {
+    totalRecords: records.length,
+    withSourceUrl: records.filter((record) => Boolean(record.sourceUrl)).length,
+    withSourceRecordId: records.filter((record) => Boolean(record.sourceRecordId)).length,
+    withFetchedAt: records.filter((record) => Boolean(record.fetchedAt && !Number.isNaN(new Date(record.fetchedAt).getTime()))).length,
+    withLicenseTermsStatus: records.filter((record) => record.licenseTermsStatus !== "unknown").length,
+    withRobotsDecision: records.filter((record) => record.robotsDecision !== "unknown").length,
+    imageReadyRecords: records.filter((record) => record.imageAssets.length >= 3).length,
+    imageBacklogRecords: records.filter((record) => record.imageAssets.length < 3).length,
+    sourcePolicyBlockedRecords: records.filter(isSourcePolicyBlocked).length,
+    productionGradeRecords: validRecords.length
+  };
 }
 
 async function getImportBatch(batchId: string): Promise<ImportBatchRow | null> {
@@ -200,6 +253,8 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
   let rejectedRecords = 0;
   let errorRecords = 0;
   const errors: ImportBatchRunResult["errors"] = [];
+  const normalizedRecords = input.records.map(normalizeRecord);
+  const sourceCoverage = buildSourceCoverage(normalizedRecords);
   const existingSourceRecordIds = dryRun
     ? new Set<string>()
     : await listExistingExtractedEntitySourceRecordIds(
@@ -208,8 +263,7 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
           .filter((sourceRecordId): sourceRecordId is string => Boolean(sourceRecordId))
       );
 
-  for (const [index, record] of input.records.entries()) {
-    const normalized = normalizeRecord(record);
+  for (const [index, normalized] of normalizedRecords.entries()) {
     const validationError = validateRecord(normalized);
 
     if (validationError) {
@@ -310,6 +364,7 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
     rejectedRecords,
     errorRecords,
     dryRun,
+    sourceCoverage,
     errors
   };
 }
