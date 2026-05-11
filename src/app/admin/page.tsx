@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { AcquisitionPipelineConsole } from "@/components/acquisition-pipeline-console";
 import { ClaimVerificationConsole } from "@/components/claim-verification-console";
 import { NewsroomConsole } from "@/components/newsroom-console";
+import { ReviewReputationConsole } from "@/components/review-reputation-console";
 import { SourceGovernanceConsole } from "@/components/source-governance-console";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { listCrawlJobs } from "@/lib/aggregation/crawl-jobs";
@@ -17,6 +18,7 @@ import type { LeadQueueSummary } from "@/lib/domain/leads";
 import { listImportBatches } from "@/lib/import-batches";
 import { listLeadQueue } from "@/lib/leads";
 import { listNewsItems } from "@/lib/newsroom/newsroom";
+import { listProviders } from "@/lib/providers";
 import { listReviewModerationQueue } from "@/lib/reviews/reviews";
 import { listScheduledWorkerRuns } from "@/lib/scheduler/runs";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
@@ -36,7 +38,8 @@ export default async function AdminPage() {
     reviewQueue,
     dataSources,
     scheduledRuns,
-    crawlJobs
+    crawlJobs,
+    providers
   ] = await Promise.all([
     getLaunchChecklist(),
     getAdminDashboardMetrics(),
@@ -49,7 +52,8 @@ export default async function AdminPage() {
     listReviewModerationQueue({ status: "pending_moderation" }),
     listDataSources(),
     listScheduledWorkerRuns({ limit: 20 }),
-    listCrawlJobs()
+    listCrawlJobs(),
+    listProviders()
   ]);
   const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
   const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
@@ -288,6 +292,16 @@ export default async function AdminPage() {
           </div>
         </div>
         <NewsroomConsole />
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Reputation revenue</p>
+            <h2>Operate reviews, responses, and request campaigns</h2>
+          </div>
+        </div>
+        <ReviewReputationConsole initialProviders={providers} initialReviews={reviewQueue} />
       </section>
 
       <section className="admin-section">
