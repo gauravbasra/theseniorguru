@@ -245,6 +245,10 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/import-batches/{id}/run": {
         post: { tags: ["Aggregation"], summary: "Run a policy-gated import batch and stage extracted provider entities" }
       },
+      "/api/v1/admin/import-launch-plan": {
+        get: { tags: ["Aggregation"], summary: "Calculate launch import waves toward the 5,000-listing target" },
+        post: { tags: ["Aggregation"], summary: "Optionally create queued launch import batches from the calculated plan" }
+      },
       "/api/v1/admin/current-site-inventory/import": {
         post: { tags: ["Aggregation"], summary: "Run current Senior Guru inventory import into the staging pipeline" }
       },

@@ -152,6 +152,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
+          label="Import launch plan"
+          loading={loadingKey === "import-plan"}
+          onClick={() =>
+            runOperation("Import launch plan", "import-plan", () =>
+              fetch("/api/v1/admin/import-launch-plan?targetListings=5000&batchSize=500")
+            )
+          }
+        />
+        <OpsButton
           icon={<SquareStack aria-hidden="true" />}
           label="Ad readiness"
           loading={loadingKey === "ad-readiness"}

@@ -72,6 +72,7 @@ Deliverables:
 - Import batch worker run API. Completed.
 - Crawl job create/list/run APIs and unresolved data quality queue API. Completed.
 - Aggregation launch readiness API and admin console action. Completed.
+- Launch import wave planning API and admin console action. Completed.
 - Provider claim outreach queue APIs. Completed.
 - Family inquiry, free listing, and operator demo intake APIs. Completed.
 - Admin lead intake queue API and operations console action. Completed.
@@ -94,6 +95,7 @@ Deliverables:
 - CMS/state/public-source import adapters.
 - JSON import worker for approved sources. Completed.
 - Crawl job control plane for approved sources. Completed.
+- Launch import wave planner for the 5,000-listing target. Completed.
 - Entity matching and duplicate detection.
 - Entity match scoring and candidate persistence. Completed.
 - Confidence scoring.

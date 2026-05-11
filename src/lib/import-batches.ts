@@ -54,7 +54,7 @@ export async function createImportBatch(input: CreateImportBatchInput): Promise<
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const batch: ImportBatchRecord = {
       id: `pending-import-${Date.now()}`,
       dataSourceId: input.dataSourceId,
       status,
@@ -66,6 +66,9 @@ export async function createImportBatch(input: CreateImportBatchInput): Promise<
       errorRecords: 0,
       createdAt: new Date().toISOString()
     };
+
+    seedImportBatches.unshift(batch);
+    return batch;
   }
 
   const { data, error } = await supabase
@@ -86,4 +89,3 @@ export async function createImportBatch(input: CreateImportBatchInput): Promise<
 
   return mapImportBatch(data);
 }
-

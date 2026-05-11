@@ -66,6 +66,30 @@ export type ImportBatchRunResult = {
   }>;
 };
 
+export type ImportLaunchPlanBatch = {
+  name: string;
+  dataSourceId?: string;
+  sourceName: string;
+  sourceKind: string;
+  estimatedRecords: number;
+  wave: number;
+};
+
+export type ImportLaunchPlanSummary = {
+  generatedAt: string;
+  targetListings: number;
+  batchSize: number;
+  importedListings: number;
+  stagedRecords: number;
+  remainingListings: number;
+  approvedSources: number;
+  existingBatches: number;
+  plannedBatches: ImportLaunchPlanBatch[];
+  createdBatches?: ImportBatchRecord[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "blocked_by_policy";
 
 export type CrawlJobRecord = {

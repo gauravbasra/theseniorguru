@@ -203,6 +203,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/extracted-entities/{id}/approve",
       "POST /api/v1/admin/current-site-inventory/import",
       "GET /api/v1/admin/aggregation-readiness",
+      "GET /api/v1/admin/import-launch-plan",
+      "POST /api/v1/admin/import-launch-plan",
       "GET /api/v1/admin/crawl-jobs",
       "POST /api/v1/admin/crawl-jobs",
       "POST /api/v1/admin/crawl-jobs/{id}/run",
