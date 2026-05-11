@@ -73,7 +73,8 @@ const migrationManifest = [
   "20260511110000_newsroom_rss_idempotency.sql",
   "20260511111500_api_key_last_used.sql",
   "20260511134452_add_webhook_signing_ciphertext.sql",
-  "20260511141401_scheduled_worker_runs.sql"
+  "20260511141401_scheduled_worker_runs.sql",
+  "20260511142434_approved_current_site_source.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -188,6 +189,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511141401_scheduled_worker_runs.sql": {
     capability: "policy",
     summary: "Scheduled backend worker run history for cron observability and launch operations."
+  },
+  "20260511142434_approved_current_site_source.sql": {
+    capability: "aggregation",
+    summary: "Approved owner-controlled current-site public listing source for policy-gated acquisition."
   }
 };
 

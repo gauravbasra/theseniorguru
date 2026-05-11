@@ -1,5 +1,6 @@
 import { createImportBatch } from "@/lib/import-batches";
 import { runImportBatch } from "@/lib/aggregation/import-worker";
+import { getApprovedDataSourceByBaseUrl } from "@/lib/data-sources";
 import type { ImportBatchSourceCoverage, ImportRecordInput } from "@/lib/domain/imports";
 import type { StagedListingAuditEvent, StagedListingImageRecord } from "@/lib/domain/entities";
 
@@ -134,6 +135,7 @@ export type CurrentSiteRealListingPreviewResult = {
 };
 
 const currentSiteBaseUrl = "https://theseniorguru.com";
+const currentSiteSourceUrl = `${currentSiteBaseUrl}/search`;
 const userAgent = "TheSeniorGuruDataAcquisitionBot/0.1 (+https://theseniorguru.com)";
 const stateAbbreviations: Record<string, string> = {
   Alabama: "AL",
@@ -626,9 +628,11 @@ export async function runCurrentSiteRealListingAcquisition(input: {
   if (!policy || policy.robotsDecision !== "allowed") {
     throw new Error("Current TheSeniorGuru.com robots.txt does not allow public listing acquisition.");
   }
+  const dataSource = await getApprovedDataSourceByBaseUrl(currentSiteSourceUrl);
   const batch = await createImportBatch({
+    dataSourceId: dataSource.id,
     name: "Current TheSeniorGuru.com real public listing acquisition batch",
-    sourceKind: "manual",
+    sourceKind: dataSource.sourceType,
     estimatedRecords: records.length
   });
   const run = await runImportBatch(batch.id, {
@@ -671,7 +675,7 @@ export async function previewCurrentSiteRealListings(input: {
   const robots = await fetchCurrentSiteRobotsDecision();
   const policy: PublicSourcePolicy = {
     sourceName: "TheSeniorGuru.com current public listing index",
-    sourceUrl: `${currentSiteBaseUrl}/search`,
+    sourceUrl: currentSiteSourceUrl,
     adapterKind: "current_site_json",
     licenseTermsStatus: "owned_public_site",
     robotsDecision: robots.decision,

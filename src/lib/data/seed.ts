@@ -10,6 +10,18 @@ export const seedDataSources: DataSourceRecord[] = [
     reviewStatus: "approved",
     termsNotes: "Official federal provider data source for launch ingestion planning.",
     approvedAt: "2026-05-10T00:00:00.000Z"
+  },
+  {
+    id: "seed-current-senior-guru-public-index",
+    name: "TheSeniorGuru.com current public listing index",
+    sourceType: "manual",
+    baseUrl: "https://theseniorguru.com/search",
+    jurisdiction: "US",
+    reviewStatus: "approved",
+    robotsStatus: "allowed",
+    termsNotes:
+      "Owner-controlled public listing index. Images are staged as source metadata pending storage and reuse review.",
+    approvedAt: "2026-05-11T00:00:00.000Z"
   }
 ];
 

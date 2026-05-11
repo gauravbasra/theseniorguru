@@ -31,6 +31,25 @@ export async function listDataSources(): Promise<DataSourceRecord[]> {
   }));
 }
 
+export async function getApprovedDataSourceByBaseUrl(baseUrl: string): Promise<DataSourceRecord> {
+  const normalized = baseUrl.trim();
+  const source = (await listDataSources()).find((item) => item.baseUrl === normalized);
+
+  if (!source) {
+    throw new Error(`Approved data source is not registered for ${normalized}`);
+  }
+
+  if (source.reviewStatus !== "approved") {
+    throw new Error(`Data source ${source.name} is not approved for live acquisition`);
+  }
+
+  if (source.robotsStatus === "blocked" || source.robotsStatus === "disallowed") {
+    throw new Error(`Data source ${source.name} is blocked by robots policy`);
+  }
+
+  return source;
+}
+
 export async function createDataSource(input: Omit<DataSourceRecord, "id">) {
   const supabase = getSupabaseAdminClient();
 
@@ -72,4 +91,3 @@ export async function createDataSource(input: Omit<DataSourceRecord, "id">) {
     approvedAt: data.approved_at ?? undefined
   };
 }
-

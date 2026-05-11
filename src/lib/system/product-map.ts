@@ -250,7 +250,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["CMS/state import adapters", "Crawler scheduler", "Provider website extraction parser"]
+    nextBackendWork: ["CMS/state import adapters", "Provider website extraction parser", "Source approval dashboard actions"]
   },
   {
     key: "reviews",
