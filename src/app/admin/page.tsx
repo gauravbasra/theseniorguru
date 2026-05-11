@@ -6,6 +6,7 @@ import { ClaimVerificationConsole } from "@/components/claim-verification-consol
 import { NewsroomConsole } from "@/components/newsroom-console";
 import { ReviewReputationConsole } from "@/components/review-reputation-console";
 import { SourceGovernanceConsole } from "@/components/source-governance-console";
+import { SupabaseReadinessConsole } from "@/components/supabase-readiness-console";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { listCrawlJobs } from "@/lib/aggregation/crawl-jobs";
 import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
@@ -23,6 +24,7 @@ import { listProviders } from "@/lib/providers";
 import { listReviewModerationQueue } from "@/lib/reviews/reviews";
 import { listScheduledWorkerRuns } from "@/lib/scheduler/runs";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
+import { getSupabaseLaunchReadiness } from "@/lib/system/supabase-launch-readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +42,8 @@ export default async function AdminPage() {
     dataSources,
     scheduledRuns,
     crawlJobs,
-    providers
+    providers,
+    supabaseReadiness
   ] = await Promise.all([
     getLaunchChecklist(),
     getAdminDashboardMetrics(),
@@ -54,7 +57,8 @@ export default async function AdminPage() {
     listDataSources(),
     listScheduledWorkerRuns({ limit: 20 }),
     listCrawlJobs(),
-    listProviders()
+    listProviders(),
+    getSupabaseLaunchReadiness()
   ]);
   const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
   const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
@@ -249,6 +253,16 @@ export default async function AdminPage() {
           <ReviewQueuePanel reviews={reviewQueue} />
           <AdPlacementPanel placements={adPlacements} />
         </div>
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Supabase production readiness</p>
+            <h2>Track persistent backend storage and migration coverage</h2>
+          </div>
+        </div>
+        <SupabaseReadinessConsole initialReadiness={supabaseReadiness} />
       </section>
 
       <section className="admin-section">

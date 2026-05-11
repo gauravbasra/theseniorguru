@@ -90,6 +90,7 @@ Deliverables:
 - Family inquiry, free listing, and operator demo intake APIs. Completed.
 - Admin lead intake queue API and operations console action. Completed.
 - Supabase migration manifest and live table readiness API. Completed.
+- Protected Supabase production readiness API and admin console for persistence mode, migration coverage, and blocked capability tracking. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 

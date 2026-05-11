@@ -2508,6 +2508,171 @@ a {
   white-space: nowrap;
 }
 
+.supabase-console {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.1fr);
+  gap: 14px;
+}
+
+.supabase-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 16px;
+}
+
+.supabase-panel h3 {
+  margin: 5px 0 0;
+  color: var(--foreground);
+  font-size: 22px;
+  line-height: 1.12;
+  text-transform: capitalize;
+}
+
+.supabase-panel > .panel-title-row > svg {
+  width: 28px;
+  height: 28px;
+  color: var(--accent-strong);
+}
+
+.supabase-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.supabase-status-grid div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.supabase-status-grid strong {
+  color: var(--foreground);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.supabase-status-grid span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.supabase-mode-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #d9ccb9;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 14px;
+}
+
+.supabase-mode-card svg {
+  color: var(--accent-strong);
+}
+
+.supabase-mode-card strong,
+.supabase-mode-card small {
+  display: block;
+}
+
+.supabase-mode-card strong {
+  color: var(--foreground);
+  text-transform: capitalize;
+}
+
+.supabase-mode-card small {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.supabase-bars,
+.supabase-capability-list {
+  display: grid;
+  gap: 10px;
+}
+
+.supabase-progress {
+  display: grid;
+  gap: 7px;
+}
+
+.supabase-progress div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.supabase-progress i {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eee5d7;
+}
+
+.supabase-progress i::after {
+  display: block;
+  width: var(--value);
+  height: 100%;
+  border-radius: inherit;
+  background: #173b36;
+  content: "";
+}
+
+.supabase-capability-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 11px 12px;
+}
+
+.supabase-capability-row strong,
+.supabase-capability-row small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.supabase-capability-row small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.supabase-capability-row b {
+  border-radius: 999px;
+  background: #f5f0e8;
+  padding: 7px 9px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .admin-chart-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -3280,6 +3445,7 @@ a {
   .claim-console,
   .review-console,
   .ad-console,
+  .supabase-console,
   .pillar-card,
   .readiness-section,
   .readiness-grid,
@@ -3312,6 +3478,7 @@ a {
   .review-status-grid,
   .ad-status-grid,
   .ad-metric-board,
+  .supabase-status-grid,
   .acquisition-action-row,
   .review-actions-grid,
   .review-moderation-grid,
@@ -3324,7 +3491,8 @@ a {
   .claim-row,
   .attempt-row,
   .review-row,
-  .ad-row {
+  .ad-row,
+  .supabase-capability-row {
     grid-template-columns: 1fr;
   }
 
