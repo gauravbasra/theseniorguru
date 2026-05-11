@@ -73,6 +73,29 @@ type QualityGap = {
   gaps: string[];
 };
 
+function sourceCoverageFor(records: ImportRecordInput[]): ImportBatchSourceCoverage {
+  const isValidTimestamp = (value?: string) => Boolean(value && !Number.isNaN(new Date(value).getTime()));
+  const isBlocked = (record: ImportRecordInput) =>
+    ["blocked", "prohibited", "disallowed"].includes(String(record.licenseTermsStatus ?? "").toLowerCase()) ||
+    ["blocked", "disallowed"].includes(String(record.robotsDecision ?? "").toLowerCase());
+  const isProductionGrade = (record: ImportRecordInput) =>
+    Boolean(record.name && record.city && record.state && record.sourceUrl && record.sourceRecordId && isValidTimestamp(record.fetchedAt)) &&
+    !isBlocked(record);
+
+  return {
+    totalRecords: records.length,
+    withSourceUrl: records.filter((record) => Boolean(record.sourceUrl)).length,
+    withSourceRecordId: records.filter((record) => Boolean(record.sourceRecordId)).length,
+    withFetchedAt: records.filter((record) => isValidTimestamp(record.fetchedAt)).length,
+    withLicenseTermsStatus: records.filter((record) => Boolean(record.licenseTermsStatus && record.licenseTermsStatus !== "unknown")).length,
+    withRobotsDecision: records.filter((record) => Boolean(record.robotsDecision && record.robotsDecision !== "unknown")).length,
+    imageReadyRecords: records.filter((record) => (record.imageAssets?.length ?? 0) >= 3).length,
+    imageBacklogRecords: records.filter((record) => (record.imageAssets?.length ?? 0) < 3).length,
+    sourcePolicyBlockedRecords: records.filter(isBlocked).length,
+    productionGradeRecords: records.filter(isProductionGrade).length
+  };
+}
+
 export type PublicSourceAcquisitionRunResult = {
   generatedAt: string;
   batchId: string;
@@ -103,6 +126,7 @@ export type CurrentSiteRealListingPreviewResult = {
   requestedRecords: number;
   parsedRecords: number;
   skippedRecords: number;
+  sourceCoverage: ImportBatchSourceCoverage;
   imageCoverage: PublicSourceAcquisitionRunResult["imageCoverage"];
   qualityGaps: QualityGap[];
   sourcePolicies: PublicSourcePolicy[];
@@ -696,6 +720,7 @@ export async function previewCurrentSiteRealListings(input: {
     requestedRecords: requested.length,
     parsedRecords: records.length,
     skippedRecords: requested.length - records.length,
+    sourceCoverage: sourceCoverageFor(records),
     imageCoverage: {
       listingsWithThreeImages,
       listingsMissingThreeImages: records.length - listingsWithThreeImages,

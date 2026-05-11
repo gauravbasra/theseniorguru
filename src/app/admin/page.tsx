@@ -165,6 +165,44 @@ export default async function AdminPage() {
             </div>
           </article>
 
+          <article className="dashboard-panel source-quality-panel">
+            <div className="panel-title-row">
+              <div>
+                <p className="eyebrow">Acquisition quality</p>
+                <h2>Source coverage</h2>
+              </div>
+              <strong className="panel-stat">
+                {percentOf(listingPreview.sourceCoverage.productionGradeRecords, listingPreview.sourceCoverage.totalRecords)}%
+              </strong>
+            </div>
+            <div className="compact-bars">
+              <HorizontalBar
+                label="Source URLs"
+                value={listingPreview.sourceCoverage.withSourceUrl}
+                total={listingPreview.sourceCoverage.totalRecords}
+                tone="green"
+              />
+              <HorizontalBar
+                label="Record IDs"
+                value={listingPreview.sourceCoverage.withSourceRecordId}
+                total={listingPreview.sourceCoverage.totalRecords}
+                tone="blue"
+              />
+              <HorizontalBar
+                label="Terms reviewed"
+                value={listingPreview.sourceCoverage.withLicenseTermsStatus}
+                total={listingPreview.sourceCoverage.totalRecords}
+                tone="gold"
+              />
+              <HorizontalBar
+                label="3+ images"
+                value={listingPreview.sourceCoverage.imageReadyRecords}
+                total={listingPreview.sourceCoverage.totalRecords}
+                tone="rose"
+              />
+            </div>
+          </article>
+
           <article className="dashboard-panel listing-preview-panel">
             <div className="panel-title-row">
               <div>

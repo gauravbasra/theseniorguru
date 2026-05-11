@@ -1465,6 +1465,10 @@ a {
   grid-column: 1 / -1;
 }
 
+.source-quality-panel {
+  grid-column: span 2;
+}
+
 .listing-preview-table {
   overflow-x: auto;
   border: 1px solid var(--line);

@@ -1,4 +1,5 @@
 import { getAdCampaignReporting } from "@/lib/ads/ads";
+import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
 import { listLeadQueue } from "@/lib/leads";
 import { listProviders } from "@/lib/providers";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
@@ -22,12 +23,13 @@ function parseRangeTarget(value: string | number) {
 }
 
 export async function getAdminDashboardMetrics() {
-  const [product, launchChecklist, leadQueue, adReporting, providers] = await Promise.all([
+  const [product, launchChecklist, leadQueue, adReporting, providers, listingPreview] = await Promise.all([
     getProductMap(),
     getLaunchChecklist(),
     listLeadQueue(),
     getAdCampaignReporting(),
-    listProviders()
+    listProviders(),
+    previewCurrentSiteRealListings({ maxRecords: 25 })
   ]);
   const readinessStatusCounts = launchChecklist.checklist.reduce(
     (counts, item) => ({
@@ -89,6 +91,7 @@ export async function getAdminDashboardMetrics() {
     leadFunnel,
     productEngines,
     monetization,
+    sourceCoverage: listingPreview.sourceCoverage,
     routeHealth,
     headlineNumbers: {
       totalProviders: providers.length,
