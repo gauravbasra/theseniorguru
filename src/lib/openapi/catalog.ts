@@ -294,6 +294,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/newsroom/articles": {
         post: { tags: ["Newsroom"], summary: "Create a policy-gated AI-assisted article draft" }
       },
+      "/api/v1/admin/newsroom/articles/{id}/approve": {
+        post: { tags: ["Newsroom"], summary: "Approve an article for publishing after editorial and policy review" }
+      },
       "/api/v1/admin/newsroom/articles/{id}/publish": {
         post: { tags: ["Newsroom"], summary: "Publish an approved article with policy checks" }
       },

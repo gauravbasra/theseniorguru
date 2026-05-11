@@ -126,6 +126,17 @@ function normalizeNewsItemKey(input: { sourceUrl?: string; sourceName?: string; 
   return `title:${input.sourceName?.trim().toLowerCase() ?? "unknown"}:${slugify(input.title)}`;
 }
 
+function assertPolicyAllowsNewsroomAction(
+  policy: Awaited<ReturnType<typeof runPolicyCheck>>,
+  fallbackMessage: string
+) {
+  if (policy.decision === "approved" || policy.decision === "approved_with_disclosure") {
+    return;
+  }
+
+  throw new Error(policy.reasons[0] ?? fallbackMessage);
+}
+
 export async function listContentSources(): Promise<ContentSourceRecord[]> {
   const supabase = getSupabaseAdminClient();
 
@@ -429,44 +440,202 @@ export async function createArticleDraft(input: CreateArticleInput): Promise<Art
   return mapArticle(data);
 }
 
-export async function publishArticle(articleId: string) {
+export async function approveArticle(articleId: string, input: { actorId?: string; notes?: string } = {}) {
+  const supabase = getSupabaseAdminClient();
+  const approvedAt = new Date().toISOString();
+
+  if (!supabase) {
+    const article = seedArticles.find((candidate) => candidate.id === articleId);
+
+    if (!article) {
+      throw new Error("Article not found");
+    }
+
+    if (article.status === "blocked_by_policy") {
+      throw new Error("Blocked articles cannot be approved");
+    }
+
+    const policy = await runPolicyCheck({
+      subjectType: "article",
+      subjectId: articleId,
+      actionKey: "approve_article",
+      input: {
+        articleId,
+        title: article.title,
+        dek: article.dek,
+        body: article.body,
+        sourceLinks: article.sourceLinks,
+        notes: input.notes
+      }
+    });
+
+    assertPolicyAllowsNewsroomAction(policy, "Article approval requires policy clearance");
+
+    article.status = "approved";
+    return { id: articleId, status: "approved", policyDecision: policy.decision, approvedAt };
+  }
+
+  const { data: article, error: lookupError } = await supabase
+    .from("published_articles")
+    .select("*")
+    .eq("id", articleId)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(`Article approval lookup failed: ${lookupError.message}`);
+  }
+
+  if (!article) {
+    throw new Error("Article not found");
+  }
+
+  if (article.status === "blocked_by_policy") {
+    throw new Error("Blocked articles cannot be approved");
+  }
+
   const policy = await runPolicyCheck({
     subjectType: "article",
     subjectId: articleId,
-    actionKey: "publish_article",
-    input: { articleId }
+    actionKey: "approve_article",
+    input: {
+      articleId,
+      title: article.title,
+      dek: article.dek,
+      body: article.body,
+      sourceLinks: article.source_links,
+      notes: input.notes
+    }
   });
 
-  if (policy.decision.startsWith("blocked")) {
-    throw new Error(policy.reasons[0] ?? "Article blocked by policy");
+  assertPolicyAllowsNewsroomAction(policy, "Article approval requires policy clearance");
+
+  const approvalPayload = {
+    ...(typeof article.approval_payload === "object" && article.approval_payload ? article.approval_payload : {}),
+    approvedAt,
+    approvedBy: input.actorId ?? "system",
+    notes: input.notes,
+    policyDecision: policy.decision
+  };
+
+  const { error } = await supabase
+    .from("published_articles")
+    .update({
+      status: "approved",
+      approval_payload: approvalPayload,
+      updated_at: approvedAt
+    })
+    .eq("id", articleId);
+
+  if (error) {
+    throw new Error(`Article approval failed: ${error.message}`);
   }
 
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: "article.approved",
+    subject_type: "article",
+    subject_id: articleId,
+    payload: {
+      notes: input.notes,
+      policyDecision: policy.decision
+    }
+  });
+
+  return { id: articleId, status: "approved", policyDecision: policy.decision, approvedAt };
+}
+
+export async function publishArticle(articleId: string) {
   const supabase = getSupabaseAdminClient();
   const publishedAt = new Date().toISOString();
 
   if (!supabase) {
     const article = seedArticles.find((candidate) => candidate.id === articleId);
 
-    if (article) {
-      article.status = "published";
-      article.publishedAt = publishedAt;
+    if (!article) {
+      throw new Error("Article not found");
     }
 
-    return { id: articleId, status: "published", policyDecision: policy.decision };
-  }
-
-  if (supabase) {
-    const { error } = await supabase
-      .from("published_articles")
-      .update({ status: "published", published_at: publishedAt })
-      .eq("id", articleId);
-
-    if (error) {
-      throw new Error(`Article publish failed: ${error.message}`);
+    if (article.status === "published") {
+      return { id: articleId, status: "published", policyDecision: "already_published", publishedAt: article.publishedAt };
     }
+
+    if (article.status !== "approved") {
+      throw new Error("Article must be approved before publishing");
+    }
+
+    const policy = await runPolicyCheck({
+      subjectType: "article",
+      subjectId: articleId,
+      actionKey: "publish_article",
+      input: { articleId, title: article.title, dek: article.dek, body: article.body, sourceLinks: article.sourceLinks }
+    });
+
+    assertPolicyAllowsNewsroomAction(policy, "Article publish requires policy clearance");
+
+    article.status = "published";
+    article.publishedAt = publishedAt;
+    return { id: articleId, status: "published", policyDecision: policy.decision, publishedAt };
   }
 
-  return { id: articleId, status: "published", policyDecision: policy.decision };
+  const { data: article, error: lookupError } = await supabase
+    .from("published_articles")
+    .select("*")
+    .eq("id", articleId)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(`Article publish lookup failed: ${lookupError.message}`);
+  }
+
+  if (!article) {
+    throw new Error("Article not found");
+  }
+
+  if (article.status === "published") {
+    return { id: articleId, status: "published", policyDecision: "already_published", publishedAt: article.published_at };
+  }
+
+  if (article.status !== "approved") {
+    throw new Error("Article must be approved before publishing");
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "article",
+    subjectId: articleId,
+    actionKey: "publish_article",
+    input: {
+      articleId,
+      title: article.title,
+      dek: article.dek,
+      body: article.body,
+      sourceLinks: article.source_links
+    }
+  });
+
+  assertPolicyAllowsNewsroomAction(policy, "Article publish requires policy clearance");
+
+  const { error } = await supabase
+    .from("published_articles")
+    .update({ status: "published", published_at: publishedAt, updated_at: publishedAt })
+    .eq("id", articleId);
+
+  if (error) {
+    throw new Error(`Article publish failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_type: "system",
+    event_type: "article.published",
+    subject_type: "article",
+    subject_id: articleId,
+    payload: {
+      policyDecision: policy.decision,
+      slug: article.slug
+    }
+  });
+
+  return { id: articleId, status: "published", policyDecision: policy.decision, publishedAt };
 }
 
 export async function generateArticleSocial(articleId: string): Promise<ArticleDerivativeRecord[]> {
