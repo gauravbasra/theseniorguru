@@ -1,6 +1,7 @@
 import { createExtractedEntity } from "@/lib/aggregation/extracted-entities";
 import { seedDataSources } from "@/lib/data/seed";
 import type { ImportBatchRunResult, ImportRecordInput, RunImportBatchInput } from "@/lib/domain/imports";
+import { completeImportBatch, failImportBatch, markImportBatchRunning } from "@/lib/import-batches";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -123,7 +124,13 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
     throw new Error("Import batch not found");
   }
 
-  await ensureSourceApproved(batch);
+  try {
+    await ensureSourceApproved(batch);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Import source approval check failed";
+    await failImportBatch({ batchId, actorId: input.actorId, reason: message });
+    throw error;
+  }
 
   const policy = await runPolicyCheck({
     subjectType: "import_batch",
@@ -138,18 +145,20 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
   });
 
   if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    await failImportBatch({
+      batchId,
+      actorId: input.actorId,
+      status: "blocked_by_policy",
+      reason: policy.reasons[0] ?? "Import batch blocked by policy"
+    });
     throw new Error(policy.reasons[0] ?? "Import batch blocked by policy");
   }
 
-  const supabase = getSupabaseAdminClient();
   const dryRun = input.dryRun ?? false;
   const startedAt = new Date().toISOString();
 
-  if (supabase && !dryRun) {
-    await supabase
-      .from("import_batches")
-      .update({ status: "running", total_records: input.records.length, started_at: startedAt })
-      .eq("id", batchId);
+  if (!dryRun) {
+    await markImportBatchRunning({ batchId, totalRecords: input.records.length, startedAt });
   }
 
   let stagedRecords = 0;
@@ -204,37 +213,18 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
   const status = errorRecords > 0 || rejectedRecords > 0 ? "completed_with_errors" : "completed";
   const completedAt = new Date().toISOString();
 
-  if (supabase && !dryRun) {
-    const { error } = await supabase
-      .from("import_batches")
-      .update({
-        status,
-        total_records: input.records.length,
-        imported_records: stagedRecords,
-        rejected_records: rejectedRecords,
-        error_records: errorRecords,
-        completed_at: completedAt
-      })
-      .eq("id", batchId);
-
-    if (error) {
-      throw new Error(`Import batch completion update failed: ${error.message}`);
-    }
-
-    await supabase.from("audit_events").insert({
-      actor_id: input.actorId,
-      actor_type: input.actorId ? "admin" : "system",
-      event_type: "import_batch.run",
-      subject_type: "import_batch",
-      subject_id: batchId,
-      payload: {
-        sourceKind: batch.source_kind,
-        totalRecords: input.records.length,
-        stagedRecords,
-        rejectedRecords,
-        errorRecords,
-        policyDecision: policy.decision
-      }
+  if (!dryRun) {
+    await completeImportBatch({
+      batchId,
+      status,
+      totalRecords: input.records.length,
+      importedRecords: stagedRecords,
+      rejectedRecords,
+      errorRecords,
+      completedAt,
+      actorId: input.actorId,
+      sourceKind: batch.source_kind,
+      policyDecision: policy.decision
     });
   }
 

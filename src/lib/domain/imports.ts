@@ -66,6 +66,17 @@ export type ImportBatchRunResult = {
   }>;
 };
 
+export type RequeueImportBatchInput = {
+  actorId?: string;
+  reason?: string;
+};
+
+export type RequeueImportBatchResult = {
+  batch: ImportBatchRecord;
+  previousStatus: ImportBatchStatus;
+  status: "queued";
+};
+
 export type ImportLaunchPlanBatch = {
   name: string;
   dataSourceId?: string;

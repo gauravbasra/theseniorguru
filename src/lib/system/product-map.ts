@@ -200,6 +200,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/data-sources",
       "POST /api/v1/admin/data-sources",
       "POST /api/v1/admin/import-batches/{id}/run",
+      "POST /api/v1/admin/import-batches/{id}/requeue",
       "GET /api/v1/admin/extracted-entities",
       "POST /api/v1/admin/extracted-entities/{id}/match",
       "POST /api/v1/admin/extracted-entities/{id}/approve",

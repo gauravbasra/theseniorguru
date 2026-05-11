@@ -77,6 +77,7 @@ Deliverables:
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.
 - Import batch worker run API. Completed.
+- Import batch requeue and shared status helpers for failed, blocked, and partial aggregation jobs. Completed.
 - Crawl job create/list/run APIs and unresolved data quality queue API. Completed.
 - Aggregation launch readiness API and admin console action. Completed.
 - Launch import wave planning API and admin console action. Completed.

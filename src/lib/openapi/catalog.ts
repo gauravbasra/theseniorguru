@@ -258,6 +258,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/import-batches/{id}/run": {
         post: { tags: ["Aggregation"], summary: "Run a policy-gated import batch and stage extracted provider entities" }
       },
+      "/api/v1/admin/import-batches/{id}/requeue": {
+        post: { tags: ["Aggregation"], summary: "Requeue a failed, blocked, or partial import batch for another run" }
+      },
       "/api/v1/admin/import-launch-plan": {
         get: { tags: ["Aggregation"], summary: "Calculate launch import waves toward the 5,000-listing target" },
         post: { tags: ["Aggregation"], summary: "Optionally create queued launch import batches from the calculated plan" }
