@@ -255,6 +255,21 @@ const requiredColumns: RequiredColumn[] = [
   { table: "review_responses", column: "provider_id", requiredFor: "Provider-owned review responses", capability: "reviews" }
 ];
 
+async function withSchemaProbeTimeout<T>(operation: PromiseLike<T>, label: string, timeoutMs = 3500): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 function summarizeCapabilities(tableChecks: SchemaTableCheck[], columnChecks: SchemaColumnCheck[]) {
   const tableSummary = requiredTables.reduce(
     (summary, table) => {
@@ -347,7 +362,24 @@ async function checkTable({ table, requiredFor, capability }: RequiredTable): Pr
     return { table, requiredFor, capability, status: "unchecked" };
   }
 
-  const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }).limit(0);
+  let result: { count: number | null; error: { message: string } | null };
+
+  try {
+    result = await withSchemaProbeTimeout(
+      supabase.from(table).select("*", { count: "exact", head: true }).limit(0),
+      `Supabase table probe ${table}`
+    );
+  } catch (error) {
+    return {
+      table,
+      requiredFor,
+      capability,
+      status: "unchecked",
+      error: error instanceof Error ? error.message : "Supabase table probe timed out"
+    };
+  }
+
+  const { count, error } = result;
 
   if (error) {
     return { table, requiredFor, capability, status: "missing", error: error.message };
@@ -363,7 +395,25 @@ async function checkColumn({ table, column, requiredFor, capability }: RequiredC
     return { table, column, requiredFor, capability, status: "unchecked" };
   }
 
-  const { error } = await supabase.from(table).select(column, { head: true }).limit(0);
+  let result: { error: { message: string } | null };
+
+  try {
+    result = await withSchemaProbeTimeout(
+      supabase.from(table).select(column, { head: true }).limit(0),
+      `Supabase column probe ${table}.${column}`
+    );
+  } catch (error) {
+    return {
+      table,
+      column,
+      requiredFor,
+      capability,
+      status: "unchecked",
+      error: error instanceof Error ? error.message : "Supabase column probe timed out"
+    };
+  }
+
+  const { error } = result;
 
   if (error) {
     return { table, column, requiredFor, capability, status: "missing", error: error.message };
@@ -390,7 +440,13 @@ export async function getSupabaseSchemaReadiness() {
 
   return {
     generatedAt: new Date().toISOString(),
-    status: !configured ? "not_configured" : missing.length || missingColumns.length ? "schema_action_required" : "ready",
+    status: !configured
+      ? "not_configured"
+      : missing.length || missingColumns.length
+        ? "schema_action_required"
+        : unchecked.length || uncheckedColumns.length
+          ? "schema_unchecked"
+          : "ready",
     configured,
     connection: {
       hasUrl: Boolean(env.supabaseUrl),
@@ -425,6 +481,8 @@ export async function getSupabaseSchemaReadiness() {
         ]
       : missing.length || missingColumns.length
         ? ["Apply pending migrations or repair missing tables before launch.", "Re-run this endpoint after migration."]
+        : unchecked.length || uncheckedColumns.length
+          ? ["Supabase schema probes timed out or could not complete; verify database connectivity and re-run readiness."]
         : []
   };
 }

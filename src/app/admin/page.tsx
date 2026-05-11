@@ -4,6 +4,7 @@ import { AcquisitionPipelineConsole } from "@/components/acquisition-pipeline-co
 import { AdRevenueConsole } from "@/components/ad-revenue-console";
 import { ClaimVerificationConsole } from "@/components/claim-verification-console";
 import { NewsroomConsole } from "@/components/newsroom-console";
+import { OpenApiConsole } from "@/components/open-api-console";
 import { ReviewReputationConsole } from "@/components/review-reputation-console";
 import { SourceGovernanceConsole } from "@/components/source-governance-console";
 import { SupabaseReadinessConsole } from "@/components/supabase-readiness-console";
@@ -20,6 +21,7 @@ import type { LeadQueueSummary } from "@/lib/domain/leads";
 import { listImportBatches } from "@/lib/import-batches";
 import { listLeadQueue } from "@/lib/leads";
 import { listNewsItems } from "@/lib/newsroom/newsroom";
+import { listApiAuditEvents, listApiClients, listWebhookDeliveries, listWebhookSubscriptions } from "@/lib/openapi/platform";
 import { listProviders } from "@/lib/providers";
 import { listReviewModerationQueue } from "@/lib/reviews/reviews";
 import { listScheduledWorkerRuns } from "@/lib/scheduler/runs";
@@ -43,7 +45,11 @@ export default async function AdminPage() {
     scheduledRuns,
     crawlJobs,
     providers,
-    supabaseReadiness
+    supabaseReadiness,
+    apiClients,
+    webhookSubscriptions,
+    webhookDeliveries,
+    apiAuditEvents
   ] = await Promise.all([
     getLaunchChecklist(),
     getAdminDashboardMetrics(),
@@ -58,7 +64,11 @@ export default async function AdminPage() {
     listScheduledWorkerRuns({ limit: 20 }),
     listCrawlJobs(),
     listProviders(),
-    getSupabaseLaunchReadiness()
+    getSupabaseLaunchReadiness(),
+    listApiClients(),
+    listWebhookSubscriptions(),
+    listWebhookDeliveries(),
+    listApiAuditEvents()
   ]);
   const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
   const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
@@ -327,6 +337,21 @@ export default async function AdminPage() {
           </div>
         </div>
         <AdRevenueConsole initialPlacements={adPlacements} initialProviders={providers} />
+      </section>
+
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Open API operations</p>
+            <h2>Manage partner access, keys, webhooks, and audits</h2>
+          </div>
+        </div>
+        <OpenApiConsole
+          initialClients={apiClients}
+          initialSubscriptions={webhookSubscriptions}
+          initialDeliveries={webhookDeliveries}
+          initialAuditEvents={apiAuditEvents}
+        />
       </section>
 
       <section className="admin-section">
