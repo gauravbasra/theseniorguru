@@ -109,6 +109,7 @@ Deliverables:
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.
+- Extracted entity launch-quality audit worker for contact, taxonomy, confidence, image coverage, and rights-risk flags. Completed.
 - Crawl job control plane for approved sources. Completed.
 - Launch import wave planner for the 5,000-listing target. Completed.
 - Entity matching and duplicate detection.

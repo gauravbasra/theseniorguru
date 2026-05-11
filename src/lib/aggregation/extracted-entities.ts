@@ -1,8 +1,11 @@
 import type {
   CreateExtractedEntityInput,
   ExtractedEntityDecisionInput,
+  ExtractedEntityQualityAuditRecord,
+  ExtractedEntityQualityAuditResult,
   ExtractedEntityRecord
 } from "@/lib/domain/entities";
+import type { DataQualityFlagRecord } from "@/lib/domain/imports";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -26,6 +29,7 @@ const seedExtractedEntities: ExtractedEntityRecord[] = [
     createdAt: "2026-05-10T00:00:00.000Z"
   }
 ];
+const seedQualityFlags: DataQualityFlagRecord[] = [];
 
 function slugify(value: string) {
   const slug = value
@@ -115,6 +119,216 @@ export async function listExtractedEntities(status = "pending"): Promise<Extract
   }
 
   return (data ?? []).map(mapExtractedEntity);
+}
+
+function getImageCount(entity: ExtractedEntityRecord) {
+  return Array.isArray(entity.imageAssets) ? entity.imageAssets.length : 0;
+}
+
+function hasRiskyImageRights(entity: ExtractedEntityRecord) {
+  return (entity.imageAssets ?? []).some(
+    (image) =>
+      image.reviewStatus === "needs_rights_review" ||
+      image.reviewStatus === "rejected" ||
+      image.storageStatus === "blocked" ||
+      image.robotsDecision === "blocked" ||
+      image.licenseTermsStatus === "restricted"
+  );
+}
+
+function scoreEntityQuality(entity: ExtractedEntityRecord, minImages: number): ExtractedEntityQualityAuditRecord {
+  const findings: ExtractedEntityQualityAuditRecord["findings"] = [];
+  const imageCount = getImageCount(entity);
+
+  if (!entity.addressLine1 || !entity.city || !entity.state) {
+    findings.push({
+      severity: "high",
+      flagKey: "missing_location",
+      message: "Listing is missing a complete city/state/address location."
+    });
+  }
+
+  if (!entity.phone && !entity.websiteUrl && !entity.email) {
+    findings.push({
+      severity: "high",
+      flagKey: "missing_contact_path",
+      message: "Listing has no phone, website, or email contact path."
+    });
+  }
+
+  if (!entity.categories.length && !(entity.careTypes ?? []).length && !(entity.services ?? []).length) {
+    findings.push({
+      severity: "medium",
+      flagKey: "missing_care_taxonomy",
+      message: "Listing is missing care categories, care types, and services."
+    });
+  }
+
+  if (imageCount < minImages) {
+    findings.push({
+      severity: imageCount === 0 ? "high" : "medium",
+      flagKey: "insufficient_images",
+      message: `Listing has ${imageCount} approved/staged image${imageCount === 1 ? "" : "s"}; launch target is at least ${minImages}.`
+    });
+  }
+
+  if (hasRiskyImageRights(entity)) {
+    findings.push({
+      severity: "critical",
+      flagKey: "image_rights_or_robots_risk",
+      message: "One or more staged images needs rights review, was rejected, blocked by robots, or has restricted license terms."
+    });
+  }
+
+  if ((entity.extractionConfidence ?? entity.confidenceScore) < 0.65) {
+    findings.push({
+      severity: "medium",
+      flagKey: "low_extraction_confidence",
+      message: "Extraction confidence is below the launch-quality threshold."
+    });
+  }
+
+  if (entity.robotsDecision === "blocked" || entity.licenseTermsStatus === "restricted") {
+    findings.push({
+      severity: "critical",
+      flagKey: "source_policy_risk",
+      message: "Source robots or license terms block automated reuse without review."
+    });
+  }
+
+  const penalty = findings.reduce((total, finding) => {
+    if (finding.severity === "critical") return total + 0.35;
+    if (finding.severity === "high") return total + 0.22;
+    if (finding.severity === "medium") return total + 0.12;
+    return total + 0.05;
+  }, 0);
+  const qualityScore = Math.max(0, Number((1 - penalty).toFixed(2)));
+  const recommendedStatus =
+    findings.some((finding) => finding.severity === "critical" || finding.severity === "high") || qualityScore < 0.72
+      ? "needs_human_review"
+      : entity.reviewStatus;
+
+  return {
+    entityId: entity.id,
+    name: entity.name,
+    reviewStatus: entity.reviewStatus,
+    recommendedStatus,
+    qualityScore,
+    imageCount,
+    findings
+  };
+}
+
+export async function runExtractedEntityQualityAudit(input: {
+  status?: ExtractedEntityRecord["reviewStatus"] | "all";
+  limit?: number;
+  minImages?: number;
+  actorId?: string;
+} = {}): Promise<ExtractedEntityQualityAuditResult> {
+  const minImages = Math.max(1, Math.min(12, input.minImages ?? 3));
+  const limit = Math.max(1, Math.min(250, input.limit ?? 100));
+  const status = input.status ?? "pending";
+
+  const policy = await runPolicyCheck({
+    subjectType: "extracted_entity",
+    actionKey: "run_extracted_entity_quality_audit",
+    input: {
+      status,
+      limit,
+      minImages
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Extracted entity quality audit blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const results = (status === "all" ? seedExtractedEntities : seedExtractedEntities.filter((entity) => entity.reviewStatus === status))
+      .slice(0, limit)
+      .map((entity) => scoreEntityQuality(entity, minImages));
+
+    for (const result of results) {
+      for (const finding of result.findings) {
+        seedQualityFlags.unshift({
+          id: `quality-flag-${Date.now()}-${seedQualityFlags.length}`,
+          subjectType: "extracted_entity",
+          subjectId: result.entityId,
+          severity: finding.severity,
+          flagKey: finding.flagKey,
+          message: finding.message,
+          createdAt: new Date().toISOString()
+        });
+      }
+    }
+
+    return {
+      audited: results.length,
+      flagged: results.filter((result) => result.findings.length > 0).length,
+      highRisk: results.filter((result) => result.findings.some((finding) => finding.severity === "critical" || finding.severity === "high")).length,
+      minImages,
+      results
+    };
+  }
+
+  let query = supabase.from("extracted_entities").select("*").order("created_at", { ascending: false }).limit(limit);
+
+  if (status !== "all") {
+    query = query.eq("review_status", status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Extracted entity quality audit query failed: ${error.message}`);
+  }
+
+  const results = (data ?? []).map((row) => scoreEntityQuality(mapExtractedEntity(row), minImages));
+  const flagged = results.filter((result) => result.findings.length > 0);
+
+  for (const result of flagged) {
+    for (const finding of result.findings) {
+      await supabase.from("data_quality_flags").insert({
+        subject_type: "extracted_entity",
+        subject_id: result.entityId,
+        severity: finding.severity,
+        flag_key: finding.flagKey,
+        message: finding.message
+      });
+    }
+
+    if (result.recommendedStatus !== result.reviewStatus) {
+      await supabase
+        .from("extracted_entities")
+        .update({ review_status: result.recommendedStatus })
+        .eq("id", result.entityId);
+    }
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: "extracted_entity.quality_audit_run",
+    subject_type: "extracted_entity",
+    payload: {
+      status,
+      limit,
+      minImages,
+      audited: results.length,
+      flagged: flagged.length,
+      policyDecision: policy.decision
+    }
+  });
+
+  return {
+    audited: results.length,
+    flagged: flagged.length,
+    highRisk: results.filter((result) => result.findings.some((finding) => finding.severity === "critical" || finding.severity === "high")).length,
+    minImages,
+    results
+  };
 }
 
 export async function createExtractedEntity(input: CreateExtractedEntityInput): Promise<ExtractedEntityRecord> {

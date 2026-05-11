@@ -134,3 +134,34 @@ export type EntityMatchResult = {
   topScore: number;
   candidates: EntityMatchCandidateRecord[];
 };
+
+export type ExtractedEntityQualityFinding = {
+  severity: "low" | "medium" | "high" | "critical";
+  flagKey: string;
+  message: string;
+};
+
+export type ExtractedEntityQualityAuditRecord = {
+  entityId: string;
+  name: string;
+  reviewStatus: ExtractedEntityReviewStatus;
+  recommendedStatus: ExtractedEntityReviewStatus;
+  qualityScore: number;
+  imageCount: number;
+  findings: ExtractedEntityQualityFinding[];
+};
+
+export type RunExtractedEntityQualityAuditInput = {
+  status?: ExtractedEntityReviewStatus | "all";
+  limit?: number;
+  minImages?: number;
+  actorId?: string;
+};
+
+export type ExtractedEntityQualityAuditResult = {
+  audited: number;
+  flagged: number;
+  highRisk: number;
+  minImages: number;
+  results: ExtractedEntityQualityAuditRecord[];
+};

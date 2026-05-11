@@ -319,6 +319,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/{id}/match": {
         post: { tags: ["Aggregation"], summary: "Score and store duplicate match candidates for an extracted entity" }
       },
+      "/api/v1/admin/extracted-entities/quality-audit": {
+        post: { tags: ["Aggregation"], summary: "Run launch-quality checks and flag staged provider records" }
+      },
       "/api/v1/admin/import-batches/{id}/run": {
         post: { tags: ["Aggregation"], summary: "Run a policy-gated import batch and stage extracted provider entities" }
       },
