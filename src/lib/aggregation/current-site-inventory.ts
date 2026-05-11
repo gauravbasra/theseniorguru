@@ -16,12 +16,28 @@ type CurrentSiteListingRecord = ImportRecordInput & {
   listingUrl: string;
 };
 
+type CurrentSiteInventoryCollection = {
+  discoveredListingUrls: string[];
+  records: CurrentSiteListingRecord[];
+  parseErrors: Array<{
+    listingUrl: string;
+    reason: string;
+  }>;
+};
+
 export type CurrentSiteInventoryImportResult = ImportBatchRunResult & {
   source: string;
   discoveredListingUrls: number;
   parsedRecords: number;
   imageBacklogRecords: number;
+  imageReadyRecords: number;
+  parseErrorRecords: number;
+  failedListingUrls: Array<{
+    listingUrl: string;
+    reason: string;
+  }>;
   listingUrls: string[];
+  nextActions: string[];
 };
 
 function decodeHtml(value: string) {
@@ -260,22 +276,42 @@ export async function parseCurrentSiteListing(listingUrl: string): Promise<Curre
   };
 }
 
-export async function getCurrentSiteInventoryRecords(input: { limit?: number } = {}): Promise<CurrentSiteListingRecord[]> {
-  const listingUrls = await discoverCurrentSiteListingUrls(input.limit ?? 100);
+function normalizeLimit(limit?: number) {
+  if (!Number.isFinite(limit)) {
+    return 100;
+  }
+
+  return Math.max(1, Math.min(Math.trunc(limit ?? 100), 500));
+}
+
+export async function getCurrentSiteInventoryRecords(
+  input: { limit?: number } = {}
+): Promise<CurrentSiteInventoryCollection> {
+  const listingUrls = await discoverCurrentSiteListingUrls(normalizeLimit(input.limit));
   const records: CurrentSiteListingRecord[] = [];
+  const parseErrors: CurrentSiteInventoryCollection["parseErrors"] = [];
 
   for (const listingUrl of listingUrls) {
     try {
       const record = await parseCurrentSiteListing(listingUrl);
       if (record) {
         records.push(record);
+      } else {
+        parseErrors.push({ listingUrl, reason: "Listing page did not contain a parseable provider name" });
       }
-    } catch {
-      // Bad individual listings should not stop the acquisition run.
+    } catch (error) {
+      parseErrors.push({
+        listingUrl,
+        reason: error instanceof Error ? error.message : "Unknown listing parse error"
+      });
     }
   }
 
-  return records;
+  return {
+    discoveredListingUrls: listingUrls,
+    records,
+    parseErrors
+  };
 }
 
 export async function runCurrentSiteInventoryImport(input: {
@@ -283,7 +319,8 @@ export async function runCurrentSiteInventoryImport(input: {
   actorId?: string;
   limit?: number;
 }): Promise<CurrentSiteInventoryImportResult> {
-  const records = await getCurrentSiteInventoryRecords({ limit: input.limit ?? 100 });
+  const collection = await getCurrentSiteInventoryRecords({ limit: input.limit ?? 100 });
+  const { records, discoveredListingUrls, parseErrors } = collection;
   const batch = await createImportBatch({
     name: "Current TheSeniorGuru live-site inventory import",
     sourceKind: "manual",
@@ -298,9 +335,23 @@ export async function runCurrentSiteInventoryImport(input: {
   return {
     ...result,
     source: "current_theseniorguru_live_site",
-    discoveredListingUrls: records.length,
+    discoveredListingUrls: discoveredListingUrls.length,
     parsedRecords: records.length,
     imageBacklogRecords: records.filter((record) => (record.imageAssets?.length ?? 0) < 3).length,
-    listingUrls: records.map((record) => record.listingUrl)
+    imageReadyRecords: records.filter((record) => (record.imageAssets?.length ?? 0) >= 3).length,
+    parseErrorRecords: parseErrors.length,
+    failedListingUrls: parseErrors,
+    listingUrls: records.map((record) => record.listingUrl),
+    nextActions: [
+      result.dryRun
+        ? "Run again with dryRun=false after confirming the parsed sample and production persistence readiness."
+        : "Review staged extracted entities for duplicate matching, quality flags, and approval into provider inventory.",
+      parseErrors.length
+        ? "Review failedListingUrls and improve parser coverage for pages with changed markup or source fetch failures."
+        : "Parser covered every discovered listing URL in this run.",
+      records.some((record) => (record.imageAssets?.length ?? 0) < 3)
+        ? "Save source image URLs now and enrich missing listing photos later; image gaps do not block inventory staging."
+        : "Every parsed listing includes at least three source image references."
+    ]
   };
 }
