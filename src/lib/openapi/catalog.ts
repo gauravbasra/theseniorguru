@@ -339,6 +339,7 @@ export function getOpenApiCatalog() {
         post: { tags: ["Aggregation"], summary: "Run a seeded public-source acquisition batch with provenance, image, and quality reporting" }
       },
       "/api/v1/admin/public-source-acquisition/current-site-preview": {
+        get: { tags: ["Aggregation"], summary: "Read real current-site listing preview records for admin inventory review" },
         post: { tags: ["Aggregation"], summary: "Preview/export parsed real current-site listing records before staging" }
       },
       "/api/v1/admin/public-source-acquisition/current-site-run": {

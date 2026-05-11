@@ -173,7 +173,7 @@ const routeContracts: LinkContract[] = [
   {
     label: "Current-site real listing preview",
     href: "/api/v1/admin/public-source-acquisition/current-site-preview",
-    method: "POST",
+    method: "GET",
     owner: "admin"
   }
 ];

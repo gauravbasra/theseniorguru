@@ -188,7 +188,7 @@ export default async function AdminPage() {
         <div className="admin-live-grid">
           <LeadQueuePanel queue={leadQueue} />
           <ClaimQueuePanel claims={claims} />
-          <ImportQueuePanel batches={importBatches} />
+          <ImportQueuePanel batches={importBatches} listingPreview={listingPreview} />
           <NewsroomQueuePanel items={newsroomItems} />
           <ReviewQueuePanel reviews={reviewQueue} />
           <AdPlacementPanel placements={adPlacements} />
@@ -251,19 +251,39 @@ function ClaimQueuePanel({ claims }: { claims: ProviderClaimRecord[] }) {
   );
 }
 
-function ImportQueuePanel({ batches }: { batches: Awaited<ReturnType<typeof listImportBatches>> }) {
+function ImportQueuePanel({
+  batches,
+  listingPreview
+}: {
+  batches: Awaited<ReturnType<typeof listImportBatches>>;
+  listingPreview: Awaited<ReturnType<typeof previewCurrentSiteRealListings>>;
+}) {
+  const rows = batches.length
+    ? batches.slice(0, 5).map((batch) => ({
+        key: batch.id,
+        primary: batch.name,
+        secondary: `${batch.importedRecords}/${batch.totalRecords} staged`,
+        status: batch.status,
+        href: `/api/v1/admin/import-batches/${batch.id}/run`
+      }))
+    : [{
+        key: "current-site-preview",
+        primary: "Current TheSeniorGuru public listings",
+        secondary: `${listingPreview.parsedRecords}/${listingPreview.discoveredListings} parsed for staging`,
+        status: listingPreview.sourcePolicies[0]?.robotsDecision ?? "review",
+        href: "/api/v1/admin/public-source-acquisition/current-site-preview?maxRecords=50"
+      }];
+
   return (
     <article className="admin-live-panel">
-      <PanelHeader eyebrow="Inventory" title={`${batches.length} batches`} meta="imports" />
+      <PanelHeader
+        eyebrow="Inventory"
+        title={batches.length ? `${batches.length} batches` : `${listingPreview.discoveredListings} discovered`}
+        meta="real source"
+      />
       <QueueTable
         emptyLabel="No import batches yet"
-        rows={batches.slice(0, 5).map((batch) => ({
-          key: batch.id,
-          primary: batch.name,
-          secondary: `${batch.importedRecords}/${batch.totalRecords} staged`,
-          status: batch.status,
-          href: `/api/v1/admin/import-batches/${batch.id}/run`
-        }))}
+        rows={rows}
       />
     </article>
   );
