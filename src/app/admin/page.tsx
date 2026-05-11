@@ -1,24 +1,43 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
-import { LaunchChecklistPanel } from "@/components/launch-checklist-panel";
 import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
 import { getAdminDashboardMetrics } from "@/lib/admin/dashboard-metrics";
+import { listAdPlacements } from "@/lib/ads/ads";
+import { listProviderClaims } from "@/lib/claims/provider-claims";
+import type { ProviderClaimRecord } from "@/lib/domain/claims";
 import type { ImportRecordInput } from "@/lib/domain/imports";
+import type { LeadQueueSummary } from "@/lib/domain/leads";
+import { listImportBatches } from "@/lib/import-batches";
+import { listLeadQueue } from "@/lib/leads";
+import { listNewsItems } from "@/lib/newsroom/newsroom";
+import { listReviewModerationQueue } from "@/lib/reviews/reviews";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
-import { getProductMap } from "@/lib/system/product-map";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  const [product, launchChecklist, dashboardMetrics, listingPreview] = await Promise.all([
-    getProductMap(),
+  const [
+    launchChecklist,
+    dashboardMetrics,
+    listingPreview,
+    leadQueue,
+    claims,
+    importBatches,
+    newsroomItems,
+    adPlacements,
+    reviewQueue
+  ] = await Promise.all([
     getLaunchChecklist(),
     getAdminDashboardMetrics(),
-    previewCurrentSiteRealListings({ maxRecords: 12 })
+    previewCurrentSiteRealListings({ maxRecords: 12 }),
+    listLeadQueue(),
+    listProviderClaims(),
+    listImportBatches(),
+    listNewsItems(),
+    listAdPlacements(),
+    listReviewModerationQueue({ status: "pending_moderation" })
   ]);
-  const readinessGroups = Object.entries(product.readiness.groups);
-  const maxEngineRoutes = Math.max(...dashboardMetrics.productEngines.map((item) => item.routes), 1);
   const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
   const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
   const acquisitionTarget = 5000;
@@ -160,7 +179,20 @@ export default async function AdminPage() {
       </section>
 
       <section className="admin-section">
-        <LaunchChecklistPanel initialChecklist={launchChecklist} />
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Live operations</p>
+            <h2>Work queues</h2>
+          </div>
+        </div>
+        <div className="admin-live-grid">
+          <LeadQueuePanel queue={leadQueue} />
+          <ClaimQueuePanel claims={claims} />
+          <ImportQueuePanel batches={importBatches} />
+          <NewsroomQueuePanel items={newsroomItems} />
+          <ReviewQueuePanel reviews={reviewQueue} />
+          <AdPlacementPanel placements={adPlacements} />
+        </div>
       </section>
 
       <section className="admin-section">
@@ -172,90 +204,169 @@ export default async function AdminPage() {
         </div>
         <AdminOperationsConsole />
       </section>
-
-      <section className="admin-section">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Business engines</p>
-            <h2>The platform is organized around the money-making and trust-building workflows.</h2>
-          </div>
-        </div>
-        <div className="pillar-grid">
-          {product.pillars.map((pillar) => (
-            <article className="pillar-card" key={pillar.key}>
-              <div>
-                <span className={`status-pill ${pillar.status}`}>{pillar.status}</span>
-                <h3>{displayPillarTitle(pillar.title)}</h3>
-                <p>{displayPillarObjective(pillar.objective)}</p>
-                <small>{pillar.audience}</small>
-              </div>
-              <div>
-                <strong>What this powers</strong>
-                <ul>
-                  {uniqueCapabilities(pillar.backendRoutes).slice(0, 6).map((capability) => (
-                    <li key={`${pillar.key}-${capability}`}>{capability}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <strong>Next product work</strong>
-                <ul>
-                  {pillar.nextBackendWork.map((item) => (
-                    <li key={item}>{item.replaceAll("API", "workflow").replaceAll("endpoint", "workflow")}</li>
-                  ))}
-                </ul>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="admin-section">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Backend engine depth</p>
-            <h2>Routes and tables by product pillar.</h2>
-          </div>
-        </div>
-        <article className="chart-panel chart-panel-full">
-          <div className="engine-chart">
-            {dashboardMetrics.productEngines.map((item) => (
-              <div className="engine-row" key={item.label}>
-                <span>{item.label}</span>
-                <div>
-                  <i style={{ "--value": `${percentOf(item.routes, maxEngineRoutes)}%` } as CSSProperties} />
-                  <b>{item.routes} workflows · {item.tables} tables</b>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-      </section>
-
-      <section className="admin-section readiness-section">
-        <div>
-          <p className="eyebrow">Readiness and blockers</p>
-          <h2>Owner-dependent launch items stay visible until they are cleared.</h2>
-        </div>
-        <div className="readiness-grid">
-          {readinessGroups.map(([name, group]) => (
-            <article className="profile-card" key={name}>
-              <p className="eyebrow">{name.replaceAll(/([A-Z])/g, " $1")}</p>
-              <h3>{group.status.replaceAll("_", " ")}</h3>
-              <ul>
-                {group.checks.map((check) => (
-                  <li key={check.key}>
-                    <strong>{displayReadinessLabel(check.label)}</strong>
-                    <span>{check.status}</span>
-                    {check.action ? <small>{displayOwnerAction(check.action)}</small> : null}
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))}
-        </div>
-      </section>
     </main>
+  );
+}
+
+function LeadQueuePanel({ queue }: { queue: LeadQueueSummary }) {
+  return (
+    <article className="admin-live-panel admin-live-panel-wide">
+      <PanelHeader eyebrow="Lead inbox" title={`${queue.total} open`} meta={queue.source.replace("_", " ")} />
+      <div className="queue-stat-row">
+        <QueueStat label="Families" value={queue.byType.family_inquiry} />
+        <QueueStat label="Free listings" value={queue.byType.free_listing} />
+        <QueueStat label="Demos" value={queue.byType.operator_demo} />
+      </div>
+      <QueueTable
+        emptyLabel="No inbound leads yet"
+        rows={queue.items.slice(0, 5).map((item) => ({
+          key: item.id,
+          primary: item.displayName,
+          secondary: item.sourceLabel,
+          status: item.status,
+          href: "/api/v1/admin/leads"
+        }))}
+      />
+    </article>
+  );
+}
+
+function ClaimQueuePanel({ claims }: { claims: ProviderClaimRecord[] }) {
+  const openClaims = claims.filter((claim) => !["approved", "rejected"].includes(claim.status));
+
+  return (
+    <article className="admin-live-panel">
+      <PanelHeader eyebrow="Claims" title={`${openClaims.length} pending`} meta={`${claims.length} total`} />
+      <QueueTable
+        emptyLabel="No provider claims pending"
+        rows={openClaims.slice(0, 5).map((claim) => ({
+          key: claim.id,
+          primary: claim.claimantName,
+          secondary: claim.businessDomain ?? claim.claimantEmail,
+          status: claim.status,
+          href: `/api/v1/admin/provider-claims/${claim.id}/verification-attempts`
+        }))}
+      />
+    </article>
+  );
+}
+
+function ImportQueuePanel({ batches }: { batches: Awaited<ReturnType<typeof listImportBatches>> }) {
+  return (
+    <article className="admin-live-panel">
+      <PanelHeader eyebrow="Inventory" title={`${batches.length} batches`} meta="imports" />
+      <QueueTable
+        emptyLabel="No import batches yet"
+        rows={batches.slice(0, 5).map((batch) => ({
+          key: batch.id,
+          primary: batch.name,
+          secondary: `${batch.importedRecords}/${batch.totalRecords} staged`,
+          status: batch.status,
+          href: `/api/v1/admin/import-batches/${batch.id}/run`
+        }))}
+      />
+    </article>
+  );
+}
+
+function NewsroomQueuePanel({ items }: { items: Awaited<ReturnType<typeof listNewsItems>> }) {
+  return (
+    <article className="admin-live-panel">
+      <PanelHeader eyebrow="Newsroom" title={`${items.length} source items`} meta="editorial" />
+      <QueueTable
+        emptyLabel="No newsroom items queued"
+        rows={items.slice(0, 5).map((item) => ({
+          key: item.id,
+          primary: item.title,
+          secondary: item.sourceName ?? item.sourceUrl ?? "source saved",
+          status: item.status,
+          href: "/api/v1/admin/newsroom/inbox"
+        }))}
+      />
+    </article>
+  );
+}
+
+function ReviewQueuePanel({ reviews }: { reviews: Awaited<ReturnType<typeof listReviewModerationQueue>> }) {
+  return (
+    <article className="admin-live-panel">
+      <PanelHeader eyebrow="Reviews" title={`${reviews.length} pending`} meta="moderation" />
+      <QueueTable
+        emptyLabel="No reviews waiting"
+        rows={reviews.slice(0, 5).map((review) => ({
+          key: review.id,
+          primary: review.title ?? `${review.rating}-star review`,
+          secondary: review.reviewerName,
+          status: review.status,
+          href: `/api/v1/admin/reviews/${review.id}/moderate`
+        }))}
+      />
+    </article>
+  );
+}
+
+function AdPlacementPanel({ placements }: { placements: Awaited<ReturnType<typeof listAdPlacements>> }) {
+  return (
+    <article className="admin-live-panel">
+      <PanelHeader eyebrow="Ad inventory" title={`${placements.length} placements`} meta="revenue" />
+      <QueueTable
+        emptyLabel="No ad placements configured"
+        rows={placements.slice(0, 5).map((placement) => ({
+          key: placement.placementKey,
+          primary: placement.name,
+          secondary: placement.surface,
+          status: placement.isActive ? "active" : "paused",
+          href: "/api/v1/admin/ads/placements"
+        }))}
+      />
+    </article>
+  );
+}
+
+function PanelHeader({ eyebrow, title, meta }: { eyebrow: string; title: string; meta: string }) {
+  return (
+    <div className="panel-title-row">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h2>{title}</h2>
+      </div>
+      <span className="queue-meta">{meta}</span>
+    </div>
+  );
+}
+
+function QueueStat({ label, value }: { label: string; value: number }) {
+  return (
+    <span>
+      <strong>{value}</strong>
+      {label}
+    </span>
+  );
+}
+
+function QueueTable({
+  rows,
+  emptyLabel
+}: {
+  rows: Array<{ key: string; primary: string; secondary: string; status: string; href: string }>;
+  emptyLabel: string;
+}) {
+  if (!rows.length) {
+    return <p className="queue-empty">{emptyLabel}</p>;
+  }
+
+  return (
+    <div className="queue-table">
+      {rows.map((row) => (
+        <a href={row.href} key={row.key}>
+          <span>
+            <strong>{row.primary}</strong>
+            <small>{row.secondary}</small>
+          </span>
+          <b>{row.status.replaceAll("_", " ")}</b>
+        </a>
+      ))}
+    </div>
   );
 }
 
@@ -355,78 +466,4 @@ function DonutChart({ label, value, total }: { label: string; value: number; tot
 
 function percentOf(value: number, total: number) {
   return total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
-}
-
-function uniqueCapabilities(routes: string[]) {
-  return Array.from(new Set(routes.map(businessCapabilityFromRoute)));
-}
-
-function displayPillarTitle(title: string) {
-  if (title === "Open API Platform") return "Partner Integration Platform";
-  return title;
-}
-
-function displayPillarObjective(objective: string) {
-  return objective
-    .replace("APIs", "integrations")
-    .replace("API", "integration")
-    .replace("backend", "operations");
-}
-
-function displayReadinessLabel(label: string) {
-  return label
-    .replace("Supabase schema readiness endpoint", "Supabase database readiness")
-    .replace("Owner backend access code", "Owner command center access code")
-    .replace("API key", "access key")
-    .replace("API secret", "access secret");
-}
-
-function displayOwnerAction(action: string) {
-  if (action.includes("GET /api/v1/system/supabase-schema")) {
-    return "Review database tables after production credentials are connected.";
-  }
-
-  return action
-    .replaceAll("API key", "access key")
-    .replaceAll("API secret", "access secret")
-    .replaceAll("APIs", "operations")
-    .replaceAll("API", "operation")
-    .replaceAll("/api/v1", "the owner console")
-    .replaceAll("endpoint", "check");
-}
-
-function businessCapabilityFromRoute(route: string) {
-  const routeText = route.toLowerCase();
-
-  if (routeText.includes("providers/{id}/contact") || routeText.includes("inquiries")) return "Family inquiry capture";
-  if (routeText.includes("free-listing")) return "Free listing intake";
-  if (routeText.includes("provider-claims") || routeText.includes("/claim")) return "Community claim verification";
-  if (routeText.includes("verification")) return "Operator verification";
-  if (routeText.includes("provider-outreach")) return "Claim outreach";
-  if (routeText.includes("providers") || routeText.includes("categories") || routeText.includes("locations")) return "Marketplace discovery";
-  if (routeText.includes("saved-providers")) return "Saved communities";
-  if (routeText.includes("care-circles")) return "Care circle collaboration";
-  if (routeText.includes("comparison-lists")) return "Community comparison";
-  if (routeText.includes("care-notes")) return "Care planning notes";
-  if (routeText.includes("tour-plans")) return "Tour planning";
-  if (routeText.includes("events") && routeText.includes("analytics")) return "Event performance";
-  if (routeText.includes("events") && routeText.includes("promotions")) return "Sponsored event promotion";
-  if (routeText.includes("events") || routeText.includes("rsvp")) return "Community events";
-  if (routeText.includes("growth-subscriptions") || routeText.includes("growth-plans")) return "Growth plan contracts";
-  if (routeText.includes("entitlements")) return "Paid feature access";
-  if (routeText.includes("campaigns")) return "Marketing campaigns";
-  if (routeText.includes("review-request")) return "Review request campaigns";
-  if (routeText.includes("reputation")) return "Reputation readiness";
-  if (routeText.includes("reviews")) return "Reviews and responses";
-  if (routeText.includes("ads") || routeText.includes("ad-")) return "Advertising placements";
-  if (routeText.includes("import") || routeText.includes("extracted-entities")) return "Inventory import review";
-  if (routeText.includes("crawl")) return "Approved source crawling";
-  if (routeText.includes("data-quality")) return "Data quality review";
-  if (routeText.includes("newsroom") || routeText.includes("articles")) return "Editorial publishing";
-  if (routeText.includes("policy")) return "Trust and compliance guardrails";
-  if (routeText.includes("auth")) return "Owner access control";
-  if (routeText.includes("webhook") || routeText.includes("api-client") || routeText.includes("partner")) return "Partner integrations";
-  if (routeText.includes("system") || routeText.includes("link-health")) return "Launch readiness checks";
-
-  return "Operational workflow";
 }
