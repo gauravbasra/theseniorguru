@@ -136,6 +136,12 @@ export function getSystemReadiness() {
         env.webhookSigningEncryptionKey || env.adminSessionSecret
           ? undefined
           : "Set WEBHOOK_SIGNING_ENCRYPTION_KEY or ADMIN_SESSION_SECRET before enabling partner webhooks on Supabase."
+    },
+    {
+      key: "CRON_SECRET",
+      label: "Scheduled operations secret",
+      status: env.cronSecret ? "ready" : "partial",
+      action: env.cronSecret ? undefined : "Set CRON_SECRET in Vercel so scheduled backend workers can run safely."
     }
   ];
   const parkedChecks: ReadinessCheck[] = [
