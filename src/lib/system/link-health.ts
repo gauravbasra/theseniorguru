@@ -59,6 +59,8 @@ const routeContracts: LinkContract[] = [
   { label: "Care notes API", href: "/api/v1/app/care-notes", method: "GET", owner: "family" },
   { label: "Tour plans API", href: "/api/v1/app/tour-plans", method: "GET", owner: "family" },
   { label: "Notification preferences API", href: "/api/v1/me/notification-preferences", method: "GET", owner: "family" },
+  { label: "Community groups API", href: "/api/v1/community/groups", method: "GET", owner: "family" },
+  { label: "Community group membership API", href: "/api/v1/community/groups/seed-denver-caregivers/members", method: "GET", owner: "family" },
   { label: "Readiness API", href: "/api/v1/system/readiness", method: "GET", owner: "admin" },
   { label: "Launch checklist API", href: "/api/v1/system/launch-checklist", method: "GET", owner: "admin" },
   { label: "Supabase schema API", href: "/api/v1/system/supabase-schema", method: "GET", owner: "admin" },

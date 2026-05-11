@@ -94,6 +94,10 @@ const productPillars: ProductPillar[] = [
     status: "partial",
     backendRoutes: [
       "GET /api/v1/app/feed",
+      "GET /api/v1/community/groups",
+      "POST /api/v1/community/groups",
+      "GET /api/v1/community/groups/{id}/members",
+      "POST /api/v1/community/groups/{id}/members",
       "POST /api/v1/community/posts",
       "GET /api/v1/community/posts/{id}/comments",
       "POST /api/v1/community/posts/{id}/comments",
@@ -109,7 +113,7 @@ const productPillars: ProductPillar[] = [
       "moderation_cases",
       "expert_profiles"
     ],
-    nextBackendWork: ["Groups API", "Community membership API", "Expert profile verification"]
+    nextBackendWork: ["Expert profile verification", "Community invitation delivery", "Local topic subscriptions"]
   },
   {
     key: "events",

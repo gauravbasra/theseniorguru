@@ -170,6 +170,7 @@ Deliverables:
 - Comments.
 - Reports/moderation.
 - Community comments, reports, and moderation APIs. Completed.
+- Local community group and membership APIs. Completed.
 - App feed API.
 - Saved providers and care circles.
 - Saved provider and care circle APIs. Completed.

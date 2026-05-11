@@ -9,6 +9,46 @@ export type CommunityPostType =
   | "safety_alert"
   | "support_request";
 
+export type CommunityGroupRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  city?: string;
+  state?: string;
+  description?: string;
+  memberCount: number;
+  createdAt: string;
+};
+
+export type CreateCommunityGroupInput = {
+  name: string;
+  slug?: string;
+  city?: string;
+  state?: string;
+  description?: string;
+  actorId?: string;
+};
+
+export type CommunityMembershipRecord = {
+  id: string;
+  communityId: string;
+  userKey: string;
+  displayName?: string;
+  email?: string;
+  role: "senior" | "family" | "caregiver" | "provider" | "expert" | "admin";
+  status: "pending" | "active" | "blocked" | "removed";
+  createdAt: string;
+};
+
+export type JoinCommunityGroupInput = {
+  communityId: string;
+  userKey: string;
+  displayName?: string;
+  email?: string;
+  role?: CommunityMembershipRecord["role"];
+  actorId?: string;
+};
+
 export type CommunityPostRecord = {
   id: string;
   communityId?: string;

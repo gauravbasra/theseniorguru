@@ -50,7 +50,8 @@ const migrationManifest = [
   "20260510210500_review_request_campaigns.sql",
   "20260510220000_dual_funnel_leads.sql",
   "20260511001000_review_moderation_sentiment.sql",
-  "20260511010000_public_source_acquisition_staging.sql"
+  "20260511010000_public_source_acquisition_staging.sql",
+  "20260511020000_community_memberships.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -125,6 +126,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511010000_public_source_acquisition_staging.sql": {
     capability: "aggregation",
     summary: "Public-source acquisition staging, enriched provider fields, and image review metadata."
+  },
+  "20260511020000_community_memberships.sql": {
+    capability: "community",
+    summary: "Local community memberships, roles, and active member discovery."
   }
 };
 
@@ -145,6 +150,8 @@ const requiredTables: RequiredTable[] = [
   { table: "provider_verification_attempts", requiredFor: "Claim verification workflow", capability: "claims" },
   { table: "provider_outreach_sequences", requiredFor: "Claim outreach queue", capability: "claims" },
   { table: "events", requiredFor: "Provider events marketplace", capability: "events" },
+  { table: "communities", requiredFor: "Local community groups", capability: "community" },
+  { table: "community_memberships", requiredFor: "Local community membership graph", capability: "community" },
   { table: "community_posts", requiredFor: "Community feed", capability: "community" },
   { table: "ad_placements", requiredFor: "Advertising inventory", capability: "ads" },
   { table: "ad_campaigns", requiredFor: "Direct-sold ad campaigns", capability: "ads" },

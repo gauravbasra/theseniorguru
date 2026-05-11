@@ -167,6 +167,14 @@ export function getOpenApiCatalog() {
       "/api/v1/community/posts": {
         post: { tags: ["Community"], summary: "Create a policy-gated community post" }
       },
+      "/api/v1/community/groups": {
+        get: { tags: ["Community"], summary: "List local senior-care community groups by city or state" },
+        post: { tags: ["Community"], summary: "Create a policy-gated local community group" }
+      },
+      "/api/v1/community/groups/{id}/members": {
+        get: { tags: ["Community"], summary: "List community group members" },
+        post: { tags: ["Community"], summary: "Join a local community group with policy and role controls" }
+      },
       "/api/v1/community/posts/{id}/comments": {
         get: { tags: ["Community"], summary: "List published comments for a community post" },
         post: { tags: ["Community"], summary: "Create a policy-gated community comment" }
