@@ -362,6 +362,9 @@ export function getOpenApiCatalog() {
       "/api/v1/system/supabase-schema": {
         get: { tags: ["System"], summary: "Return Supabase migration manifest and live table readiness checks" }
       },
+      "/api/v1/system/supabase-migration-plan": {
+        get: { tags: ["System"], summary: "Return deploy-safe Supabase migration order, file coverage, capability mapping, and owner blockers" }
+      },
       "/api/v1/system/product-map": {
         get: { tags: ["System"], summary: "Return FRD-aligned product pillars, backend routes, launch targets, and blockers" }
       },

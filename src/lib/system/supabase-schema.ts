@@ -1,5 +1,7 @@
 import { getAppEnv } from "@/lib/env";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 type SchemaTableCheck = {
   table: string;
@@ -50,6 +52,81 @@ const migrationManifest = [
   "20260511001000_review_moderation_sentiment.sql",
   "20260511010000_public_source_acquisition_staging.sql"
 ];
+
+const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
+  "20260510000000_senior_platform_foundation.sql": {
+    capability: "directory",
+    summary: "Core provider directory, locations, categories, provenance, and family inquiry foundation."
+  },
+  "20260510001000_aggregation_pipeline.sql": {
+    capability: "aggregation",
+    summary: "Import batches, crawl jobs, extracted entity staging, matching, and data quality review."
+  },
+  "20260510002000_claim_verification_engine.sql": {
+    capability: "claims",
+    summary: "Provider claims, verification attempts, and claim outreach workflows."
+  },
+  "20260510003000_events_marketplace.sql": {
+    capability: "events",
+    summary: "Events, RSVPs, sponsored promotions, and event analytics foundation."
+  },
+  "20260510004000_community_feed.sql": {
+    capability: "community",
+    summary: "Community posts, comments, reports, and moderation controls."
+  },
+  "20260510005000_ad_placement_engine.sql": {
+    capability: "ads",
+    summary: "Ad placements, direct-sold campaigns, creatives, impressions, and clicks."
+  },
+  "20260510006000_marketing_growth_engine.sql": {
+    capability: "growth",
+    summary: "Campaigns, AI generations, content assets, and provider growth tools."
+  },
+  "20260510007000_reviews_reputation.sql": {
+    capability: "reviews",
+    summary: "Reviews, review responses, review requests, and reputation scores."
+  },
+  "20260510008000_ai_newsroom.sql": {
+    capability: "newsroom",
+    summary: "Content sources, newsroom intake, article drafts, published articles, and derivatives."
+  },
+  "20260510154824_mobile_stickiness.sql": {
+    capability: "community",
+    summary: "Mobile saved providers, care circles, comparison lists, care notes, tours, and notifications."
+  },
+  "20260510160122_provider_growth_subscriptions.sql": {
+    capability: "growth",
+    summary: "Growth plans, contract subscriptions, and feature entitlements."
+  },
+  "20260510183000_mobile_provider_portal_completion.sql": {
+    capability: "directory",
+    summary: "Provider portal profile updates, audits, and claimed listing operations."
+  },
+  "20260510184500_open_api_platform.sql": {
+    capability: "openApi",
+    summary: "API clients, keys, partner access, and webhook subscriptions."
+  },
+  "20260510193500_webhook_delivery_worker.sql": {
+    capability: "openApi",
+    summary: "Webhook delivery queue, attempts, retries, and audit events."
+  },
+  "20260510210500_review_request_campaigns.sql": {
+    capability: "reviews",
+    summary: "Consent-gated review request campaigns and recipient send tracking."
+  },
+  "20260510220000_dual_funnel_leads.sql": {
+    capability: "leadIntake",
+    summary: "Family inquiries, operator demos, and free listing lead intake."
+  },
+  "20260511001000_review_moderation_sentiment.sql": {
+    capability: "reviews",
+    summary: "Review moderation cases and sentiment scoring."
+  },
+  "20260511010000_public_source_acquisition_staging.sql": {
+    capability: "aggregation",
+    summary: "Public-source acquisition staging, enriched provider fields, and image review metadata."
+  }
+};
 
 const requiredTables: RequiredTable[] = [
   { table: "providers", requiredFor: "Directory inventory", capability: "directory" },
@@ -194,5 +271,87 @@ export async function getSupabaseSchemaReadiness() {
       : missing.length
         ? ["Apply pending migrations or repair missing tables before launch.", "Re-run this endpoint after migration."]
         : []
+  };
+}
+
+function migrationPath(file: string) {
+  return path.join(process.cwd(), "supabase", "migrations", file);
+}
+
+function extractTouchedTables(sql: string) {
+  const matches = [...sql.matchAll(/\b(?:create|alter)\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?([a-z0-9_]+)/gi)];
+  return Array.from(new Set(matches.map((match) => match[1]).filter(Boolean))).sort();
+}
+
+export async function getSupabaseMigrationPlan() {
+  const env = getAppEnv();
+  const schema = await getSupabaseSchemaReadiness();
+  const migrations = migrationManifest.map((file, index) => {
+    const filePath = migrationPath(file);
+    const exists = existsSync(filePath);
+    const sql = exists ? readFileSync(filePath, "utf8") : "";
+    const touchedTables = extractTouchedTables(sql);
+    const metadata = migrationCapabilities[file];
+
+    return {
+      order: index + 1,
+      file,
+      exists,
+      capability: metadata?.capability ?? "policy",
+      summary: metadata?.summary ?? "Platform database migration.",
+      touchedTables,
+      requiredTablesCovered: requiredTables
+        .filter((table) => touchedTables.includes(table.table))
+        .map((table) => table.table)
+    };
+  });
+  const missingFiles = migrations.filter((migration) => !migration.exists).map((migration) => migration.file);
+  const capabilityCoverage = Object.values(
+    migrations.reduce(
+      (summary, migration) => {
+        const current = summary[migration.capability] ?? {
+          capability: migration.capability,
+          migrations: 0,
+          requiredTablesCovered: new Set<string>()
+        };
+
+        current.migrations += 1;
+        migration.requiredTablesCovered.forEach((table) => current.requiredTablesCovered.add(table));
+        summary[migration.capability] = current;
+        return summary;
+      },
+      {} as Record<SupabaseCapabilityKey, { capability: SupabaseCapabilityKey; migrations: number; requiredTablesCovered: Set<string> }>
+    )
+  ).map((item) => ({
+    capability: item.capability,
+    migrations: item.migrations,
+    requiredTablesCovered: item.requiredTablesCovered.size
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: missingFiles.length
+      ? "missing_migration_files"
+      : schema.status === "ready"
+        ? "ready"
+        : "apply_migrations",
+    configured: schema.configured,
+    connection: schema.connection,
+    migrationCount: migrations.length,
+    missingFiles,
+    migrations,
+    capabilityCoverage,
+    commandPlan: [
+      "Confirm production Supabase project and backups.",
+      "Run Supabase migrations in order from supabase/migrations.",
+      "Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY in Vercel.",
+      "Re-run /api/v1/system/supabase-schema and confirm missing tables is 0.",
+      "Run a dry-run public-source acquisition batch before live ingestion."
+    ],
+    ownerParkedItems: [
+      ...(env.supabaseUrl ? [] : ["Production Supabase URL is not configured."]),
+      ...(env.supabaseAnonKey ? [] : ["Production Supabase anon key is not configured."]),
+      ...(env.supabaseServiceRoleKey ? [] : ["Production Supabase service role key is not configured."])
+    ]
   };
 }

@@ -46,7 +46,7 @@ export function getSystemReadiness() {
       key: "SUPABASE_SCHEMA_READINESS",
       label: "Supabase schema readiness endpoint",
       status: "ready",
-      action: "GET /api/v1/system/supabase-schema lists required migrations and checks live table coverage when credentials are configured."
+      action: "GET /api/v1/system/supabase-schema checks live table coverage; GET /api/v1/system/supabase-migration-plan returns migration order and owner blockers."
     }
   ];
   const emailChecks: ReadinessCheck[] = [
