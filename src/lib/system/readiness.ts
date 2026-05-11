@@ -142,6 +142,15 @@ export function getSystemReadiness() {
       label: "Scheduled operations secret",
       status: env.cronSecret ? "ready" : "partial",
       action: env.cronSecret ? undefined : "Set CRON_SECRET in Vercel so scheduled backend workers can run safely."
+    },
+    {
+      key: "SOURCE_ACQUISITION_CRON_MODE",
+      label: "Source acquisition cron mode",
+      status: env.sourceAcquisitionCronMode === "live" ? "ready" : "partial",
+      action:
+        env.sourceAcquisitionCronMode === "live"
+          ? undefined
+          : "Set SOURCE_ACQUISITION_CRON_MODE=live only after approving live current-site inventory staging; preview mode is safe for monitoring."
     }
   ];
   const parkedChecks: ReadinessCheck[] = [

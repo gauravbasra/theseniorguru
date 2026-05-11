@@ -7,6 +7,8 @@ export type AppEnv = {
   adminSessionSecret?: string;
   webhookSigningEncryptionKey?: string;
   cronSecret?: string;
+  sourceAcquisitionCronMode?: string;
+  sourceAcquisitionCronMaxRecords?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
   googleAdsClientId?: string;
@@ -27,6 +29,8 @@ export function getAppEnv(): AppEnv {
     adminSessionSecret: process.env.ADMIN_SESSION_SECRET,
     webhookSigningEncryptionKey: process.env.WEBHOOK_SIGNING_ENCRYPTION_KEY,
     cronSecret: process.env.CRON_SECRET,
+    sourceAcquisitionCronMode: process.env.SOURCE_ACQUISITION_CRON_MODE,
+    sourceAcquisitionCronMaxRecords: process.env.SOURCE_ACQUISITION_CRON_MAX_RECORDS,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     googleAdsClientId: process.env.GOOGLE_ADS_CLIENT_ID,
