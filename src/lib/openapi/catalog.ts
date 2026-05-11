@@ -105,6 +105,12 @@ export function getOpenApiCatalog() {
       "/api/v1/app/feed": {
         get: { tags: ["Community"], summary: "Get unified app feed items" }
       },
+      "/api/v1/articles": {
+        get: { tags: ["Newsroom"], summary: "List published senior care guides and newsroom articles" }
+      },
+      "/api/v1/articles/{slug}": {
+        get: { tags: ["Newsroom"], summary: "Get a published senior care guide by slug" }
+      },
       "/api/v1/app/saved-providers": {
         get: { tags: ["Community"], summary: "List saved providers for a senior or caregiver app user" },
         post: { tags: ["Community"], summary: "Save a provider with optional notes and tags" }

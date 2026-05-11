@@ -68,6 +68,7 @@ export default async function HomePage() {
           <Link href="/operators/free-listing">List Free</Link>
           <Link href="/operators">For Operators</Link>
           <Link href="/operators/ai-occupancy-platform">AI Occupancy</Link>
+          <Link href="/articles">Guides</Link>
         </div>
       </nav>
 

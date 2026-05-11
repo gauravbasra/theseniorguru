@@ -20,6 +20,13 @@ const routeContracts: LinkContract[] = [
   { label: "Free listing", href: "/operators/free-listing", method: "GET", owner: "provider" },
   { label: "AI occupancy platform", href: "/operators/ai-occupancy-platform", method: "GET", owner: "provider" },
   { label: "Reputation management", href: "/operators/reputation", method: "GET", owner: "provider" },
+  { label: "Senior care guides", href: "/articles", method: "GET", owner: "public" },
+  {
+    label: "Memory care tour questions guide",
+    href: "/articles/memory-care-tour-questions-families-should-ask-before-they-feel-rushed",
+    method: "GET",
+    owner: "public"
+  },
   { label: "Denver senior living", href: "/senior-living/co/denver", method: "GET", owner: "public" },
   { label: "Denver assisted living", href: "/senior-care/co/denver/assisted-living", method: "GET", owner: "public" },
   { label: "Provider console", href: "/provider", method: "GET", owner: "provider" },
@@ -34,6 +41,13 @@ const routeContracts: LinkContract[] = [
   { label: "Operator demo API", href: "/api/v1/operator/demo-requests", method: "POST", owner: "provider" },
   { label: "Admin leads API", href: "/api/v1/admin/leads", method: "GET", owner: "admin" },
   { label: "App feed API", href: "/api/v1/app/feed", method: "GET", owner: "family" },
+  { label: "Articles API", href: "/api/v1/articles", method: "GET", owner: "public" },
+  {
+    label: "Article detail API",
+    href: "/api/v1/articles/memory-care-tour-questions-families-should-ask-before-they-feel-rushed",
+    method: "GET",
+    owner: "public"
+  },
   { label: "Comparison lists API", href: "/api/v1/app/comparison-lists", method: "GET", owner: "family" },
   { label: "Care notes API", href: "/api/v1/app/care-notes", method: "GET", owner: "family" },
   { label: "Tour plans API", href: "/api/v1/app/tour-plans", method: "GET", owner: "family" },

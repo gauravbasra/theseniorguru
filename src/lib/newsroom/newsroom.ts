@@ -21,7 +21,32 @@ const seedNewsItems: NewsItemRecord[] = [
     createdAt: "2026-05-10T00:00:00.000Z"
   }
 ];
-const seedArticles: ArticleRecord[] = [];
+const seedArticles: ArticleRecord[] = [
+  {
+    id: "seed-article-memory-care-tour-questions",
+    status: "published",
+    byline: "Gaurav Basra",
+    title: "Memory Care Tour Questions Families Should Ask Before They Feel Rushed",
+    slug: "memory-care-tour-questions-families-should-ask-before-they-feel-rushed",
+    dek:
+      "A practical Senior Guru guide for families comparing memory care communities and operators building trust through transparent answers.",
+    body: [
+      "Memory care tours can feel emotional and rushed. Families are often trying to understand safety, staffing, daily routines, cost, communication, and whether a community feels warm enough for someone they love.",
+      "Start with the questions that reveal day-to-day care. Ask how the team handles sundowning, wandering risk, medication changes, family updates, meals, activities, and transitions after a difficult week.",
+      "Then compare practical details across communities. Look at direct contact options, care levels, pricing context, reviews, nearby hospitals, family visitation patterns, and whether the community can explain what happens after the first tour.",
+      "The Senior Guru approach is simple: families should be able to compare local options without pressure, and communities should be able to earn trust through clear profiles, helpful events, real reviews, and fast follow-up."
+    ].join("\n\n"),
+    sourceLinks: [
+      {
+        title: "The Senior Guru editorial guidance",
+        url: "https://theseniorguru.com/senior-care/co/denver/memory-care"
+      }
+    ],
+    aiAssisted: true,
+    publishedAt: "2026-05-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  }
+];
 const seedDerivatives: ArticleDerivativeRecord[] = [];
 
 function slugify(value: string) {
@@ -358,6 +383,47 @@ export async function getNewsroomReadiness(): Promise<NewsroomReadinessSummary> 
     blockers,
     nextActions: blockers.length ? blockers : ["Newsroom engine is ready for the next source-to-publication cycle."]
   };
+}
+
+export async function listPublishedArticles(): Promise<ArticleRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedArticles.filter((article) => article.status === "published");
+  }
+
+  const { data, error } = await supabase
+    .from("published_articles")
+    .select("*")
+    .eq("status", "published")
+    .order("published_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Published article query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapArticle);
+}
+
+export async function getPublishedArticleBySlug(slug: string): Promise<ArticleRecord | null> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedArticles.find((article) => article.status === "published" && article.slug === slug) ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from("published_articles")
+    .select("*")
+    .eq("status", "published")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Published article lookup failed: ${error.message}`);
+  }
+
+  return data ? mapArticle(data) : null;
 }
 
 async function listArticles(): Promise<ArticleRecord[]> {
