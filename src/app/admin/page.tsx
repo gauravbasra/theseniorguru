@@ -2,101 +2,86 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { AdminOperationsConsole } from "@/components/admin-operations-console";
 import { LaunchChecklistPanel } from "@/components/launch-checklist-panel";
+import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
 import { getAdminDashboardMetrics } from "@/lib/admin/dashboard-metrics";
+import type { ImportRecordInput } from "@/lib/domain/imports";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
 import { getProductMap } from "@/lib/system/product-map";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  const [product, launchChecklist, dashboardMetrics] = await Promise.all([
+  const [product, launchChecklist, dashboardMetrics, listingPreview] = await Promise.all([
     getProductMap(),
     getLaunchChecklist(),
-    getAdminDashboardMetrics()
+    getAdminDashboardMetrics(),
+    previewCurrentSiteRealListings({ maxRecords: 12 })
   ]);
   const readinessGroups = Object.entries(product.readiness.groups);
   const maxEngineRoutes = Math.max(...dashboardMetrics.productEngines.map((item) => item.routes), 1);
+  const readyCount = dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0;
+  const totalReadiness = dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0);
+  const acquisitionTarget = 5000;
 
   return (
     <main className="admin-shell">
-      <section className="admin-hero">
-        <div>
-          <p className="eyebrow">Platform command center</p>
-          <h1>Run The Senior Guru like a real senior living marketplace.</h1>
-          <p className="lede">
-            Monitor launch readiness, review incoming leads, prepare inventory, verify community claims, and activate
-            the growth tools that turn free listings into paid operator relationships.
-          </p>
+      <section className="command-dashboard">
+        <div className="command-topbar">
+          <div>
+            <p className="eyebrow">Owner command center</p>
+            <h1>TheSeniorGuru operations dashboard</h1>
+          </div>
           <div className="actions">
             <Link className="button primary" href="/provider">Provider console</Link>
             <Link className="button secondary" href="/discover">View marketplace</Link>
-            <Link className="button secondary" href="/articles">Review content hub</Link>
             <form action="/api/v1/auth/logout" method="post">
               <button className="button secondary" type="submit">Sign out</button>
             </form>
           </div>
         </div>
-        <aside className="admin-status-card">
-          <p className="eyebrow">Launch health</p>
-          <h2>{product.operationalSummary.readinessStatus.replaceAll("_", " ")}</h2>
-          <p>
-            Site checks: {product.linkHealth.status} · Data sources: {product.operationalSummary.dataSources} ·
-            Import batches: {product.operationalSummary.importBatches}
-          </p>
-        </aside>
-      </section>
 
-      <section className="admin-promises">
-        <article>
-          <p className="eyebrow">Consumer promise</p>
-          <h2>{product.slogans.consumer}</h2>
-        </article>
-        <article>
-          <p className="eyebrow">Provider promise</p>
-          <h2>{product.slogans.provider}</h2>
-        </article>
-        <article>
-          <p className="eyebrow">Market promise</p>
-          <h2>{product.slogans.market}</h2>
-        </article>
-      </section>
-
-      <section className="admin-metrics">
-        {[
-          ["Live providers", dashboardMetrics.headlineNumbers.totalProviders],
-          ["Lead queue", dashboardMetrics.headlineNumbers.totalLeads],
-          ["Backend workflows", dashboardMetrics.headlineNumbers.backendRoutes],
-          ["Required tables", dashboardMetrics.headlineNumbers.requiredTables]
-        ].map(([label, value]) => (
-          <article className="profile-card" key={label}>
-            <p className="eyebrow">{label}</p>
-            <h2>{value}</h2>
+        <div className="command-kpi-grid">
+          <article className="command-kpi primary">
+            <span>Real listings discovered</span>
+            <strong>{listingPreview.discoveredListings}</strong>
+            <small>{listingPreview.parsedRecords} parsed in preview</small>
           </article>
-        ))}
-      </section>
-
-      <section className="admin-section">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Visual command center</p>
-            <h2>Charts for launch readiness, inventory growth, leads, and monetization.</h2>
-          </div>
-          <Link className="button secondary" href="/api/v1/admin/dashboard-metrics">Metrics API</Link>
+          <article className="command-kpi">
+            <span>Listing target</span>
+            <strong>{percentOf(listingPreview.discoveredListings, acquisitionTarget)}%</strong>
+            <small>{listingPreview.discoveredListings} / {acquisitionTarget}</small>
+          </article>
+          <article className="command-kpi">
+            <span>Image coverage</span>
+            <strong>{listingPreview.imageCoverage.listingsWithThreeImages}/{listingPreview.parsedRecords}</strong>
+            <small>3+ source images</small>
+          </article>
+          <article className="command-kpi">
+            <span>Lead queue</span>
+            <strong>{dashboardMetrics.headlineNumbers.totalLeads}</strong>
+            <small>family + operator demand</small>
+          </article>
+          <article className="command-kpi">
+            <span>Route health</span>
+            <strong>{dashboardMetrics.routeHealth.percentValid}%</strong>
+            <small>{dashboardMetrics.routeHealth.total} checks</small>
+          </article>
         </div>
-        <div className="admin-chart-grid">
-          <article className="chart-panel chart-panel-large">
-            <div className="chart-panel-header">
+
+        <div className="command-screen-grid">
+          <article className="dashboard-panel launch-ring-panel">
+            <div className="panel-title-row">
               <div>
                 <p className="eyebrow">Launch readiness</p>
-                <h3>{launchChecklist.status.replaceAll("_", " ")}</h3>
+                <h2>{launchChecklist.status.replaceAll("_", " ")}</h2>
               </div>
               <DonutChart
-                label={`${dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0}/${dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0)}`}
-                value={dashboardMetrics.readiness.find((item) => item.label === "Ready")?.value ?? 0}
-                total={dashboardMetrics.readiness.reduce((sum, item) => sum + item.value, 0)}
+                label={`${readyCount}/${totalReadiness}`}
+                value={readyCount}
+                total={totalReadiness}
               />
             </div>
-            <div className="stacked-bars">
+            <div className="compact-bars">
               {dashboardMetrics.readiness.map((item) => (
                 <HorizontalBar
                   key={item.label}
@@ -109,25 +94,17 @@ export default async function AdminPage() {
             </div>
           </article>
 
-          <article className="chart-panel">
-            <div className="chart-panel-header">
+          <article className="dashboard-panel">
+            <div className="panel-title-row">
               <div>
-                <p className="eyebrow">Route health</p>
-                <h3>{dashboardMetrics.routeHealth.percentValid}% valid</h3>
+                <p className="eyebrow">5,000-listing launch</p>
+                <h2>Inventory pipeline</h2>
               </div>
-              <DonutChart
-                label={`${dashboardMetrics.routeHealth.valid}/${dashboardMetrics.routeHealth.total}`}
-                value={dashboardMetrics.routeHealth.valid}
-                total={dashboardMetrics.routeHealth.total}
-              />
+              <strong className="panel-stat">{listingPreview.discoveredListings}</strong>
             </div>
-            <p className="chart-note">{dashboardMetrics.routeHealth.invalid} invalid links or API contracts.</p>
-          </article>
-
-          <article className="chart-panel chart-panel-wide">
-            <p className="eyebrow">5,000-listing launch target</p>
-            <h3>Inventory pipeline</h3>
-            <div className="progress-list">
+            <div className="compact-bars">
+              <HorizontalBar label="Current-site discovered" value={listingPreview.discoveredListings} total={acquisitionTarget} tone="green" />
+              <HorizontalBar label="Parsed preview" value={listingPreview.parsedRecords} total={listingPreview.requestedRecords} tone="blue" />
               {dashboardMetrics.inventoryProgress.map((item) => (
                 <HorizontalBar
                   key={item.label}
@@ -140,9 +117,9 @@ export default async function AdminPage() {
             </div>
           </article>
 
-          <article className="chart-panel">
+          <article className="dashboard-panel">
             <p className="eyebrow">Lead funnel</p>
-            <h3>Inbound demand by audience</h3>
+            <h2>Demand</h2>
             <div className="mini-column-chart">
               {dashboardMetrics.leadFunnel.map((item) => (
                 <VerticalBar
@@ -156,9 +133,9 @@ export default async function AdminPage() {
             </div>
           </article>
 
-          <article className="chart-panel">
+          <article className="dashboard-panel">
             <p className="eyebrow">Advertising</p>
-            <h3>Monetization activity</h3>
+            <h2>Monetization</h2>
             <div className="metric-chip-grid">
               {dashboardMetrics.monetization.map((item) => (
                 <span className={`metric-chip ${item.tone}`} key={item.label}>
@@ -169,20 +146,15 @@ export default async function AdminPage() {
             </div>
           </article>
 
-          <article className="chart-panel chart-panel-full">
-            <p className="eyebrow">Backend engine depth</p>
-            <h3>Routes and tables by product pillar</h3>
-            <div className="engine-chart">
-              {dashboardMetrics.productEngines.map((item) => (
-                <div className="engine-row" key={item.label}>
-                  <span>{item.label}</span>
-                  <div>
-                    <i style={{ "--value": `${percentOf(item.routes, maxEngineRoutes)}%` } as CSSProperties} />
-                    <b>{item.routes} workflows · {item.tables} tables</b>
-                  </div>
-                </div>
-              ))}
+          <article className="dashboard-panel listing-preview-panel">
+            <div className="panel-title-row">
+              <div>
+                <p className="eyebrow">Real listing preview</p>
+                <h2>{listingPreview.parsedRecords} parsed records</h2>
+              </div>
+              <Link className="button secondary" href="/api/v1/admin/dashboard-metrics">Metrics</Link>
             </div>
+            <ListingPreviewTable records={listingPreview.records.slice(0, 8)} />
           </article>
         </div>
       </section>
@@ -238,6 +210,28 @@ export default async function AdminPage() {
         </div>
       </section>
 
+      <section className="admin-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Backend engine depth</p>
+            <h2>Routes and tables by product pillar.</h2>
+          </div>
+        </div>
+        <article className="chart-panel chart-panel-full">
+          <div className="engine-chart">
+            {dashboardMetrics.productEngines.map((item) => (
+              <div className="engine-row" key={item.label}>
+                <span>{item.label}</span>
+                <div>
+                  <i style={{ "--value": `${percentOf(item.routes, maxEngineRoutes)}%` } as CSSProperties} />
+                  <b>{item.routes} workflows · {item.tables} tables</b>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
       <section className="admin-section readiness-section">
         <div>
           <p className="eyebrow">Readiness and blockers</p>
@@ -263,6 +257,46 @@ export default async function AdminPage() {
       </section>
     </main>
   );
+}
+
+function ListingPreviewTable({ records }: { records: ImportRecordInput[] }) {
+  return (
+    <div className="listing-preview-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Listing</th>
+            <th>Market</th>
+            <th>Category</th>
+            <th>Images</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record) => (
+            <tr key={record.sourceRecordId ?? record.sourceUrl ?? record.name}>
+              <td>
+                <strong>{record.name}</strong>
+                <span>{record.phone || record.websiteUrl || "contact pending"}</span>
+              </td>
+              <td>{displayRecordMarket(record)}</td>
+              <td>{record.categories?.[0] ?? "Senior services"}</td>
+              <td>{record.imageAssets?.length ?? 0}</td>
+              <td>
+                {record.sourceUrl ? <a href={record.sourceUrl} target="_blank" rel="noreferrer">Open</a> : "saved"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function displayRecordMarket(record: ImportRecordInput) {
+  if (record.city && record.state && /^[A-Z]{2}$/.test(record.state)) return `${record.city}, ${record.state}`;
+  if (record.city || record.state) return "location review";
+  return "pending";
 }
 
 function HorizontalBar({

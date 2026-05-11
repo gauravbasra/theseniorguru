@@ -79,6 +79,34 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<SquareStack aria-hidden="true" />}
+          label="Preview real listings"
+          loading={loadingKey === "current-preview"}
+          onClick={() =>
+            runOperation("Preview real listings", "current-preview", () =>
+              fetch("/api/v1/admin/public-source-acquisition/current-site-preview", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ maxRecords: 25 })
+              })
+            )
+          }
+        />
+        <OpsButton
+          icon={<FileCheck2 aria-hidden="true" />}
+          label="Stage real listings"
+          loading={loadingKey === "current-run"}
+          onClick={() =>
+            runOperation("Stage real listings", "current-run", () =>
+              fetch("/api/v1/admin/public-source-acquisition/current-site-run", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ maxRecords: 25, dryRun: false })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<GitMerge aria-hidden="true" />}
           label="Score duplicate match"
           loading={loadingKey === "match"}
@@ -243,6 +271,14 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "import") {
     return `${String(record.stagedRecords ?? 0)} listings staged, ${String(record.rejectedRecords ?? 0)} rejected, and ${String(record.totalRecords ?? 0)} reviewed.`;
+  }
+
+  if (key === "current-preview") {
+    return `${String(record.parsedRecords ?? 0)} production listings parsed from ${String(record.discoveredListings ?? 0)} discovered current-site records.`;
+  }
+
+  if (key === "current-run") {
+    return `${String(record.stagedRecords ?? 0)} real listings staged, ${String(record.rejectedRecords ?? 0)} rejected, and ${String(record.errors ?? 0)} errors recorded.`;
   }
 
   if (key === "match") {
