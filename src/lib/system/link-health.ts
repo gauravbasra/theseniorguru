@@ -66,6 +66,8 @@ const routeContracts: LinkContract[] = [
   { label: "Import launch plan API", href: "/api/v1/admin/import-launch-plan", method: "GET", owner: "admin" },
   { label: "Import batch requeue API", href: "/api/v1/admin/import-batches/demo/requeue", method: "POST", owner: "admin" },
   { label: "Ad readiness API", href: "/api/v1/admin/ad-readiness", method: "GET", owner: "admin" },
+  { label: "Ad placements admin API", href: "/api/v1/admin/ads/placements", method: "GET", owner: "admin" },
+  { label: "Ad creative admin API", href: "/api/v1/admin/ads/creatives", method: "POST", owner: "admin" },
   { label: "Crawl jobs API", href: "/api/v1/admin/crawl-jobs", method: "GET", owner: "admin" },
   { label: "Data quality flags API", href: "/api/v1/admin/data-quality-flags", method: "GET", owner: "admin" },
   { label: "API clients API", href: "/api/v1/admin/api-clients", method: "GET", owner: "admin" },

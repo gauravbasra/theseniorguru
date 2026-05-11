@@ -1,11 +1,15 @@
 import type {
   AdCreativeRecord,
   AdEventInput,
+  AdPlacementRecord,
   AdPlacementReadinessItem,
   AdPlacementResponse,
-  AdReadinessSummary
+  AdReadinessSummary,
+  CreateAdCreativeInput,
+  UpsertAdPlacementInput
 } from "@/lib/domain/ads";
 import { getAppEnv } from "@/lib/env";
+import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedPlacements: Record<string, AdPlacementResponse> = {
@@ -34,6 +38,31 @@ const requiredPlacementKeys: Array<{ key: string; surface: AdPlacementReadinessI
   { key: "app.feed.inline", surface: "mobile" },
   { key: "events.featured.local", surface: "web_mobile" }
 ];
+
+function fallbackPlacementRecord(placementKey: string, placement?: AdPlacementResponse): AdPlacementRecord {
+  return {
+    placementKey,
+    name: placementKey.split(".").map((part) => part[0]?.toUpperCase() + part.slice(1)).join(" "),
+    surface: requiredPlacementKeys.find((item) => item.key === placementKey)?.surface ?? "unknown",
+    disclosureRequired: placement?.disclosureRequired ?? true,
+    disclosureLabel: placement?.disclosureLabel ?? "Sponsored",
+    isActive: true
+  };
+}
+
+function mapPlacement(row: Record<string, unknown>): AdPlacementRecord {
+  return {
+    id: String(row.id),
+    placementKey: String(row.placement_key),
+    name: String(row.name),
+    surface: row.surface as AdPlacementRecord["surface"],
+    description: row.description ? String(row.description) : undefined,
+    disclosureRequired: Boolean(row.requires_disclosure),
+    disclosureLabel: String(row.default_disclosure_label),
+    isActive: Boolean(row.is_active),
+    createdAt: String(row.created_at)
+  };
+}
 
 export async function getAdPlacement(placementKey: string): Promise<AdPlacementResponse> {
   const supabase = getSupabaseAdminClient();
@@ -83,6 +112,185 @@ export async function getAdPlacement(placementKey: string): Promise<AdPlacementR
       disclosureLabel: creative.disclosure_label,
       payload: creative.creative_payload ?? {}
     }))
+  };
+}
+
+export async function listAdPlacements(): Promise<AdPlacementRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return Object.entries(seedPlacements).map(([key, placement]) => fallbackPlacementRecord(key, placement));
+  }
+
+  const { data, error } = await supabase
+    .from("ad_placements")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Ad placement list failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapPlacement);
+}
+
+export async function upsertAdPlacement(input: UpsertAdPlacementInput): Promise<AdPlacementRecord> {
+  const policy = await runPolicyCheck({
+    subjectType: "ad_placement",
+    subjectId: input.placementKey,
+    actionKey: "upsert_ad_placement",
+    input
+  });
+
+  if (policy.decision.startsWith("blocked")) {
+    throw new Error(policy.reasons[0] ?? "Ad placement blocked by policy");
+  }
+
+  const disclosureLabel = input.disclosureLabel ?? "Sponsored";
+  const record: AdPlacementRecord = {
+    placementKey: input.placementKey,
+    name: input.name,
+    surface: input.surface,
+    description: input.description,
+    disclosureRequired: input.disclosureRequired ?? true,
+    disclosureLabel,
+    isActive: input.isActive ?? true,
+    createdAt: new Date().toISOString()
+  };
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const existing = seedPlacements[input.placementKey]?.creatives ?? [];
+    seedPlacements[input.placementKey] = {
+      placementKey: input.placementKey,
+      disclosureRequired: record.disclosureRequired,
+      disclosureLabel,
+      creatives: existing
+    };
+    return record;
+  }
+
+  const { data, error } = await supabase
+    .from("ad_placements")
+    .upsert({
+      placement_key: input.placementKey,
+      name: input.name,
+      surface: input.surface,
+      description: input.description,
+      requires_disclosure: input.disclosureRequired ?? true,
+      default_disclosure_label: disclosureLabel,
+      is_active: input.isActive ?? true
+    }, { onConflict: "placement_key" })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Ad placement upsert failed: ${error.message}`);
+  }
+
+  return mapPlacement(data);
+}
+
+export async function createAdCreative(input: CreateAdCreativeInput): Promise<AdCreativeRecord> {
+  const policy = await runPolicyCheck({
+    subjectType: "ad_creative",
+    subjectId: input.placementKey,
+    actionKey: "create_sponsored_ad_creative",
+    input
+  });
+
+  if (policy.decision.startsWith("blocked")) {
+    throw new Error(policy.reasons[0] ?? "Ad creative blocked by policy");
+  }
+
+  const placement = await getAdPlacement(input.placementKey);
+  const disclosureLabel = input.disclosureLabel ?? placement.disclosureLabel ?? "Sponsored";
+  const creative: AdCreativeRecord = {
+    id: `ad-creative-${Date.now()}`,
+    placementKey: input.placementKey,
+    headline: input.headline,
+    body: input.body,
+    imageUrl: input.imageUrl,
+    destinationUrl: input.destinationUrl,
+    disclosureLabel,
+    payload: {
+      ...(input.creativePayload ?? {}),
+      campaignName: input.campaignName,
+      providerId: input.providerId,
+      policyDecision: policy.decision
+    }
+  };
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    seedPlacements[input.placementKey] = {
+      placementKey: input.placementKey,
+      disclosureRequired: true,
+      disclosureLabel,
+      creatives: [creative, ...(seedPlacements[input.placementKey]?.creatives ?? [])]
+    };
+    return creative;
+  }
+
+  const { data: placementRow, error: placementError } = await supabase
+    .from("ad_placements")
+    .select("id,default_disclosure_label")
+    .eq("placement_key", input.placementKey)
+    .single();
+
+  if (placementError) {
+    throw new Error(`Ad placement lookup failed: ${placementError.message}`);
+  }
+
+  const { data: campaign, error: campaignError } = await supabase
+    .from("ad_campaigns")
+    .insert({
+      provider_id: input.providerId,
+      name: input.campaignName,
+      status: input.activate === false ? "draft" : "active",
+      budget_cents: input.budgetCents ?? 0,
+      targeting_rules: input.targetingRules ?? {}
+    })
+    .select("id")
+    .single();
+
+  if (campaignError) {
+    throw new Error(`Ad campaign creation failed: ${campaignError.message}`);
+  }
+
+  const { data, error } = await supabase
+    .from("ad_creatives")
+    .insert({
+      ad_campaign_id: campaign.id,
+      placement_id: placementRow.id,
+      headline: input.headline,
+      body: input.body,
+      image_url: input.imageUrl,
+      destination_url: input.destinationUrl,
+      disclosure_label: disclosureLabel,
+      creative_payload: {
+        ...(input.creativePayload ?? {}),
+        policyDecision: policy.decision,
+        requiredDisclosures: policy.requiredDisclosures
+      },
+      is_active: input.activate !== false
+    })
+    .select("id,headline,body,image_url,destination_url,disclosure_label,creative_payload")
+    .single();
+
+  if (error) {
+    throw new Error(`Ad creative creation failed: ${error.message}`);
+  }
+
+  return {
+    id: String(data.id),
+    placementKey: input.placementKey,
+    headline: String(data.headline),
+    body: data.body ? String(data.body) : undefined,
+    imageUrl: data.image_url ? String(data.image_url) : undefined,
+    destinationUrl: data.destination_url ? String(data.destination_url) : undefined,
+    disclosureLabel: String(data.disclosure_label),
+    payload: data.creative_payload ?? {}
   };
 }
 

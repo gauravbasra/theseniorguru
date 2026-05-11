@@ -68,6 +68,8 @@ const requiredTables: RequiredTable[] = [
   { table: "events", requiredFor: "Provider events marketplace", capability: "events" },
   { table: "community_posts", requiredFor: "Community feed", capability: "community" },
   { table: "ad_placements", requiredFor: "Advertising inventory", capability: "ads" },
+  { table: "ad_campaigns", requiredFor: "Direct-sold ad campaigns", capability: "ads" },
+  { table: "ad_creatives", requiredFor: "Sponsored ad creative", capability: "ads" },
   { table: "marketing_campaigns", requiredFor: "Growth engine campaigns", capability: "growth" },
   { table: "growth_plans", requiredFor: "Paid plan catalog", capability: "growth" },
   { table: "provider_growth_subscriptions", requiredFor: "Provider contract subscriptions", capability: "growth" },

@@ -9,11 +9,50 @@ export type AdCreativeRecord = {
   payload: Record<string, unknown>;
 };
 
+export type AdPlacementRecord = {
+  id?: string;
+  placementKey: string;
+  name: string;
+  surface: "web" | "mobile" | "web_mobile" | "unknown";
+  description?: string;
+  disclosureRequired: boolean;
+  disclosureLabel: string;
+  isActive: boolean;
+  createdAt?: string;
+};
+
 export type AdPlacementResponse = {
   placementKey: string;
   disclosureRequired: boolean;
   disclosureLabel: string;
   creatives: AdCreativeRecord[];
+};
+
+export type UpsertAdPlacementInput = {
+  placementKey: string;
+  name: string;
+  surface: AdPlacementRecord["surface"];
+  description?: string;
+  disclosureRequired?: boolean;
+  disclosureLabel?: string;
+  isActive?: boolean;
+  actorId?: string;
+};
+
+export type CreateAdCreativeInput = {
+  placementKey: string;
+  providerId?: string;
+  campaignName: string;
+  headline: string;
+  body?: string;
+  imageUrl?: string;
+  destinationUrl?: string;
+  disclosureLabel?: string;
+  budgetCents?: number;
+  targetingRules?: Record<string, unknown>;
+  creativePayload?: Record<string, unknown>;
+  activate?: boolean;
+  actorId?: string;
 };
 
 export type AdEventInput = {

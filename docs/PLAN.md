@@ -40,6 +40,7 @@ Deliverables:
 - Community post, comment, report, and moderation APIs. Completed.
 - Ad placement schema. Completed.
 - Ad placement/impression/click APIs. Completed.
+- Direct-sold ad placement and creative admin APIs with policy-gated sponsorship disclosures. Completed.
 - Marketing campaign schema. Completed.
 - Campaign create/generate/publish APIs. Completed.
 - Provider growth plans, subscriptions, and entitlements schema. Completed.

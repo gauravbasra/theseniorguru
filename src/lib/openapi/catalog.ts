@@ -177,6 +177,13 @@ export function getOpenApiCatalog() {
       "/api/v1/ads/placements/{key}": {
         get: { tags: ["Ads"], summary: "Get ad placement metadata and creatives" }
       },
+      "/api/v1/admin/ads/placements": {
+        get: { tags: ["Ads"], summary: "List advertising placements" },
+        post: { tags: ["Ads"], summary: "Create or update a policy-gated advertising placement" }
+      },
+      "/api/v1/admin/ads/creatives": {
+        post: { tags: ["Ads"], summary: "Create a policy-gated direct-sold ad creative" }
+      },
       "/api/v1/admin/ad-readiness": {
         get: { tags: ["Ads"], summary: "Return direct-sold and Google backfill advertising readiness" }
       },
