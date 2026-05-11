@@ -4,6 +4,7 @@ import type {
   ProviderClaimStatus,
   ProviderVerificationDeliveryRecord,
   ProviderVerificationAttemptRecord,
+  ProviderVerificationExpiryResult,
   ProviderVerificationMethod,
   SendProviderVerificationAttemptInput
 } from "@/lib/domain/claims";
@@ -57,6 +58,21 @@ function deliveryChannelForMethod(method: ProviderVerificationMethod): ProviderV
 function buildVerificationActionUrl(attempt: ProviderVerificationAttemptRecord) {
   const env = getAppEnv();
   return `${env.appUrl.replace(/\/$/, "")}/provider/claims/${attempt.providerClaimId}?verification=${attempt.id}`;
+}
+
+function isExpiredPendingAttempt(attempt: ProviderVerificationAttemptRecord, now = new Date()) {
+  return attempt.status === "pending" && Boolean(attempt.expiresAt) && Date.parse(attempt.expiresAt as string) <= now.getTime();
+}
+
+function nonExpiredPendingAttempt(attempts: ProviderVerificationAttemptRecord[], input: CreateProviderVerificationAttemptInput) {
+  const now = new Date();
+
+  return attempts
+    .filter((attempt) => attempt.providerClaimId === input.claimId)
+    .filter((attempt) => attempt.method === input.method)
+    .filter((attempt) => attempt.status === "pending")
+    .filter((attempt) => !isExpiredPendingAttempt(attempt, now))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
 }
 
 function buildDeliveryRecord(
@@ -128,6 +144,12 @@ export async function createProviderVerificationAttempt(
   const now = new Date().toISOString();
 
   if (!supabase) {
+    const existing = nonExpiredPendingAttempt(seedVerificationAttempts, input);
+
+    if (existing) {
+      return existing;
+    }
+
     const attempt: ProviderVerificationAttemptRecord = {
       id: `pending-verification-${Date.now()}`,
       providerClaimId: input.claimId,
@@ -140,6 +162,25 @@ export async function createProviderVerificationAttempt(
     };
     seedVerificationAttempts.unshift(attempt);
     return attempt;
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("provider_verification_attempts")
+    .select("*")
+    .eq("provider_claim_id", input.claimId)
+    .eq("method", input.method)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (existingError) {
+    throw new Error(`Provider verification attempt idempotency lookup failed: ${existingError.message}`);
+  }
+
+  const existingAttempt = (existing ?? []).map(mapVerificationAttempt).find((attempt) => !isExpiredPendingAttempt(attempt, new Date(now)));
+
+  if (existingAttempt) {
+    return existingAttempt;
   }
 
   const { data, error } = await supabase
@@ -181,6 +222,101 @@ export async function createProviderVerificationAttempt(
   });
 
   return mapVerificationAttempt(data);
+}
+
+export async function expireProviderVerificationAttempts(input: {
+  claimId?: string;
+  actorId?: string;
+  limit?: number;
+} = {}): Promise<ProviderVerificationExpiryResult> {
+  const now = new Date().toISOString();
+  const limit = Math.max(1, Math.min(input.limit ?? 100, 250));
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const expired = seedVerificationAttempts
+      .filter((attempt) => !input.claimId || attempt.providerClaimId === input.claimId)
+      .filter((attempt) => isExpiredPendingAttempt(attempt))
+      .slice(0, limit);
+
+    for (const attempt of expired) {
+      attempt.status = "expired";
+      attempt.completedAt = now;
+      attempt.attemptPayload = {
+        ...attempt.attemptPayload,
+        expiredBy: "verification_expiry_worker",
+        expiredAt: now
+      };
+    }
+
+    return {
+      generatedAt: now,
+      expired: expired.length,
+      attempts: expired
+    };
+  }
+
+  let query = supabase
+    .from("provider_verification_attempts")
+    .select("*")
+    .eq("status", "pending")
+    .lt("expires_at", now)
+    .order("expires_at", { ascending: true })
+    .limit(limit);
+
+  if (input.claimId) {
+    query = query.eq("provider_claim_id", input.claimId);
+  }
+
+  const { data: expiredRows, error: lookupError } = await query;
+
+  if (lookupError) {
+    throw new Error(`Provider verification expiry lookup failed: ${lookupError.message}`);
+  }
+
+  const expired = (expiredRows ?? []).map(mapVerificationAttempt);
+
+  if (expired.length === 0) {
+    return {
+      generatedAt: now,
+      expired: 0,
+      attempts: []
+    };
+  }
+
+  const { error: updateError } = await supabase
+    .from("provider_verification_attempts")
+    .update({
+      status: "expired",
+      completed_at: now
+    })
+    .in("id", expired.map((attempt) => attempt.id));
+
+  if (updateError) {
+    throw new Error(`Provider verification expiry update failed: ${updateError.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: "provider_verification_attempts.expired",
+    subject_type: "provider_verification_attempt",
+    payload: {
+      expiredAttemptIds: expired.map((attempt) => attempt.id),
+      claimId: input.claimId,
+      expired: expired.length
+    }
+  });
+
+  return {
+    generatedAt: now,
+    expired: expired.length,
+    attempts: expired.map((attempt) => ({
+      ...attempt,
+      status: "expired" as const,
+      completedAt: now
+    }))
+  };
 }
 
 export async function completeProviderVerificationAttempt(

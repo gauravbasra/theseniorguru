@@ -23,6 +23,14 @@ function latestAttemptForMethod(
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 }
 
+function statusForAttempt(attempt: ProviderVerificationAttemptRecord): ProviderClaimChecklistItem["status"] {
+  if (attempt.status === "pending" && attempt.expiresAt && Date.parse(attempt.expiresAt) <= Date.now()) {
+    return "expired";
+  }
+
+  return attempt.status;
+}
+
 function buildChecklist(attempts: ProviderVerificationAttemptRecord[]): ProviderClaimChecklistItem[] {
   return checklistDefinitions.map((definition) => {
     const attempt = latestAttemptForMethod(attempts, definition.method);
@@ -39,7 +47,7 @@ function buildChecklist(attempts: ProviderVerificationAttemptRecord[]): Provider
     return {
       key: definition.key,
       label: definition.label,
-      status: attempt.status,
+      status: statusForAttempt(attempt),
       method: definition.method,
       target: attempt.target,
       attemptId: attempt.id,

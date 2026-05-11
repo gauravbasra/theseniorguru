@@ -88,6 +88,12 @@ export type ProviderVerificationDeliveryRecord = {
   sentAt?: string;
 };
 
+export type ProviderVerificationExpiryResult = {
+  generatedAt: string;
+  expired: number;
+  attempts: ProviderVerificationAttemptRecord[];
+};
+
 export type SubmitProviderClaimEvidenceInput = {
   claimId: string;
   method?: ProviderVerificationMethod;

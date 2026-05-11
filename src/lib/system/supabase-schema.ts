@@ -54,7 +54,8 @@ const migrationManifest = [
   "20260511020000_community_memberships.sql",
   "20260511030000_expert_profiles.sql",
   "20260511033000_community_invitations_topics.sql",
-  "20260511102000_import_idempotency.sql"
+  "20260511102000_import_idempotency.sql",
+  "20260511104000_claim_verification_operations.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -145,6 +146,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511102000_import_idempotency.sql": {
     capability: "aggregation",
     summary: "Skipped-record accounting and source-record indexes for idempotent listing imports."
+  },
+  "20260511104000_claim_verification_operations.sql": {
+    capability: "claims",
+    summary: "Indexes for idempotent claim verification attempts and expiry operations."
   }
 };
 
