@@ -328,6 +328,7 @@ export async function activateGrowthSubscription(
   if (!supabase) {
     const existing = seedSubscriptions.find((subscription) => subscription.id === input.subscriptionId);
     const termMonths = existing?.termMonths ?? 3;
+    const plan = seedGrowthPlans.find((item) => item.id === existing?.growthPlanId);
     const activated: ProviderGrowthSubscriptionRecord = {
       id: input.subscriptionId,
       providerId: existing?.providerId ?? "fallback-provider",
@@ -348,6 +349,31 @@ export async function activateGrowthSubscription(
       Object.assign(existing, activated);
     } else {
       seedSubscriptions.unshift(activated);
+    }
+
+    for (const featureKey of plan?.featureFlags ?? []) {
+      const entitlement: ProviderFeatureEntitlementRecord = {
+        id: `seed-entitlement-${activated.providerId}-${featureKey}-${Date.now()}`,
+        providerId: activated.providerId,
+        subscriptionId: activated.id,
+        featureKey,
+        status: "active",
+        startsAt: activated.startsAt,
+        endsAt: activated.endsAt,
+        createdAt: now
+      };
+      const existingIndex = seedEntitlements.findIndex(
+        (item) =>
+          item.providerId === entitlement.providerId &&
+          item.subscriptionId === entitlement.subscriptionId &&
+          item.featureKey === entitlement.featureKey
+      );
+
+      if (existingIndex >= 0) {
+        seedEntitlements[existingIndex] = entitlement;
+      } else {
+        seedEntitlements.unshift(entitlement);
+      }
     }
 
     return activated;

@@ -12,6 +12,7 @@ import type {
   CreateAdCreativeInput,
   UpsertAdPlacementInput
 } from "@/lib/domain/ads";
+import { requireProviderFeature } from "@/lib/billing/entitlements";
 import { getAppEnv } from "@/lib/env";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -203,6 +204,9 @@ export async function upsertAdPlacement(input: UpsertAdPlacementInput): Promise<
 }
 
 export async function createAdCreative(input: CreateAdCreativeInput): Promise<AdCreativeRecord> {
+  const entitlementCheck = input.providerId && input.activate !== false
+    ? await requireProviderFeature(input.providerId, "campaigns")
+    : undefined;
   const policy = await runPolicyCheck({
     subjectType: "ad_creative",
     subjectId: input.placementKey,
@@ -228,6 +232,7 @@ export async function createAdCreative(input: CreateAdCreativeInput): Promise<Ad
       ...(input.creativePayload ?? {}),
       campaignName: input.campaignName,
       providerId: input.providerId,
+      entitlementCheck,
       policyDecision: policy.decision
     }
   };
@@ -281,6 +286,7 @@ export async function createAdCreative(input: CreateAdCreativeInput): Promise<Ad
       disclosure_label: disclosureLabel,
       creative_payload: {
         ...(input.creativePayload ?? {}),
+        entitlementCheck,
         policyDecision: policy.decision,
         requiredDisclosures: policy.requiredDisclosures
       },

@@ -27,6 +27,9 @@ export async function POST(request: Request) {
       })
     }, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const status = message.includes("requires an active growth subscription") ? 403 : 500;
+
+    return NextResponse.json({ error: message }, { status });
   }
 }
