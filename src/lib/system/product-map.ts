@@ -327,7 +327,10 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/link-health",
       "GET /api/v1/system/readiness",
       "GET /api/v1/system/launch-checklist",
-      "GET /api/v1/system/supabase-schema"
+      "GET /api/v1/system/supabase-schema",
+      "GET /api/v1/admin/scheduled-worker-runs",
+      "GET /api/cron/operations",
+      "GET /api/cron/acquisition"
     ],
     requiredTables: [
       "policy_rules",
@@ -336,7 +339,8 @@ const productPillars: ProductPillar[] = [
       "policy_approval_requests",
       "policy_overrides",
       "consent_records",
-      "audit_events"
+      "audit_events",
+      "scheduled_worker_runs"
     ],
     nextBackendWork: ["Policy queue API", "Approval/override APIs", "Immutable audit event browser"]
   },

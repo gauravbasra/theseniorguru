@@ -2,6 +2,7 @@ import { getAdCampaignReporting } from "@/lib/ads/ads";
 import { previewCurrentSiteRealListings } from "@/lib/aggregation/public-source-acquisition";
 import { listLeadQueue } from "@/lib/leads";
 import { listProviders } from "@/lib/providers";
+import { listScheduledWorkerRuns } from "@/lib/scheduler/runs";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
 import { getProductMap } from "@/lib/system/product-map";
 
@@ -23,13 +24,14 @@ function parseRangeTarget(value: string | number) {
 }
 
 export async function getAdminDashboardMetrics() {
-  const [product, launchChecklist, leadQueue, adReporting, providers, listingPreview] = await Promise.all([
+  const [product, launchChecklist, leadQueue, adReporting, providers, listingPreview, scheduledRuns] = await Promise.all([
     getProductMap(),
     getLaunchChecklist(),
     listLeadQueue(),
     getAdCampaignReporting(),
     listProviders(),
-    previewCurrentSiteRealListings({ maxRecords: 25 })
+    previewCurrentSiteRealListings({ maxRecords: 25 }),
+    listScheduledWorkerRuns({ limit: 10 })
   ]);
   const readinessStatusCounts = launchChecklist.checklist.reduce(
     (counts, item) => ({
@@ -92,6 +94,7 @@ export async function getAdminDashboardMetrics() {
     productEngines,
     monetization,
     sourceCoverage: listingPreview.sourceCoverage,
+    scheduledRuns,
     routeHealth,
     headlineNumbers: {
       totalProviders: providers.length,

@@ -72,7 +72,8 @@ const migrationManifest = [
   "20260511105000_ad_event_idempotency.sql",
   "20260511110000_newsroom_rss_idempotency.sql",
   "20260511111500_api_key_last_used.sql",
-  "20260511134452_add_webhook_signing_ciphertext.sql"
+  "20260511134452_add_webhook_signing_ciphertext.sql",
+  "20260511141401_scheduled_worker_runs.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -183,6 +184,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511134452_add_webhook_signing_ciphertext.sql": {
     capability: "openApi",
     summary: "Encrypted webhook signing secret storage for deliverable partner webhooks."
+  },
+  "20260511141401_scheduled_worker_runs.sql": {
+    capability: "policy",
+    summary: "Scheduled backend worker run history for cron observability and launch operations."
   }
 };
 
@@ -228,7 +233,8 @@ const requiredTables: RequiredTable[] = [
   { table: "webhook_deliveries", requiredFor: "Webhook delivery queue", capability: "openApi" },
   { table: "webhook_delivery_attempts", requiredFor: "Webhook retry evidence", capability: "openApi" },
   { table: "policy_checks", requiredFor: "Policy guardrail audit", capability: "policy" },
-  { table: "audit_events", requiredFor: "Operational audit trail", capability: "policy" }
+  { table: "audit_events", requiredFor: "Operational audit trail", capability: "policy" },
+  { table: "scheduled_worker_runs", requiredFor: "Scheduled worker observability", capability: "policy" }
 ];
 
 const requiredColumns: RequiredColumn[] = [
