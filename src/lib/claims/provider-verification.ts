@@ -2,9 +2,12 @@ import type {
   CompleteProviderVerificationAttemptInput,
   CreateProviderVerificationAttemptInput,
   ProviderClaimStatus,
+  ProviderVerificationDeliveryRecord,
   ProviderVerificationAttemptRecord,
-  ProviderVerificationMethod
+  ProviderVerificationMethod,
+  SendProviderVerificationAttemptInput
 } from "@/lib/domain/claims";
+import { getAppEnv } from "@/lib/env";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -41,6 +44,44 @@ function mapVerificationAttempt(row: Record<string, unknown>): ProviderVerificat
     expiresAt: row.expires_at ? String(row.expires_at) : undefined,
     completedAt: row.completed_at ? String(row.completed_at) : undefined,
     createdAt: String(row.created_at)
+  };
+}
+
+function deliveryChannelForMethod(method: ProviderVerificationMethod): ProviderVerificationDeliveryRecord["channel"] {
+  if (method === "business_email" || method === "domain_dns") return "email";
+  if (method === "business_phone") return "sms";
+  if (method === "license_document" || method === "admin_manual") return "manual";
+  return "manual";
+}
+
+function buildVerificationActionUrl(attempt: ProviderVerificationAttemptRecord) {
+  const env = getAppEnv();
+  return `${env.appUrl.replace(/\/$/, "")}/provider/claims/${attempt.providerClaimId}?verification=${attempt.id}`;
+}
+
+function buildDeliveryRecord(
+  attempt: ProviderVerificationAttemptRecord,
+  input: SendProviderVerificationAttemptInput,
+  policyDecision: string
+): ProviderVerificationDeliveryRecord {
+  const channel = input.channel ?? deliveryChannelForMethod(attempt.method);
+  const target = input.target ?? attempt.target;
+  const sentAt = channel === "manual" ? undefined : new Date().toISOString();
+
+  return {
+    attemptId: attempt.id,
+    status: channel === "manual" || !target ? "manual_required" : "sent",
+    channel,
+    target,
+    actionUrl: buildVerificationActionUrl(attempt),
+    sentAt,
+    deliveryPayload: {
+      messageTemplate: input.messageTemplate ?? "provider_claim_verification",
+      policyDecision,
+      providerClaimId: attempt.providerClaimId,
+      method: attempt.method,
+      deliveryProvider: channel === "manual" ? "owner_console" : "configured_messaging_adapter_pending"
+    }
   };
 }
 
@@ -235,4 +276,92 @@ export async function completeProviderVerificationAttempt(
   });
 
   return mapVerificationAttempt(data);
+}
+
+export async function sendProviderVerificationAttempt(
+  input: SendProviderVerificationAttemptInput
+): Promise<ProviderVerificationDeliveryRecord> {
+  const supabase = getSupabaseAdminClient();
+  const attempt = supabase
+    ? await getSupabaseVerificationAttempt(input.attemptId)
+    : seedVerificationAttempts.find((item) => item.id === input.attemptId);
+
+  if (!attempt) {
+    throw new Error("Provider verification attempt not found");
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "provider_verification_attempt",
+    subjectId: input.attemptId,
+    actionKey: "send_provider_verification_attempt",
+    input: {
+      ...input,
+      method: attempt.method,
+      providerClaimId: attempt.providerClaimId
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Provider verification delivery blocked by policy");
+  }
+
+  const delivery = buildDeliveryRecord(attempt, input, policy.decision);
+  const updatedPayload = {
+    ...attempt.attemptPayload,
+    delivery
+  };
+
+  if (!supabase) {
+    Object.assign(attempt, { attemptPayload: updatedPayload });
+    return delivery;
+  }
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("provider_verification_attempts")
+    .update({
+      attempt_payload: updatedPayload
+    })
+    .eq("id", input.attemptId);
+
+  if (error) {
+    throw new Error(`Provider verification delivery update failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: "provider_verification_attempt.delivery_sent",
+    subject_type: "provider_verification_attempt",
+    subject_id: input.attemptId,
+    payload: {
+      claimId: attempt.providerClaimId,
+      method: attempt.method,
+      channel: delivery.channel,
+      target: delivery.target,
+      deliveryStatus: delivery.status,
+      policyDecision: policy.decision,
+      sentAt: delivery.sentAt ?? now
+    }
+  });
+
+  return delivery;
+}
+
+async function getSupabaseVerificationAttempt(attemptId: string): Promise<ProviderVerificationAttemptRecord | null> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("provider_verification_attempts")
+    .select("*")
+    .eq("id", attemptId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Provider verification attempt lookup failed: ${error.message}`);
+  }
+
+  return data ? mapVerificationAttempt(data) : null;
 }

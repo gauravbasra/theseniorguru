@@ -146,6 +146,7 @@ Deliverables:
 - License/document review.
 - Verification evidence and attempt workflow. Completed.
 - Provider-facing claim checklist/status API. Completed.
+- Policy-gated verification delivery worker and audit payload. Completed.
 - Profile completion assistant.
 - Provider visibility report.
 

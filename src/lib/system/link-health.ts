@@ -105,6 +105,12 @@ const routeContracts: LinkContract[] = [
     method: "POST",
     owner: "provider"
   },
+  {
+    label: "Provider verification delivery API",
+    href: "/api/v1/admin/provider-verification-attempts/demo/send",
+    method: "POST",
+    owner: "admin"
+  },
   { label: "Review request campaigns API", href: "/api/v1/provider/review-request-campaigns", method: "GET", owner: "provider" },
   {
     label: "Review request send API",

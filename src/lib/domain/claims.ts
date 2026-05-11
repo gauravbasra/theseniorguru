@@ -70,6 +70,24 @@ export type CompleteProviderVerificationAttemptInput = {
   actorId?: string;
 };
 
+export type SendProviderVerificationAttemptInput = {
+  attemptId: string;
+  channel?: "email" | "sms" | "phone" | "manual";
+  target?: string;
+  messageTemplate?: string;
+  actorId?: string;
+};
+
+export type ProviderVerificationDeliveryRecord = {
+  attemptId: string;
+  status: "queued" | "sent" | "manual_required";
+  channel: "email" | "sms" | "phone" | "manual";
+  target?: string;
+  actionUrl: string;
+  deliveryPayload: Record<string, unknown>;
+  sentAt?: string;
+};
+
 export type SubmitProviderClaimEvidenceInput = {
   claimId: string;
   method?: ProviderVerificationMethod;
