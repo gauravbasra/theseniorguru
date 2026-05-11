@@ -55,7 +55,8 @@ const migrationManifest = [
   "20260511030000_expert_profiles.sql",
   "20260511033000_community_invitations_topics.sql",
   "20260511102000_import_idempotency.sql",
-  "20260511104000_claim_verification_operations.sql"
+  "20260511104000_claim_verification_operations.sql",
+  "20260511105000_ad_event_idempotency.sql"
 ];
 
 const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -150,6 +151,10 @@ const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey;
   "20260511104000_claim_verification_operations.sql": {
     capability: "claims",
     summary: "Indexes for idempotent claim verification attempts and expiry operations."
+  },
+  "20260511105000_ad_event_idempotency.sql": {
+    capability: "ads",
+    summary: "Unique request-level dedupe indexes for ad impressions and clicks."
   }
 };
 

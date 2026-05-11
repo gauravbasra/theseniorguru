@@ -63,6 +63,15 @@ export type AdEventInput = {
   userContext?: Record<string, unknown>;
 };
 
+export type AdEventRecordResult = {
+  recorded: boolean;
+  duplicate: boolean;
+  eventType: "impression" | "click";
+  placementKey: string;
+  requestId?: string;
+  recordedAt?: string;
+};
+
 export type AdCampaignReportingInput = {
   placementKey?: string;
   providerId?: string;

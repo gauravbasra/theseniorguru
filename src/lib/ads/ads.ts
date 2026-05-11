@@ -3,6 +3,7 @@ import type {
   AdCampaignReportingPlacement,
   AdCampaignReportingSummary,
   AdCreativeRecord,
+  AdEventRecordResult,
   AdEventInput,
   AdPlacementRecord,
   AdPlacementReadinessItem,
@@ -304,45 +305,101 @@ export async function createAdCreative(input: CreateAdCreativeInput): Promise<Ad
   };
 }
 
-export async function recordAdImpression(input: AdEventInput) {
-  const supabase = getSupabaseAdminClient();
-
-  if (!supabase) {
-    fallbackAdEvents.push({ ...input, type: "impression", recordedAt: new Date().toISOString() });
-    return { recorded: true };
-  }
-
-  if (supabase) {
-    await supabase.from("ad_impressions").insert({
-      ad_creative_id: input.adCreativeId,
-      placement_key: input.placementKey,
-      request_id: input.requestId,
-      user_context: input.userContext ?? {}
-    });
-  }
-
-  return { recorded: true };
+function isDuplicateFallbackAdEvent(input: AdEventInput, type: FallbackAdEvent["type"]) {
+  return Boolean(input.requestId) && fallbackAdEvents.some(
+    (event) =>
+      event.type === type &&
+      event.placementKey === input.placementKey &&
+      event.requestId === input.requestId &&
+      event.adCreativeId === input.adCreativeId
+  );
 }
 
-export async function recordAdClick(input: AdEventInput) {
+async function hasSupabaseAdEvent(input: AdEventInput, type: FallbackAdEvent["type"]) {
+  if (!input.requestId) {
+    return false;
+  }
+
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    fallbackAdEvents.push({ ...input, type: "click", recordedAt: new Date().toISOString() });
-    return { recorded: true };
+    return isDuplicateFallbackAdEvent(input, type);
   }
 
-  if (supabase) {
-    await supabase.from("ad_clicks").insert({
-      ad_creative_id: input.adCreativeId,
-      placement_key: input.placementKey,
-      request_id: input.requestId,
-      destination_url: input.destinationUrl,
-      user_context: input.userContext ?? {}
-    });
+  const table = type === "impression" ? "ad_impressions" : "ad_clicks";
+  let query = supabase
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .eq("placement_key", input.placementKey)
+    .eq("request_id", input.requestId);
+
+  query = input.adCreativeId ? query.eq("ad_creative_id", input.adCreativeId) : query.is("ad_creative_id", null);
+
+  const { count, error } = await query;
+
+  if (error) {
+    throw new Error(`Ad ${type} duplicate lookup failed: ${error.message}`);
   }
 
-  return { recorded: true };
+  return (count ?? 0) > 0;
+}
+
+function adEventResult(input: AdEventInput, eventType: FallbackAdEvent["type"], recorded: boolean, recordedAt?: string): AdEventRecordResult {
+  return {
+    recorded,
+    duplicate: !recorded,
+    eventType,
+    placementKey: input.placementKey,
+    requestId: input.requestId,
+    recordedAt
+  };
+}
+
+export async function recordAdImpression(input: AdEventInput): Promise<AdEventRecordResult> {
+  if (await hasSupabaseAdEvent(input, "impression")) {
+    return adEventResult(input, "impression", false);
+  }
+
+  const recordedAt = new Date().toISOString();
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    fallbackAdEvents.push({ ...input, type: "impression", recordedAt });
+    return adEventResult(input, "impression", true, recordedAt);
+  }
+
+  await supabase.from("ad_impressions").insert({
+    ad_creative_id: input.adCreativeId,
+    placement_key: input.placementKey,
+    request_id: input.requestId,
+    user_context: input.userContext ?? {}
+  });
+
+  return adEventResult(input, "impression", true, recordedAt);
+}
+
+export async function recordAdClick(input: AdEventInput): Promise<AdEventRecordResult> {
+  if (await hasSupabaseAdEvent(input, "click")) {
+    return adEventResult(input, "click", false);
+  }
+
+  const recordedAt = new Date().toISOString();
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    fallbackAdEvents.push({ ...input, type: "click", recordedAt });
+    return adEventResult(input, "click", true, recordedAt);
+  }
+
+  await supabase.from("ad_clicks").insert({
+    ad_creative_id: input.adCreativeId,
+    placement_key: input.placementKey,
+    request_id: input.requestId,
+    destination_url: input.destinationUrl,
+    user_context: input.userContext ?? {}
+  });
+
+  return adEventResult(input, "click", true, recordedAt);
 }
 
 function withinReportingWindow(recordedAt: string, filters: AdCampaignReportingInput) {
