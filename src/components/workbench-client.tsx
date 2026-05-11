@@ -89,8 +89,8 @@ export function WorkbenchClient() {
           <p className="eyebrow">Executable workflow</p>
           <h2>Run the platform proof</h2>
           <p>
-            This calls backend services, not mock UI: import, matching, mobile saving, care circles, subscriptions,
-            entitlement checks, campaigns, event promotion, and analytics.
+            This run moves through the real operating flow: inventory review, matching, saved communities, care
+            circles, growth plan access, campaigns, event promotion, and analytics.
           </p>
         </div>
         <button className="button primary icon-button" type="button" onClick={runDemo} disabled={loading}>
@@ -157,4 +157,3 @@ function ResultRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-

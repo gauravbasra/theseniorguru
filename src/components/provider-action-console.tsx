@@ -8,6 +8,7 @@ type ActionResult = {
   ok: boolean;
   message: string;
   data?: unknown;
+  summary: string;
 };
 
 type ProviderActionConsoleProps = {
@@ -38,7 +39,8 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
         label,
         ok: response.ok,
         message: response.ok ? "Success" : payload.error ?? "Request failed",
-        data: payload.data
+        data: payload.data,
+        summary: summarizeProviderAction(key, payload.data)
       },
       ...current.slice(0, 4)
     ]);
@@ -52,9 +54,9 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
     <section className="action-console">
       <div className="console-header">
         <div>
-          <p className="eyebrow">Functional console</p>
-          <h2>Run provider workflows</h2>
-          <p>These buttons call live route handlers and service logic. Results appear below immediately.</p>
+          <p className="eyebrow">Provider actions</p>
+          <h2>Manage your listing and growth tools</h2>
+          <p>Use these actions to claim the listing, create events, start campaigns, and check reputation readiness.</p>
         </div>
       </div>
 
@@ -199,20 +201,59 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
                 <strong>{result.label}</strong>
                 <span>{result.message}</span>
               </div>
-              <pre>{JSON.stringify(result.data ?? {}, null, 2)}</pre>
+              <p>{result.summary}</p>
             </article>
           ))
         ) : (
           <article className="console-result">
             <div>
               <strong>No actions run yet</strong>
-              <span>Use the buttons above to call backend workflows.</span>
+              <span>Choose a provider action to see the result here.</span>
             </div>
           </article>
         )}
       </div>
     </section>
   );
+}
+
+function summarizeProviderAction(key: string, data: unknown) {
+  const record = isRecord(data) ? data : {};
+
+  if (key === "claim") {
+    return `Claim ${String(record.status ?? "submitted")} and ready for verification.`;
+  }
+
+  if (key === "claim-status") {
+    const checklist = Array.isArray(record.checklist) ? record.checklist.length : 0;
+    return `Claim status is ${String(record.status ?? "in review")} with ${checklist} verification steps.`;
+  }
+
+  if (key === "claim-evidence") {
+    return `Verification evidence was saved and moved into review.`;
+  }
+
+  if (key === "event") {
+    return `Event ${String(record.status ?? "created")} for families to discover and RSVP.`;
+  }
+
+  if (key === "subscribe") {
+    return `Growth contract ${String(record.status ?? "created")} for a ${String(record.termMonths ?? 6)} month term.`;
+  }
+
+  if (key === "reputation") {
+    return `Reputation status: ${String(record.status ?? "review")} with review and response readiness checked.`;
+  }
+
+  if (key === "campaign") {
+    return `Campaign ${String(record.status ?? "created")} and ready for the next growth step.`;
+  }
+
+  return "Action completed and the provider workspace was updated.";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function ConsoleButton({

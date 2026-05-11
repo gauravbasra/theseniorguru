@@ -15,10 +15,10 @@ export default function LoginPage() {
         </Link>
         <div>
           <p className="eyebrow">Owner login</p>
-          <h1>Check the backend console securely.</h1>
+          <h1>Open the owner command center securely.</h1>
           <p>
-            Sign in to view launch readiness, link health, import planning, claims, leads, newsroom workflows,
-            advertising readiness, and provider onboarding operations.
+            Sign in to review launch readiness, inventory planning, claims, leads, newsroom workflows, advertising
+            readiness, and provider onboarding operations.
           </p>
         </div>
         <Suspense fallback={<p className="login-note">Loading secure login...</p>}>
@@ -32,4 +32,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

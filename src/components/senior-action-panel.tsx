@@ -8,6 +8,7 @@ type SeniorActionResult = {
   ok: boolean;
   message: string;
   data?: unknown;
+  summary: string;
 };
 
 type SeniorActionPanelProps = {
@@ -29,7 +30,8 @@ export function SeniorActionPanel({ providerId }: SeniorActionPanelProps) {
         label,
         ok: response.ok,
         message: response.ok ? "Success" : payload.error ?? "Request failed",
-        data: payload.data
+        data: payload.data,
+        summary: summarizeSeniorAction(key, payload.data)
       },
       ...current.slice(0, 4)
     ]);
@@ -41,7 +43,7 @@ export function SeniorActionPanel({ providerId }: SeniorActionPanelProps) {
         <div>
           <p className="eyebrow">Family app actions</p>
           <h2>Try the sticky mobile workflows</h2>
-          <p>These actions call the same app APIs intended for the senior mobile experience.</p>
+          <p>Save communities, coordinate family decisions, and ask local care questions in one place.</p>
         </div>
       </div>
       <div className="senior-action-grid">
@@ -132,20 +134,43 @@ export function SeniorActionPanel({ providerId }: SeniorActionPanelProps) {
                 <strong>{result.label}</strong>
                 <span>{result.message}</span>
               </div>
-              <pre>{JSON.stringify(result.data ?? {}, null, 2)}</pre>
+              <p>{result.summary}</p>
             </article>
           ))
         ) : (
           <article className="console-result">
             <div>
               <strong>No family actions run yet</strong>
-              <span>Use the buttons above to call backend workflows.</span>
+              <span>Choose an action above to see how a family would use the app.</span>
             </div>
           </article>
         )}
       </div>
     </section>
   );
+}
+
+function summarizeSeniorAction(key: string, data: unknown) {
+  const record = typeof data === "object" && data !== null ? data as Record<string, unknown> : {};
+
+  if (key === "save") {
+    const tags = Array.isArray(record.tags) ? record.tags.join(", ") : "shortlist";
+    return `Community saved to the family shortlist with ${tags} tags.`;
+  }
+
+  if (key === "circle") {
+    return `Care circle ${String(record.name ?? "created")} is ready for shared planning.`;
+  }
+
+  if (key === "member") {
+    return `Family invite added so the care team can collaborate.`;
+  }
+
+  if (key === "post") {
+    return `Community question submitted for local guidance and moderation.`;
+  }
+
+  return "Family action completed.";
 }
 
 function SeniorButton({
@@ -168,4 +193,3 @@ function SeniorButton({
     </button>
   );
 }
-

@@ -58,7 +58,7 @@ export default async function ProviderDashboardPage() {
               <h2>{task.title}</h2>
             </div>
             <div className="card-actions">
-              <Link href={task.href}>Open API</Link>
+              <Link href={task.href}>{providerTaskAction(task.title)}</Link>
             </div>
           </article>
         ))}
@@ -67,4 +67,16 @@ export default async function ProviderDashboardPage() {
       <ProviderActionConsole providerId={dashboard.provider?.id} />
     </main>
   );
+}
+
+function providerTaskAction(title: string) {
+  const normalized = title.toLowerCase();
+
+  if (normalized.includes("claim")) return "Start claim";
+  if (normalized.includes("reputation") || normalized.includes("review")) return "Review reputation";
+  if (normalized.includes("event")) return "Promote event";
+  if (normalized.includes("campaign")) return "Create campaign";
+  if (normalized.includes("growth")) return "View growth plan";
+
+  return "Continue";
 }

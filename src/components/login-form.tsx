@@ -52,9 +52,8 @@ export function LoginForm({ authConfigured }: { authConfigured: boolean }) {
       )}
       {message ? <p className="login-error">{message}</p> : null}
       <button className="button primary" disabled={status === "submitting" || !accessCode.trim()} type="submit">
-        {status === "submitting" ? "Signing in..." : "Open backend console"}
+        {status === "submitting" ? "Signing in..." : "Open owner command center"}
       </button>
     </form>
   );
 }
-

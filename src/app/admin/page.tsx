@@ -15,12 +15,15 @@ export default async function AdminPage() {
       <section className="admin-hero">
         <div>
           <p className="eyebrow">Platform command center</p>
-          <h1>Build and operate The Senior Guru from the FRD, not from random screens.</h1>
-          <p className="lede">{product.thesis}</p>
+          <h1>Run The Senior Guru like a real senior living marketplace.</h1>
+          <p className="lede">
+            Monitor launch readiness, review incoming leads, prepare inventory, verify community claims, and activate
+            the growth tools that turn free listings into paid operator relationships.
+          </p>
           <div className="actions">
-            <Link className="button primary" href="/api/v1/system/product-map">Product map API</Link>
-            <Link className="button secondary" href="/api/v1/system/link-health">Link health</Link>
-            <Link className="button secondary" href="/api/v1/openapi">OpenAPI</Link>
+            <Link className="button primary" href="/provider">Provider console</Link>
+            <Link className="button secondary" href="/discover">View marketplace</Link>
+            <Link className="button secondary" href="/articles">Review content hub</Link>
             <form action="/api/v1/auth/logout" method="post">
               <button className="button secondary" type="submit">Sign out</button>
             </form>
@@ -30,8 +33,8 @@ export default async function AdminPage() {
           <p className="eyebrow">Launch health</p>
           <h2>{product.operationalSummary.readinessStatus.replaceAll("_", " ")}</h2>
           <p>
-            Links: {product.linkHealth.status} · Data sources: {product.operationalSummary.dataSources} · Import
-            batches: {product.operationalSummary.importBatches}
+            Site checks: {product.linkHealth.status} · Data sources: {product.operationalSummary.dataSources} ·
+            Import batches: {product.operationalSummary.importBatches}
           </p>
         </aside>
       </section>
@@ -73,7 +76,7 @@ export default async function AdminPage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Executable operations</p>
-            <h2>Run launch workflows against backend routes, including the new lead intake queue.</h2>
+            <h2>Operate the launch pipeline from one place.</h2>
           </div>
         </div>
         <AdminOperationsConsole />
@@ -82,8 +85,8 @@ export default async function AdminPage() {
       <section className="admin-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">FRD product pillars</p>
-            <h2>Every website surface must map to one of these backend workflows.</h2>
+            <p className="eyebrow">Business engines</p>
+            <h2>The platform is organized around the money-making and trust-building workflows.</h2>
           </div>
         </div>
         <div className="pillar-grid">
@@ -91,23 +94,23 @@ export default async function AdminPage() {
             <article className="pillar-card" key={pillar.key}>
               <div>
                 <span className={`status-pill ${pillar.status}`}>{pillar.status}</span>
-                <h3>{pillar.title}</h3>
-                <p>{pillar.objective}</p>
+                <h3>{displayPillarTitle(pillar.title)}</h3>
+                <p>{displayPillarObjective(pillar.objective)}</p>
                 <small>{pillar.audience}</small>
               </div>
               <div>
-                <strong>Backend routes</strong>
+                <strong>What this powers</strong>
                 <ul>
-                  {pillar.backendRoutes.slice(0, 6).map((route) => (
-                    <li key={route}>{route}</li>
+                  {uniqueCapabilities(pillar.backendRoutes).slice(0, 6).map((capability) => (
+                    <li key={`${pillar.key}-${capability}`}>{capability}</li>
                   ))}
                 </ul>
               </div>
               <div>
-                <strong>Next backend work</strong>
+                <strong>Next product work</strong>
                 <ul>
                   {pillar.nextBackendWork.map((item) => (
-                    <li key={item}>{item}</li>
+                    <li key={item}>{item.replaceAll("API", "workflow").replaceAll("endpoint", "workflow")}</li>
                   ))}
                 </ul>
               </div>
@@ -119,7 +122,7 @@ export default async function AdminPage() {
       <section className="admin-section readiness-section">
         <div>
           <p className="eyebrow">Readiness and blockers</p>
-          <h2>Owner-dependent work stays visible while backend development continues.</h2>
+          <h2>Owner-dependent launch items stay visible until they are cleared.</h2>
         </div>
         <div className="readiness-grid">
           {readinessGroups.map(([name, group]) => (
@@ -129,9 +132,9 @@ export default async function AdminPage() {
               <ul>
                 {group.checks.map((check) => (
                   <li key={check.key}>
-                    <strong>{check.label}</strong>
+                    <strong>{displayReadinessLabel(check.label)}</strong>
                     <span>{check.status}</span>
-                    {check.action ? <small>{check.action}</small> : null}
+                    {check.action ? <small>{displayOwnerAction(check.action)}</small> : null}
                   </li>
                 ))}
               </ul>
@@ -141,4 +144,78 @@ export default async function AdminPage() {
       </section>
     </main>
   );
+}
+
+function uniqueCapabilities(routes: string[]) {
+  return Array.from(new Set(routes.map(businessCapabilityFromRoute)));
+}
+
+function displayPillarTitle(title: string) {
+  if (title === "Open API Platform") return "Partner Integration Platform";
+  return title;
+}
+
+function displayPillarObjective(objective: string) {
+  return objective
+    .replace("APIs", "integrations")
+    .replace("API", "integration")
+    .replace("backend", "operations");
+}
+
+function displayReadinessLabel(label: string) {
+  return label
+    .replace("Supabase schema readiness endpoint", "Supabase database readiness")
+    .replace("Owner backend access code", "Owner command center access code")
+    .replace("API key", "access key")
+    .replace("API secret", "access secret");
+}
+
+function displayOwnerAction(action: string) {
+  if (action.includes("GET /api/v1/system/supabase-schema")) {
+    return "Review database tables after production credentials are connected.";
+  }
+
+  return action
+    .replaceAll("API key", "access key")
+    .replaceAll("API secret", "access secret")
+    .replaceAll("APIs", "operations")
+    .replaceAll("API", "operation")
+    .replaceAll("/api/v1", "the owner console")
+    .replaceAll("endpoint", "check");
+}
+
+function businessCapabilityFromRoute(route: string) {
+  const routeText = route.toLowerCase();
+
+  if (routeText.includes("providers/{id}/contact") || routeText.includes("inquiries")) return "Family inquiry capture";
+  if (routeText.includes("free-listing")) return "Free listing intake";
+  if (routeText.includes("provider-claims") || routeText.includes("/claim")) return "Community claim verification";
+  if (routeText.includes("verification")) return "Operator verification";
+  if (routeText.includes("provider-outreach")) return "Claim outreach";
+  if (routeText.includes("providers") || routeText.includes("categories") || routeText.includes("locations")) return "Marketplace discovery";
+  if (routeText.includes("saved-providers")) return "Saved communities";
+  if (routeText.includes("care-circles")) return "Care circle collaboration";
+  if (routeText.includes("comparison-lists")) return "Community comparison";
+  if (routeText.includes("care-notes")) return "Care planning notes";
+  if (routeText.includes("tour-plans")) return "Tour planning";
+  if (routeText.includes("events") && routeText.includes("analytics")) return "Event performance";
+  if (routeText.includes("events") && routeText.includes("promotions")) return "Sponsored event promotion";
+  if (routeText.includes("events") || routeText.includes("rsvp")) return "Community events";
+  if (routeText.includes("growth-subscriptions") || routeText.includes("growth-plans")) return "Growth plan contracts";
+  if (routeText.includes("entitlements")) return "Paid feature access";
+  if (routeText.includes("campaigns")) return "Marketing campaigns";
+  if (routeText.includes("review-request")) return "Review request campaigns";
+  if (routeText.includes("reputation")) return "Reputation readiness";
+  if (routeText.includes("reviews")) return "Reviews and responses";
+  if (routeText.includes("ads") || routeText.includes("ad-")) return "Advertising placements";
+  if (routeText.includes("import") || routeText.includes("extracted-entities")) return "Inventory import review";
+  if (routeText.includes("crawl")) return "Approved source crawling";
+  if (routeText.includes("data-quality")) return "Data quality review";
+  if (routeText.includes("newsroom") || routeText.includes("articles")) return "Editorial publishing";
+  if (routeText.includes("policy")) return "Trust and compliance guardrails";
+  if (routeText.includes("auth")) return "Owner access control";
+  if (routeText.includes("webhook") || routeText.includes("api-client") || routeText.includes("partner")) return "Partner integrations";
+  if (routeText.includes("system") || routeText.includes("link-health")) return "Launch readiness checks";
+
+  return "Operational workflow";
 }

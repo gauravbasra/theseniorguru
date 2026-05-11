@@ -21,6 +21,7 @@ type OperationResult = {
   status: number;
   data?: unknown;
   error?: string;
+  summary: string;
 };
 
 const launchRecords = [
@@ -53,7 +54,8 @@ export function AdminOperationsConsole() {
         ok: response.ok,
         status: response.status,
         data: payload.data,
-        error: payload.error
+        error: payload.error,
+        summary: summarizeOperation(key, payload.data)
       },
       ...current.slice(0, 7)
     ]);
@@ -220,20 +222,79 @@ export function AdminOperationsConsole() {
                 <strong>{result.label}</strong>
                 <span>{result.ok ? `HTTP ${result.status}` : result.error ?? `HTTP ${result.status}`}</span>
               </div>
-              <pre>{JSON.stringify(result.data ?? { error: result.error }, null, 2)}</pre>
+              <p>{result.ok ? result.summary : result.error ?? "Action needs attention before it can finish."}</p>
             </article>
           ))
         ) : (
           <article className="ops-result">
             <div>
               <strong>No operations run yet</strong>
-              <span>Choose an action to exercise launch operations.</span>
+              <span>Choose an action to review launch operations.</span>
             </div>
           </article>
         )}
       </div>
     </section>
   );
+}
+
+function summarizeOperation(key: string, data: unknown) {
+  const record = isRecord(data) ? data : {};
+
+  if (key === "import") {
+    return `${String(record.stagedRecords ?? 0)} listings staged, ${String(record.rejectedRecords ?? 0)} rejected, and ${String(record.totalRecords ?? 0)} reviewed.`;
+  }
+
+  if (key === "match") {
+    return `${String(record.candidateCount ?? 0)} possible duplicate matches scored before publishing.`;
+  }
+
+  if (key === "approve") {
+    return `Listing approval completed and inventory can move forward.`;
+  }
+
+  if (key === "verify") {
+    return `Claim verification step created for operator review.`;
+  }
+
+  if (key === "outreach") {
+    return `Provider claim outreach was queued with policy checks.`;
+  }
+
+  if (key === "leads") {
+    const leads = Array.isArray(data) ? data.length : Array.isArray(record.items) ? record.items.length : 0;
+    return `${leads} lead intake items are available for owner follow-up.`;
+  }
+
+  if (key === "provider-onboarding") {
+    return `Provider onboarding readiness was refreshed for claim, reputation, and growth setup.`;
+  }
+
+  if (key === "aggregation-readiness") {
+    return `Inventory launch readiness was refreshed across sources, imports, crawling, and data quality.`;
+  }
+
+  if (key === "import-plan") {
+    return `Launch import plan is ready for the 5,000-listing target.`;
+  }
+
+  if (key === "ad-readiness") {
+    return `Advertising readiness was checked for placements, disclosures, and backfill setup.`;
+  }
+
+  if (key === "report") {
+    return `Community report was created for moderation review.`;
+  }
+
+  if (key === "moderate") {
+    return `Community moderation decision was recorded.`;
+  }
+
+  return "Operation completed and the launch workspace was updated.";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function OpsButton({

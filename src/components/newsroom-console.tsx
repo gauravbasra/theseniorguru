@@ -9,6 +9,7 @@ type NewsroomResult = {
   status: number;
   data?: unknown;
   error?: string;
+  summary: string;
 };
 
 type NewsItemPayload = {
@@ -55,7 +56,8 @@ export function NewsroomConsole() {
         ok: response.ok,
         status: response.status,
         data: payload.data,
-        error: payload.error
+        error: payload.error,
+        summary: summarizeNewsroomAction(key, payload.data)
       },
       ...current.slice(0, 7)
     ]);
@@ -70,8 +72,8 @@ export function NewsroomConsole() {
           <p className="eyebrow">AI newsroom engine</p>
           <h2>Ingest, draft, publish, and repurpose with policy rails.</h2>
           <p>
-            This cockpit exercises the backend workflows for source ingestion, AI-assisted drafts, founder byline
-            publishing, and social/newsletter derivatives.
+            Turn approved senior care sources into founder-led articles, social posts, podcast briefs, and publishing
+            decisions with compliance checks built in.
           </p>
         </div>
       </div>
@@ -199,7 +201,7 @@ export function NewsroomConsole() {
                 <strong>{result.label}</strong>
                 <span>{result.ok ? `HTTP ${result.status}` : result.error ?? `HTTP ${result.status}`}</span>
               </div>
-              <pre>{JSON.stringify(result.data ?? { error: result.error }, null, 2)}</pre>
+              <p>{result.ok ? result.summary : result.error ?? "Newsroom action needs attention."}</p>
             </article>
           ))
         ) : (
@@ -213,6 +215,45 @@ export function NewsroomConsole() {
       </div>
     </section>
   );
+}
+
+function summarizeNewsroomAction(key: string, data: unknown) {
+  const record = typeof data === "object" && data !== null ? data as Record<string, unknown> : {};
+
+  if (key === "inbox") {
+    const count = Array.isArray(data) ? data.length : Array.isArray(record.items) ? record.items.length : 0;
+    return `${count} editorial source items are available for review.`;
+  }
+
+  if (key === "source") {
+    return `Source saved for editorial review and future founder commentary.`;
+  }
+
+  if (key === "draft") {
+    return `Article draft created with source attribution and approval guardrails.`;
+  }
+
+  if (key === "publish") {
+    return `Article publishing step completed or moved to the next approval state.`;
+  }
+
+  if (key === "social") {
+    return `Social derivatives prepared for distribution.`;
+  }
+
+  if (key === "podcast") {
+    return `Podcast/interview brief prepared for the content pipeline.`;
+  }
+
+  if (key === "readiness") {
+    return `Newsroom readiness refreshed across sources, approvals, drafts, and publishing checks.`;
+  }
+
+  if (key === "policy") {
+    return `Content policy check completed before publishing.`;
+  }
+
+  return "Newsroom action completed.";
 }
 
 function NewsroomButton({

@@ -12,12 +12,12 @@ export default function WorkbenchPage() {
           <p className="eyebrow">Founder workbench</p>
           <h1>Use the product, not just the pages.</h1>
           <p className="lede">
-            This screen connects the backend workflows already built for The Senior Guru into one executable console.
-            Run it to prove the platform has real services behind the interface.
+            Run a full owner workflow that imports listings, checks duplicates, saves communities, starts a care
+            circle, activates a growth plan, and measures event promotion performance.
           </p>
           <div className="actions">
             <Link className="button secondary" href="/provider">Provider dashboard</Link>
-            <Link className="button secondary" href="/api/v1/openapi">OpenAPI</Link>
+            <Link className="button secondary" href="/admin">Owner command center</Link>
           </div>
         </div>
         <aside className="workbench-status">
@@ -30,4 +30,3 @@ export default function WorkbenchPage() {
     </main>
   );
 }
-
