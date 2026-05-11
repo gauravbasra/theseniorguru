@@ -1,4 +1,7 @@
 import type {
+  AdCampaignReportingInput,
+  AdCampaignReportingPlacement,
+  AdCampaignReportingSummary,
   AdCreativeRecord,
   AdEventInput,
   AdPlacementRecord,
@@ -32,6 +35,13 @@ const seedPlacements: Record<string, AdPlacementResponse> = {
     creatives: []
   }
 };
+
+type FallbackAdEvent = AdEventInput & {
+  type: "impression" | "click";
+  recordedAt: string;
+};
+
+const fallbackAdEvents: FallbackAdEvent[] = [];
 
 const requiredPlacementKeys: Array<{ key: string; surface: AdPlacementReadinessItem["surface"] }> = [
   { key: "web.discover.top", surface: "web" },
@@ -297,6 +307,11 @@ export async function createAdCreative(input: CreateAdCreativeInput): Promise<Ad
 export async function recordAdImpression(input: AdEventInput) {
   const supabase = getSupabaseAdminClient();
 
+  if (!supabase) {
+    fallbackAdEvents.push({ ...input, type: "impression", recordedAt: new Date().toISOString() });
+    return { recorded: true };
+  }
+
   if (supabase) {
     await supabase.from("ad_impressions").insert({
       ad_creative_id: input.adCreativeId,
@@ -312,6 +327,11 @@ export async function recordAdImpression(input: AdEventInput) {
 export async function recordAdClick(input: AdEventInput) {
   const supabase = getSupabaseAdminClient();
 
+  if (!supabase) {
+    fallbackAdEvents.push({ ...input, type: "click", recordedAt: new Date().toISOString() });
+    return { recorded: true };
+  }
+
   if (supabase) {
     await supabase.from("ad_clicks").insert({
       ad_creative_id: input.adCreativeId,
@@ -323,6 +343,157 @@ export async function recordAdClick(input: AdEventInput) {
   }
 
   return { recorded: true };
+}
+
+function withinReportingWindow(recordedAt: string, filters: AdCampaignReportingInput) {
+  const recorded = new Date(recordedAt).getTime();
+  const from = filters.from ? new Date(filters.from).getTime() : undefined;
+  const to = filters.to ? new Date(filters.to).getTime() : undefined;
+
+  return (!from || recorded >= from) && (!to || recorded <= to);
+}
+
+function calculateCtr(clicks: number, impressions: number) {
+  return impressions > 0 ? Number((clicks / impressions).toFixed(4)) : 0;
+}
+
+function buildNextActions(placements: AdCampaignReportingPlacement[]) {
+  const actions: string[] = [];
+  const emptyTraffic = placements.filter((placement) => placement.activeCreatives > 0 && placement.impressions === 0);
+  const lowCtr = placements.filter((placement) => placement.impressions >= 100 && placement.ctr < 0.005);
+
+  if (emptyTraffic.length) {
+    actions.push(`Verify rendering and impression tracking for ${emptyTraffic.map((item) => item.placementKey).join(", ")}.`);
+  }
+
+  if (lowCtr.length) {
+    actions.push(`Refresh creative or targeting for low-CTR placements: ${lowCtr.map((item) => item.placementKey).join(", ")}.`);
+  }
+
+  return actions.length ? actions : ["Ad reporting is collecting measurable placement activity."];
+}
+
+export async function getAdCampaignReporting(
+  filters: AdCampaignReportingInput = {}
+): Promise<AdCampaignReportingSummary> {
+  const supabase = getSupabaseAdminClient();
+  const placements = (await listAdPlacements()).filter((placement) =>
+    filters.placementKey ? placement.placementKey === filters.placementKey : true
+  );
+
+  if (!supabase) {
+    const reportingPlacements = await Promise.all(
+      placements.map(async (placement): Promise<AdCampaignReportingPlacement> => {
+        const activeCreatives = (await getAdPlacement(placement.placementKey)).creatives.length;
+        const events = fallbackAdEvents.filter((event) =>
+          event.placementKey === placement.placementKey && withinReportingWindow(event.recordedAt, filters)
+        );
+        const impressions = events.filter((event) => event.type === "impression").length;
+        const clicks = events.filter((event) => event.type === "click").length;
+        const lastActivityAt = events
+          .map((event) => event.recordedAt)
+          .sort()
+          .at(-1);
+
+        return {
+          placementKey: placement.placementKey,
+          surface: placement.surface,
+          activeCreatives,
+          impressions,
+          clicks,
+          ctr: calculateCtr(clicks, impressions),
+          lastActivityAt
+        };
+      })
+    );
+    const totals = reportingPlacements.reduce(
+      (summary, placement) => ({
+        placements: summary.placements + 1,
+        activeCreatives: summary.activeCreatives + placement.activeCreatives,
+        impressions: summary.impressions + placement.impressions,
+        clicks: summary.clicks + placement.clicks,
+        ctr: 0
+      }),
+      { placements: 0, activeCreatives: 0, impressions: 0, clicks: 0, ctr: 0 }
+    );
+
+    totals.ctr = calculateCtr(totals.clicks, totals.impressions);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      filters,
+      totals,
+      placements: reportingPlacements,
+      nextActions: buildNextActions(reportingPlacements)
+    };
+  }
+
+  const from = filters.from ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const to = filters.to ?? new Date().toISOString();
+  const reportingPlacements = await Promise.all(
+    placements.map(async (placement): Promise<AdCampaignReportingPlacement> => {
+      const placementData = await getAdPlacement(placement.placementKey);
+      const impressionQuery = supabase
+        .from("ad_impressions")
+        .select("id,created_at", { count: "exact" })
+        .eq("placement_key", placement.placementKey)
+        .gte("created_at", from)
+        .lte("created_at", to)
+        .limit(1);
+      const clickQuery = supabase
+        .from("ad_clicks")
+        .select("id,created_at", { count: "exact" })
+        .eq("placement_key", placement.placementKey)
+        .gte("created_at", from)
+        .lte("created_at", to)
+        .limit(1);
+      const [{ count: impressions, data: impressionRows, error: impressionError }, { count: clicks, data: clickRows, error: clickError }] =
+        await Promise.all([impressionQuery, clickQuery]);
+
+      if (impressionError) {
+        throw new Error(`Ad impression reporting failed: ${impressionError.message}`);
+      }
+
+      if (clickError) {
+        throw new Error(`Ad click reporting failed: ${clickError.message}`);
+      }
+
+      const lastActivityAt = [...(impressionRows ?? []), ...(clickRows ?? [])]
+        .map((row) => String(row.created_at))
+        .sort()
+        .at(-1);
+
+      return {
+        placementKey: placement.placementKey,
+        surface: placement.surface,
+        activeCreatives: placementData.creatives.length,
+        impressions: impressions ?? 0,
+        clicks: clicks ?? 0,
+        ctr: calculateCtr(clicks ?? 0, impressions ?? 0),
+        lastActivityAt
+      };
+    })
+  );
+  const totals = reportingPlacements.reduce(
+    (summary, placement) => ({
+      placements: summary.placements + 1,
+      activeCreatives: summary.activeCreatives + placement.activeCreatives,
+      impressions: summary.impressions + placement.impressions,
+      clicks: summary.clicks + placement.clicks,
+      ctr: 0
+    }),
+    { placements: 0, activeCreatives: 0, impressions: 0, clicks: 0, ctr: 0 }
+  );
+
+  totals.ctr = calculateCtr(totals.clicks, totals.impressions);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    filters: { ...filters, from, to },
+    totals,
+    placements: reportingPlacements,
+    nextActions: buildNextActions(reportingPlacements)
+  };
 }
 
 export async function getAdReadinessSummary(): Promise<AdReadinessSummary> {

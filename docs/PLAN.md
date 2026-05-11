@@ -193,6 +193,7 @@ Deliverables:
 - Google Ad Manager/AdSense hooks.
 - Impression/click tracking.
 - Direct-sold and Google backfill ad readiness API plus admin console action. Completed.
+- Direct-sold placement reporting with impressions, clicks, CTR, and next actions. Completed.
 - Frequency caps and disclosures.
 
 ## Phase 8: AI Newsroom

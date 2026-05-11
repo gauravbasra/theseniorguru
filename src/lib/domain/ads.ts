@@ -63,6 +63,37 @@ export type AdEventInput = {
   userContext?: Record<string, unknown>;
 };
 
+export type AdCampaignReportingInput = {
+  placementKey?: string;
+  providerId?: string;
+  from?: string;
+  to?: string;
+};
+
+export type AdCampaignReportingPlacement = {
+  placementKey: string;
+  surface: AdPlacementRecord["surface"];
+  activeCreatives: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  lastActivityAt?: string;
+};
+
+export type AdCampaignReportingSummary = {
+  generatedAt: string;
+  filters: AdCampaignReportingInput;
+  totals: {
+    placements: number;
+    activeCreatives: number;
+    impressions: number;
+    clicks: number;
+    ctr: number;
+  };
+  placements: AdCampaignReportingPlacement[];
+  nextActions: string[];
+};
+
 export type AdPlacementReadinessItem = {
   placementKey: string;
   surface: "web" | "mobile" | "web_mobile" | "unknown";

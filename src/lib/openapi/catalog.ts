@@ -184,6 +184,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/ads/creatives": {
         post: { tags: ["Ads"], summary: "Create a policy-gated direct-sold ad creative" }
       },
+      "/api/v1/admin/ads/reporting": {
+        get: { tags: ["Ads"], summary: "Return direct-sold ad placement impressions, clicks, CTR, and optimization next actions" }
+      },
       "/api/v1/admin/ad-readiness": {
         get: { tags: ["Ads"], summary: "Return direct-sold and Google backfill advertising readiness" }
       },
