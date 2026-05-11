@@ -33,6 +33,9 @@ These items require owner credentials, production access, or confirmation. Imple
 
 - Review the Policy Guardrail and Governance Engine before public launch.
 - Confirm state-by-state launch markets for senior referral/disclosure review.
+- Approve each production public-source acquisition source before live ingestion, including source URL, license/terms status, robots decision, allowed adapter type, attribution requirements, and refresh cadence.
+- Confirm image handling policy for sourced listing images: storage workflow, review owner, attribution display, rejection rules, and whether any source permits reuse beyond staging.
+- Provide any official directory/API credentials or data use agreements required for CMS, state licensing, county agency, provider registry, or open data imports.
 
 ## Google Ads/Publishing
 

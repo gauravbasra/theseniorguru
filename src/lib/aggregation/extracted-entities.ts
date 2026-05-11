@@ -45,6 +45,11 @@ function mapTextArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 }
 
+function mapNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
 function mapExtractedEntity(row: Record<string, unknown>): ExtractedEntityRecord {
   return {
     id: String(row.id),
@@ -55,12 +60,33 @@ function mapExtractedEntity(row: Record<string, unknown>): ExtractedEntityRecord
     name: String(row.name),
     normalizedName: row.normalized_name ? String(row.normalized_name) : undefined,
     addressLine1: row.address_line1 ? String(row.address_line1) : undefined,
+    addressLine2: row.address_line2 ? String(row.address_line2) : undefined,
     city: row.city ? String(row.city) : undefined,
     state: row.state ? String(row.state) : undefined,
     postalCode: row.postal_code ? String(row.postal_code) : undefined,
+    county: row.county ? String(row.county) : undefined,
+    latitude: mapNumber(row.latitude),
+    longitude: mapNumber(row.longitude),
     phone: row.phone ? String(row.phone) : undefined,
+    email: row.email ? String(row.email) : undefined,
     websiteUrl: row.website_url ? String(row.website_url) : undefined,
     categories: mapTextArray(row.categories),
+    careTypes: mapTextArray(row.care_types),
+    amenities: mapTextArray(row.amenities),
+    services: mapTextArray(row.services),
+    description: row.description ? String(row.description) : undefined,
+    pricingSignals: mapJson(row.pricing_signals),
+    licenseFields: mapJson(row.license_fields),
+    accreditationFields: mapJson(row.accreditation_fields),
+    sourceUrl: row.source_url ? String(row.source_url) : undefined,
+    sourceRecordId: row.source_record_id ? String(row.source_record_id) : undefined,
+    fetchedAt: row.fetched_at ? String(row.fetched_at) : undefined,
+    licenseTermsStatus: row.license_terms_status ? String(row.license_terms_status) : undefined,
+    robotsDecision: row.robots_decision ? String(row.robots_decision) : undefined,
+    extractionConfidence: mapNumber(row.extraction_confidence),
+    duplicateMatchData: mapJson(row.duplicate_match_data),
+    imageAssets: Array.isArray(row.image_assets) ? row.image_assets : undefined,
+    auditTrail: Array.isArray(row.audit_trail) ? row.audit_trail : undefined,
     rawPayload: mapJson(row.raw_payload),
     extractedFields: mapJson(row.extracted_fields),
     confidenceScore: Number(row.confidence_score ?? 0),
@@ -116,12 +142,33 @@ export async function createExtractedEntity(input: CreateExtractedEntityInput): 
       name: input.name,
       normalizedName: input.name.toLowerCase(),
       addressLine1: input.addressLine1,
+      addressLine2: input.addressLine2,
       city: input.city,
       state: input.state,
       postalCode: input.postalCode,
+      county: input.county,
+      latitude: input.latitude,
+      longitude: input.longitude,
       phone: input.phone,
+      email: input.email,
       websiteUrl: input.websiteUrl,
       categories: input.categories ?? [],
+      careTypes: input.careTypes ?? [],
+      amenities: input.amenities ?? [],
+      services: input.services ?? [],
+      description: input.description,
+      pricingSignals: input.pricingSignals ?? {},
+      licenseFields: input.licenseFields ?? {},
+      accreditationFields: input.accreditationFields ?? {},
+      sourceUrl: input.sourceUrl,
+      sourceRecordId: input.sourceRecordId,
+      fetchedAt: input.fetchedAt,
+      licenseTermsStatus: input.licenseTermsStatus,
+      robotsDecision: input.robotsDecision,
+      extractionConfidence: input.extractionConfidence,
+      duplicateMatchData: input.duplicateMatchData ?? {},
+      imageAssets: input.imageAssets ?? [],
+      auditTrail: input.auditTrail ?? [],
       rawPayload: input.rawPayload ?? {},
       extractedFields: input.extractedFields ?? {},
       confidenceScore: input.confidenceScore ?? 0,
@@ -139,12 +186,33 @@ export async function createExtractedEntity(input: CreateExtractedEntityInput): 
       name: input.name,
       normalized_name: input.name.toLowerCase(),
       address_line1: input.addressLine1,
+      address_line2: input.addressLine2,
       city: input.city,
       state: input.state,
       postal_code: input.postalCode,
+      county: input.county,
+      latitude: input.latitude,
+      longitude: input.longitude,
       phone: input.phone,
+      email: input.email,
       website_url: input.websiteUrl,
       categories: input.categories ?? [],
+      care_types: input.careTypes ?? [],
+      amenities: input.amenities ?? [],
+      services: input.services ?? [],
+      description: input.description,
+      pricing_signals: input.pricingSignals ?? {},
+      license_fields: input.licenseFields ?? {},
+      accreditation_fields: input.accreditationFields ?? {},
+      source_url: input.sourceUrl,
+      source_record_id: input.sourceRecordId,
+      fetched_at: input.fetchedAt,
+      license_terms_status: input.licenseTermsStatus,
+      robots_decision: input.robotsDecision,
+      extraction_confidence: input.extractionConfidence ?? input.confidenceScore ?? 0,
+      duplicate_match_data: input.duplicateMatchData ?? {},
+      image_assets: input.imageAssets ?? [],
+      audit_trail: input.auditTrail ?? [],
       raw_payload: input.rawPayload ?? {},
       extracted_fields: input.extractedFields ?? {},
       confidence_score: input.confidenceScore ?? 0
@@ -154,6 +222,29 @@ export async function createExtractedEntity(input: CreateExtractedEntityInput): 
 
   if (error) {
     throw new Error(`Extracted entity staging failed: ${error.message}`);
+  }
+
+  if (input.imageAssets?.length) {
+    const { error: imageError } = await supabase.from("extracted_entity_images").upsert(
+      input.imageAssets.map((image, index) => ({
+        extracted_entity_id: data.id,
+        image_url: image.url,
+        source_url: image.sourceUrl,
+        fetched_at: image.fetchedAt,
+        license_terms_status: image.licenseTermsStatus,
+        robots_decision: image.robotsDecision,
+        review_status: image.reviewStatus,
+        storage_status: image.storageStatus,
+        alt_text: image.altText,
+        credit: image.credit,
+        ordinal: image.ordinal ?? index + 1
+      })),
+      { onConflict: "extracted_entity_id,image_url" }
+    );
+
+    if (imageError) {
+      throw new Error(`Extracted entity image staging failed: ${imageError.message}`);
+    }
   }
 
   return mapExtractedEntity(data);
@@ -335,4 +426,3 @@ async function publishProviderFromEntity(entity: Record<string, unknown>, matche
 
   return providerId;
 }
-

@@ -300,6 +300,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/current-site-inventory/import": {
         post: { tags: ["Aggregation"], summary: "Run current Senior Guru inventory import into the staging pipeline" }
       },
+      "/api/v1/admin/public-source-acquisition/sample-run": {
+        post: { tags: ["Aggregation"], summary: "Run a seeded public-source acquisition batch with provenance, image, and quality reporting" }
+      },
       "/api/v1/admin/aggregation-readiness": {
         get: { tags: ["Aggregation"], summary: "Return launch import, crawler, source, and quality readiness summary" }
       },

@@ -32,15 +32,34 @@ export type CreateImportBatchInput = {
 
 export type ImportRecordInput = {
   name?: string;
+  categories?: string[];
+  careTypes?: string[];
   addressLine1?: string;
+  addressLine2?: string;
   city?: string;
   state?: string;
   postalCode?: string;
+  county?: string;
+  latitude?: number;
+  longitude?: number;
   phone?: string;
+  email?: string;
   websiteUrl?: string;
-  categories?: string[];
+  description?: string;
+  amenities?: string[];
+  services?: string[];
+  pricingSignals?: Record<string, unknown>;
+  licenseFields?: Record<string, unknown>;
+  accreditationFields?: Record<string, unknown>;
   sourceUrl?: string;
   sourceRecordId?: string;
+  fetchedAt?: string;
+  licenseTermsStatus?: string;
+  robotsDecision?: string;
+  extractionConfidence?: number;
+  duplicateMatchData?: Record<string, unknown>;
+  imageAssets?: import("@/lib/domain/entities").StagedListingImageRecord[];
+  auditTrail?: import("@/lib/domain/entities").StagedListingAuditEvent[];
   confidenceScore?: number;
   rawPayload?: Record<string, unknown>;
   extractedFields?: Record<string, unknown>;

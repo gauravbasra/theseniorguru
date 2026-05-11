@@ -61,6 +61,7 @@ const requiredTables: RequiredTable[] = [
   { table: "import_batches", requiredFor: "Aggregation import jobs", capability: "aggregation" },
   { table: "crawl_jobs", requiredFor: "Crawler control plane", capability: "aggregation" },
   { table: "extracted_entities", requiredFor: "Inventory staging review", capability: "aggregation" },
+  { table: "extracted_entity_images", requiredFor: "Public-source image staging review", capability: "aggregation" },
   { table: "entity_match_candidates", requiredFor: "Duplicate detection", capability: "aggregation" },
   { table: "provider_claims", requiredFor: "Free listing claim workflow", capability: "claims" },
   { table: "provider_verification_attempts", requiredFor: "Claim verification workflow", capability: "claims" },

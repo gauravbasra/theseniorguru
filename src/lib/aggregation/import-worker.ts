@@ -16,22 +16,56 @@ function normalizeCategories(value: unknown) {
   return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 10) : [];
 }
 
+function normalizeTextArray(value: unknown, limit = 25) {
+  return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean).slice(0, limit) : [];
+}
+
+function normalizeNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
 function normalizeRecord(record: ImportRecordInput) {
   return {
     name: record.name?.trim(),
     addressLine1: record.addressLine1?.trim(),
+    addressLine2: record.addressLine2?.trim(),
     city: record.city?.trim(),
     state: record.state?.trim().toUpperCase(),
     postalCode: record.postalCode?.trim(),
+    county: record.county?.trim(),
+    latitude: normalizeNumber(record.latitude),
+    longitude: normalizeNumber(record.longitude),
     phone: record.phone?.trim(),
+    email: record.email?.trim(),
     websiteUrl: record.websiteUrl?.trim(),
     categories: normalizeCategories(record.categories),
+    careTypes: normalizeTextArray(record.careTypes),
+    amenities: normalizeTextArray(record.amenities),
+    services: normalizeTextArray(record.services),
+    description: record.description?.trim(),
+    pricingSignals: record.pricingSignals ?? {},
+    licenseFields: record.licenseFields ?? {},
+    accreditationFields: record.accreditationFields ?? {},
+    sourceUrl: record.sourceUrl?.trim(),
+    sourceRecordId: record.sourceRecordId?.trim(),
+    fetchedAt: record.fetchedAt,
+    licenseTermsStatus: record.licenseTermsStatus ?? "unknown",
+    robotsDecision: record.robotsDecision ?? "unknown",
+    extractionConfidence: Math.max(0, Math.min(1, Number(record.extractionConfidence ?? record.confidenceScore ?? 0.5))),
+    duplicateMatchData: record.duplicateMatchData ?? {},
+    imageAssets: Array.isArray(record.imageAssets) ? record.imageAssets.slice(0, 12) : [],
+    auditTrail: Array.isArray(record.auditTrail) ? record.auditTrail.slice(0, 25) : [],
     confidenceScore: Math.max(0, Math.min(1, Number(record.confidenceScore ?? 0.5))),
     rawPayload: record.rawPayload ?? record,
     extractedFields: {
       ...(record.extractedFields ?? {}),
       sourceUrl: record.sourceUrl,
-      sourceRecordId: record.sourceRecordId
+      sourceRecordId: record.sourceRecordId,
+      fetchedAt: record.fetchedAt,
+      licenseTermsStatus: record.licenseTermsStatus,
+      robotsDecision: record.robotsDecision,
+      imageCount: Array.isArray(record.imageAssets) ? record.imageAssets.length : 0
     }
   };
 }
@@ -193,12 +227,33 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
         entityType: "provider",
         name,
         addressLine1: normalized.addressLine1,
+        addressLine2: normalized.addressLine2,
         city: normalized.city,
         state: normalized.state,
         postalCode: normalized.postalCode,
+        county: normalized.county,
+        latitude: normalized.latitude,
+        longitude: normalized.longitude,
         phone: normalized.phone,
+        email: normalized.email,
         websiteUrl: normalized.websiteUrl,
         categories: normalized.categories,
+        careTypes: normalized.careTypes,
+        amenities: normalized.amenities,
+        services: normalized.services,
+        description: normalized.description,
+        pricingSignals: normalized.pricingSignals,
+        licenseFields: normalized.licenseFields,
+        accreditationFields: normalized.accreditationFields,
+        sourceUrl: normalized.sourceUrl,
+        sourceRecordId: normalized.sourceRecordId,
+        fetchedAt: normalized.fetchedAt,
+        licenseTermsStatus: normalized.licenseTermsStatus,
+        robotsDecision: normalized.robotsDecision,
+        extractionConfidence: normalized.extractionConfidence,
+        duplicateMatchData: normalized.duplicateMatchData,
+        imageAssets: normalized.imageAssets,
+        auditTrail: normalized.auditTrail,
         rawPayload: normalized.rawPayload,
         extractedFields: normalized.extractedFields,
         confidenceScore: normalized.confidenceScore
