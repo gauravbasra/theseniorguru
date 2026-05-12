@@ -96,6 +96,7 @@ Deliverables:
 - Admin lead intake queue API and operations console action. Completed.
 - Supabase migration manifest and live table readiness API. Completed.
 - Protected Supabase production readiness API and admin console for persistence mode, migration coverage, and blocked capability tracking. Completed.
+- Protected Supabase migration bundle API with ordered checksums and admin console action. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 

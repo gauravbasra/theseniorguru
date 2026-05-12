@@ -45,7 +45,7 @@ type RequiredColumn = RequiredTable & {
   column: string;
 };
 
-const migrationManifest = [
+export const migrationManifest = [
   "20260510000000_senior_platform_foundation.sql",
   "20260510001000_aggregation_pipeline.sql",
   "20260510002000_claim_verification_engine.sql",
@@ -78,7 +78,7 @@ const migrationManifest = [
   "20260511202000_event_reminder_followups.sql"
 ];
 
-const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
+export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
   "20260510000000_senior_platform_foundation.sql": {
     capability: "directory",
     summary: "Core provider directory, locations, categories, provenance, and family inquiry foundation."

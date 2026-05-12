@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import { Database, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { Database, FileCode2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import type { SupabaseMigrationBundle } from "@/lib/system/supabase-migration-bundle";
 import type { getSupabaseLaunchReadiness } from "@/lib/system/supabase-launch-readiness";
 
 type SupabaseLaunchReadiness = Awaited<ReturnType<typeof getSupabaseLaunchReadiness>>;
@@ -23,6 +24,8 @@ function statusLabel(value: string) {
 export function SupabaseReadinessConsole({ initialReadiness }: SupabaseReadinessConsoleProps) {
   const [readiness, setReadiness] = useState(initialReadiness);
   const [loading, setLoading] = useState(false);
+  const [bundleLoading, setBundleLoading] = useState(false);
+  const [bundle, setBundle] = useState<SupabaseMigrationBundle | null>(null);
   const [actionState, setActionState] = useState<ActionState>(null);
 
   async function refreshReadiness() {
@@ -40,6 +43,24 @@ export function SupabaseReadinessConsole({ initialReadiness }: SupabaseReadiness
       message: response.ok
         ? `Supabase readiness refreshed: ${statusLabel(payload.data?.launchDecision ?? readiness.launchDecision)}.`
         : payload.error ?? "Supabase readiness refresh failed."
+    });
+  }
+
+  async function loadMigrationBundle() {
+    setBundleLoading(true);
+    const response = await fetch("/api/v1/admin/supabase-migration-bundle");
+    const payload = await response.json().catch(() => ({}));
+    setBundleLoading(false);
+
+    if (response.ok && payload.data) {
+      setBundle(payload.data);
+    }
+
+    setActionState({
+      ok: response.ok,
+      message: response.ok
+        ? `Migration bundle ready: ${payload.data?.migrationCount ?? 0} files, checksum ${String(payload.data?.bundleSha256 ?? "").slice(0, 12)}.`
+        : payload.error ?? "Migration bundle generation failed."
     });
   }
 
@@ -126,6 +147,21 @@ export function SupabaseReadinessConsole({ initialReadiness }: SupabaseReadiness
           <strong>{readiness.nextActions.length ? "Next backend action" : "Supabase backend ready"}</strong>
           <p>{readiness.nextActions[0] ?? "Persistent imports, claims, ads, newsroom, reviews, and Open API workflows can use Supabase."}</p>
         </div>
+
+        <button className="icon-text-button full-width-action" type="button" disabled={bundleLoading} onClick={loadMigrationBundle}>
+          {bundleLoading ? <Loader2 className="spin-icon" aria-hidden="true" /> : <FileCode2 aria-hidden="true" />}
+          Build migration bundle
+        </button>
+
+        {bundle ? (
+          <div className="migration-bundle-card">
+            <span>
+              <strong>{bundle.migrationCount} migrations</strong>
+              <small>{bundle.totalBytes.toLocaleString()} bytes ordered for Supabase SQL Editor</small>
+            </span>
+            <code>{bundle.bundleSha256.slice(0, 24)}</code>
+          </div>
+        ) : null}
 
         {readiness.migrationPlan.ownerParkedItems.length ? (
           <p className="claim-hint">{readiness.migrationPlan.ownerParkedItems[0]}</p>
