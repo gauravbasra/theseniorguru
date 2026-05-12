@@ -3159,6 +3159,21 @@ button.open-api-row {
   line-height: 1.25;
 }
 
+.attendance-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+}
+
 .admin-chart-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

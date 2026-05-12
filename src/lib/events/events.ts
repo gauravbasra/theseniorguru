@@ -1,4 +1,11 @@
-import type { CreateEventInput, EventRecord, EventRsvpInput, EventRsvpRecord } from "@/lib/domain/events";
+import type {
+  CreateEventInput,
+  EventAttendanceInput,
+  EventAttendanceRecord,
+  EventRecord,
+  EventRsvpInput,
+  EventRsvpRecord
+} from "@/lib/domain/events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -23,6 +30,7 @@ const seedEvents: EventRecord[] = [
   }
 ];
 const seedRsvps: EventRsvpRecord[] = [];
+const seedAttendance: EventAttendanceRecord[] = [];
 
 function slugify(value: string) {
   return value
@@ -192,6 +200,126 @@ export async function createEventRsvp(input: EventRsvpInput): Promise<EventRsvpR
     status: data.status,
     consentPayload: data.consent_payload ?? {},
     createdAt: data.created_at
+  };
+}
+
+export async function recordEventAttendance(input: EventAttendanceInput): Promise<EventAttendanceRecord> {
+  if (!["attended", "no_show"].includes(input.status)) {
+    throw new Error("Attendance status must be attended or no_show");
+  }
+
+  const event = await getEventById(input.eventId);
+
+  if (!event) {
+    throw new Error("Event not found");
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const checkedInAt = input.checkedInAt ?? new Date().toISOString();
+  const attendanceSource = input.attendanceSource ?? "provider_console";
+
+  if (!supabase) {
+    const rsvpIndex = seedRsvps.findIndex((rsvp) => rsvp.id === input.rsvpId && rsvp.eventId === event.id);
+
+    if (rsvpIndex === -1) {
+      throw new Error("RSVP not found");
+    }
+
+    const rsvp = {
+      ...seedRsvps[rsvpIndex],
+      status: input.status
+    };
+    seedRsvps[rsvpIndex] = rsvp;
+
+    const existingIndex = seedAttendance.findIndex((record) => record.eventId === event.id && record.rsvpId === input.rsvpId);
+    const record: EventAttendanceRecord = {
+      id: existingIndex >= 0 ? seedAttendance[existingIndex].id : `event-attendance-${Date.now()}`,
+      eventId: event.id,
+      rsvpId: input.rsvpId,
+      status: input.status,
+      checkedInAt: input.status === "attended" ? checkedInAt : undefined,
+      attendanceSource,
+      notes: input.notes,
+      actorId: input.actorId,
+      createdAt: existingIndex >= 0 ? seedAttendance[existingIndex].createdAt : new Date().toISOString(),
+      rsvp
+    };
+
+    if (existingIndex >= 0) {
+      seedAttendance[existingIndex] = record;
+    } else {
+      seedAttendance.unshift(record);
+    }
+
+    return record;
+  }
+
+  const { data: rsvp, error: rsvpError } = await supabase
+    .from("event_rsvps")
+    .update({ status: input.status })
+    .eq("id", input.rsvpId)
+    .eq("event_id", event.id)
+    .select("*")
+    .single();
+
+  if (rsvpError) {
+    throw new Error(`Event RSVP attendance update failed: ${rsvpError.message}`);
+  }
+
+  const { data: attendance, error: attendanceError } = await supabase
+    .from("event_attendance")
+    .upsert(
+      {
+        event_id: event.id,
+        rsvp_id: input.rsvpId,
+        status: input.status,
+        checked_in_at: input.status === "attended" ? checkedInAt : null,
+        attendance_source: attendanceSource,
+        notes: input.notes,
+        actor_id: input.actorId
+      },
+      { onConflict: "event_id,rsvp_id" }
+    )
+    .select("*")
+    .single();
+
+  if (attendanceError) {
+    throw new Error(`Event attendance record failed: ${attendanceError.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    event_type: "event_attendance.recorded",
+    subject_type: "event",
+    subject_id: event.id,
+    metadata: {
+      rsvpId: input.rsvpId,
+      status: input.status,
+      attendanceSource
+    }
+  });
+
+  return {
+    id: attendance.id,
+    eventId: attendance.event_id,
+    rsvpId: attendance.rsvp_id,
+    status: attendance.status,
+    checkedInAt: attendance.checked_in_at ?? undefined,
+    attendanceSource: attendance.attendance_source,
+    notes: attendance.notes ?? undefined,
+    actorId: attendance.actor_id ?? undefined,
+    createdAt: attendance.created_at,
+    rsvp: {
+      id: rsvp.id,
+      eventId: rsvp.event_id,
+      attendeeName: rsvp.attendee_name,
+      attendeeEmail: rsvp.attendee_email,
+      attendeePhone: rsvp.attendee_phone ?? undefined,
+      partySize: rsvp.party_size,
+      status: rsvp.status,
+      consentPayload: rsvp.consent_payload ?? {},
+      createdAt: rsvp.created_at
+    }
   };
 }
 

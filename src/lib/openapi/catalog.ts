@@ -127,6 +127,9 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/events/{id}/analytics": {
         get: { tags: ["Events"], summary: "Get RSVP, promotion, impression, and click analytics for a provider event" }
       },
+      "/api/v1/provider/events/{id}/attendance": {
+        post: { tags: ["Events"], summary: "Record attended or no-show status for an event RSVP and update event analytics" }
+      },
       "/api/v1/admin/event-automation/run": {
         post: { tags: ["Events"], summary: "Queue idempotent event reminders and post-event follow-ups for RSVPs" }
       },

@@ -75,7 +75,8 @@ export const migrationManifest = [
   "20260511134452_add_webhook_signing_ciphertext.sql",
   "20260511141401_scheduled_worker_runs.sql",
   "20260511142434_approved_current_site_source.sql",
-  "20260511202000_event_reminder_followups.sql"
+  "20260511202000_event_reminder_followups.sql",
+  "20260512034500_event_attendance_capture.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -198,6 +199,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260511202000_event_reminder_followups.sql": {
     capability: "events",
     summary: "Event reminder and post-event follow-up queues for provider event retention automation."
+  },
+  "20260512034500_event_attendance_capture.sql": {
+    capability: "events",
+    summary: "Event attendance capture and no-show tracking for RSVP conversion analytics."
   }
 };
 
@@ -221,6 +226,7 @@ const requiredTables: RequiredTable[] = [
   { table: "event_rsvps", requiredFor: "Family event RSVP capture", capability: "events" },
   { table: "event_reminders", requiredFor: "Event reminder automation", capability: "events" },
   { table: "event_followups", requiredFor: "Post-event follow-up automation", capability: "events" },
+  { table: "event_attendance", requiredFor: "Event attendance and no-show capture", capability: "events" },
   { table: "communities", requiredFor: "Local community groups", capability: "community" },
   { table: "community_memberships", requiredFor: "Local community membership graph", capability: "community" },
   { table: "community_invitations", requiredFor: "Community invitation delivery", capability: "community" },

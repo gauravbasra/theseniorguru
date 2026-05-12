@@ -171,6 +171,7 @@ Deliverables:
 - Event promotion products.
 - Sponsored event promotion creation and activation. Completed.
 - Reminder/follow-up automation. Completed.
+- Attendance and no-show capture with analytics update. Completed.
 - Event analytics. Completed.
 
 ## Phase 5: Community and Mobile API

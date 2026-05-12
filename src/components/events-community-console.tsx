@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BellRing, CalendarPlus, CheckCircle2, Loader2, Megaphone, Send, UsersRound } from "lucide-react";
+import { BellRing, CalendarPlus, CheckCircle2, ClipboardCheck, Loader2, Megaphone, Send, UsersRound } from "lucide-react";
 import type { CommunityGroupRecord, CommunityInvitationRecord, CommunityPostRecord, ExpertProfileRecord } from "@/lib/domain/community";
-import type { EventAnalyticsSummary, EventAutomationRunSummary, EventPromotionRecord, EventRecord } from "@/lib/domain/events";
+import type { EventAnalyticsSummary, EventAutomationRunSummary, EventRsvpRecord, EventPromotionRecord, EventRecord } from "@/lib/domain/events";
 
 type EventsCommunityConsoleProps = {
   initialEvents: EventRecord[];
@@ -30,6 +30,7 @@ export function EventsCommunityConsole({
   const [promotions, setPromotions] = useState<EventPromotionRecord[]>([]);
   const [analytics, setAnalytics] = useState<EventAnalyticsSummary | null>(null);
   const [automation, setAutomation] = useState<EventAutomationRunSummary | null>(null);
+  const [latestRsvp, setLatestRsvp] = useState<EventRsvpRecord | null>(null);
   const [groups, setGroups] = useState(initialGroups);
   const [selectedGroupId, setSelectedGroupId] = useState(initialGroups[0]?.id ?? "");
   const [invitations, setInvitations] = useState<CommunityInvitationRecord[]>([]);
@@ -121,7 +122,7 @@ export function EventsCommunityConsole({
   async function createRsvp() {
     if (!selectedEventId) return;
 
-    await runAction(
+    const data = await runAction<EventRsvpRecord>(
       "rsvp",
       () => fetch(`/api/v1/events/${selectedEventId}/rsvp`, {
         method: "POST",
@@ -136,8 +137,10 @@ export function EventsCommunityConsole({
           }
         })
       }),
-      () => "Family RSVP captured with consent payload."
+      (rsvp) => `${rsvp.attendeeName} RSVP captured with consent payload.`
     );
+
+    if (data) setLatestRsvp(data);
   }
 
   async function createPromotion() {
@@ -209,6 +212,31 @@ export function EventsCommunityConsole({
     );
 
     if (data) setAutomation(data);
+  }
+
+  async function recordAttendance(status: "attended" | "no_show") {
+    if (!selectedEventId || !latestRsvp) return;
+
+    const data = await runAction(
+      `attendance-${status}`,
+      () => fetch(`/api/v1/provider/events/${selectedEventId}/attendance`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          rsvpId: latestRsvp.id,
+          status,
+          checkedInAt: new Date().toISOString(),
+          attendanceSource: "admin_events_community_console",
+          notes: status === "attended" ? "Checked in from owner console." : "Marked no-show from owner console.",
+          actorId
+        })
+      }),
+      () => `RSVP marked ${status.replaceAll("_", " ")} and analytics can refresh.`
+    );
+
+    if (data) {
+      await loadAnalytics();
+    }
   }
 
   async function createGroup() {
@@ -418,6 +446,17 @@ export function EventsCommunityConsole({
           <button className="button primary" type="button" disabled={Boolean(loadingKey)} onClick={createEvent}>Create event</button>
           <button className="button secondary" type="button" disabled={!selectedEventId || Boolean(loadingKey)} onClick={createRsvp}>Add RSVP</button>
           <button className="button secondary" type="button" disabled={!selectedEventId || Boolean(loadingKey)} onClick={loadAnalytics}>Analytics</button>
+        </div>
+
+        <div className="events-community-actions-grid">
+          <button className="small-action approve" type="button" disabled={!latestRsvp || Boolean(loadingKey)} onClick={() => recordAttendance("attended")}>
+            {loadingKey === "attendance-attended" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <ClipboardCheck aria-hidden="true" />}
+            Attended
+          </button>
+          <button className="small-action" type="button" disabled={!latestRsvp || Boolean(loadingKey)} onClick={() => recordAttendance("no_show")}>
+            No-show
+          </button>
+          <span className="attendance-chip">{analytics?.rsvps.attended ?? 0} attended</span>
         </div>
 
         <div className="events-community-actions-grid">

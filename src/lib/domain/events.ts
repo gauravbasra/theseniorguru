@@ -53,6 +53,31 @@ export type EventRsvpRecord = EventRsvpInput & {
   createdAt: string;
 };
 
+export type EventAttendanceDecision = "attended" | "no_show";
+
+export type EventAttendanceInput = {
+  eventId: string;
+  rsvpId: string;
+  status: EventAttendanceDecision;
+  checkedInAt?: string;
+  attendanceSource?: string;
+  notes?: string;
+  actorId?: string;
+};
+
+export type EventAttendanceRecord = {
+  id: string;
+  eventId: string;
+  rsvpId: string;
+  status: EventAttendanceDecision;
+  checkedInAt?: string;
+  attendanceSource: string;
+  notes?: string;
+  actorId?: string;
+  createdAt: string;
+  rsvp: EventRsvpRecord;
+};
+
 export type EventPromotionStatus = "draft" | "pending_policy" | "active" | "paused" | "completed" | "blocked";
 
 export type EventPromotionRecord = {

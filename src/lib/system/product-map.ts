@@ -138,6 +138,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/provider/events",
       "POST /api/v1/provider/events/{id}/promotions",
       "GET /api/v1/provider/events/{id}/analytics",
+      "POST /api/v1/provider/events/{id}/attendance",
       "POST /api/v1/admin/event-automation/run",
       "GET /api/cron/operations"
     ],
@@ -150,7 +151,7 @@ const productPillars: ProductPillar[] = [
       "event_followups",
       "event_attendance"
     ],
-    nextBackendWork: ["Attendance capture", "Provider-facing event reminder reporting"]
+    nextBackendWork: ["Provider-facing event reminder reporting", "Attendance-driven follow-up segmentation"]
   },
   {
     key: "growth",
