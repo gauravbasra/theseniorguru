@@ -472,6 +472,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="Replace rules"
+          loading={loadingKey === "provider-website-parser-rule-replace"}
+          onClick={() =>
+            runOperation("Provider website parser rule replacement", "provider-website-parser-rule-replace", () =>
+              fetch("/api/v1/admin/provider-website-parser/rules/replace", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<Send aria-hidden="true" />}
           label="Retry escalations"
           loading={loadingKey === "escalation-retry-scheduler"}
@@ -718,6 +732,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "provider-website-parser-rule-rollback") {
     const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
     return `${String(candidates)} active parser rule override rollback candidate${candidates === 1 ? "" : "s"} found, dry-run ${String(record.dryRun)}.`;
+  }
+
+  if (key === "provider-website-parser-rule-replace") {
+    const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
+    return `${String(candidates)} active parser rule override replacement candidate${candidates === 1 ? "" : "s"} found, dry-run ${String(record.dryRun)}.`;
   }
 
   if (key === "escalation-retry-scheduler") {

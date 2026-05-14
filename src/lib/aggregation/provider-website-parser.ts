@@ -13,6 +13,8 @@ import type {
   ProviderWebsiteParserRuleOverrideInput,
   ProviderWebsiteParserRuleOverrideAuditSummary,
   ProviderWebsiteParserRuleOverrideRecord,
+  ProviderWebsiteParserRuleOverrideReplaceInput,
+  ProviderWebsiteParserRuleOverrideReplaceResult,
   ProviderWebsiteParserRuleOverrideRollbackInput,
   ProviderWebsiteParserRuleOverrideRollbackResult,
   ProviderWebsiteParserRuleReadinessSource,
@@ -110,6 +112,29 @@ function withOverrideSource(override: ProviderWebsiteParserRuleOverrideRecord, s
   return {
     ...override,
     dataSourceName: override.dataSourceName ?? sources.find((source) => source.id === override.dataSourceId)?.name
+  };
+}
+
+function buildOverrideRecord(
+  input: ProviderWebsiteParserRuleOverrideInput,
+  source: DataSourceRecord,
+  now: string,
+  existing?: ProviderWebsiteParserRuleOverrideRecord
+): ProviderWebsiteParserRuleOverrideRecord {
+  return {
+    id: existing?.id ?? `provider-website-rule-override-${Date.now()}`,
+    dataSourceId: source.id,
+    dataSourceName: source.name,
+    minConfidence: Math.max(0.35, Math.min(0.95, input.minConfidence ?? existing?.minConfidence ?? 0.55)),
+    minContentCharacters: Math.max(90, Math.min(2000, Math.floor(input.minContentCharacters ?? existing?.minContentCharacters ?? 220))),
+    serviceKeywords: cleanKeywordArray(input.serviceKeywords, existing?.serviceKeywords ?? serviceKeywords),
+    conversionKeywords: cleanKeywordArray(input.conversionKeywords, existing?.conversionKeywords ?? tourKeywords),
+    pricingKeywords: cleanKeywordArray(input.pricingKeywords, existing?.pricingKeywords ?? pricingKeywords),
+    status: input.status ?? existing?.status ?? "active",
+    approvedBy: input.approvedBy ?? existing?.approvedBy,
+    notes: input.notes ?? existing?.notes,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now
   };
 }
 
@@ -377,24 +402,8 @@ export async function upsertProviderWebsiteParserRuleOverride(
     throw new Error("Parser rule overrides require an approved provider website source");
   }
 
-  const minConfidence = Math.max(0.35, Math.min(0.95, input.minConfidence ?? 0.55));
-  const minContentCharacters = Math.max(90, Math.min(2000, Math.floor(input.minContentCharacters ?? 220)));
   const now = new Date().toISOString();
-  const record: ProviderWebsiteParserRuleOverrideRecord = {
-    id: `provider-website-rule-override-${Date.now()}`,
-    dataSourceId: source.id,
-    dataSourceName: source.name,
-    minConfidence,
-    minContentCharacters,
-    serviceKeywords: cleanKeywordArray(input.serviceKeywords, serviceKeywords),
-    conversionKeywords: cleanKeywordArray(input.conversionKeywords, tourKeywords),
-    pricingKeywords: cleanKeywordArray(input.pricingKeywords, pricingKeywords),
-    status: input.status ?? "active",
-    approvedBy: input.approvedBy,
-    notes: input.notes,
-    createdAt: now,
-    updatedAt: now
-  };
+  const record = buildOverrideRecord(input, source, now);
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
@@ -473,6 +482,153 @@ async function recordProviderWebsiteParserRuleOverrideAudit(
       notes: override.notes
     }
   });
+}
+
+export async function replaceProviderWebsiteParserRuleOverride(
+  input: ProviderWebsiteParserRuleOverrideReplaceInput
+): Promise<ProviderWebsiteParserRuleOverrideReplaceResult> {
+  const dryRun = input.dryRun ?? true;
+  const sources = await listDataSources();
+  const overrides = await listProviderWebsiteParserRuleOverrides();
+  const activeOverrides = overrides.filter((override) => override.status === "active");
+
+  if (dryRun && !input.dataSourceId) {
+    return {
+      generatedAt: new Date().toISOString(),
+      dryRun,
+      status: "preview",
+      candidates: activeOverrides,
+      nextActions: activeOverrides.length
+        ? ["Select an active parser rule override, provide replacement thresholds or keywords, and run live replacement after parser dry-run review."]
+        : ["No active provider website parser rule overrides are available for replacement."]
+    };
+  }
+
+  const source = sources.find((item) => item.id === input.dataSourceId);
+
+  if (!source) {
+    throw new Error("Data source not found");
+  }
+
+  if (source.sourceType !== "provider_website") {
+    throw new Error("Parser rule replacement requires a provider website data source");
+  }
+
+  if (source.reviewStatus !== "approved") {
+    throw new Error("Parser rule replacement requires an approved provider website source");
+  }
+
+  const existing = activeOverrides.find((override) => override.dataSourceId === input.dataSourceId);
+
+  if (!existing) {
+    throw new Error("Active provider website parser rule override not found");
+  }
+
+  const now = new Date().toISOString();
+  const replacement = buildOverrideRecord({ ...input, status: "active" }, source, now, existing);
+
+  if (dryRun) {
+    return {
+      generatedAt: now,
+      dryRun,
+      status: "preview",
+      candidates: [existing],
+      previousOverride: existing,
+      replacementPreview: replacement,
+      nextActions: [
+        "Run provider website parser rule readiness against the replacement values before live replacement.",
+        "Run live replacement only after confirming parser dry-run impact and approval notes."
+      ]
+    };
+  }
+
+  const supabase = getSupabaseAdminClient();
+  let saved: ProviderWebsiteParserRuleOverrideRecord;
+
+  if (!supabase) {
+    const existingIndex = localRuleOverrides.findIndex((override) => override.id === existing.id);
+
+    if (existingIndex >= 0) {
+      localRuleOverrides[existingIndex] = replacement;
+      saved = withOverrideSource(localRuleOverrides[existingIndex], sources);
+    } else {
+      localRuleOverrides.unshift(replacement);
+      saved = replacement;
+    }
+  } else {
+    const { data, error } = await supabase
+      .from("provider_website_parser_rule_overrides")
+      .update({
+        min_confidence: replacement.minConfidence,
+        min_content_characters: replacement.minContentCharacters,
+        service_keywords: replacement.serviceKeywords,
+        conversion_keywords: replacement.conversionKeywords,
+        pricing_keywords: replacement.pricingKeywords,
+        status: "active",
+        approved_by: replacement.approvedBy,
+        notes: replacement.notes,
+        updated_at: now
+      })
+      .eq("data_source_id", input.dataSourceId)
+      .select("*")
+      .single();
+
+    if (error) {
+      if (!isMissingOverrideTableError(error)) {
+        throw new Error(`Provider website parser rule override replacement failed: ${error.message}`);
+      }
+
+      saved = replacement;
+    } else {
+      saved = mapRuleOverride(data, sources);
+    }
+  }
+
+  const audit = await recordAuditEvent({
+    actorId: input.actorId ?? input.approvedBy,
+    actorType: input.actorId || input.approvedBy ? "admin" : "system",
+    eventType: "provider_website_parser.rule_override_replaced",
+    subjectType: "provider_website_parser_rule_override",
+    subjectId: saved.id,
+    payload: {
+      overrideId: saved.id,
+      dataSourceId: saved.dataSourceId,
+      dataSourceName: saved.dataSourceName ?? source.name,
+      previous: {
+        minConfidence: existing.minConfidence,
+        minContentCharacters: existing.minContentCharacters,
+        serviceKeywords: existing.serviceKeywords,
+        conversionKeywords: existing.conversionKeywords,
+        pricingKeywords: existing.pricingKeywords,
+        notes: existing.notes
+      },
+      replacement: {
+        minConfidence: saved.minConfidence,
+        minContentCharacters: saved.minContentCharacters,
+        serviceKeywords: saved.serviceKeywords,
+        conversionKeywords: saved.conversionKeywords,
+        pricingKeywords: saved.pricingKeywords,
+        notes: saved.notes
+      },
+      approvedBy: input.approvedBy,
+      reason: input.reason,
+      actorId: input.actorId
+    }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    status: "replaced",
+    candidates: [saved],
+    previousOverride: existing,
+    replacement: saved,
+    auditEventId: audit.id,
+    nextActions: [
+      "Run provider website parser rule readiness to confirm the replacement profile is now active.",
+      "Monitor staged provider website parser entities for confidence, category, and contact quality after replacement."
+    ]
+  };
 }
 
 export async function rollbackProviderWebsiteParserRuleOverride(
@@ -602,7 +758,7 @@ export async function rollbackProviderWebsiteParserRuleOverride(
 }
 
 export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promise<ProviderWebsiteParserRuleOverrideAuditSummary> {
-  const [overrides, upsertAuditSummary, rollbackAuditSummary] = await Promise.all([
+  const [overrides, upsertAuditSummary, rollbackAuditSummary, replacementAuditSummary] = await Promise.all([
     listProviderWebsiteParserRuleOverrides(),
     listAuditEvents({
       eventType: "provider_website_parser.rule_override_upserted",
@@ -613,9 +769,14 @@ export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promis
       eventType: "provider_website_parser.rule_override_rolled_back",
       subjectType: "provider_website_parser_rule_override",
       limit: 250
+    }),
+    listAuditEvents({
+      eventType: "provider_website_parser.rule_override_replaced",
+      subjectType: "provider_website_parser_rule_override",
+      limit: 250
     })
   ]);
-  const auditEvents = [...upsertAuditSummary.events, ...rollbackAuditSummary.events].sort(
+  const auditEvents = [...upsertAuditSummary.events, ...rollbackAuditSummary.events, ...replacementAuditSummary.events].sort(
     (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
   );
   const overrideRows = overrides.map((override) => {

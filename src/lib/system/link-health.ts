@@ -117,6 +117,12 @@ const routeContracts: LinkContract[] = [
     method: "POST",
     owner: "admin"
   },
+  {
+    label: "Provider website parser rule replacement API",
+    href: "/api/v1/admin/provider-website-parser/rules/replace",
+    method: "POST",
+    owner: "admin"
+  },
   { label: "Ad readiness API", href: "/api/v1/admin/ad-readiness", method: "GET", owner: "admin" },
   { label: "Ad placements admin API", href: "/api/v1/admin/ads/placements", method: "GET", owner: "admin" },
   { label: "Ad creative admin API", href: "/api/v1/admin/ads/creatives", method: "POST", owner: "admin" },

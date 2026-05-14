@@ -744,6 +744,24 @@ export type ProviderWebsiteParserRuleOverrideRollbackResult = {
   nextActions: string[];
 };
 
+export type ProviderWebsiteParserRuleOverrideReplaceInput = ProviderWebsiteParserRuleOverrideInput & {
+  dryRun?: boolean;
+  actorId?: string;
+  reason?: string;
+};
+
+export type ProviderWebsiteParserRuleOverrideReplaceResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  status: "preview" | "replaced";
+  candidates: ProviderWebsiteParserRuleOverrideRecord[];
+  previousOverride?: ProviderWebsiteParserRuleOverrideRecord;
+  replacementPreview?: ProviderWebsiteParserRuleOverrideRecord;
+  replacement?: ProviderWebsiteParserRuleOverrideRecord;
+  auditEventId?: string;
+  nextActions: string[];
+};
+
 export type ProviderWebsiteParserRuleOverrideAuditSummary = {
   generatedAt: string;
   totals: {

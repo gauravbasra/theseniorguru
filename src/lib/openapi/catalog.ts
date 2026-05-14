@@ -532,6 +532,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-website-parser/rules/rollback": {
         post: { tags: ["Aggregation"], summary: "Preview or deactivate a governed provider website parser rule override with rollback audit evidence" }
       },
+      "/api/v1/admin/provider-website-parser/rules/replace": {
+        post: { tags: ["Aggregation"], summary: "Preview or replace an active provider website parser rule override with previous/new audit evidence" }
+      },
       "/api/v1/admin/data-quality-flags": {
         get: { tags: ["Aggregation"], summary: "List unresolved data quality flags for import/crawl review" }
       },
