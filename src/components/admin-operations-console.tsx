@@ -330,6 +330,20 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<GitMerge aria-hidden="true" />}
+          label="Source worker"
+          loading={loadingKey === "source-adapter-worker"}
+          onClick={() =>
+            runOperation("Source adapter scheduled worker", "source-adapter-worker", () =>
+              fetch("/api/v1/admin/source-adapter-imports/worker", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, payloads: [] })
+              })
+            )
+          }
+        />
+        <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
           label="Vendor feeds"
           loading={loadingKey === "vendor-feeds"}
           onClick={() =>
@@ -538,6 +552,10 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "source-adapter-imports") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.runnable ?? 0)} runnable CMS/state/manual source adapters, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.unsupported ?? 0)} routed to source-specific runners.`;
+  }
+
+  if (key === "source-adapter-worker") {
+    return `${String(record.executedAdapters ?? 0)} source adapters executed, ${String(record.skippedAdapters ?? 0)} skipped for missing payloads, and ${String(record.blockedAdapters ?? 0)} blocked by readiness gates.`;
   }
 
   if (key === "provider-website-parser") {

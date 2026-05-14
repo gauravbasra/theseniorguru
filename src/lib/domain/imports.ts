@@ -264,6 +264,52 @@ export type SourceAdapterImportReadinessSummary = {
   nextActions: string[];
 };
 
+export type SourceAdapterWorkerPayloadInput = {
+  dataSourceId: string;
+  records: ImportRecordInput[];
+  batchName?: string;
+};
+
+export type SourceAdapterWorkerRunInput = {
+  dryRun?: boolean;
+  actorId?: string;
+  maxAdapters?: number;
+  payloads?: SourceAdapterWorkerPayloadInput[];
+};
+
+export type SourceAdapterWorkerAdapterSummary = {
+  dataSourceId: string;
+  dataSourceName: string;
+  sourceType: string;
+  adapterKey: string;
+  readinessStatus: "runnable" | "blocked" | "unsupported";
+  action: "blocked" | "skipped" | "unsupported" | "executed";
+  reason?: string;
+  recordsProvided: number;
+  run?: SourceAdapterImportResult;
+};
+
+export type SourceAdapterWorkerRunResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  adaptersReviewed: number;
+  runnableAdapters: number;
+  blockedAdapters: number;
+  unsupportedAdapters: number;
+  skippedAdapters: number;
+  executedAdapters: number;
+  totals: {
+    totalRecords: number;
+    stagedRecords: number;
+    skippedRecords: number;
+    rejectedRecords: number;
+    errorRecords: number;
+  };
+  adapters: SourceAdapterWorkerAdapterSummary[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type VendorFeedAuthType = "api_key" | "sftp" | "oauth" | "manual_upload";
 export type VendorFeedReviewStatus = "missing" | "pending" | "approved" | "blocked";
 export type VendorFeedCredentialStorageStatus = "missing" | "reference_recorded" | "verified";

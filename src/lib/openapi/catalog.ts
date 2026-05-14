@@ -447,6 +447,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Aggregation"], summary: "Report CMS, state license, and owner-controlled source adapter run readiness" },
         post: { tags: ["Aggregation"], summary: "Run approved CMS, state license, or owner-controlled source payload records through the import worker" }
       },
+      "/api/v1/admin/source-adapter-imports/worker": {
+        post: { tags: ["Aggregation"], summary: "Preview or execute scheduled CMS, state, and owner-controlled source adapter imports with supplied payload records" }
+      },
       "/api/v1/admin/vendor-feed-connections": {
         get: { tags: ["Aggregation"], summary: "Report vendor feed contract, credential reference, and field mapping readiness" },
         post: { tags: ["Aggregation"], summary: "Record safe vendor feed credential metadata without storing vendor secrets" }
