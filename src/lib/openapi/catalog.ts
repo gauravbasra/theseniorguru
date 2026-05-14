@@ -654,6 +654,9 @@ export function getOpenApiCatalog() {
       "/api/v1/system/deployment": {
         get: { tags: ["System"], summary: "Return production deployment target, canonical URL, persistence mode, and owner DNS actions" }
       },
+      "/api/v1/system/production-cutover": {
+        get: { tags: ["System"], summary: "Return production DNS cutover readiness gates, blockers, owner actions, and rollback evidence requirements" }
+      },
       "/api/v1/system/launch-checklist": {
         get: { tags: ["System"], summary: "Return launch go/no-go checklist across config, schema, links, aggregation, ads, newsroom, and onboarding" }
       },

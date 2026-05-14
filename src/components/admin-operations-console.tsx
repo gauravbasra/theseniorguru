@@ -614,6 +614,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<CheckCheck aria-hidden="true" />}
+          label="Cutover readiness"
+          loading={loadingKey === "production-cutover"}
+          onClick={() =>
+            runOperation("Production cutover readiness", "production-cutover", () =>
+              fetch("/api/v1/system/production-cutover")
+            )
+          }
+        />
+        <OpsButton
           icon={<ShieldAlert aria-hidden="true" />}
           label="Worker alerts"
           loading={loadingKey === "worker-alerts"}
@@ -937,6 +947,13 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "worker-health") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.healthy ?? 0)} workers healthy, ${String(totals?.stale ?? 0)} stale, ${String(totals?.failing ?? 0)} failing, and ${String(totals?.neverRun ?? 0)} never run.`;
+  }
+
+  if (key === "production-cutover") {
+    const checks = Array.isArray(record.checks) ? record.checks.length : 0;
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    const ownerActions = Array.isArray(record.ownerActions) ? record.ownerActions.length : 0;
+    return `Cutover status ${String(record.status ?? "unknown")} across ${String(checks)} checks with ${String(blockers)} blocker${blockers === 1 ? "" : "s"} and ${String(ownerActions)} owner action${ownerActions === 1 ? "" : "s"}.`;
   }
 
   if (key === "import-plan") {

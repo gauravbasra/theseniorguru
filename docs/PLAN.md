@@ -110,6 +110,7 @@ Deliverables:
 - Senior family action panel for saved providers, care circles, members, and community posts. Completed.
 - Admin AI newsroom console for source ingestion, article drafting, publishing, derivatives, and policy checks. Completed.
 - Deployment status API and admin link for active Vercel URL, commit, canonical domain, and owner DNS actions. Completed.
+- Production cutover readiness API for canonical domain, Vercel production alias, persistent Supabase mode, launch checklist, DNS owner approval, rollback evidence, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.

@@ -490,6 +490,25 @@ const productPillars: ProductPillar[] = [
       "api_audit_events"
     ],
     nextBackendWork: ["Owner-approved SDK registry publishing", "Partner production promotion approval workflow", "Partner cursor pagination evaluation"]
+  },
+  {
+    key: "production_operations",
+    title: "Production Operations and Cutover Controls",
+    objective: "Keep go-live, DNS cutover, persistence, and rollback decisions gated by observable backend evidence.",
+    audience: "Owner, platform admins, deployment operators",
+    status: "partial",
+    backendRoutes: [
+      "GET /api/v1/system/readiness",
+      "GET /api/v1/system/deployment",
+      "GET /api/v1/system/production-cutover",
+      "GET /api/v1/system/launch-checklist",
+      "GET /api/v1/system/persistence",
+      "GET /api/v1/system/link-health",
+      "GET /api/v1/admin/scheduled-worker-health",
+      "GET /api/v1/admin/scheduled-worker-runs"
+    ],
+    requiredTables: ["audit_events"],
+    nextBackendWork: ["DNS cutover approval recorder", "Production rollback evidence export", "Live credential installation runbook"]
   }
 ];
 
