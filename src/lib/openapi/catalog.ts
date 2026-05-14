@@ -467,6 +467,10 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/crawl-jobs/{id}/run": {
         post: { tags: ["Aggregation"], summary: "Run a crawler job with dry-run support and crawl page staging" }
       },
+      "/api/v1/admin/provider-website-parser": {
+        get: { tags: ["Aggregation"], summary: "Report provider website parser readiness by source, crawl job, and staged page" },
+        post: { tags: ["Aggregation"], summary: "Parse completed provider website crawl pages into extracted entity candidates" }
+      },
       "/api/v1/admin/data-quality-flags": {
         get: { tags: ["Aggregation"], summary: "List unresolved data quality flags for import/crawl review" }
       },

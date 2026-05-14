@@ -173,6 +173,32 @@ async function getCrawlJob(crawlJobId: string) {
   return data ? mapCrawlJob(data) : null;
 }
 
+export async function getCrawlJobById(crawlJobId: string): Promise<CrawlJobRecord | null> {
+  return getCrawlJob(crawlJobId);
+}
+
+export async function listCrawlPages(crawlJobId?: string): Promise<CrawlPageRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return crawlJobId ? seedCrawlPages.filter((page) => page.crawlJobId === crawlJobId) : seedCrawlPages;
+  }
+
+  let query = supabase.from("crawl_pages").select("*").order("fetched_at", { ascending: false });
+
+  if (crawlJobId) {
+    query = query.eq("crawl_job_id", crawlJobId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Crawl page query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapCrawlPage);
+}
+
 async function insertCrawlPage(input: Omit<CrawlPageRecord, "id" | "fetchedAt">): Promise<CrawlPageRecord> {
   const supabase = getSupabaseAdminClient();
   const fetchedAt = new Date().toISOString();

@@ -117,6 +117,7 @@ Deliverables:
 - Launch import source seeding API for approved CMS/current-site/state-license sources and optional starter batches. Completed.
 - Launch import execution API for current-site starter batches with explicit CMS/state adapter blockers. Completed.
 - Import adapter readiness API for CMS, state license, owner-controlled manual, provider website, RSS, and vendor sources. Completed.
+- Provider website parser readiness and crawl-page extraction API with source, robots, and review gates. Completed.
 - Extracted entity confidence review queue API for approval-ready, human-review, legal-review, image-rights, and duplicate routing. Completed.
 - Extracted entity review assignment and SLA API with Supabase migration, local fallback, and admin console action. Completed.
 - Import operator escalation report API for overdue, due-soon, unassigned, and blocked extracted-entity reviews. Completed.

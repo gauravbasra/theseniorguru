@@ -267,6 +267,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/crawl-jobs",
       "POST /api/v1/admin/crawl-jobs",
       "POST /api/v1/admin/crawl-jobs/{id}/run",
+      "GET /api/v1/admin/provider-website-parser",
+      "POST /api/v1/admin/provider-website-parser",
       "GET /api/v1/admin/data-quality-flags"
     ],
     requiredTables: [
@@ -280,7 +282,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Provider website extraction parser", "Import escalation provider integration", "Vendor feed credential workflow"]
+    nextBackendWork: ["Import escalation provider integration", "Vendor feed credential workflow", "Provider website parser rule tuning"]
   },
   {
     key: "reviews",

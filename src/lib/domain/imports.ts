@@ -272,6 +272,67 @@ export type CrawlJobRunResult = {
   errors: string[];
 };
 
+export type ProviderWebsiteParserCandidate = {
+  crawlPageId: string;
+  sourceUrl: string;
+  sourceRecordId: string;
+  name?: string;
+  phone?: string;
+  email?: string;
+  websiteUrl?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  categories: string[];
+  description?: string;
+  extractionConfidence: number;
+  blockers: string[];
+  extractedFields: Record<string, unknown>;
+};
+
+export type ProviderWebsiteParserRunResult = {
+  generatedAt: string;
+  crawlJobId: string;
+  dataSourceId: string;
+  dataSourceName: string;
+  dryRun: boolean;
+  pagesReviewed: number;
+  candidatesFound: number;
+  stagedEntities: number;
+  rejectedCandidates: number;
+  candidates: ProviderWebsiteParserCandidate[];
+  stagedEntityIds: string[];
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ProviderWebsiteParserReadinessSource = {
+  dataSourceId: string;
+  dataSourceName: string;
+  status: "ready" | "blocked";
+  baseUrl?: string;
+  reviewStatus: string;
+  robotsStatus?: string;
+  completedCrawlJobs: number;
+  stagedPages: number;
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ProviderWebsiteParserReadinessSummary = {
+  generatedAt: string;
+  totals: {
+    providerWebsiteSources: number;
+    ready: number;
+    blocked: number;
+    completedCrawlJobs: number;
+    stagedPages: number;
+  };
+  sources: ProviderWebsiteParserReadinessSource[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type DataQualityFlagRecord = {
   id: string;
   subjectType: string;

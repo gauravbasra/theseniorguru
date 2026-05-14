@@ -309,6 +309,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
+          label="Website parser"
+          loading={loadingKey === "provider-website-parser"}
+          onClick={() =>
+            runOperation("Provider website parser readiness", "provider-website-parser", () =>
+              fetch("/api/v1/admin/provider-website-parser")
+            )
+          }
+        />
+        <OpsButton
           icon={<ListChecks aria-hidden="true" />}
           label="Worker health"
           loading={loadingKey === "worker-health"}
@@ -479,6 +489,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "import-adapters") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.ready ?? 0)} ready, ${String(totals?.manualReady ?? 0)} manual-ready, and ${String(totals?.blocked ?? 0)} blocked import adapters.`;
+  }
+
+  if (key === "provider-website-parser") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.ready ?? 0)} ready provider website parser sources, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.stagedPages ?? 0)} staged crawl pages.`;
   }
 
   if (key === "entity-review-queue") {
