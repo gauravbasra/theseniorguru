@@ -107,6 +107,31 @@ export default function DevelopersPage() {
         ))}
       </section>
 
+      <section className="operator-band">
+        <div>
+          <p className="eyebrow">API changelog</p>
+          <h2>Current partner API version: {docs.changelog.currentVersion}</h2>
+          <p>{docs.changelog.policy.preOneDotZero}</p>
+        </div>
+        <article className="profile-card">
+          <p className="eyebrow">Deprecation notice</p>
+          <h2>{docs.changelog.policy.deprecationNoticeDays} days</h2>
+          <p>{docs.changelog.policy.breakingChangeRule}</p>
+        </article>
+      </section>
+
+      <section className="operator-funnel">
+        {docs.changelog.entries.map((entry) => (
+          <article key={entry.version}>
+            <span>{entry.status}</span>
+            <h2>{entry.version}</h2>
+            <p>{entry.summary}</p>
+            <p><strong>{entry.additions.join(" ")}</strong></p>
+            <p>{entry.migrationNotes.join(" ")}</p>
+          </article>
+        ))}
+      </section>
+
       <section className="category-strip">
         <div>
           <p className="eyebrow">Operations controls</p>

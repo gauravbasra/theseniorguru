@@ -22,11 +22,23 @@ type SandboxChecklistStep = {
   blocker: string;
 };
 
+type PartnerApiChangelogEntry = {
+  version: string;
+  releasedAt: string;
+  status: "current" | "planned";
+  summary: string;
+  additions: string[];
+  breakingChanges: string[];
+  migrationNotes: string[];
+  affectedEndpoints: string[];
+};
+
 const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/events",
   "/api/v1/partner/usage",
   "/api/v1/partner/onboarding-checklist",
+  "/api/v1/partner/changelog",
   "/api/v1/partner/webhooks/signing-guide",
   "/api/v1/partner/webhooks/verify"
 ];
@@ -192,6 +204,80 @@ export function getPartnerSandboxOnboardingChecklist() {
   };
 }
 
+export function getPartnerApiChangelog() {
+  const entries: PartnerApiChangelogEntry[] = [
+    {
+      version: "0.1.0",
+      releasedAt: "2026-05-14",
+      status: "current",
+      summary:
+        "Initial governed partner API foundation for sandbox provider/event reads, usage evidence, webhook verification, developer docs, and onboarding readiness.",
+      additions: [
+        "Scoped partner API key authentication with rate-limit headers and sandbox-mode response metadata.",
+        "Provider and event read endpoints for approved partner integrations.",
+        "Partner usage analytics with JSON and CSV evidence export.",
+        "Webhook signing guide, signature verification endpoint, replay evidence export, and SDK examples.",
+        "Sandbox onboarding checklist with production promotion blockers and evidence signals."
+      ],
+      breakingChanges: [],
+      migrationNotes: [
+        "Use x-senior-guru-api-key for all partner calls.",
+        "Treat all 0.x endpoints as pre-1.0 and verify OpenAPI metadata before production promotion.",
+        "Keep sandbox clients in sandboxMode=true until owner approval records partner purpose, scopes, rate limits, and webhook events."
+      ],
+      affectedEndpoints: [
+        "GET /api/v1/partner/providers",
+        "GET /api/v1/partner/events",
+        "GET /api/v1/partner/usage",
+        "GET /api/v1/partner/onboarding-checklist",
+        "GET /api/v1/partner/developer-docs",
+        "GET /api/v1/partner/webhooks/signing-guide",
+        "POST /api/v1/partner/webhooks/verify"
+      ]
+    },
+    {
+      version: "0.2.0",
+      releasedAt: "planned",
+      status: "planned",
+      summary:
+        "Planned partner evidence release for sandbox evidence export, versioned response envelopes, and SDK package publishing guidance.",
+      additions: [
+        "Sandbox evidence bundle export for provider, events, usage, webhook, and link-health checks.",
+        "Explicit response envelope version metadata for partner routes.",
+        "Package publishing plan for signed webhook verification helpers."
+      ],
+      breakingChanges: [],
+      migrationNotes: [
+        "No breaking changes are planned for 0.2.0.",
+        "Partners should begin storing usage and webhook evidence ids so evidence bundles can reconcile prior sandbox runs."
+      ],
+      affectedEndpoints: [
+        "GET /api/v1/partner/usage",
+        "GET /api/v1/partner/developer-docs",
+        "GET /api/v1/partner/changelog"
+      ]
+    }
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    currentVersion: entries.find((entry) => entry.status === "current")?.version ?? "0.1.0",
+    policy: {
+      preOneDotZero:
+        "Partner APIs are pre-1.0 and require OpenAPI, changelog, usage evidence, and owner approval review before production promotion.",
+      deprecationNoticeDays: 90,
+      breakingChangeRule:
+        "Breaking partner API changes require a changelog entry, OpenAPI update, migration note, and owner-approved partner notification before rollout."
+    },
+    entries,
+    nextActions: [
+      "Review the current changelog before issuing or promoting partner keys.",
+      "Use OpenAPI and the sandbox checklist to validate endpoint behavior for each partner environment.",
+      "Capture partner evidence before adopting planned 0.2.0 response metadata or SDK packages."
+    ]
+  };
+}
+
 export function getPartnerDeveloperDocs() {
   const catalog = getOpenApiCatalog();
   const signingGuide = getWebhookSigningGuide();
@@ -246,6 +332,7 @@ export function getPartnerDeveloperDocs() {
     },
     sdkExamples: buildSdkExamples(signingGuide),
     sandboxOnboarding: getPartnerSandboxOnboardingChecklist(),
+    changelog: getPartnerApiChangelog(),
     operationalControls: [
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",

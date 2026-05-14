@@ -618,6 +618,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/onboarding-checklist": {
         get: { tags: ["System"], summary: "Return the partner sandbox onboarding checklist with scopes, evidence, and production promotion blockers" }
       },
+      "/api/v1/partner/changelog": {
+        get: { tags: ["System"], summary: "Return partner API version changelog, deprecation policy, migration notes, and planned release signals" }
+      },
       "/api/v1/partner/developer-docs": {
         get: { tags: ["System"], summary: "Return partner developer documentation, SDK examples, OpenAPI endpoints, and webhook signing contracts" }
       },
