@@ -553,6 +553,30 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<ListChecks aria-hidden="true" />}
+          label="Audit export"
+          loading={loadingKey === "audit-export"}
+          onClick={() =>
+            runOperation("Audit event export", "audit-export", () =>
+              fetch("/api/v1/admin/audit-events/export?format=json&limit=25")
+            )
+          }
+        />
+        <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="Audit retention"
+          loading={loadingKey === "audit-retention"}
+          onClick={() =>
+            runOperation("Audit retention controls", "audit-retention", () =>
+              fetch("/api/v1/admin/audit-events/retention", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, limit: 25 })
+              })
+            )
+          }
+        />
+        <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
           label="Policy reviewers"
           loading={loadingKey === "policy-review-assignments"}
           onClick={() =>
@@ -842,6 +866,17 @@ function summarizeOperation(key: string, data: unknown) {
     const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
     const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
     return `${String(candidates)} policy review assignment candidate${candidates === 1 ? "" : "s"} found, ${String(blockers)} blocker${blockers === 1 ? "" : "s"}, status ${String(record.status ?? "preview")}.`;
+  }
+
+  if (key === "audit-export") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.events ?? 0)} audit event${totals?.events === 1 ? "" : "s"} exported, ${String(totals?.retentionCandidates ?? 0)} retention candidate${totals?.retentionCandidates === 1 ? "" : "s"} flagged.`;
+  }
+
+  if (key === "audit-retention") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    return `${String(totals?.retentionCandidates ?? 0)} audit retention candidate${totals?.retentionCandidates === 1 ? "" : "s"} found, ${String(blockers)} blocker${blockers === 1 ? "" : "s"}, status ${String(record.status ?? "preview")}.`;
   }
 
   if (key === "entity-escalations") {

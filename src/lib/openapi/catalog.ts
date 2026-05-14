@@ -587,6 +587,13 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/audit-events": {
         get: { tags: ["Policy"], summary: "List immutable operational audit events for policy, claims, imports, and publishing workflows" }
       },
+      "/api/v1/admin/audit-events/export": {
+        get: { tags: ["Policy"], summary: "Export immutable operational audit events as JSON or CSV with retention candidate totals" }
+      },
+      "/api/v1/admin/audit-events/retention": {
+        get: { tags: ["Policy"], summary: "Preview audit event retention candidates without destructive purge execution" },
+        post: { tags: ["Policy"], summary: "Preview or blocked-live audit retention controls with owner approval guardrails" }
+      },
       "/api/v1/partner/providers": {
         get: { tags: ["Providers"], summary: "Partner provider directory API requiring providers:read scope" }
       },
