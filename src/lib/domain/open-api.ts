@@ -112,6 +112,43 @@ export type ApiAuditEventRecord = {
   createdAt: string;
 };
 
+export type ApiUsageAnalyticsClient = {
+  apiClientId: string;
+  name: string;
+  ownerType: ApiClientRecord["ownerType"];
+  status: ApiClientRecord["status"];
+  requests: number;
+  allowed: number;
+  blocked: number;
+  rateLimited: number;
+  activeKeys: number;
+  revokedKeys: number;
+  webhookSubscriptions: number;
+  webhookDeliveries: number;
+  lastRequestAt?: string;
+  topEvents: Array<{ eventType: string; count: number }>;
+};
+
+export type ApiUsageAnalyticsSummary = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  windowDays: number;
+  since: string;
+  totals: {
+    clients: number;
+    requests: number;
+    allowed: number;
+    blocked: number;
+    rateLimited: number;
+    activeKeys: number;
+    revokedKeys: number;
+    webhookDeliveries: number;
+  };
+  clients: ApiUsageAnalyticsClient[];
+  topEvents: Array<{ eventType: string; count: number }>;
+  nextActions: string[];
+};
+
 export type ApiAuthenticationResult =
   | {
       ok: true;

@@ -164,6 +164,7 @@ const routeContracts: LinkContract[] = [
   { label: "Source manifest fetch cron API", href: "/api/cron/source-manifests", method: "GET", owner: "admin" },
   { label: "Import escalation retry cron API", href: "/api/cron/import-escalation-retries", method: "GET", owner: "admin" },
   { label: "API audit events API", href: "/api/v1/admin/api-audit-events", method: "GET", owner: "admin" },
+  { label: "API usage analytics API", href: "/api/v1/admin/api-usage-analytics", method: "GET", owner: "admin" },
   { label: "Scheduled worker runs API", href: "/api/v1/admin/scheduled-worker-runs", method: "GET", owner: "admin" },
   { label: "Scheduled worker health API", href: "/api/v1/admin/scheduled-worker-health", method: "GET", owner: "admin" },
   { label: "Scheduled worker alert API", href: "/api/v1/admin/scheduled-worker-alerts", method: "POST", owner: "admin" },

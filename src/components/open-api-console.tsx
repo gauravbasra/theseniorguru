@@ -6,6 +6,7 @@ import type {
   ApiAuditEventRecord,
   ApiClientRecord,
   ApiKeyRecord,
+  ApiUsageAnalyticsSummary,
   CreatedApiKeyRecord,
   CreatedWebhookSubscriptionRecord,
   WebhookDeliveryRecord,
@@ -17,6 +18,7 @@ type OpenApiConsoleProps = {
   initialSubscriptions: WebhookSubscriptionRecord[];
   initialDeliveries: WebhookDeliveryRecord[];
   initialAuditEvents: ApiAuditEventRecord[];
+  initialUsageAnalytics: ApiUsageAnalyticsSummary;
 };
 
 type ActionState = {
@@ -30,7 +32,8 @@ export function OpenApiConsole({
   initialClients,
   initialSubscriptions,
   initialDeliveries,
-  initialAuditEvents
+  initialAuditEvents,
+  initialUsageAnalytics
 }: OpenApiConsoleProps) {
   const [clients, setClients] = useState(initialClients);
   const [selectedClientId, setSelectedClientId] = useState(initialClients[0]?.id ?? "");
@@ -39,6 +42,7 @@ export function OpenApiConsole({
   const [subscriptions, setSubscriptions] = useState(initialSubscriptions);
   const [deliveries, setDeliveries] = useState(initialDeliveries);
   const [auditEvents, setAuditEvents] = useState(initialAuditEvents);
+  const [usageAnalytics, setUsageAnalytics] = useState(initialUsageAnalytics);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [actionState, setActionState] = useState<ActionState>(null);
 
@@ -74,17 +78,19 @@ export function OpenApiConsole({
 
   async function refreshAll() {
     setLoadingKey("refresh");
-    const [clientResponse, subscriptionResponse, deliveryResponse, auditResponse] = await Promise.all([
+    const [clientResponse, subscriptionResponse, deliveryResponse, auditResponse, usageResponse] = await Promise.all([
       fetch("/api/v1/admin/api-clients"),
       fetch("/api/v1/admin/webhook-subscriptions"),
       fetch("/api/v1/admin/webhook-deliveries"),
-      fetch("/api/v1/admin/api-audit-events")
+      fetch("/api/v1/admin/api-audit-events"),
+      fetch("/api/v1/admin/api-usage-analytics")
     ]);
-    const [clientPayload, subscriptionPayload, deliveryPayload, auditPayload] = await Promise.all([
+    const [clientPayload, subscriptionPayload, deliveryPayload, auditPayload, usagePayload] = await Promise.all([
       clientResponse.json().catch(() => ({})),
       subscriptionResponse.json().catch(() => ({})),
       deliveryResponse.json().catch(() => ({})),
-      auditResponse.json().catch(() => ({}))
+      auditResponse.json().catch(() => ({})),
+      usageResponse.json().catch(() => ({}))
     ]);
     setLoadingKey(null);
 
@@ -96,10 +102,11 @@ export function OpenApiConsole({
     if (subscriptionResponse.ok && Array.isArray(subscriptionPayload.data)) setSubscriptions(subscriptionPayload.data);
     if (deliveryResponse.ok && Array.isArray(deliveryPayload.data)) setDeliveries(deliveryPayload.data);
     if (auditResponse.ok && Array.isArray(auditPayload.data)) setAuditEvents(auditPayload.data);
+    if (usageResponse.ok && usagePayload.data) setUsageAnalytics(usagePayload.data);
 
     setActionState({
-      ok: clientResponse.ok && subscriptionResponse.ok && deliveryResponse.ok && auditResponse.ok,
-      message: "Open API clients, webhooks, deliveries, and audit events refreshed."
+      ok: clientResponse.ok && subscriptionResponse.ok && deliveryResponse.ok && auditResponse.ok && usageResponse.ok,
+      message: "Open API clients, webhooks, deliveries, audit events, and usage analytics refreshed."
     });
   }
 
@@ -405,6 +412,36 @@ export function OpenApiConsole({
         </div>
 
         {actionState ? <p className={actionState.ok ? "governance-message ok" : "governance-message error"}>{actionState.message}</p> : null}
+      </article>
+
+      <article className="open-api-panel">
+        <p className="eyebrow">Usage analytics</p>
+        <h3>{usageAnalytics.totals.requests} partner API calls</h3>
+
+        <div className="open-api-status-grid">
+          <div><strong>{usageAnalytics.totals.allowed}</strong><span>Allowed</span></div>
+          <div><strong>{usageAnalytics.totals.blocked}</strong><span>Blocked</span></div>
+          <div><strong>{usageAnalytics.totals.rateLimited}</strong><span>Rate limited</span></div>
+          <div><strong>{usageAnalytics.totals.webhookDeliveries}</strong><span>Webhook volume</span></div>
+        </div>
+
+        <div className="open-api-list">
+          {usageAnalytics.clients.slice(0, 5).map((client) => (
+            <div className="open-api-row" key={client.apiClientId}>
+              <span>
+                <strong>{client.name}</strong>
+                <small>{client.requests} calls, {client.activeKeys} active keys, {client.webhookDeliveries} webhooks</small>
+              </span>
+              <b>{client.status}</b>
+            </div>
+          ))}
+          {!usageAnalytics.clients.length ? (
+            <div className="empty-governance-state compact">
+              <strong>No usage yet</strong>
+              <span>Issue a scoped key and run a partner endpoint smoke call.</span>
+            </div>
+          ) : null}
+        </div>
       </article>
     </div>
   );

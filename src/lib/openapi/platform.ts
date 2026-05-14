@@ -5,6 +5,8 @@ import type {
   ApiClientRecord,
   ApiClientScope,
   ApiKeyRecord,
+  ApiUsageAnalyticsClient,
+  ApiUsageAnalyticsSummary,
   CreateApiClientInput,
   CreateApiKeyInput,
   CreatedApiKeyRecord,
@@ -1278,6 +1280,103 @@ export async function listApiAuditEvents(apiClientId?: string): Promise<ApiAudit
   }
 
   return (data ?? []).map(mapApiAuditEvent);
+}
+
+function countBy<T>(items: T[], keyFor: (item: T) => string | undefined) {
+  const counts = new Map<string, number>();
+
+  for (const item of items) {
+    const key = keyFor(item);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return counts;
+}
+
+function topCounts(counts: Map<string, number>, limit = 5) {
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, limit)
+    .map(([eventType, count]) => ({ eventType, count }));
+}
+
+export async function getApiUsageAnalytics(input: { apiClientId?: string; windowDays?: number } = {}): Promise<ApiUsageAnalyticsSummary> {
+  const windowDays = Math.max(1, Math.min(Number(input.windowDays ?? 30), 365));
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const [allClients, allAuditEvents, allDeliveries] = await Promise.all([
+    listApiClients(),
+    listApiAuditEvents(input.apiClientId),
+    listWebhookDeliveries()
+  ]);
+  const clients = input.apiClientId ? allClients.filter((client) => client.id === input.apiClientId) : allClients;
+  const source: ApiUsageAnalyticsSummary["source"] = getSupabaseAdminClient() ? "supabase" : "local_fallback";
+  const clientIds = new Set(clients.map((client) => client.id));
+  const auditEvents = allAuditEvents
+    .filter((event) => !input.apiClientId || event.apiClientId === input.apiClientId)
+    .filter((event) => Date.parse(event.createdAt) >= Date.parse(since));
+  const subscriptions = (await Promise.all(clients.map((client) => listWebhookSubscriptions(client.id)))).flat();
+  const keyPairs = await Promise.all(clients.map(async (client) => ({ client, keys: await listApiKeys(client.id) })));
+  const eventCounts = countBy(auditEvents, (event) => event.eventType);
+  const deliveriesByClient = countBy(
+    allDeliveries.filter((delivery) => {
+      const subscription = subscriptions.find((item) => item.id === delivery.subscriptionId);
+      return subscription ? clientIds.has(subscription.apiClientId) : false;
+    }),
+    (delivery) => subscriptions.find((subscription) => subscription.id === delivery.subscriptionId)?.apiClientId
+  );
+  const clientAnalytics: ApiUsageAnalyticsClient[] = clients.map((client) => {
+    const events = auditEvents.filter((event) => event.apiClientId === client.id);
+    const keys = keyPairs.find((pair) => pair.client.id === client.id)?.keys ?? [];
+    const clientSubscriptions = subscriptions.filter((subscription) => subscription.apiClientId === client.id);
+    const latest = events[0]?.createdAt;
+
+    return {
+      apiClientId: client.id,
+      name: client.name,
+      ownerType: client.ownerType,
+      status: client.status,
+      requests: events.length,
+      allowed: events.filter((event) => event.status === "allowed").length,
+      blocked: events.filter((event) => event.status === "blocked").length,
+      rateLimited: events.filter((event) => event.status === "rate_limited").length,
+      activeKeys: keys.filter((key) => key.status === "active").length,
+      revokedKeys: keys.filter((key) => key.status === "revoked").length,
+      webhookSubscriptions: clientSubscriptions.length,
+      webhookDeliveries: deliveriesByClient.get(client.id) ?? 0,
+      lastRequestAt: latest,
+      topEvents: topCounts(countBy(events, (event) => event.eventType), 3)
+    };
+  });
+  const totals = {
+    clients: clientAnalytics.length,
+    requests: auditEvents.length,
+    allowed: auditEvents.filter((event) => event.status === "allowed").length,
+    blocked: auditEvents.filter((event) => event.status === "blocked").length,
+    rateLimited: auditEvents.filter((event) => event.status === "rate_limited").length,
+    activeKeys: clientAnalytics.reduce((sum, client) => sum + client.activeKeys, 0),
+    revokedKeys: clientAnalytics.reduce((sum, client) => sum + client.revokedKeys, 0),
+    webhookDeliveries: clientAnalytics.reduce((sum, client) => sum + client.webhookDeliveries, 0)
+  };
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source,
+    windowDays,
+    since,
+    totals,
+    clients: clientAnalytics.sort((left, right) => right.requests - left.requests || left.name.localeCompare(right.name)),
+    topEvents: topCounts(eventCounts, 8),
+    nextActions: [
+      ...(totals.rateLimited ? ["Review rate-limited clients and confirm limits match partner contracts."] : []),
+      ...(totals.blocked ? ["Review blocked partner API calls for invalid keys, missing scopes, or integration drift."] : []),
+      ...(clientAnalytics.some((client) => client.activeKeys === 0)
+        ? ["Issue active API keys only for approved partner clients that are ready to test."]
+        : []),
+      ...(!totals.requests ? ["No partner API usage exists in the selected window; run a partner smoke call after issuing a scoped key."] : []),
+      ...(totals.requests && !totals.blocked && !totals.rateLimited ? ["Partner API usage is flowing without blocked or rate-limited calls in the selected window."] : [])
+    ]
+  };
 }
 
 export async function authenticatePartnerApiRequest(

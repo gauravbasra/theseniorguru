@@ -27,7 +27,7 @@ import { listEvents } from "@/lib/events/events";
 import { listImportBatches } from "@/lib/import-batches";
 import { listLeadQueue } from "@/lib/leads";
 import { listNewsItems } from "@/lib/newsroom/newsroom";
-import { listApiAuditEvents, listApiClients, listWebhookDeliveries, listWebhookSubscriptions } from "@/lib/openapi/platform";
+import { getApiUsageAnalytics, listApiAuditEvents, listApiClients, listWebhookDeliveries, listWebhookSubscriptions } from "@/lib/openapi/platform";
 import { listProviders } from "@/lib/providers";
 import { listReviewModerationQueue } from "@/lib/reviews/reviews";
 import { listScheduledWorkerRuns } from "@/lib/scheduler/runs";
@@ -56,6 +56,7 @@ export default async function AdminPage() {
     webhookSubscriptions,
     webhookDeliveries,
     apiAuditEvents,
+    apiUsageAnalytics,
     events,
     communityGroups,
     expertProfiles,
@@ -80,6 +81,7 @@ export default async function AdminPage() {
     listWebhookSubscriptions(),
     listWebhookDeliveries(),
     listApiAuditEvents(),
+    getApiUsageAnalytics(),
     listEvents(),
     listCommunityGroups(),
     listExpertProfiles({ status: "verified" }),
@@ -420,6 +422,7 @@ export default async function AdminPage() {
           initialSubscriptions={webhookSubscriptions}
           initialDeliveries={webhookDeliveries}
           initialAuditEvents={apiAuditEvents}
+          initialUsageAnalytics={apiUsageAnalytics}
         />
       </section>
 

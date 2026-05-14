@@ -578,6 +578,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/api-audit-events": {
         get: { tags: ["System"], summary: "List Open API audit events" }
       },
+      "/api/v1/admin/api-usage-analytics": {
+        get: { tags: ["System"], summary: "Summarize partner API usage, blocked calls, rate limits, keys, and webhook delivery volume" }
+      },
       "/api/v1/admin/scheduled-worker-runs": {
         get: { tags: ["System"], summary: "List scheduled backend worker run history with status, duration, and summaries" }
       },
