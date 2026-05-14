@@ -84,6 +84,7 @@ Deliverables:
 - API usage retention policy metadata with retention cutoff, purge-candidate counts, archive/legal-hold requirements, blocked purge status, CSV evidence fields, and admin console visibility. Completed.
 - Partner webhook signature verification endpoint with owned-subscription enforcement, timestamp tolerance, digest comparison, audit evidence, and OpenAPI/link-health coverage. Completed.
 - Admin webhook delivery replay endpoint that duplicates failed, blocked, or delivered historical deliveries into fresh queued records with immutable source delivery audit evidence and console access. Completed.
+- Webhook replay evidence export API that pairs replayed deliveries to their source deliveries, attempts, replay audit metadata, and CSV/JSON admin evidence downloads. Completed.
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.
 - Admin Open API operations console for clients, scoped keys, webhooks, dry-run delivery, retries, and audit visibility. Completed.

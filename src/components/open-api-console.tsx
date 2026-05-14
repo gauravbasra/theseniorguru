@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { KeyRound, Loader2, RefreshCw, RotateCcw, Send, ShieldCheck, Webhook } from "lucide-react";
+import { Download, KeyRound, Loader2, RefreshCw, RotateCcw, Send, ShieldCheck, Webhook } from "lucide-react";
 import type {
   ApiAuditEventRecord,
   ApiClientRecord,
@@ -407,6 +407,10 @@ export function OpenApiConsole({
             {loadingKey === "replay" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <Webhook aria-hidden="true" />}
             Replay failed
           </button>
+          <a className="small-action" href="/api/v1/admin/webhook-deliveries/replay/export?format=csv">
+            <Download aria-hidden="true" />
+            Replay evidence
+          </a>
         </div>
 
         <div className="open-api-list">

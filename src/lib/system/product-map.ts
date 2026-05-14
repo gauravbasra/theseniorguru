@@ -459,6 +459,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/webhook-deliveries/run",
       "POST /api/v1/admin/webhook-deliveries/retry",
       "POST /api/v1/admin/webhook-deliveries/replay",
+      "GET /api/v1/admin/webhook-deliveries/replay/export",
       "POST /api/v1/admin/webhook-deliveries/scheduler",
       "GET /api/v1/admin/api-audit-events",
       "GET /api/v1/admin/api-usage-analytics",
@@ -478,7 +479,7 @@ const productPillars: ProductPillar[] = [
       "webhook_delivery_attempts",
       "api_audit_events"
     ],
-    nextBackendWork: ["Partner developer docs UI", "Webhook event signing docs", "Partner webhook delivery replay evidence export"]
+    nextBackendWork: ["Partner developer docs UI", "Webhook event signing docs", "Webhook replay evidence review filters"]
   }
 ];
 

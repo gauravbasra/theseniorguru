@@ -131,6 +131,7 @@ export type ApiAuditEventRecord = {
   subjectType?: string;
   subjectId?: string;
   status: "allowed" | "blocked" | "rate_limited";
+  requestMetadata?: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -248,6 +249,41 @@ export type ReplayWebhookDeliveriesResult = {
   sourceDeliveryIds: string[];
   replayedDeliveryIds: string[];
   status: "queued";
+};
+
+export type WebhookReplayEvidenceExportRow = {
+  replayedDeliveryId: string;
+  sourceDeliveryId: string;
+  subscriptionId: string;
+  apiClientId?: string;
+  eventType: WebhookEventType;
+  subjectId?: string;
+  sourceStatus?: WebhookDeliveryRecord["status"];
+  replayStatus: WebhookDeliveryRecord["status"];
+  sourceAttempts: number;
+  replayAttempts: number;
+  sourceCreatedAt?: string;
+  replayCreatedAt: string;
+  lastSourceError?: string;
+  auditEventId?: string;
+  auditCreatedAt?: string;
+  replayReason?: string;
+  replayActorId?: string;
+};
+
+export type WebhookReplayEvidenceExport = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  format: "json" | "csv";
+  limit: number;
+  totals: {
+    replayedDeliveries: number;
+    auditedReplays: number;
+    missingSourceDeliveries: number;
+  };
+  rows: WebhookReplayEvidenceExportRow[];
+  csv?: string;
+  filename: string;
 };
 
 export type WebhookRetrySchedulerInput = {

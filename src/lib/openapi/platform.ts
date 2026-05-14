@@ -24,6 +24,8 @@ import type {
   WebhookDeliveryAttemptRecord,
   WebhookDeliveryRecord,
   WebhookEventType,
+  WebhookReplayEvidenceExport,
+  WebhookReplayEvidenceExportRow,
   WebhookSignatureVerificationInput,
   WebhookSignatureVerificationResult,
   WebhookSubscriptionRecord
@@ -272,6 +274,10 @@ function mapApiAuditEvent(row: Record<string, unknown>): ApiAuditEventRecord {
     subjectType: row.subject_type ? String(row.subject_type) : undefined,
     subjectId: row.subject_id ? String(row.subject_id) : undefined,
     status: row.status as ApiAuditEventRecord["status"],
+    requestMetadata:
+      row.request_metadata && typeof row.request_metadata === "object"
+        ? (row.request_metadata as Record<string, unknown>)
+        : undefined,
     createdAt: String(row.created_at)
   };
 }
@@ -314,6 +320,7 @@ async function recordApiAuditEvent(input: {
       subjectType: input.subjectType,
       subjectId: input.subjectId,
       status: input.status,
+      requestMetadata: input.requestMetadata,
       createdAt
     });
     return;
@@ -860,6 +867,32 @@ export async function listWebhookDeliveries(status?: WebhookDeliveryRecord["stat
   }
 
   return (data ?? []).map(mapWebhookDelivery);
+}
+
+async function listWebhookDeliveryAttempts(deliveryIds: string[]): Promise<WebhookDeliveryAttemptRecord[]> {
+  const ids = Array.from(new Set(deliveryIds.filter(Boolean)));
+
+  if (!ids.length) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedWebhookDeliveryAttempts.filter((attempt) => ids.includes(attempt.deliveryId));
+  }
+
+  const { data, error } = await supabase
+    .from("webhook_delivery_attempts")
+    .select("*")
+    .in("delivery_id", ids)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Webhook delivery attempt query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapWebhookDeliveryAttempt);
 }
 
 export async function enqueueWebhookDeliveries(input: EnqueueWebhookDeliveryInput): Promise<WebhookDeliveryRecord[]> {
@@ -1731,6 +1764,136 @@ export async function exportApiUsageAnalytics(input: { apiClientId?: string; win
       ...rows.map((row) => row.map(csvCell).join(","))
     ].join("\n"),
     filename: `senior-guru-api-usage-${summary.windowDays}d-${summary.generatedAt.slice(0, 10)}.csv`
+  };
+}
+
+function getReplaySourceDeliveryId(delivery: WebhookDeliveryRecord) {
+  const replayOfDeliveryId = delivery.payload.replayOfDeliveryId;
+  return typeof replayOfDeliveryId === "string" && replayOfDeliveryId.trim() ? replayOfDeliveryId.trim() : undefined;
+}
+
+function getReplayAuditValue(auditEvent: ApiAuditEventRecord | undefined, key: string) {
+  const value = auditEvent?.requestMetadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+export async function exportWebhookReplayEvidence(input: {
+  format?: "json" | "csv";
+  limit?: number;
+  apiClientId?: string;
+} = {}): Promise<WebhookReplayEvidenceExport> {
+  const format = input.format ?? "json";
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 100), 500));
+  const source: WebhookReplayEvidenceExport["source"] = getSupabaseAdminClient() ? "supabase" : "local_fallback";
+  const [deliveries, auditEvents, subscriptions] = await Promise.all([
+    listWebhookDeliveries(),
+    listApiAuditEvents(input.apiClientId),
+    input.apiClientId ? listWebhookSubscriptions(input.apiClientId) : listWebhookSubscriptions()
+  ]);
+  const subscriptionById = new Map(subscriptions.map((subscription) => [subscription.id, subscription]));
+  const replayedDeliveries = deliveries
+    .filter((delivery) => Boolean(getReplaySourceDeliveryId(delivery)))
+    .filter((delivery) => {
+      if (!input.apiClientId) return true;
+      return subscriptionById.get(delivery.subscriptionId)?.apiClientId === input.apiClientId;
+    })
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .slice(0, limit);
+  const sourceIds = replayedDeliveries.map(getReplaySourceDeliveryId).filter(Boolean) as string[];
+  const evidenceDeliveryIds = [...replayedDeliveries.map((delivery) => delivery.id), ...sourceIds];
+  const [attempts] = await Promise.all([listWebhookDeliveryAttempts(evidenceDeliveryIds)]);
+  const deliveryById = new Map(deliveries.map((delivery) => [delivery.id, delivery]));
+  const attemptsByDeliveryId = countBy(attempts, (attempt) => attempt.deliveryId);
+  const replayAudits = auditEvents.filter((event) => event.eventType === "webhook_delivery.replayed");
+
+  const rows: WebhookReplayEvidenceExportRow[] = replayedDeliveries.map((replayed) => {
+    const sourceDeliveryId = getReplaySourceDeliveryId(replayed) ?? "";
+    const sourceDelivery = deliveryById.get(sourceDeliveryId);
+    const auditEvent = replayAudits.find((event) => {
+      const replayedDeliveryIds = event.requestMetadata?.replayedDeliveryIds;
+      return (
+        String(event.subjectId ?? "").split(",").map((value) => value.trim()).includes(sourceDeliveryId) ||
+        (Array.isArray(replayedDeliveryIds) && replayedDeliveryIds.map(String).includes(replayed.id))
+      );
+    });
+    const subscription = subscriptionById.get(replayed.subscriptionId);
+
+    return {
+      replayedDeliveryId: replayed.id,
+      sourceDeliveryId,
+      subscriptionId: replayed.subscriptionId,
+      apiClientId: subscription?.apiClientId,
+      eventType: replayed.eventType,
+      subjectId: replayed.subjectId,
+      sourceStatus: sourceDelivery?.status,
+      replayStatus: replayed.status,
+      sourceAttempts: attemptsByDeliveryId.get(sourceDeliveryId) ?? sourceDelivery?.attempts ?? 0,
+      replayAttempts: attemptsByDeliveryId.get(replayed.id) ?? replayed.attempts,
+      sourceCreatedAt: sourceDelivery?.createdAt,
+      replayCreatedAt: replayed.createdAt,
+      lastSourceError: sourceDelivery?.lastError,
+      auditEventId: auditEvent?.id,
+      auditCreatedAt: auditEvent?.createdAt,
+      replayReason: getReplayAuditValue(auditEvent, "reason"),
+      replayActorId: getReplayAuditValue(auditEvent, "actorId")
+    };
+  });
+  const generatedAt = new Date().toISOString();
+  const headers = [
+    "replayed_delivery_id",
+    "source_delivery_id",
+    "subscription_id",
+    "api_client_id",
+    "event_type",
+    "subject_id",
+    "source_status",
+    "replay_status",
+    "source_attempts",
+    "replay_attempts",
+    "source_created_at",
+    "replay_created_at",
+    "last_source_error",
+    "audit_event_id",
+    "audit_created_at",
+    "replay_reason",
+    "replay_actor_id"
+  ];
+  const csvRows = rows.map((row) => [
+    row.replayedDeliveryId,
+    row.sourceDeliveryId,
+    row.subscriptionId,
+    row.apiClientId,
+    row.eventType,
+    row.subjectId,
+    row.sourceStatus,
+    row.replayStatus,
+    row.sourceAttempts,
+    row.replayAttempts,
+    row.sourceCreatedAt,
+    row.replayCreatedAt,
+    row.lastSourceError,
+    row.auditEventId,
+    row.auditCreatedAt,
+    row.replayReason,
+    row.replayActorId
+  ]);
+
+  return {
+    generatedAt,
+    source,
+    format,
+    limit,
+    totals: {
+      replayedDeliveries: rows.length,
+      auditedReplays: rows.filter((row) => Boolean(row.auditEventId)).length,
+      missingSourceDeliveries: rows.filter((row) => !row.sourceStatus).length
+    },
+    rows,
+    csv: [
+      headers.map(csvCell).join(","),
+      ...csvRows.map((row) => row.map(csvCell).join(","))
+    ].join("\n"),
+    filename: `senior-guru-webhook-replay-evidence-${generatedAt.slice(0, 10)}.${format === "csv" ? "csv" : "json"}`
   };
 }
 
