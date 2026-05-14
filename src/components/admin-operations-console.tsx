@@ -156,6 +156,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Send aria-hidden="true" />}
+          label="Notify escalations"
+          loading={loadingKey === "entity-escalation-notify"}
+          onClick={() =>
+            runOperation("Notify import escalations", "entity-escalation-notify", () =>
+              fetch("/api/v1/admin/extracted-entities/escalations/notify", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, actorId: "admin-console", deliveryProvider: "manual_export" })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Approve entity"
           loading={loadingKey === "approve"}
@@ -400,6 +414,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "entity-escalations") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.overdue ?? 0)} overdue, ${String(totals?.dueSoon ?? 0)} due soon, ${String(totals?.unassigned ?? 0)} unassigned, and ${String(totals?.blockedRoutes ?? 0)} blocked routes.`;
+  }
+
+  if (key === "entity-escalation-notify") {
+    const preview = record.payloadPreview as Record<string, unknown> | undefined;
+    return `${String(preview?.escalationCount ?? 0)} escalation item${preview?.escalationCount === 1 ? "" : "s"} prepared for ${String(record.deliveryProvider ?? "manual export")}.`;
   }
 
   if (key === "worker-health") {

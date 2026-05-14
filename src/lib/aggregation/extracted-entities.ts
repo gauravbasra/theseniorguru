@@ -2,15 +2,18 @@ import type {
   AssignExtractedEntityReviewInput,
   CreateExtractedEntityInput,
   ExtractedEntityDecisionInput,
+  ExtractedEntityEscalationNotificationResult,
   ExtractedEntityReviewEscalationSummary,
   ExtractedEntityReviewAssignmentRecord,
   ExtractedEntityQualityAuditRecord,
   ExtractedEntityQualityAuditResult,
   ExtractedEntityRecord,
   ExtractedEntityReviewQueueItem,
-  ExtractedEntityReviewQueueSummary
+  ExtractedEntityReviewQueueSummary,
+  NotifyExtractedEntityReviewEscalationsInput
 } from "@/lib/domain/entities";
 import type { DataQualityFlagRecord } from "@/lib/domain/imports";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -733,6 +736,101 @@ export async function getExtractedEntityReviewEscalations(input: {
       ...(!overdue.length && !blockedRoutes.length && !dueSoon.length && !unassigned.length
         ? ["No import review escalations are active. Continue processing approval-ready records."]
         : [])
+    ]
+  };
+}
+
+function escalationNotificationItems(summary: ExtractedEntityReviewEscalationSummary) {
+  const uniqueItems = new Map<string, ExtractedEntityReviewQueueItem>();
+
+  for (const item of [...summary.overdue, ...summary.blockedRoutes, ...summary.dueSoon, ...summary.unassigned]) {
+    uniqueItems.set(item.entity.id, item);
+  }
+
+  return [...uniqueItems.values()].slice(0, 25);
+}
+
+export async function notifyExtractedEntityReviewEscalations(
+  input: NotifyExtractedEntityReviewEscalationsInput = {}
+): Promise<ExtractedEntityEscalationNotificationResult> {
+  const dryRun = input.dryRun ?? true;
+  const deliveryProvider = input.deliveryProvider ?? "manual_export";
+  const summary = await getExtractedEntityReviewEscalations({
+    limit: input.limit,
+    minImages: input.minImages
+  });
+  const items = escalationNotificationItems(summary);
+  const policy = await runPolicyCheck({
+    subjectType: "extracted_entity_review_escalation",
+    actionKey: "notify_extracted_entity_review_escalations",
+    input: {
+      dryRun,
+      deliveryProvider,
+      totals: summary.totals,
+      status: summary.status
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Extracted entity escalation notification blocked by policy");
+  }
+
+  const blockers = [
+    ...(deliveryProvider === "internal_notification_queue" && !dryRun
+      ? ["Internal notification queue provider is not configured for live escalation delivery yet."]
+      : [])
+  ];
+  const payloadPreview = {
+    subject: summary.status === "ready"
+      ? "The Senior Guru import review queue has no active escalations"
+      : "The Senior Guru import review escalations need attention",
+    escalationCount: items.length,
+    overdue: summary.totals.overdue,
+    dueSoon: summary.totals.dueSoon,
+    unassigned: summary.totals.unassigned,
+    blockedRoutes: summary.totals.blockedRoutes,
+    items: items.map((item) => ({
+      entityId: item.entity.id,
+      name: item.entity.name,
+      route: item.route,
+      slaStatus: item.slaStatus,
+      assignedTo: item.assignment?.assignedTo,
+      priority: item.priority,
+      nextActions: item.nextActions
+    }))
+  };
+  const resultStatus =
+    summary.status === "ready" ? "no_action" : blockers.length ? "blocked" : dryRun ? "ready" : "sent";
+
+  if (!dryRun && !blockers.length && summary.status !== "ready") {
+    await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: "extracted_entity.escalation_notification_sent",
+      subjectType: "extracted_entity_review_escalation",
+      payload: {
+        deliveryProvider,
+        totals: summary.totals,
+        escalationCount: items.length,
+        policyDecision: policy.decision
+      }
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    deliveryProvider,
+    status: resultStatus,
+    recipients: ["launch-ops"],
+    escalationSummary: summary,
+    payloadPreview,
+    blockers,
+    nextActions: [
+      ...(summary.status === "ready" ? ["No escalation delivery is needed right now."] : []),
+      ...(dryRun && summary.status !== "ready" ? ["Review the payload preview, then run with dryRun=false after choosing the delivery provider."] : []),
+      ...(!dryRun && blockers.length ? ["Keep delivery in manual export mode until the internal notification queue is configured."] : []),
+      ...(!dryRun && !blockers.length && summary.status !== "ready" ? ["Escalation notification was recorded for launch operations follow-up."] : [])
     ]
   };
 }

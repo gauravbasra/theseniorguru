@@ -241,3 +241,39 @@ export type ExtractedEntityReviewEscalationSummary = {
   blockedRoutes: ExtractedEntityReviewQueueItem[];
   nextActions: string[];
 };
+
+export type NotifyExtractedEntityReviewEscalationsInput = {
+  dryRun?: boolean;
+  limit?: number;
+  minImages?: number;
+  deliveryProvider?: "manual_export" | "internal_notification_queue";
+  actorId?: string;
+};
+
+export type ExtractedEntityEscalationNotificationResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  deliveryProvider: "manual_export" | "internal_notification_queue";
+  status: "ready" | "blocked" | "sent" | "no_action";
+  recipients: string[];
+  escalationSummary: ExtractedEntityReviewEscalationSummary;
+  payloadPreview: {
+    subject: string;
+    escalationCount: number;
+    overdue: number;
+    dueSoon: number;
+    unassigned: number;
+    blockedRoutes: number;
+    items: Array<{
+      entityId: string;
+      name: string;
+      route: ExtractedEntityReviewQueueItem["route"];
+      slaStatus: ExtractedEntityReviewQueueItem["slaStatus"];
+      assignedTo?: string;
+      priority: ExtractedEntityReviewQueuePriority;
+      nextActions: string[];
+    }>;
+  };
+  blockers: string[];
+  nextActions: string[];
+};
