@@ -5,7 +5,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    if (!body.manifestId || !Array.isArray(body.records)) {
+    if (!body.manifestId || !Array.isArray(body.records) || !body.records.length) {
       return NextResponse.json({ error: "manifestId and records are required" }, { status: 422 });
     }
 
