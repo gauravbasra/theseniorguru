@@ -33,6 +33,7 @@ Deliverables:
 - Admin provider verification queue API for ready, pending-delivery, failed/expired, and not-started claim work. Completed.
 - Admin provider verification SLA API for overdue, due-soon, delivery, failed/expired, and review-ready claim work. Completed.
 - Admin provider verification SLA alert preview/record API with policy gate, manual export path, and blocked live queue adapter. Completed.
+- Admin provider verification delivery readiness API for manual, email, SMS, and phone adapter status. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.
 - Sponsored event promotion APIs. Completed.

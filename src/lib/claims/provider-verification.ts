@@ -5,6 +5,8 @@ import type {
   IssueProviderVerificationCodeInput,
   ProviderClaimStatus,
   ProviderVerificationCodeDeliveryRecord,
+  ProviderVerificationDeliveryReadiness,
+  ProviderVerificationDeliveryReadinessChannel,
   ProviderVerificationDeliveryRecord,
   ProviderVerificationAttemptRecord,
   ProviderVerificationExpiryResult,
@@ -177,6 +179,63 @@ function buildCodeDeliveryRecord(
       deliveryProvider: "owner_console_manual_delivery",
       instruction: "Deliver this verification code to the verified business email, phone, or DNS contact before marking the claim approved."
     }
+  };
+}
+
+function verificationDeliveryChannels(): ProviderVerificationDeliveryReadinessChannel[] {
+  const env = getAppEnv();
+  const emailReady = Boolean(env.mailjetApiKey && env.mailjetApiSecret);
+
+  return [
+    {
+      channel: "manual",
+      status: "ready",
+      provider: "owner_console",
+      blockers: [],
+      nextActions: ["Manual owner-console verification delivery is available for document, admin, and fallback claim workflows."]
+    },
+    {
+      channel: "email",
+      status: emailReady ? "manual_only" : "blocked",
+      provider: emailReady ? "mailjet_configuration_detected_pending_transactional_adapter" : "mailjet_not_configured",
+      blockers: emailReady
+        ? ["Mailjet credentials are configured, but the provider claim transactional email adapter is not enabled yet."]
+        : ["MAILJET_API_KEY and MAILJET_API_SECRET are required before email verification delivery can leave manual mode."],
+      nextActions: emailReady
+        ? ["Wire provider claim verification templates to the transactional email adapter before live sends."]
+        : ["Configure Mailjet credentials or keep business-email verification in manual delivery mode."]
+    },
+    {
+      channel: "sms",
+      status: "blocked",
+      provider: "sms_adapter_not_configured",
+      blockers: ["No SMS provider adapter is configured for business-phone verification delivery."],
+      nextActions: ["Choose and configure an SMS provider before enabling live business-phone verification sends."]
+    },
+    {
+      channel: "phone",
+      status: "manual_only",
+      provider: "owner_console_call_task",
+      blockers: ["Automated outbound phone verification is not configured."],
+      nextActions: ["Use owner-console call tasks for phone verification until a voice provider adapter is approved."]
+    }
+  ];
+}
+
+export async function getProviderVerificationDeliveryReadiness(): Promise<ProviderVerificationDeliveryReadiness> {
+  const channels = verificationDeliveryChannels();
+  const blockers = channels.flatMap((channel) => channel.blockers);
+  const liveReadyChannels = channels.filter((channel) => channel.channel !== "manual" && channel.status === "ready");
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: liveReadyChannels.length ? "ready" : blockers.length ? "manual_only" : "ready",
+    channels,
+    blockers,
+    nextActions: [
+      "Keep provider verification sends in owner-console/manual mode until a channel reports ready.",
+      ...channels.flatMap((channel) => channel.nextActions)
+    ]
   };
 }
 

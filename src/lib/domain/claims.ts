@@ -88,6 +88,22 @@ export type ProviderVerificationDeliveryRecord = {
   sentAt?: string;
 };
 
+export type ProviderVerificationDeliveryReadinessChannel = {
+  channel: "email" | "sms" | "phone" | "manual";
+  status: "ready" | "manual_only" | "blocked";
+  provider: string;
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ProviderVerificationDeliveryReadiness = {
+  generatedAt: string;
+  status: "ready" | "manual_only" | "blocked";
+  channels: ProviderVerificationDeliveryReadinessChannel[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ProviderVerificationCodeDeliveryRecord = ProviderVerificationDeliveryRecord & {
   codeExpiresAt: string;
   manualCode?: string;

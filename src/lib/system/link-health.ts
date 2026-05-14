@@ -41,6 +41,7 @@ const routeContracts: LinkContract[] = [
   { label: "Provider verification queue API", href: "/api/v1/admin/provider-verification-queue", method: "GET", owner: "admin" },
   { label: "Provider verification SLA API", href: "/api/v1/admin/provider-verification-sla", method: "GET", owner: "admin" },
   { label: "Provider verification SLA alert API", href: "/api/v1/admin/provider-verification-sla/notify", method: "POST", owner: "admin" },
+  { label: "Provider verification delivery readiness API", href: "/api/v1/admin/provider-verification-delivery-readiness", method: "GET", owner: "admin" },
   { label: "Provider profile update queue API", href: "/api/v1/admin/provider-profile-updates", method: "GET", owner: "admin" },
   { label: "Provider profile update status API", href: "/api/v1/provider-portal/providers/seed-cottages-dayton-place/profile-updates", method: "GET", owner: "provider" },
   { label: "Providers API", href: "/api/v1/providers", method: "GET", owner: "public" },

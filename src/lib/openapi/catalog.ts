@@ -94,6 +94,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-verification-sla/notify": {
         post: { tags: ["Claims"], summary: "Preview or record policy-gated claim verification SLA alert delivery" }
       },
+      "/api/v1/admin/provider-verification-delivery-readiness": {
+        get: { tags: ["Claims"], summary: "Report claim verification delivery adapter readiness by email, SMS, phone, and manual channel" }
+      },
       "/api/v1/admin/provider-outreach": {
         get: { tags: ["Claims"], summary: "List provider claim outreach queue items" },
         post: { tags: ["Claims"], summary: "Create a policy-gated free-claim outreach sequence item" }
