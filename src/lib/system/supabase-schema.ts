@@ -81,7 +81,8 @@ export const migrationManifest = [
   "20260514070334_newsroom_content_performance_metrics.sql",
   "20260514073400_newsletter_delivery_attempts.sql",
   "20260514085800_policy_override_workflow.sql",
-  "20260514110500_extracted_entity_review_assignments.sql"
+  "20260514110500_extracted_entity_review_assignments.sql",
+  "20260514132000_vendor_feed_connections.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -228,6 +229,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260514110500_extracted_entity_review_assignments.sql": {
     capability: "aggregation",
     summary: "Owner assignment and SLA tracking for extracted entity review queue decisions."
+  },
+  "20260514132000_vendor_feed_connections.sql": {
+    capability: "aggregation",
+    summary: "Vendor feed contract, credential reference, and field mapping readiness metadata."
   }
 };
 
@@ -243,6 +248,7 @@ const requiredTables: RequiredTable[] = [
   { table: "crawl_jobs", requiredFor: "Crawler control plane", capability: "aggregation" },
   { table: "extracted_entities", requiredFor: "Inventory staging review", capability: "aggregation" },
   { table: "extracted_entity_review_assignments", requiredFor: "Extracted entity review owner and SLA tracking", capability: "aggregation" },
+  { table: "vendor_feed_connections", requiredFor: "Vendor feed credential and mapping readiness", capability: "aggregation" },
   { table: "extracted_entity_images", requiredFor: "Public-source image staging review", capability: "aggregation" },
   { table: "entity_match_candidates", requiredFor: "Duplicate detection", capability: "aggregation" },
   { table: "provider_claims", requiredFor: "Free listing claim workflow", capability: "claims" },

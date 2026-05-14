@@ -263,6 +263,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/import-launch-plan",
       "POST /api/v1/admin/import-launch-sources/seed",
       "GET /api/v1/admin/import-adapters",
+      "GET /api/v1/admin/vendor-feed-connections",
+      "POST /api/v1/admin/vendor-feed-connections",
       "GET /api/v1/admin/import-launch-execution",
       "POST /api/v1/admin/import-launch-execution",
       "GET /api/v1/admin/crawl-jobs",
@@ -278,12 +280,13 @@ const productPillars: ProductPillar[] = [
       "crawl_pages",
       "extracted_entities",
       "extracted_entity_review_assignments",
+      "vendor_feed_connections",
       "entity_matches",
       "source_field_values",
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Vendor feed credential workflow", "Provider website parser rule tuning", "Live import escalation queue adapter"]
+    nextBackendWork: ["Provider website parser rule tuning", "Live import escalation queue adapter", "Vendor feed import runner"]
   },
   {
     key: "reviews",

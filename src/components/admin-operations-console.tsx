@@ -320,6 +320,16 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<GitMerge aria-hidden="true" />}
+          label="Vendor feeds"
+          loading={loadingKey === "vendor-feeds"}
+          onClick={() =>
+            runOperation("Vendor feed readiness", "vendor-feeds", () =>
+              fetch("/api/v1/admin/vendor-feed-connections")
+            )
+          }
+        />
+        <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
           label="Website parser"
           loading={loadingKey === "provider-website-parser"}
           onClick={() =>
@@ -504,6 +514,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "provider-website-parser") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.ready ?? 0)} ready provider website parser sources, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.stagedPages ?? 0)} staged crawl pages.`;
+  }
+
+  if (key === "vendor-feeds") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.ready ?? 0)} ready vendor feeds, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.credentialsVerified ?? 0)} verified credential references.`;
   }
 
   if (key === "entity-review-queue") {

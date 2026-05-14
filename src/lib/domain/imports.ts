@@ -221,6 +221,71 @@ export type ImportAdapterReadinessSummary = {
   nextActions: string[];
 };
 
+export type VendorFeedAuthType = "api_key" | "sftp" | "oauth" | "manual_upload";
+export type VendorFeedReviewStatus = "missing" | "pending" | "approved" | "blocked";
+export type VendorFeedCredentialStorageStatus = "missing" | "reference_recorded" | "verified";
+
+export type VendorFeedConnectionRecord = {
+  id: string;
+  dataSourceId: string;
+  dataSourceName?: string;
+  vendorName: string;
+  authType: VendorFeedAuthType;
+  contractStatus: VendorFeedReviewStatus;
+  credentialStorageStatus: VendorFeedCredentialStorageStatus;
+  fieldMappingStatus: VendorFeedReviewStatus;
+  credentialReference?: string;
+  sampleFileUrl?: string;
+  approvedBy?: string;
+  lastValidatedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type VendorFeedConnectionInput = {
+  dataSourceId: string;
+  vendorName: string;
+  authType?: VendorFeedAuthType;
+  contractStatus?: VendorFeedReviewStatus;
+  credentialStorageStatus?: VendorFeedCredentialStorageStatus;
+  fieldMappingStatus?: VendorFeedReviewStatus;
+  credentialReference?: string;
+  credentialSecret?: string;
+  sampleFileUrl?: string;
+  approvedBy?: string;
+};
+
+export type VendorFeedReadinessItem = {
+  dataSourceId: string;
+  dataSourceName: string;
+  connectionId?: string;
+  vendorName?: string;
+  status: "ready" | "blocked";
+  sourceReviewStatus: string;
+  authType?: VendorFeedAuthType;
+  contractStatus?: VendorFeedReviewStatus;
+  credentialStorageStatus?: VendorFeedCredentialStorageStatus;
+  fieldMappingStatus?: VendorFeedReviewStatus;
+  credentialReference?: string;
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type VendorFeedReadinessSummary = {
+  generatedAt: string;
+  totals: {
+    vendorSources: number;
+    connections: number;
+    ready: number;
+    blocked: number;
+    credentialsVerified: number;
+  };
+  sources: VendorFeedReadinessItem[];
+  connections: VendorFeedConnectionRecord[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "blocked_by_policy";
 
 export type CrawlJobRecord = {
