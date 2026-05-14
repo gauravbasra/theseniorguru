@@ -259,6 +259,9 @@ export function getOpenApiCatalog() {
       "/api/v1/provider-portal/providers/{id}": {
         patch: { tags: ["Providers"], summary: "Submit provider profile changes into the policy/audit review workflow" }
       },
+      "/api/v1/provider-portal/providers/{id}/profile-updates": {
+        get: { tags: ["Providers"], summary: "Return provider-facing profile edit approval status and review history" }
+      },
       "/api/v1/admin/provider-profile-updates": {
         get: { tags: ["Providers"], summary: "List claimed-provider profile edit audit queue for admin review" }
       },

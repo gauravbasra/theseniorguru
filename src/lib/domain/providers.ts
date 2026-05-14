@@ -106,6 +106,21 @@ export type ProviderProfileUpdateDecisionResult = {
   nextActions: string[];
 };
 
+export type ProviderProfileUpdateStatusSummary = {
+  generatedAt: string;
+  providerId: string;
+  providerName?: string;
+  totals: {
+    updates: number;
+    pendingReview: number;
+    applied: number;
+    rejected: number;
+  };
+  latestStatus: ProviderProfileAuditStatus | "not_started";
+  updates: ProviderProfileAuditRecord[];
+  nextActions: string[];
+};
+
 export type DataSourceReviewStatus = "pending" | "approved" | "blocked" | "needs_legal_review";
 
 export type DataSourceRecord = {

@@ -5,6 +5,7 @@ import type {
   ProviderProfileUpdateDecisionInput,
   ProviderProfileUpdateDecisionResult,
   ProviderProfileUpdateQueueSummary,
+  ProviderProfileUpdateStatusSummary,
   ProviderPortalUpdateInput,
   ProviderPortalUpdateResult
 } from "@/lib/domain/providers";
@@ -285,6 +286,56 @@ export async function getProviderProfileUpdateQueue(): Promise<ProviderProfileUp
       ...(pendingReview.length ? ["Review claimed-provider profile edits before they alter public listing content."] : []),
       ...(!audits.length ? ["Provider portal edits will appear here after claimed operators submit attested changes."] : []),
       ...(applied.length ? ["Applied edits remain visible in the audit queue for launch review traceability."] : [])
+    ]
+  };
+}
+
+export async function getProviderProfileUpdateStatus(providerId: string): Promise<ProviderProfileUpdateStatusSummary> {
+  const provider = await getProviderById(providerId);
+
+  if (!provider) {
+    throw new Error("Provider not found");
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const updates = supabase
+    ? await (async () => {
+        const { data, error } = await supabase
+          .from("provider_profile_audits")
+          .select("*, providers(name)")
+          .eq("provider_id", provider.id)
+          .order("created_at", { ascending: false })
+          .limit(25);
+
+        if (error) {
+          throw new Error(`Provider profile update status query failed: ${error.message}`);
+        }
+
+        return (data ?? []).map(mapProviderProfileAudit);
+      })()
+    : localProfileAudits.filter((audit) => audit.providerId === provider.id);
+  const pendingReview = updates.filter((audit) => audit.status === "pending_review");
+  const applied = updates.filter((audit) => audit.status === "applied" || audit.status === "approved");
+  const rejected = updates.filter((audit) => audit.status === "rejected");
+  const latestStatus = updates[0]?.status ?? "not_started";
+
+  return {
+    generatedAt: new Date().toISOString(),
+    providerId: provider.id,
+    providerName: provider.name,
+    totals: {
+      updates: updates.length,
+      pendingReview: pendingReview.length,
+      applied: applied.length,
+      rejected: rejected.length
+    },
+    latestStatus,
+    updates,
+    nextActions: [
+      ...(pendingReview.length ? ["Your latest profile changes are pending Senior Guru review before they appear publicly."] : []),
+      ...(latestStatus === "applied" || latestStatus === "approved" ? ["Your latest approved profile changes are now reflected in the public directory."] : []),
+      ...(latestStatus === "rejected" ? ["Review the admin notes, correct the profile change, and submit a new attested update."] : []),
+      ...(!updates.length ? ["Submit an attested provider profile update to start the review workflow."] : [])
     ]
   };
 }
