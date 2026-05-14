@@ -174,6 +174,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/provider/campaigns/{id}/publish",
       "POST /api/v1/provider/campaigns/{id}/metrics",
       "GET /api/v1/provider/campaigns/metrics",
+      "GET /api/v1/provider/campaigns/optimization-recommendations",
       "GET /api/v1/admin/provider-onboarding-readiness",
       "GET /api/v1/provider/reputation-readiness",
       "GET /api/v1/provider/review-request-campaigns",
@@ -195,7 +196,7 @@ const productPillars: ProductPillar[] = [
       "voice_campaigns",
       "chat_agents"
     ],
-    nextBackendWork: ["AI voice assistant adapter", "Review request delivery provider adapter", "Provider-facing campaign optimization recommendations"]
+    nextBackendWork: ["AI voice assistant adapter", "Review request delivery provider adapter", "Campaign recommendation delivery UI"]
   },
   {
     key: "ads",

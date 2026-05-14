@@ -112,3 +112,24 @@ export type ProviderCampaignMetricsSummary = {
   }>;
   nextActions: string[];
 };
+
+export type CampaignOptimizationRecommendation = {
+  id: string;
+  campaignId?: string;
+  priority: "critical" | "high" | "medium" | "low";
+  category: "launch" | "creative" | "traffic" | "conversion" | "measurement";
+  title: string;
+  rationale: string;
+  action: string;
+  expectedImpact: string;
+  evidence: Record<string, unknown>;
+};
+
+export type ProviderCampaignOptimizationSummary = {
+  providerId?: string;
+  generatedAt: string;
+  metrics: ProviderCampaignMetricsSummary["metrics"];
+  campaignCount: number;
+  recommendationCount: number;
+  recommendations: CampaignOptimizationRecommendation[];
+};

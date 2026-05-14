@@ -257,6 +257,15 @@ export function getOpenApiCatalog() {
         get: { tags: ["Campaigns"], summary: "List provider campaigns" },
         post: { tags: ["Campaigns"], summary: "Create a provider marketing campaign" }
       },
+      "/api/v1/provider/campaigns/{id}/metrics": {
+        post: { tags: ["Campaigns"], summary: "Record a campaign impression, click, lead, or conversion event" }
+      },
+      "/api/v1/provider/campaigns/metrics": {
+        get: { tags: ["Campaigns"], summary: "Return provider campaign, asset, and metric rollups" }
+      },
+      "/api/v1/provider/campaigns/optimization-recommendations": {
+        get: { tags: ["Campaigns"], summary: "Return provider-facing campaign optimization recommendations from recorded metrics" }
+      },
       "/api/v1/provider/review-request-campaigns": {
         get: { tags: ["Reviews"], summary: "List provider review request campaigns" },
         post: { tags: ["Reviews"], summary: "Create a consent-gated review request campaign" }

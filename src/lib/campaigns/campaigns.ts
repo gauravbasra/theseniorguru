@@ -5,6 +5,7 @@ import type {
   CampaignMetricRecord,
   CreateCampaignInput,
   MarketingCampaignRecord,
+  ProviderCampaignOptimizationSummary,
   ProviderCampaignMetricsSummary,
   RecordCampaignMetricInput,
   RecordCampaignMetricResult
@@ -415,5 +416,133 @@ export async function getProviderCampaignMetrics(providerId?: string): Promise<P
       metrics: metrics.filter((metric) => metric.marketingCampaignId === campaign.id)
     })),
     nextActions: buildCampaignMetricActions({ campaigns, assets, metrics })
+  };
+}
+
+function campaignRecommendationId(parts: Array<string | undefined>) {
+  return parts.filter(Boolean).join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+export async function getProviderCampaignOptimizationRecommendations(
+  providerId?: string
+): Promise<ProviderCampaignOptimizationSummary> {
+  const summary = await getProviderCampaignMetrics(providerId);
+  const recommendations: ProviderCampaignOptimizationSummary["recommendations"] = [];
+
+  if (summary.campaigns.total === 0) {
+    recommendations.push({
+      id: campaignRecommendationId(["campaign", providerId, "launch-growth-campaign"]),
+      priority: "high",
+      category: "launch",
+      title: "Launch the first provider growth campaign",
+      rationale: "No campaigns exist yet, so campaign performance cannot accumulate.",
+      action: "Create a profile growth, local SEO, or event promotion campaign before optimizing traffic.",
+      expectedImpact: "Creates the baseline needed for impressions, clicks, leads, and conversion tracking.",
+      evidence: { campaignCount: summary.campaigns.total }
+    });
+  }
+
+  if (summary.campaigns.total > 0 && summary.campaigns.published === 0) {
+    recommendations.push({
+      id: campaignRecommendationId(["campaign", providerId, "publish-approved-campaign"]),
+      priority: "high",
+      category: "launch",
+      title: "Publish an approved campaign",
+      rationale: "Campaigns exist but none are published, so family-facing traffic cannot be measured.",
+      action: "Review generated assets, complete approvals, and publish the strongest campaign.",
+      expectedImpact: "Moves campaign work from draft readiness into measurable family engagement.",
+      evidence: { totalCampaigns: summary.campaigns.total, publishedCampaigns: summary.campaigns.published }
+    });
+  }
+
+  if (summary.assets.draft > 0) {
+    recommendations.push({
+      id: campaignRecommendationId(["campaign", providerId, "approve-draft-assets"]),
+      priority: "medium",
+      category: "creative",
+      title: "Approve or revise draft campaign assets",
+      rationale: "Draft assets are waiting for review and cannot support reliable campaign growth until approved.",
+      action: "Review draft social, SEO, and profile assets for senior-care accuracy, disclosures, and call-to-action clarity.",
+      expectedImpact: "Improves launch readiness and reduces policy or brand delays before publishing.",
+      evidence: { draftAssets: summary.assets.draft, totalAssets: summary.assets.total }
+    });
+  }
+
+  if (summary.metrics.impressions > 0 && summary.metrics.clickThroughRate < 0.02) {
+    recommendations.push({
+      id: campaignRecommendationId(["campaign", providerId, "improve-click-through-rate"]),
+      priority: "medium",
+      category: "traffic",
+      title: "Improve campaign click-through rate",
+      rationale: "The campaign is earning impressions, but click-through rate is below the 2% optimization threshold.",
+      action: "Test clearer care-type messaging, local trust signals, pricing-question language, and direct tour calls-to-action.",
+      expectedImpact: "Converts existing visibility into more provider profile visits and family inquiries.",
+      evidence: {
+        impressions: summary.metrics.impressions,
+        clicks: summary.metrics.clicks,
+        clickThroughRate: summary.metrics.clickThroughRate
+      }
+    });
+  }
+
+  if (summary.metrics.clicks >= 10 && summary.metrics.leads === 0) {
+    recommendations.push({
+      id: campaignRecommendationId(["campaign", providerId, "connect-lead-capture"]),
+      priority: "critical",
+      category: "conversion",
+      title: "Connect campaign traffic to lead capture",
+      rationale: "Campaign clicks are present, but no lead events have been recorded.",
+      action: "Verify inquiry forms, phone click tracking, tour request capture, and provider contact intent instrumentation.",
+      expectedImpact: "Turns campaign traffic into measurable occupancy pipeline signals.",
+      evidence: { clicks: summary.metrics.clicks, leads: summary.metrics.leads }
+    });
+  }
+
+  if (summary.metrics.leads > 0 && summary.metrics.conversions === 0) {
+    recommendations.push({
+      id: campaignRecommendationId(["campaign", providerId, "track-conversions"]),
+      priority: "medium",
+      category: "measurement",
+      title: "Track downstream tour and conversion outcomes",
+      rationale: "Lead events exist, but conversion events have not been recorded.",
+      action: "Record tour scheduled, tour completed, and move-in milestone events against the campaign.",
+      expectedImpact: "Connects marketing performance to admissions and occupancy reporting.",
+      evidence: { leads: summary.metrics.leads, conversions: summary.metrics.conversions }
+    });
+  }
+
+  if (summary.metrics.impressions === 0 && summary.campaigns.published > 0) {
+    recommendations.push({
+      id: campaignRecommendationId(["campaign", providerId, "verify-distribution"]),
+      priority: "high",
+      category: "measurement",
+      title: "Verify campaign distribution and impression tracking",
+      rationale: "Published campaigns exist, but no impressions have been recorded.",
+      action: "Confirm the campaign is placed on public surfaces and that impression events are being posted.",
+      expectedImpact: "Confirms whether the campaign has a traffic problem or an instrumentation problem.",
+      evidence: { publishedCampaigns: summary.campaigns.published, impressions: summary.metrics.impressions }
+    });
+  }
+
+  if (!recommendations.length) {
+    recommendations.push({
+      id: campaignRecommendationId(["campaign", providerId, "continue-optimization-review"]),
+      priority: "low",
+      category: "measurement",
+      title: "Continue weekly campaign optimization review",
+      rationale: "Campaign metrics are flowing and no critical growth blockers were detected.",
+      action: "Review CTR, lead rate, conversion rate, and asset approvals weekly before changing spend or creative.",
+      expectedImpact: "Keeps campaign decisions tied to actual family engagement data.",
+      evidence: summary.metrics
+    });
+  }
+
+  return {
+    providerId,
+    generatedAt: new Date().toISOString(),
+    metrics: summary.metrics,
+    campaignCount: summary.campaigns.total,
+    recommendationCount: recommendations.length,
+    recommendations
   };
 }
