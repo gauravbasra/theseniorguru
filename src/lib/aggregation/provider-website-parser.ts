@@ -13,6 +13,8 @@ import type {
   ProviderWebsiteParserRuleOverrideInput,
   ProviderWebsiteParserRuleOverrideAuditSummary,
   ProviderWebsiteParserRuleOverrideRecord,
+  ProviderWebsiteParserRuleOverrideRollbackInput,
+  ProviderWebsiteParserRuleOverrideRollbackResult,
   ProviderWebsiteParserRuleReadinessSource,
   ProviderWebsiteParserRuleReadinessSummary,
   ProviderWebsiteParserRuleSignal,
@@ -473,16 +475,149 @@ async function recordProviderWebsiteParserRuleOverrideAudit(
   });
 }
 
+export async function rollbackProviderWebsiteParserRuleOverride(
+  input: ProviderWebsiteParserRuleOverrideRollbackInput
+): Promise<ProviderWebsiteParserRuleOverrideRollbackResult> {
+  const dryRun = input.dryRun ?? true;
+  const overrides = await listProviderWebsiteParserRuleOverrides();
+  const candidates = overrides.filter((override) => override.status === "active");
+
+  if (dryRun) {
+    return {
+      generatedAt: new Date().toISOString(),
+      dryRun,
+      status: "preview",
+      candidates: input.dataSourceId || input.overrideId
+        ? candidates.filter((override) => override.id === input.overrideId || override.dataSourceId === input.dataSourceId)
+        : candidates,
+      nextActions: candidates.length
+        ? ["Select a parser rule override and run live rollback only after reviewing parser dry-run impact."]
+        : ["No active provider website parser rule overrides are available for rollback."]
+    };
+  }
+
+  if (!input.dataSourceId && !input.overrideId) {
+    throw new Error("dataSourceId or overrideId is required");
+  }
+
+  const sources = await listDataSources();
+  const existing = overrides.find(
+    (override) => override.id === input.overrideId || override.dataSourceId === input.dataSourceId
+  );
+
+  if (!existing) {
+    throw new Error("Provider website parser rule override not found");
+  }
+
+  if (existing.status === "inactive") {
+    throw new Error("Provider website parser rule override is already inactive");
+  }
+
+  const source = sources.find((item) => item.id === existing.dataSourceId);
+
+  if (!source) {
+    throw new Error("Data source not found for parser rule override");
+  }
+
+  const now = new Date().toISOString();
+  const supabase = getSupabaseAdminClient();
+  let rolledBack: ProviderWebsiteParserRuleOverrideRecord;
+
+  if (!supabase) {
+    const existingIndex = localRuleOverrides.findIndex((override) => override.id === existing.id);
+
+    if (existingIndex >= 0) {
+      localRuleOverrides[existingIndex] = {
+        ...localRuleOverrides[existingIndex],
+        status: "inactive",
+        notes: input.reason ?? localRuleOverrides[existingIndex].notes,
+        updatedAt: now
+      };
+      rolledBack = withOverrideSource(localRuleOverrides[existingIndex], sources);
+    } else {
+      rolledBack = {
+        ...existing,
+        status: "inactive",
+        notes: input.reason ?? existing.notes,
+        updatedAt: now
+      };
+    }
+  } else {
+    const { data, error } = await supabase
+      .from("provider_website_parser_rule_overrides")
+      .update({
+        status: "inactive",
+        notes: input.reason ?? existing.notes,
+        updated_at: now
+      })
+      .eq(input.overrideId ? "id" : "data_source_id", input.overrideId ?? existing.dataSourceId)
+      .select("*")
+      .single();
+
+    if (error) {
+      if (!isMissingOverrideTableError(error)) {
+        throw new Error(`Provider website parser rule override rollback failed: ${error.message}`);
+      }
+
+      rolledBack = {
+        ...existing,
+        status: "inactive",
+        notes: input.reason ?? existing.notes,
+        updatedAt: now
+      };
+    } else {
+      rolledBack = mapRuleOverride(data, sources);
+    }
+  }
+
+  const audit = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: "provider_website_parser.rule_override_rolled_back",
+    subjectType: "provider_website_parser_rule_override",
+    subjectId: rolledBack.id,
+    payload: {
+      overrideId: rolledBack.id,
+      dataSourceId: rolledBack.dataSourceId,
+      dataSourceName: rolledBack.dataSourceName ?? source.name,
+      previousStatus: existing.status,
+      status: rolledBack.status,
+      reason: input.reason,
+      actorId: input.actorId
+    }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    status: "rolled_back",
+    candidates: [rolledBack],
+    override: rolledBack,
+    auditEventId: audit.id,
+    nextActions: [
+      "Run provider website parser rule readiness again to confirm the default parser profile is active.",
+      "Review future parser dry-runs before re-activating or replacing this source-specific override."
+    ]
+  };
+}
+
 export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promise<ProviderWebsiteParserRuleOverrideAuditSummary> {
-  const [overrides, auditSummary] = await Promise.all([
+  const [overrides, upsertAuditSummary, rollbackAuditSummary] = await Promise.all([
     listProviderWebsiteParserRuleOverrides(),
     listAuditEvents({
       eventType: "provider_website_parser.rule_override_upserted",
       subjectType: "provider_website_parser_rule_override",
       limit: 250
+    }),
+    listAuditEvents({
+      eventType: "provider_website_parser.rule_override_rolled_back",
+      subjectType: "provider_website_parser_rule_override",
+      limit: 250
     })
   ]);
-  const auditEvents = auditSummary.events;
+  const auditEvents = [...upsertAuditSummary.events, ...rollbackAuditSummary.events].sort(
+    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
+  );
   const overrideRows = overrides.map((override) => {
     const overrideAuditEvents = auditEvents.filter(
       (event) =>

@@ -286,6 +286,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/provider-website-parser/rules",
       "POST /api/v1/admin/provider-website-parser/rules",
       "GET /api/v1/admin/provider-website-parser/rules/audit",
+      "POST /api/v1/admin/provider-website-parser/rules/rollback",
       "GET /api/v1/admin/data-quality-flags"
     ],
     requiredTables: [
@@ -302,7 +303,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Source manifest signed object fetch executor", "Provider website parser override rollback workflow", "Import escalation retry delivery executor"]
+    nextBackendWork: ["Source manifest signed object fetch executor", "Import escalation retry delivery executor", "Provider website parser override replacement workflow"]
   },
   {
     key: "reviews",

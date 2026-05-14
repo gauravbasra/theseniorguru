@@ -417,6 +417,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="Rollback rules"
+          loading={loadingKey === "provider-website-parser-rule-rollback"}
+          onClick={() =>
+            runOperation("Provider website parser rule rollback", "provider-website-parser-rule-rollback", () =>
+              fetch("/api/v1/admin/provider-website-parser/rules/rollback", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<Send aria-hidden="true" />}
           label="Retry escalations"
           loading={loadingKey === "escalation-retry-scheduler"}
@@ -636,6 +650,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "provider-website-parser-rule-audit") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.auditEvents ?? 0)} parser rule override audit event${totals?.auditEvents === 1 ? "" : "s"}, ${String(totals?.activeOverrides ?? 0)} active override${totals?.activeOverrides === 1 ? "" : "s"}, and ${String(totals?.unauditedOverrides ?? 0)} override${totals?.unauditedOverrides === 1 ? "" : "s"} missing audit evidence.`;
+  }
+
+  if (key === "provider-website-parser-rule-rollback") {
+    const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
+    return `${String(candidates)} active parser rule override rollback candidate${candidates === 1 ? "" : "s"} found, dry-run ${String(record.dryRun)}.`;
   }
 
   if (key === "escalation-retry-scheduler") {
