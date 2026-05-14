@@ -79,7 +79,8 @@ export function getPartnerDeveloperDocs() {
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",
       "Webhook subscriptions require HTTPS targets and expose signing secrets only once at creation.",
-      "Failed webhook deliveries can be retried; historical deliveries can be replayed as fresh queued records with audit evidence."
+      "Failed webhook deliveries can be retried; historical deliveries can be replayed as fresh queued records with audit evidence.",
+      "Replay evidence exports can be filtered by API client, event type, source status, replay status, subject, date window, and audited-only rows."
     ],
     nextActions: [
       "Issue a scoped sandbox API key from the admin Open API console.",

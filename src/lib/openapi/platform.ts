@@ -1837,13 +1837,22 @@ export async function exportWebhookReplayEvidence(input: {
   format?: "json" | "csv";
   limit?: number;
   apiClientId?: string;
+  eventType?: WebhookEventType;
+  sourceStatus?: WebhookDeliveryRecord["status"];
+  replayStatus?: WebhookDeliveryRecord["status"];
+  subjectId?: string;
+  since?: string;
+  before?: string;
+  auditedOnly?: boolean;
 } = {}): Promise<WebhookReplayEvidenceExport> {
   const format = input.format ?? "json";
   const limit = Math.max(1, Math.min(Number(input.limit ?? 100), 500));
   const source: WebhookReplayEvidenceExport["source"] = getSupabaseAdminClient() ? "supabase" : "local_fallback";
+  const sinceTime = input.since ? Date.parse(input.since) : Number.NaN;
+  const beforeTime = input.before ? Date.parse(input.before) : Number.NaN;
   const [deliveries, auditEvents, subscriptions] = await Promise.all([
     listWebhookDeliveries(),
-    listApiAuditEvents(input.apiClientId),
+    listApiAuditEvents(),
     input.apiClientId ? listWebhookSubscriptions(input.apiClientId) : listWebhookSubscriptions()
   ]);
   const subscriptionById = new Map(subscriptions.map((subscription) => [subscription.id, subscription]));
@@ -1853,8 +1862,13 @@ export async function exportWebhookReplayEvidence(input: {
       if (!input.apiClientId) return true;
       return subscriptionById.get(delivery.subscriptionId)?.apiClientId === input.apiClientId;
     })
+    .filter((delivery) => !input.eventType || delivery.eventType === input.eventType)
+    .filter((delivery) => !input.replayStatus || delivery.status === input.replayStatus)
+    .filter((delivery) => !input.subjectId || delivery.subjectId === input.subjectId)
+    .filter((delivery) => !Number.isFinite(sinceTime) || Date.parse(delivery.createdAt) >= sinceTime)
+    .filter((delivery) => !Number.isFinite(beforeTime) || Date.parse(delivery.createdAt) < beforeTime)
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
-    .slice(0, limit);
+    .slice(0, limit * 2);
   const sourceIds = replayedDeliveries.map(getReplaySourceDeliveryId).filter(Boolean) as string[];
   const evidenceDeliveryIds = [...replayedDeliveries.map((delivery) => delivery.id), ...sourceIds];
   const [attempts] = await Promise.all([listWebhookDeliveryAttempts(evidenceDeliveryIds)]);
@@ -1893,9 +1907,20 @@ export async function exportWebhookReplayEvidence(input: {
       replayReason: getReplayAuditValue(auditEvent, "reason"),
       replayActorId: getReplayAuditValue(auditEvent, "actorId")
     };
-  });
+  })
+    .filter((row) => !input.sourceStatus || row.sourceStatus === input.sourceStatus)
+    .filter((row) => !input.auditedOnly || Boolean(row.auditEventId))
+    .slice(0, limit);
   const generatedAt = new Date().toISOString();
   const headers = [
+    "filter_api_client_id",
+    "filter_event_type",
+    "filter_source_status",
+    "filter_replay_status",
+    "filter_subject_id",
+    "filter_since",
+    "filter_before",
+    "filter_audited_only",
     "replayed_delivery_id",
     "source_delivery_id",
     "subscription_id",
@@ -1915,6 +1940,14 @@ export async function exportWebhookReplayEvidence(input: {
     "replay_actor_id"
   ];
   const csvRows = rows.map((row) => [
+    input.apiClientId,
+    input.eventType,
+    input.sourceStatus,
+    input.replayStatus,
+    input.subjectId,
+    input.since,
+    input.before,
+    input.auditedOnly ? "true" : "false",
     row.replayedDeliveryId,
     row.sourceDeliveryId,
     row.subscriptionId,
@@ -1939,6 +1972,16 @@ export async function exportWebhookReplayEvidence(input: {
     source,
     format,
     limit,
+    filters: {
+      apiClientId: input.apiClientId,
+      eventType: input.eventType,
+      sourceStatus: input.sourceStatus,
+      replayStatus: input.replayStatus,
+      subjectId: input.subjectId,
+      since: input.since,
+      before: input.before,
+      auditedOnly: Boolean(input.auditedOnly)
+    },
     totals: {
       replayedDeliveries: rows.length,
       auditedReplays: rows.filter((row) => Boolean(row.auditEventId)).length,

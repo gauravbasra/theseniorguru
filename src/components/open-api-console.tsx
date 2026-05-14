@@ -407,9 +407,9 @@ export function OpenApiConsole({
             {loadingKey === "replay" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <Webhook aria-hidden="true" />}
             Replay failed
           </button>
-          <a className="small-action" href="/api/v1/admin/webhook-deliveries/replay/export?format=csv">
+          <a className="small-action" href="/api/v1/admin/webhook-deliveries/replay/export?format=csv&sourceStatus=failed&replayStatus=queued&auditedOnly=true">
             <Download aria-hidden="true" />
-            Replay evidence
+            Audited replay evidence
           </a>
         </div>
 

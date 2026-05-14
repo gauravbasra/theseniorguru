@@ -576,7 +576,7 @@ export function getOpenApiCatalog() {
         post: { tags: ["System"], summary: "Replay failed, blocked, or delivered webhook deliveries as fresh queued records with audit evidence" }
       },
       "/api/v1/admin/webhook-deliveries/replay/export": {
-        get: { tags: ["System"], summary: "Export webhook replay source-delivery evidence as JSON or CSV for partner operations review" }
+        get: { tags: ["System"], summary: "Export filtered webhook replay source-delivery evidence as JSON or CSV for partner operations review" }
       },
       "/api/v1/admin/webhook-deliveries/scheduler": {
         post: { tags: ["System"], summary: "Preview or run the scheduled webhook retry worker with failed and blocked candidate counts" }

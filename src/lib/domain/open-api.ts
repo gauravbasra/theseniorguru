@@ -302,6 +302,16 @@ export type WebhookReplayEvidenceExport = {
   source: "supabase" | "local_fallback";
   format: "json" | "csv";
   limit: number;
+  filters: {
+    apiClientId?: string;
+    eventType?: WebhookEventType;
+    sourceStatus?: WebhookDeliveryRecord["status"];
+    replayStatus?: WebhookDeliveryRecord["status"];
+    subjectId?: string;
+    since?: string;
+    before?: string;
+    auditedOnly: boolean;
+  };
   totals: {
     replayedDeliveries: number;
     auditedReplays: number;
