@@ -80,7 +80,7 @@ export function getOpenApiCatalog() {
         post: { tags: ["Claims"], summary: "Complete a provider claim verification attempt with evidence" }
       },
       "/api/v1/admin/provider-verification-attempts/{id}/send": {
-        post: { tags: ["Claims"], summary: "Run policy-gated delivery for a provider claim verification attempt" }
+        post: { tags: ["Claims"], summary: "Run policy-gated verification delivery with live-adapter readiness and manual fallback guards" }
       },
       "/api/v1/admin/provider-verification-attempts/expire": {
         post: { tags: ["Claims"], summary: "Expire pending provider claim verification attempts whose deadline has passed" }

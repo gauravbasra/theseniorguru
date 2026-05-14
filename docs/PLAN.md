@@ -187,6 +187,7 @@ Deliverables:
 - Verification evidence and attempt workflow. Completed.
 - Provider-facing claim checklist/status API. Completed.
 - Policy-gated verification delivery worker and audit payload. Completed.
+- Production-safe verification delivery manual fallback when email, SMS, or phone adapters are not live. Completed.
 - Owner claim verification queue with readiness, delivery, and blocker status. Completed.
 - Profile completion assistant. Completed.
 - Provider visibility report. Completed.

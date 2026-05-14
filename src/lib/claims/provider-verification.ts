@@ -109,11 +109,13 @@ function buildDeliveryRecord(
 ): ProviderVerificationDeliveryRecord {
   const channel = input.channel ?? deliveryChannelForMethod(attempt.method);
   const target = input.target ?? attempt.target;
-  const sentAt = channel === "manual" ? undefined : new Date().toISOString();
+  const readiness = deliveryReadinessForChannel(channel);
+  const canSendLive = Boolean(target) && readiness.status === "ready";
+  const sentAt = canSendLive && channel !== "manual" ? new Date().toISOString() : undefined;
 
   return {
     attemptId: attempt.id,
-    status: channel === "manual" || !target ? "manual_required" : "sent",
+    status: canSendLive && channel !== "manual" ? "sent" : "manual_required",
     channel,
     target,
     actionUrl: buildVerificationActionUrl(attempt),
@@ -123,7 +125,13 @@ function buildDeliveryRecord(
       policyDecision,
       providerClaimId: attempt.providerClaimId,
       method: attempt.method,
-      deliveryProvider: channel === "manual" ? "owner_console" : "configured_messaging_adapter_pending"
+      deliveryProvider: readiness.provider,
+      deliveryReadiness: readiness.status,
+      blockers: [
+        ...readiness.blockers,
+        ...(!target ? ["Verification delivery target is required before non-manual delivery can be sent."] : [])
+      ],
+      nextActions: readiness.nextActions
     }
   };
 }
@@ -220,6 +228,10 @@ function verificationDeliveryChannels(): ProviderVerificationDeliveryReadinessCh
       nextActions: ["Use owner-console call tasks for phone verification until a voice provider adapter is approved."]
     }
   ];
+}
+
+function deliveryReadinessForChannel(channel: ProviderVerificationDeliveryRecord["channel"]) {
+  return verificationDeliveryChannels().find((item) => item.channel === channel) ?? verificationDeliveryChannels()[0];
 }
 
 export async function getProviderVerificationDeliveryReadiness(): Promise<ProviderVerificationDeliveryReadiness> {
