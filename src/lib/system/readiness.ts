@@ -192,6 +192,15 @@ export function getSystemReadiness() {
         env.sourceManifestFetchCronMode === "live"
           ? undefined
           : "Set SOURCE_MANIFEST_FETCH_CRON_MODE=live only after fetch-ready source manifests are approved for unattended imports; preview mode is non-mutating."
+    },
+    {
+      key: "IMPORT_ESCALATION_RETRY_CRON_MODE",
+      label: "Import escalation retry cron mode",
+      status: env.importEscalationRetryCronMode === "live" ? "ready" : "partial",
+      action:
+        env.importEscalationRetryCronMode === "live"
+          ? undefined
+          : "Set IMPORT_ESCALATION_RETRY_CRON_MODE=live only after retry delivery provider readiness is approved; preview mode is non-mutating."
     }
   ];
   const parkedChecks: ReadinessCheck[] = [

@@ -15,6 +15,9 @@ export type AppEnv = {
   webhookRetryCronLimit?: string;
   sourceManifestFetchCronMode?: string;
   sourceManifestFetchCronLimit?: string;
+  importEscalationRetryCronMode?: string;
+  importEscalationRetryCronLimit?: string;
+  importEscalationRetryCronProvider?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
   newsletterMailjetSenderEmail?: string;
@@ -45,6 +48,9 @@ export function getAppEnv(): AppEnv {
     webhookRetryCronLimit: process.env.WEBHOOK_RETRY_CRON_LIMIT,
     sourceManifestFetchCronMode: process.env.SOURCE_MANIFEST_FETCH_CRON_MODE,
     sourceManifestFetchCronLimit: process.env.SOURCE_MANIFEST_FETCH_CRON_LIMIT,
+    importEscalationRetryCronMode: process.env.IMPORT_ESCALATION_RETRY_CRON_MODE,
+    importEscalationRetryCronLimit: process.env.IMPORT_ESCALATION_RETRY_CRON_LIMIT,
+    importEscalationRetryCronProvider: process.env.IMPORT_ESCALATION_RETRY_CRON_PROVIDER,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     newsletterMailjetSenderEmail: process.env.NEWSLETTER_MAILJET_SENDER_EMAIL,

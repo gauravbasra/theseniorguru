@@ -142,6 +142,7 @@ Deliverables:
 - Import escalation delivery callback reconciliation API with policy gate and operational audit evidence. Completed.
 - Import escalation retry scheduler API with dry-run candidate detection, live retry scheduling audit evidence, and admin console access. Completed.
 - Import escalation retry delivery executor API with dry-run batch preview, manual export execution evidence, internal queue readiness gates, and admin console access. Completed.
+- Protected import escalation retry cron route with preview/live mode safety, retry scheduling, retry delivery rollups, and scheduled worker run observability. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 

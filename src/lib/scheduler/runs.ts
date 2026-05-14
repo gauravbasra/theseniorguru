@@ -13,6 +13,7 @@ const expectedWorkers = [
   { workerKey: "cron:operations", label: "Operations cron", expectedCadenceMinutes: 60 },
   { workerKey: "cron:acquisition", label: "Acquisition cron", expectedCadenceMinutes: 24 * 60 },
   { workerKey: "cron:source-manifest-fetch", label: "Source manifest fetch cron", expectedCadenceMinutes: 24 * 60 },
+  { workerKey: "cron:import-escalation-retry", label: "Import escalation retry cron", expectedCadenceMinutes: 60 },
   { workerKey: "cron:newsroom-rss", label: "Newsroom RSS cron", expectedCadenceMinutes: 24 * 60 },
   { workerKey: "cron:webhook-retry", label: "Webhook retry cron", expectedCadenceMinutes: 60 }
 ];

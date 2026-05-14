@@ -336,6 +336,9 @@ export function getOpenApiCatalog() {
       "/api/cron/source-manifests": {
         get: { tags: ["Aggregation"], summary: "Run protected scheduled source manifest signed-object fetch worker in preview or live mode" }
       },
+      "/api/cron/import-escalation-retries": {
+        get: { tags: ["Aggregation"], summary: "Run protected import escalation retry scheduling and retry delivery in preview or live mode" }
+      },
       "/api/cron/webhooks": {
         get: { tags: ["System"], summary: "Run protected webhook retry scheduler in preview or live mode" }
       },

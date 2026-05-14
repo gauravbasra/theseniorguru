@@ -257,6 +257,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/extracted-entities/escalations/delivery-callback",
       "POST /api/v1/admin/extracted-entities/escalations/retry-scheduler",
       "POST /api/v1/admin/extracted-entities/escalations/retry-delivery",
+      "GET /api/cron/import-escalation-retries",
       "POST /api/v1/admin/extracted-entities/{id}/approve",
       "POST /api/v1/admin/current-site-inventory/import",
       "POST /api/v1/admin/public-source-acquisition/current-site-run",
@@ -307,7 +308,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Provider website parser override replacement workflow", "Import escalation retry cron wiring", "Source manifest fetch cron Vercel schedule config"]
+    nextBackendWork: ["Provider website parser override replacement workflow", "Import escalation retry cron Vercel schedule config", "Source manifest fetch cron Vercel schedule config"]
   },
   {
     key: "reviews",
@@ -412,7 +413,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/cron/operations",
       "GET /api/cron/acquisition",
       "GET /api/cron/newsroom",
-      "GET /api/cron/source-manifests"
+      "GET /api/cron/source-manifests",
+      "GET /api/cron/import-escalation-retries"
     ],
     requiredTables: [
       "policy_rules",
