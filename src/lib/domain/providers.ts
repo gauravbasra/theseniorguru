@@ -252,6 +252,65 @@ export type PolicyOverrideSummary = {
   nextActions: string[];
 };
 
+export type PolicyReviewAssignmentRole = "policy_reviewer" | "legal_reviewer" | "expert_reviewer" | "launch_owner";
+
+export type PolicyReviewAssignmentRecord = {
+  id: string;
+  policyCheckId: string;
+  assignedTo: string;
+  assignedRole: PolicyReviewAssignmentRole;
+  assignedBy: string;
+  notes?: string;
+  dueAt?: string;
+  assignedAt: string;
+  policyCheck?: PolicyQueueItem;
+};
+
+export type PolicyReviewAssignmentCandidate = {
+  policyCheck: PolicyQueueItem;
+  recommendedRole: PolicyReviewAssignmentRole;
+  recommendedDueAt: string;
+  blockers: string[];
+};
+
+export type PolicyReviewAssignmentSummary = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  totals: {
+    assignments: number;
+    legalReviewer: number;
+    policyReviewer: number;
+    expertReviewer: number;
+    launchOwner: number;
+    overdue: number;
+  };
+  assignments: PolicyReviewAssignmentRecord[];
+  candidates: PolicyReviewAssignmentCandidate[];
+  nextActions: string[];
+};
+
+export type AssignPolicyReviewInput = {
+  policyCheckId?: string;
+  assignedTo?: string;
+  assignedRole?: PolicyReviewAssignmentRole;
+  assignedBy?: string;
+  dueAt?: string;
+  notes?: string;
+  dryRun?: boolean;
+  limit?: number;
+};
+
+export type AssignPolicyReviewResult = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  status: "preview" | "assigned" | "blocked";
+  dryRun: boolean;
+  assignment?: PolicyReviewAssignmentRecord;
+  candidates: PolicyReviewAssignmentCandidate[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ExpirePolicyOverrideResult = {
   generatedAt: string;
   source: "supabase" | "local_fallback";

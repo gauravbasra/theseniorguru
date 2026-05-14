@@ -168,6 +168,8 @@ const routeContracts: LinkContract[] = [
   { label: "Scheduled worker health API", href: "/api/v1/admin/scheduled-worker-health", method: "GET", owner: "admin" },
   { label: "Operational audit events API", href: "/api/v1/admin/audit-events", method: "GET", owner: "admin" },
   { label: "Policy queue API", href: "/api/v1/admin/policy-queue", method: "GET", owner: "admin" },
+  { label: "Policy review assignments API", href: "/api/v1/admin/policy-review-assignments", method: "GET", owner: "admin" },
+  { label: "Policy review assignment recorder API", href: "/api/v1/admin/policy-review-assignments", method: "POST", owner: "admin" },
   { label: "Policy overrides API", href: "/api/v1/admin/policy-overrides", method: "GET", owner: "admin" },
   { label: "Policy override expiry API", href: "/api/v1/admin/policy-overrides/expire", method: "POST", owner: "admin" },
   { label: "Policy override decision API", href: "/api/v1/admin/policy-overrides/demo/decide", method: "POST", owner: "admin" },

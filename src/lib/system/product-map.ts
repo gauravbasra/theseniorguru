@@ -410,6 +410,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/scheduled-worker-health",
       "GET /api/v1/admin/audit-events",
       "GET /api/v1/admin/policy-queue",
+      "GET /api/v1/admin/policy-review-assignments",
+      "POST /api/v1/admin/policy-review-assignments",
       "GET /api/v1/admin/policy-overrides",
       "POST /api/v1/admin/policy-overrides",
       "POST /api/v1/admin/policy-overrides/expire",
@@ -424,13 +426,14 @@ const productPillars: ProductPillar[] = [
       "policy_rules",
       "policy_checks",
       "policy_decisions",
+      "policy_review_assignments",
       "policy_approval_requests",
       "policy_overrides",
       "consent_records",
       "audit_events",
       "scheduled_worker_runs"
     ],
-    nextBackendWork: ["Legal reviewer assignment workflow", "Policy reviewer assignment workflow", "Audit retention/export controls", "Cron alert delivery"]
+    nextBackendWork: ["Audit retention/export controls", "Cron alert delivery", "Policy assignment reviewer decision dashboard"]
   },
   {
     key: "open-api",

@@ -553,6 +553,20 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<ListChecks aria-hidden="true" />}
+          label="Policy reviewers"
+          loading={loadingKey === "policy-review-assignments"}
+          onClick={() =>
+            runOperation("Policy review assignments", "policy-review-assignments", () =>
+              fetch("/api/v1/admin/policy-review-assignments", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, limit: 25 })
+              })
+            )
+          }
+        />
+        <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
           label="Worker health"
           loading={loadingKey === "worker-health"}
           onClick={() =>
@@ -822,6 +836,12 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "entity-review-assignment") {
     return `Extracted entity review was assigned to ${String(record.assignedTo ?? "the review owner")} with an SLA due date.`;
+  }
+
+  if (key === "policy-review-assignments") {
+    const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    return `${String(candidates)} policy review assignment candidate${candidates === 1 ? "" : "s"} found, ${String(blockers)} blocker${blockers === 1 ? "" : "s"}, status ${String(record.status ?? "preview")}.`;
   }
 
   if (key === "entity-escalations") {

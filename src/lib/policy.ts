@@ -3,12 +3,18 @@ import type {
   PolicyCheckRequest,
   PolicyCheckResult,
   PolicyDecision,
+  AssignPolicyReviewInput,
+  AssignPolicyReviewResult,
   ExpirePolicyOverrideResult,
   PolicyOverrideRequest,
   PolicyOverrideStatus,
   PolicyOverrideSummary,
   PolicyQueueItem,
-  PolicyQueueSummary
+  PolicyQueueSummary,
+  PolicyReviewAssignmentCandidate,
+  PolicyReviewAssignmentRecord,
+  PolicyReviewAssignmentRole,
+  PolicyReviewAssignmentSummary
 } from "@/lib/domain/providers";
 import { recordAuditEvent } from "@/lib/audit-events";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -36,6 +42,7 @@ type PolicyCheckRecord = {
 
 const localPolicyChecks: PolicyCheckRecord[] = [];
 const localPolicyOverrides: PolicyOverrideRequest[] = [];
+const localPolicyReviewAssignments: PolicyReviewAssignmentRecord[] = [];
 
 function mapPolicyCheck(row: Record<string, unknown>): PolicyCheckRecord {
   return {
@@ -110,6 +117,55 @@ function findLocalPolicyCheck(id: string) {
   return localPolicyChecks.find((check) => check.id === id);
 }
 
+function defaultDueAt(days = 2) {
+  const due = new Date();
+  due.setUTCDate(due.getUTCDate() + days);
+  return due.toISOString();
+}
+
+function recommendedReviewRole(decision: PolicyDecision): PolicyReviewAssignmentRole {
+  if (decision === "needs_legal_review") return "legal_reviewer";
+  if (decision === "needs_expert_review") return "expert_reviewer";
+  return "policy_reviewer";
+}
+
+function isReviewRequiredDecision(decision: PolicyDecision) {
+  return decision === "needs_human_review" || decision === "needs_legal_review" || decision === "needs_expert_review";
+}
+
+function mapPolicyReviewAssignment(
+  row: Record<string, unknown>,
+  policyCheck?: PolicyQueueItem
+): PolicyReviewAssignmentRecord {
+  return {
+    id: String(row.id),
+    policyCheckId: String(row.policy_check_id),
+    assignedTo: String(row.assigned_to),
+    assignedRole: row.assigned_role as PolicyReviewAssignmentRole,
+    assignedBy: String(row.assigned_by ?? "admin"),
+    notes: row.notes ? String(row.notes) : undefined,
+    dueAt: row.due_at ? String(row.due_at) : undefined,
+    assignedAt: String(row.assigned_at ?? row.created_at ?? new Date().toISOString()),
+    policyCheck
+  };
+}
+
+function buildPolicyReviewCandidate(
+  policyCheck: PolicyQueueItem,
+  existingAssignments: PolicyReviewAssignmentRecord[]
+): PolicyReviewAssignmentCandidate {
+  const alreadyAssigned = existingAssignments.some((assignment) => assignment.policyCheckId === policyCheck.id);
+  return {
+    policyCheck,
+    recommendedRole: recommendedReviewRole(policyCheck.decision),
+    recommendedDueAt: defaultDueAt(policyCheck.decision === "needs_legal_review" ? 1 : 2),
+    blockers: [
+      ...(!isReviewRequiredDecision(policyCheck.decision) ? ["Policy check does not require reviewer assignment."] : []),
+      ...(alreadyAssigned ? ["Policy check already has a reviewer assignment."] : [])
+    ]
+  };
+}
+
 function mapPolicyOverride(row: Record<string, unknown>, policyCheck?: PolicyQueueItem): PolicyOverrideRequest {
   return {
     id: String(row.id),
@@ -123,6 +179,64 @@ function mapPolicyOverride(row: Record<string, unknown>, policyCheck?: PolicyQue
     createdAt: String(row.created_at ?? new Date().toISOString()),
     reviewedAt: row.reviewed_at ? String(row.reviewed_at) : undefined,
     policyCheck
+  };
+}
+
+async function getPolicyCheckById(policyCheckId: string): Promise<{ source: PolicyQueueSummary["source"]; record: PolicyCheckRecord }> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const record = findLocalPolicyCheck(policyCheckId);
+    if (!record) {
+      throw new Error("Policy check not found");
+    }
+    return { source: "local_fallback", record };
+  }
+
+  const { data, error } = await supabase.from("policy_checks").select("*").eq("id", policyCheckId).single();
+
+  if (error || !data) {
+    throw new Error(`Policy check lookup failed: ${error?.message ?? "not found"}`);
+  }
+
+  return { source: "supabase", record: mapPolicyCheck(data) };
+}
+
+async function loadPolicyReviewAssignments(input: { policyCheckId?: string; limit?: number } = {}) {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 100), 250));
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return {
+      source: "local_fallback" as const,
+      assignments: localPolicyReviewAssignments
+        .filter((assignment) => !input.policyCheckId || assignment.policyCheckId === input.policyCheckId)
+        .slice(0, limit)
+    };
+  }
+
+  let query = supabase
+    .from("policy_review_assignments")
+    .select("*, policy_checks(*)")
+    .order("assigned_at", { ascending: false })
+    .limit(limit);
+
+  if (input.policyCheckId) {
+    query = query.eq("policy_check_id", input.policyCheckId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Policy review assignment query failed: ${error.message}`);
+  }
+
+  return {
+    source: "supabase" as const,
+    assignments: (data ?? []).map((row) => {
+      const check = row.policy_checks && typeof row.policy_checks === "object" ? toPolicyQueueItem(mapPolicyCheck(row.policy_checks)) : undefined;
+      return mapPolicyReviewAssignment(row, check);
+    })
   };
 }
 
@@ -508,6 +622,151 @@ export async function decidePolicyOverrideRequest(input: {
   });
 
   return mapPolicyOverride(data);
+}
+
+export async function getPolicyReviewAssignments(
+  input: { policyCheckId?: string; limit?: number } = {}
+): Promise<PolicyReviewAssignmentSummary> {
+  const queue = await getPolicyQueue({ limit: input.limit ?? 100 });
+  const { source, assignments } = await loadPolicyReviewAssignments(input);
+  const candidates = queue.queues.reviewRequired
+    .map((policyCheck) => buildPolicyReviewCandidate(policyCheck, assignments))
+    .filter((candidate) => !input.policyCheckId || candidate.policyCheck.id === input.policyCheckId);
+  const now = Date.now();
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source,
+    totals: {
+      assignments: assignments.length,
+      legalReviewer: assignments.filter((assignment) => assignment.assignedRole === "legal_reviewer").length,
+      policyReviewer: assignments.filter((assignment) => assignment.assignedRole === "policy_reviewer").length,
+      expertReviewer: assignments.filter((assignment) => assignment.assignedRole === "expert_reviewer").length,
+      launchOwner: assignments.filter((assignment) => assignment.assignedRole === "launch_owner").length,
+      overdue: assignments.filter((assignment) => assignment.dueAt && Date.parse(assignment.dueAt) < now).length
+    },
+    assignments,
+    candidates,
+    nextActions: [
+      ...(candidates.some((candidate) => !candidate.blockers.length)
+        ? ["Assign unowned legal, expert, and human-review policy checks before launch execution continues."]
+        : []),
+      ...(assignments.some((assignment) => assignment.dueAt && Date.parse(assignment.dueAt) < now)
+        ? ["Escalate overdue policy review assignments and capture reviewer decisions."]
+        : []),
+      ...(!assignments.length && !candidates.length ? ["No policy checks currently need reviewer assignment."] : [])
+    ]
+  };
+}
+
+export async function assignPolicyReview(input: AssignPolicyReviewInput = {}): Promise<AssignPolicyReviewResult> {
+  const dryRun = input.dryRun ?? !input.policyCheckId;
+  const assignmentSummary = await getPolicyReviewAssignments({ policyCheckId: input.policyCheckId, limit: input.limit ?? 100 });
+
+  if (!input.policyCheckId) {
+    return {
+      generatedAt: new Date().toISOString(),
+      source: assignmentSummary.source,
+      status: "preview",
+      dryRun: true,
+      candidates: assignmentSummary.candidates,
+      blockers: [],
+      nextActions: assignmentSummary.nextActions
+    };
+  }
+
+  const assignedTo = input.assignedTo?.trim();
+  const assignedBy = input.assignedBy?.trim() || "admin";
+  const { source, record } = await getPolicyCheckById(input.policyCheckId);
+  const policyCheck = toPolicyQueueItem(record);
+  const existing = assignmentSummary.assignments.filter((assignment) => assignment.policyCheckId === input.policyCheckId);
+  const candidate = buildPolicyReviewCandidate(policyCheck, existing);
+  const blockers = [
+    ...candidate.blockers,
+    ...(!assignedTo ? ["assignedTo is required for policy review assignment."] : []),
+    ...(input.dueAt && Number.isNaN(Date.parse(input.dueAt)) ? ["dueAt must be an ISO date string."] : [])
+  ];
+
+  if (dryRun || blockers.length) {
+    return {
+      generatedAt: new Date().toISOString(),
+      source,
+      status: blockers.length ? "blocked" : "preview",
+      dryRun,
+      candidates: [candidate],
+      blockers,
+      nextActions: blockers.length
+        ? ["Resolve policy review assignment blockers before recording ownership."]
+        : ["Run with dryRun=false to record reviewer ownership and audit evidence."]
+    };
+  }
+
+  const assignedRole = input.assignedRole ?? candidate.recommendedRole;
+  const dueAt = input.dueAt ?? candidate.recommendedDueAt;
+  const supabase = getSupabaseAdminClient();
+  let assignment: PolicyReviewAssignmentRecord;
+
+  if (!supabase) {
+    assignment = {
+      id: `policy-review-assignment-${crypto.randomUUID()}`,
+      policyCheckId: input.policyCheckId,
+      assignedTo: assignedTo as string,
+      assignedRole,
+      assignedBy,
+      notes: input.notes,
+      dueAt,
+      assignedAt: new Date().toISOString(),
+      policyCheck
+    };
+    localPolicyReviewAssignments.unshift(assignment);
+  } else {
+    const { data, error } = await supabase
+      .from("policy_review_assignments")
+      .insert({
+        policy_check_id: input.policyCheckId,
+        assigned_to: assignedTo,
+        assigned_role: assignedRole,
+        assigned_by: assignedBy,
+        notes: input.notes,
+        due_at: dueAt
+      })
+      .select("*, policy_checks(*)")
+      .single();
+
+    if (error) {
+      throw new Error(`Policy review assignment creation failed: ${error.message}`);
+    }
+
+    const joinedCheck = data.policy_checks && typeof data.policy_checks === "object" ? toPolicyQueueItem(mapPolicyCheck(data.policy_checks)) : policyCheck;
+    assignment = mapPolicyReviewAssignment(data, joinedCheck);
+  }
+
+  await recordAuditEvent({
+    actorType: "admin",
+    eventType: "policy.review_assigned",
+    subjectType: "policy_check",
+    subjectId: input.policyCheckId,
+    payload: {
+      assignmentId: assignment.id,
+      assignedTo: assignment.assignedTo,
+      assignedRole: assignment.assignedRole,
+      assignedBy,
+      dueAt,
+      notes: input.notes,
+      decision: policyCheck.decision
+    }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source,
+    status: "assigned",
+    dryRun: false,
+    assignment,
+    candidates: [candidate],
+    blockers: [],
+    nextActions: ["Reviewer ownership is recorded; capture the final legal, expert, or policy decision before execution continues."]
+  };
 }
 
 export async function expirePolicyOverrideRequests(input: { now?: string; limit?: number } = {}): Promise<ExpirePolicyOverrideResult> {

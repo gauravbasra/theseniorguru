@@ -111,6 +111,7 @@ Deliverables:
 - Context-specific visual assets for local events, newsroom guidance, and trust/safety with surface-mapped readiness metadata. Completed.
 - Context-specific visual asset wiring for public article, city, and care-type SEO routes. Completed.
 - Policy queue API for review-required, disclosure-required, blocked, and approved policy checks with link-health/OpenAPI coverage. Completed.
+- Policy review assignment workflow for legal, expert, and policy-review ownership with SLA due dates, audit events, Supabase schema, OpenAPI/link-health coverage, and admin console access. Completed.
 - Policy override request and decision APIs with audit-ready Supabase schema, local fallback, and route catalog coverage. Completed.
 - Policy override expiry worker API for requested or approved time-bound overrides with audit-ready behavior. Completed.
 - Immutable operational audit event browser API with policy override request, decision, and expiry evidence coverage. Completed.

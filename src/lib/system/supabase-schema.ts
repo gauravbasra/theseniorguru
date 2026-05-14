@@ -84,7 +84,8 @@ export const migrationManifest = [
   "20260514110500_extracted_entity_review_assignments.sql",
   "20260514132000_vendor_feed_connections.sql",
   "20260514143000_source_adapter_manifests.sql",
-  "20260514153500_provider_website_parser_rule_overrides.sql"
+  "20260514153500_provider_website_parser_rule_overrides.sql",
+  "20260514190000_policy_review_assignments.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -243,6 +244,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260514153500_provider_website_parser_rule_overrides.sql": {
     capability: "aggregation",
     summary: "Governed source-specific provider website parser thresholds and keyword overrides."
+  },
+  "20260514190000_policy_review_assignments.sql": {
+    capability: "policy",
+    summary: "Reviewer ownership and SLA due dates for legal, expert, and policy review checks."
   }
 };
 
@@ -299,6 +304,7 @@ const requiredTables: RequiredTable[] = [
   { table: "webhook_deliveries", requiredFor: "Webhook delivery queue", capability: "openApi" },
   { table: "webhook_delivery_attempts", requiredFor: "Webhook retry evidence", capability: "openApi" },
   { table: "policy_checks", requiredFor: "Policy guardrail audit", capability: "policy" },
+  { table: "policy_review_assignments", requiredFor: "Policy reviewer ownership and SLA tracking", capability: "policy" },
   { table: "policy_approval_requests", requiredFor: "Policy approval workflow", capability: "policy" },
   { table: "policy_overrides", requiredFor: "Policy override audit evidence", capability: "policy" },
   { table: "audit_events", requiredFor: "Operational audit trail", capability: "policy" },

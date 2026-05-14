@@ -629,6 +629,10 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/policy-queue": {
         get: { tags: ["Policy"], summary: "List policy checks requiring review, disclosure verification, or blocked-action resolution" }
       },
+      "/api/v1/admin/policy-review-assignments": {
+        get: { tags: ["Policy"], summary: "List policy reviewer assignments and assignable legal, expert, or policy-review checks" },
+        post: { tags: ["Policy"], summary: "Preview or record reviewer ownership for legal, expert, or policy-review checks" }
+      },
       "/api/v1/admin/policy-overrides": {
         get: { tags: ["Policy"], summary: "List policy override approval requests" },
         post: { tags: ["Policy"], summary: "Request a governed override for an overridable policy check" }
