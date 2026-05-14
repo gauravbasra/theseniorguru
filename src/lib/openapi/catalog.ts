@@ -457,6 +457,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/source-adapter-manifests/load": {
         post: { tags: ["Aggregation"], summary: "Load supplied source payload records through a verified file manifest and governed import worker" }
       },
+      "/api/v1/admin/source-adapter-manifests/storage-readiness": {
+        get: { tags: ["Aggregation"], summary: "Report source manifest object-storage scheme readiness and owner credential blockers" }
+      },
       "/api/v1/admin/vendor-feed-connections": {
         get: { tags: ["Aggregation"], summary: "Report vendor feed contract, credential reference, and field mapping readiness" },
         post: { tags: ["Aggregation"], summary: "Record safe vendor feed credential metadata without storing vendor secrets" }

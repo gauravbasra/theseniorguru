@@ -371,6 +371,46 @@ export type SourceAdapterManifestReadinessSummary = {
   nextActions: string[];
 };
 
+export type SourceAdapterStorageScheme =
+  | "https"
+  | "s3"
+  | "gcs"
+  | "azure_blob"
+  | "supabase_storage"
+  | "manual_upload"
+  | "unknown";
+
+export type SourceAdapterStorageReadinessItem = {
+  manifestId: string;
+  dataSourceId: string;
+  dataSourceName?: string;
+  sourceType?: string;
+  fileName: string;
+  fileUrl?: string;
+  payloadKind: string;
+  scheme: SourceAdapterStorageScheme;
+  status: "fetch_ready" | "manual_ready" | "blocked";
+  storageStatus: SourceAdapterManifestStorageStatus;
+  mappingStatus: SourceAdapterManifestMappingStatus;
+  ownerCredentialRequired: boolean;
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type SourceAdapterStorageReadinessSummary = {
+  generatedAt: string;
+  totals: {
+    manifests: number;
+    fetchReady: number;
+    manualReady: number;
+    blocked: number;
+    ownerCredentialRequired: number;
+  };
+  manifests: SourceAdapterStorageReadinessItem[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type SourceAdapterManifestPayloadLoadInput = {
   manifestId: string;
   records: ImportRecordInput[];

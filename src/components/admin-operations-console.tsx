@@ -354,6 +354,16 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<GitMerge aria-hidden="true" />}
+          label="Storage readiness"
+          loading={loadingKey === "source-adapter-storage-readiness"}
+          onClick={() =>
+            runOperation("Source manifest storage readiness", "source-adapter-storage-readiness", () =>
+              fetch("/api/v1/admin/source-adapter-manifests/storage-readiness")
+            )
+          }
+        />
+        <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
           label="Vendor feeds"
           loading={loadingKey === "vendor-feeds"}
           onClick={() =>
@@ -571,6 +581,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "source-adapter-manifests") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.ready ?? 0)} source manifests ready, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.verifiedStorage ?? 0)} verified storage checks.`;
+  }
+
+  if (key === "source-adapter-storage-readiness") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.manualReady ?? 0)} source manifests ready for manual payload loading, ${String(totals?.blocked ?? 0)} object-storage fetches blocked, and ${String(totals?.ownerCredentialRequired ?? 0)} require owner credentials.`;
   }
 
   if (key === "provider-website-parser") {
