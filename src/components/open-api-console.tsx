@@ -434,6 +434,7 @@ export function OpenApiConsole({
         <div className="response-preview">
           <strong>{lastSecret ? "One-time secret generated" : "Secrets stay redacted after creation"}</strong>
           <p>{lastSecret ?? "API keys and webhook signing secrets are only surfaced once, then the dashboard shows previews and audit records."}</p>
+          <a className="mini-link" href="/api/v1/partner/webhooks/signing-guide">Webhook signing guide</a>
         </div>
 
         {actionState ? <p className={actionState.ok ? "governance-message ok" : "governance-message error"}>{actionState.message}</p> : null}

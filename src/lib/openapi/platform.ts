@@ -26,6 +26,7 @@ import type {
   WebhookEventType,
   WebhookReplayEvidenceExport,
   WebhookReplayEvidenceExportRow,
+  WebhookSigningGuide,
   WebhookSignatureVerificationInput,
   WebhookSignatureVerificationResult,
   WebhookSubscriptionRecord
@@ -454,6 +455,61 @@ function signWebhookPayload(secretMaterial: string, timestamp: number, body: str
 
 function previewSignature(signature: string) {
   return `${signature.slice(0, 24)}...${signature.slice(-8)}`;
+}
+
+export function getWebhookSigningGuide(): WebhookSigningGuide {
+  const timestamp = 1778792400;
+  const payload = {
+    id: "webhook-delivery-example",
+    eventType: "provider.updated",
+    subjectId: "provider-example",
+    payload: {
+      providerId: "provider-example",
+      status: "updated"
+    },
+    createdAt: "2026-05-14T21:00:00.000Z"
+  };
+  const rawBody = JSON.stringify(payload);
+  const secret = "whsec_example_do_not_use";
+  const signature = signWebhookPayload(secret, timestamp, rawBody);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    version: "v1",
+    algorithm: "HMAC-SHA256",
+    signatureHeader: "x-senior-guru-signature",
+    eventHeader: "x-senior-guru-event",
+    userAgent: "TheSeniorGuru-Webhooks/0.1",
+    signedContent: "timestamp.rawBody",
+    toleranceSeconds: 300,
+    supportedEvents: allowedWebhookEvents,
+    verificationSteps: [
+      "Read the exact raw request body before JSON parsing.",
+      "Parse x-senior-guru-signature into t and v1 values.",
+      "Reject requests when the timestamp is outside the configured tolerance window.",
+      "Compute HMAC-SHA256 with the webhook signing secret over `${t}.${rawBody}`.",
+      "Compare the computed v1 digest to the supplied v1 digest using a constant-time comparison.",
+      "Use the webhook delivery id as an idempotency key before writing downstream changes."
+    ],
+    sample: {
+      secret,
+      timestamp,
+      payload,
+      rawBody,
+      signature,
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "TheSeniorGuru-Webhooks/0.1",
+        "x-senior-guru-event": "provider.updated",
+        "x-senior-guru-signature": signature
+      }
+    },
+    failureHandling: {
+      retryableStatuses: ["failed", "blocked"],
+      replayableStatuses: ["failed", "blocked", "delivered"],
+      duplicateProtection: "Store the webhook delivery id and ignore a delivery when it has already been processed."
+    }
+  };
 }
 
 function extractWebhookSignatureParts(signature: string) {

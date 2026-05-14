@@ -618,6 +618,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/webhooks/verify": {
         post: { tags: ["System"], summary: "Verify a webhook payload signature for an owned subscription requiring webhooks:write scope" }
       },
+      "/api/v1/partner/webhooks/signing-guide": {
+        get: { tags: ["System"], summary: "Return webhook signing headers, HMAC verification steps, event list, and deterministic sample payload" }
+      },
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
       },

@@ -105,6 +105,32 @@ export type WebhookSignatureVerificationResult = {
   reasons: string[];
 };
 
+export type WebhookSigningGuide = {
+  generatedAt: string;
+  version: "v1";
+  algorithm: "HMAC-SHA256";
+  signatureHeader: "x-senior-guru-signature";
+  eventHeader: "x-senior-guru-event";
+  userAgent: "TheSeniorGuru-Webhooks/0.1";
+  signedContent: string;
+  toleranceSeconds: number;
+  supportedEvents: WebhookEventType[];
+  verificationSteps: string[];
+  sample: {
+    secret: string;
+    timestamp: number;
+    payload: Record<string, unknown>;
+    rawBody: string;
+    signature: string;
+    headers: Record<string, string>;
+  };
+  failureHandling: {
+    retryableStatuses: Array<"failed" | "blocked">;
+    replayableStatuses: Array<"failed" | "blocked" | "delivered">;
+    duplicateProtection: string;
+  };
+};
+
 export type WebhookDeliveryRecord = {
   id: string;
   subscriptionId: string;
