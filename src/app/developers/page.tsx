@@ -132,6 +132,31 @@ export default function DevelopersPage() {
         ))}
       </section>
 
+      <section className="operator-band">
+        <div>
+          <p className="eyebrow">SDK package plan</p>
+          <h2>{docs.sdkPackagePlan.title}</h2>
+          <p>{docs.sdkPackagePlan.objective}</p>
+        </div>
+        <article className="profile-card">
+          <p className="eyebrow">Status</p>
+          <h2>{docs.sdkPackagePlan.status}</h2>
+          <p>{docs.sdkPackagePlan.nextActions[0]}</p>
+        </article>
+      </section>
+
+      <section className="operator-funnel">
+        {docs.sdkPackagePlan.packages.map((sdkPackage) => (
+          <article key={sdkPackage.packageName}>
+            <span>{sdkPackage.language}</span>
+            <h2>{sdkPackage.packageName}</h2>
+            <p><strong>{sdkPackage.publicModule}</strong></p>
+            <p>{sdkPackage.responsibilities.join(" ")}</p>
+            <p>{sdkPackage.releaseGate}</p>
+          </article>
+        ))}
+      </section>
+
       <section className="category-strip">
         <div>
           <p className="eyebrow">Operations controls</p>

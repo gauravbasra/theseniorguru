@@ -91,6 +91,7 @@ Deliverables:
 - Webhook event signing SDK examples for Node.js, Python, and partner API curl usage generated from the live signing-guide sample and rendered on `/developers`. Completed.
 - Partner sandbox onboarding checklist API and `/developers` section with scoped steps, evidence signals, production blockers, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
 - Partner API version changelog API and `/developers` section with current/planned release entries, deprecation policy, migration notes, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
+- Webhook SDK package publishing plan API and `/developers` section with package names, release gates, security controls, owner blockers, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.
 - Admin Open API operations console for clients, scoped keys, webhooks, dry-run delivery, retries, and audit visibility. Completed.

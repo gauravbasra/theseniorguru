@@ -33,12 +33,22 @@ type PartnerApiChangelogEntry = {
   affectedEndpoints: string[];
 };
 
+type SdkPackage = {
+  language: "node" | "python";
+  packageName: string;
+  status: "planned";
+  publicModule: string;
+  responsibilities: string[];
+  releaseGate: string;
+};
+
 const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/events",
   "/api/v1/partner/usage",
   "/api/v1/partner/onboarding-checklist",
   "/api/v1/partner/changelog",
+  "/api/v1/partner/sdk-package-plan",
   "/api/v1/partner/webhooks/signing-guide",
   "/api/v1/partner/webhooks/verify"
 ];
@@ -278,6 +288,70 @@ export function getPartnerApiChangelog() {
   };
 }
 
+export function getWebhookSdkPackagePlan() {
+  const packages: SdkPackage[] = [
+    {
+      language: "node",
+      packageName: "@theseniorguru/webhooks",
+      status: "planned",
+      publicModule: "verifySeniorGuruWebhookSignature",
+      responsibilities: [
+        "Verify x-senior-guru-signature using HMAC-SHA256 and timing-safe digest comparison.",
+        "Enforce timestamp tolerance before application JSON parsing.",
+        "Return typed verification results with failure reasons for audit logging."
+      ],
+      releaseGate:
+        "Publish only after npm organization ownership, package provenance, 2FA, README review, and signed release workflow are approved."
+    },
+    {
+      language: "python",
+      packageName: "theseniorguru-webhooks",
+      status: "planned",
+      publicModule: "verify_senior_guru_webhook_signature",
+      responsibilities: [
+        "Verify x-senior-guru-signature using hmac.compare_digest.",
+        "Keep raw-body verification separate from framework JSON parsing.",
+        "Expose deterministic sample tests matching the live signing-guide payload."
+      ],
+      releaseGate:
+        "Publish only after PyPI ownership, trusted publishing, README review, and signed release workflow are approved."
+    }
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Webhook SDK Package Publishing Plan",
+    objective:
+      "Package the webhook signature verification examples into maintained SDK helpers without weakening raw-body verification, secret custody, or partner audit evidence.",
+    status: "planned",
+    packages,
+    requiredSecurityControls: [
+      "No SDK stores API keys or webhook signing secrets.",
+      "Every helper accepts raw body, signature header, signing secret, and optional tolerance seconds from the caller.",
+      "Digest comparison must remain timing-safe in each language runtime.",
+      "Package release requires owner-approved registry credentials and 2FA or trusted publishing.",
+      "Release artifacts must include deterministic tests generated from /api/v1/partner/webhooks/signing-guide."
+    ],
+    releaseChecklist: [
+      "Reserve package names in npm and PyPI under owner-controlled accounts.",
+      "Create package READMEs from the live signing guide and changelog.",
+      "Add CI tests that recompute the deterministic sample signature.",
+      "Document framework-specific raw-body capture examples without handling secrets.",
+      "Publish a signed prerelease before linking packages from developer docs."
+    ],
+    ownerBlockers: [
+      "Confirm npm organization and PyPI project ownership.",
+      "Approve package names, support email, repository URL, and release signer.",
+      "Approve whether SDK package publishing happens before or after the 0.2.0 partner evidence release."
+    ],
+    nextActions: [
+      "Keep inline SDK examples as the production-safe integration path until registry ownership is approved.",
+      "Prepare package READMEs and deterministic tests from the live signing-guide sample.",
+      "Add owner approvals before publishing package URLs in public developer docs."
+    ]
+  };
+}
+
 export function getPartnerDeveloperDocs() {
   const catalog = getOpenApiCatalog();
   const signingGuide = getWebhookSigningGuide();
@@ -333,6 +407,7 @@ export function getPartnerDeveloperDocs() {
     sdkExamples: buildSdkExamples(signingGuide),
     sandboxOnboarding: getPartnerSandboxOnboardingChecklist(),
     changelog: getPartnerApiChangelog(),
+    sdkPackagePlan: getWebhookSdkPackagePlan(),
     operationalControls: [
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",

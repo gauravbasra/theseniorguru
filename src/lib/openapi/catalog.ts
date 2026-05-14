@@ -621,6 +621,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/changelog": {
         get: { tags: ["System"], summary: "Return partner API version changelog, deprecation policy, migration notes, and planned release signals" }
       },
+      "/api/v1/partner/sdk-package-plan": {
+        get: { tags: ["System"], summary: "Return webhook SDK package publishing plan, security controls, release gates, and owner blockers" }
+      },
       "/api/v1/partner/developer-docs": {
         get: { tags: ["System"], summary: "Return partner developer documentation, SDK examples, OpenAPI endpoints, and webhook signing contracts" }
       },

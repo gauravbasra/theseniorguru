@@ -215,6 +215,7 @@ const routeContracts: LinkContract[] = [
   { label: "Partner usage analytics CSV export", href: "/api/v1/partner/usage?format=csv", method: "GET", owner: "provider" },
   { label: "Partner sandbox onboarding checklist API", href: "/api/v1/partner/onboarding-checklist", method: "GET", owner: "provider" },
   { label: "Partner API changelog", href: "/api/v1/partner/changelog", method: "GET", owner: "provider" },
+  { label: "Webhook SDK package plan", href: "/api/v1/partner/sdk-package-plan", method: "GET", owner: "provider" },
   { label: "Partner developer docs API", href: "/api/v1/partner/developer-docs", method: "GET", owner: "provider" },
   { label: "Partner developer docs page", href: "/developers", method: "GET", owner: "provider" },
   { label: "Partner webhook signature verification API", href: "/api/v1/partner/webhooks/verify", method: "POST", owner: "provider" },
