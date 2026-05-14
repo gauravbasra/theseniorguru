@@ -12,7 +12,9 @@ import type {
   NewsletterEditionActionInput,
   NewsletterEditionActionResult,
   NewsletterEditionRecord,
-  NewsroomReadinessSummary
+  NewsroomReadinessSummary,
+  RunScheduledRssImportsInput,
+  RunScheduledRssImportsResult
 } from "@/lib/domain/newsroom";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -406,6 +408,73 @@ export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRs
     skipped,
     items: createdItems,
     policyDecisions
+  };
+}
+
+export async function runScheduledRssImports(
+  input: RunScheduledRssImportsInput = {}
+): Promise<RunScheduledRssImportsResult> {
+  const sources = await listContentSources();
+  const requestedIds = new Set(input.contentSourceIds ?? []);
+  const rssSources = sources.filter((source) => {
+    if (source.sourceType !== "rss") {
+      return false;
+    }
+
+    return !requestedIds.size || requestedIds.has(source.id);
+  });
+  const skippedSources = rssSources
+    .filter((source) => source.reviewStatus !== "approved" || !source.url)
+    .map((source) => ({
+      id: source.id,
+      name: source.name,
+      reason: source.reviewStatus !== "approved" ? "source_not_approved" : "missing_feed_url"
+    }));
+  const runnableSources = rssSources.filter((source) => source.reviewStatus === "approved" && source.url);
+  const runs: ImportRssFeedResult[] = [];
+
+  for (const source of runnableSources) {
+    runs.push(await importRssFeed({
+      contentSourceId: source.id,
+      limit: input.limit,
+      dryRun: input.dryRun,
+      items: input.items
+    }));
+  }
+
+  const processed = runs.reduce((total, run) => total + run.processed, 0);
+  const staged = runs.reduce((total, run) => total + run.staged, 0);
+  const blocked = runs.reduce((total, run) => total + run.blocked, 0);
+  const skipped = runs.reduce((total, run) => total + run.skipped, 0);
+  const nextActions: string[] = [];
+
+  if (!rssSources.length) {
+    nextActions.push("Register at least one RSS content source before scheduling newsroom imports.");
+  }
+
+  if (skippedSources.length) {
+    nextActions.push("Approve RSS sources and confirm feed URLs before enabling scheduled live intake.");
+  }
+
+  if (runs.length && staged === 0 && !input.dryRun) {
+    nextActions.push("Review duplicate detection, source quality, and policy decisions because no live items were staged.");
+  }
+
+  if (!nextActions.length) {
+    nextActions.push(input.dryRun ? "Dry-run RSS scheduling is ready for live intake." : "Scheduled RSS intake completed.");
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun: Boolean(input.dryRun),
+    sourceCount: runnableSources.length,
+    processed,
+    staged,
+    blocked,
+    skipped,
+    runs,
+    skippedSources,
+    nextActions
   };
 }
 

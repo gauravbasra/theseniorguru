@@ -306,6 +306,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/newsroom/rss/import": {
         post: { tags: ["Newsroom"], summary: "Import RSS feed items into the policy-gated newsroom inbox" }
       },
+      "/api/v1/admin/newsroom/rss/run": {
+        post: { tags: ["Newsroom"], summary: "Run scheduled RSS intake across approved editorial sources" }
+      },
       "/api/v1/admin/newsroom/articles": {
         post: { tags: ["Newsroom"], summary: "Create a policy-gated AI-assisted article draft" }
       },

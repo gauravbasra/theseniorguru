@@ -70,6 +70,26 @@ export type ImportRssFeedResult = {
   policyDecisions: string[];
 };
 
+export type RunScheduledRssImportsInput = {
+  dryRun?: boolean;
+  limit?: number;
+  contentSourceIds?: string[];
+  items?: RssFeedItemInput[];
+};
+
+export type RunScheduledRssImportsResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  sourceCount: number;
+  processed: number;
+  staged: number;
+  blocked: number;
+  skipped: number;
+  runs: ImportRssFeedResult[];
+  skippedSources: Array<{ id: string; name: string; reason: string }>;
+  nextActions: string[];
+};
+
 export type ArticleRecord = {
   id: string;
   newsItemId?: string;

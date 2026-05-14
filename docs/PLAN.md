@@ -235,3 +235,4 @@ Deliverables:
 - Byline approval.
 - Newsletter edition schema and admin/public APIs. Completed.
 - Newsletter approval, scheduling, and send lifecycle APIs. Completed.
+- Scheduled RSS intake worker API across approved editorial sources. Completed.
