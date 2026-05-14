@@ -48,6 +48,7 @@ const allowedApiScopes: ApiClientScope[] = [
   "reviews:read",
   "campaigns:read",
   "ads:read",
+  "usage:read",
   "claims:write",
   "webhooks:write"
 ];
@@ -475,7 +476,7 @@ export async function createApiClient(input: CreateApiClientInput): Promise<ApiC
     name: input.name,
     ownerType: input.ownerType ?? "partner",
     ownerId: input.ownerId,
-    scopes: input.scopes ?? ["providers:read", "events:read"],
+    scopes: input.scopes ?? ["providers:read", "events:read", "usage:read"],
     sandboxMode: input.sandboxMode ?? true,
     rateLimitPerMinute: input.rateLimitPerMinute ?? 60,
     status: "active",

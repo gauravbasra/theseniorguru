@@ -119,7 +119,7 @@ export function OpenApiConsole({
         body: JSON.stringify({
           name: "Launch partner integration",
           ownerType: "partner",
-          scopes: ["providers:read", "events:read", "reviews:read", "webhooks:write"],
+          scopes: ["providers:read", "events:read", "reviews:read", "usage:read", "webhooks:write"],
           sandboxMode: true,
           rateLimitPerMinute: 120
         })

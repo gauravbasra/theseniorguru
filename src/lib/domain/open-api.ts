@@ -4,6 +4,7 @@ export type ApiClientScope =
   | "reviews:read"
   | "campaigns:read"
   | "ads:read"
+  | "usage:read"
   | "claims:write"
   | "webhooks:write";
 

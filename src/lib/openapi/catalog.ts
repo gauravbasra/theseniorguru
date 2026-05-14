@@ -606,6 +606,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/events": {
         get: { tags: ["Events"], summary: "Partner events API requiring events:read scope" }
       },
+      "/api/v1/partner/usage": {
+        get: { tags: ["System"], summary: "Partner-scoped API usage summary requiring usage:read scope" }
+      },
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }
       },
