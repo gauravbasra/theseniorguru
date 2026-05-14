@@ -90,6 +90,8 @@ const routeContracts: LinkContract[] = [
   { label: "Import launch plan API", href: "/api/v1/admin/import-launch-plan", method: "GET", owner: "admin" },
   { label: "Launch import source seeding API", href: "/api/v1/admin/import-launch-sources/seed", method: "POST", owner: "admin" },
   { label: "Import adapter readiness API", href: "/api/v1/admin/import-adapters", method: "GET", owner: "admin" },
+  { label: "Source adapter import readiness API", href: "/api/v1/admin/source-adapter-imports", method: "GET", owner: "admin" },
+  { label: "Source adapter import runner API", href: "/api/v1/admin/source-adapter-imports", method: "POST", owner: "admin" },
   { label: "Vendor feed connections API", href: "/api/v1/admin/vendor-feed-connections", method: "GET", owner: "admin" },
   { label: "Vendor feed import runner API", href: "/api/v1/admin/vendor-feed-imports", method: "POST", owner: "admin" },
   { label: "Vendor feed scheduled worker API", href: "/api/v1/admin/vendor-feed-imports/worker", method: "POST", owner: "admin" },

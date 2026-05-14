@@ -443,6 +443,10 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/import-adapters": {
         get: { tags: ["Aggregation"], summary: "Report CMS, state, manual, provider website, RSS, and vendor import adapter readiness" }
       },
+      "/api/v1/admin/source-adapter-imports": {
+        get: { tags: ["Aggregation"], summary: "Report CMS, state license, and owner-controlled source adapter run readiness" },
+        post: { tags: ["Aggregation"], summary: "Run approved CMS, state license, or owner-controlled source payload records through the import worker" }
+      },
       "/api/v1/admin/vendor-feed-connections": {
         get: { tags: ["Aggregation"], summary: "Report vendor feed contract, credential reference, and field mapping readiness" },
         post: { tags: ["Aggregation"], summary: "Record safe vendor feed credential metadata without storing vendor secrets" }

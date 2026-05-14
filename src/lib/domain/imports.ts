@@ -221,6 +221,49 @@ export type ImportAdapterReadinessSummary = {
   nextActions: string[];
 };
 
+export type SourceAdapterImportInput = {
+  dataSourceId: string;
+  records: ImportRecordInput[];
+  dryRun?: boolean;
+  actorId?: string;
+  batchName?: string;
+};
+
+export type SourceAdapterImportResult = {
+  generatedAt: string;
+  dataSourceId: string;
+  dataSourceName: string;
+  sourceType: string;
+  adapterKey: string;
+  dryRun: boolean;
+  batch: ImportBatchRecord;
+  run: ImportBatchRunResult;
+  readiness: ImportAdapterReadinessItem;
+  nextActions: string[];
+};
+
+export type SourceAdapterImportReadinessSummary = {
+  generatedAt: string;
+  totals: {
+    adapters: number;
+    runnable: number;
+    blocked: number;
+    unsupported: number;
+  };
+  adapters: Array<{
+    dataSourceId: string;
+    dataSourceName: string;
+    sourceType: string;
+    adapterKey: string;
+    status: "runnable" | "blocked" | "unsupported";
+    acceptedPayloadKinds: string[];
+    blockers: string[];
+    nextActions: string[];
+  }>;
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type VendorFeedAuthType = "api_key" | "sftp" | "oauth" | "manual_upload";
 export type VendorFeedReviewStatus = "missing" | "pending" | "approved" | "blocked";
 export type VendorFeedCredentialStorageStatus = "missing" | "reference_recorded" | "verified";

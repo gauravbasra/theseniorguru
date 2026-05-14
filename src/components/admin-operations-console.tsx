@@ -320,6 +320,16 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<GitMerge aria-hidden="true" />}
+          label="Source runners"
+          loading={loadingKey === "source-adapter-imports"}
+          onClick={() =>
+            runOperation("Source adapter import readiness", "source-adapter-imports", () =>
+              fetch("/api/v1/admin/source-adapter-imports")
+            )
+          }
+        />
+        <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
           label="Vendor feeds"
           loading={loadingKey === "vendor-feeds"}
           onClick={() =>
@@ -523,6 +533,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "import-adapters") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.ready ?? 0)} ready, ${String(totals?.manualReady ?? 0)} manual-ready, and ${String(totals?.blocked ?? 0)} blocked import adapters.`;
+  }
+
+  if (key === "source-adapter-imports") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.runnable ?? 0)} runnable CMS/state/manual source adapters, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.unsupported ?? 0)} routed to source-specific runners.`;
   }
 
   if (key === "provider-website-parser") {

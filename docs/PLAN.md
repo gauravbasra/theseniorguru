@@ -117,6 +117,7 @@ Deliverables:
 - Launch import source seeding API for approved CMS/current-site/state-license sources and optional starter batches. Completed.
 - Launch import execution API for current-site starter batches with explicit CMS/state adapter blockers. Completed.
 - Import adapter readiness API for CMS, state license, owner-controlled manual, provider website, RSS, and vendor sources. Completed.
+- Source adapter import readiness and direct runner API for approved CMS, state license, and owner-controlled payload records. Completed.
 - Vendor feed credential metadata and readiness workflow with contract, vault reference, and field mapping gates. Completed.
 - Vendor feed import runner API for ready vendor metadata and source records through the governed import worker. Completed.
 - Scheduled vendor feed worker preview/run API for ready vendor metadata and supplied vendor payloads without fabricated records. Completed.
@@ -144,7 +145,7 @@ Deliverables:
 - Current live TheSeniorGuru listing crawler and staging adapter. Completed.
 - Current-site public JSON acquisition worker for real production listing records. Completed.
 - Current-site parsed record preview/export API. Completed.
-- CMS/state/public-source import adapters.
+- CMS/state/public-source import adapters. Direct runner completed; scheduled payload worker remains.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.
