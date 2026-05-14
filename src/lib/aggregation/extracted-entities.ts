@@ -752,8 +752,27 @@ function escalationNotificationItems(summary: ExtractedEntityReviewEscalationSum
   return [...uniqueItems.values()].slice(0, 25);
 }
 
+function internalQueueTarget() {
+  return process.env.INTERNAL_NOTIFICATION_QUEUE_URL?.trim() || process.env.INTERNAL_NOTIFICATION_QUEUE_TOPIC?.trim();
+}
+
+function isValidHttpsTarget(value?: string) {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function escalationDeliveryChannels(): ExtractedEntityEscalationDeliveryChannel[] {
-  const internalQueueConfigured = Boolean(process.env.INTERNAL_NOTIFICATION_QUEUE_URL || process.env.INTERNAL_NOTIFICATION_QUEUE_TOPIC);
+  const queueUrl = process.env.INTERNAL_NOTIFICATION_QUEUE_URL?.trim();
+  const queueTopic = process.env.INTERNAL_NOTIFICATION_QUEUE_TOPIC?.trim();
+  const internalQueueConfigured = Boolean(queueUrl || queueTopic);
+  const queueUrlReady = isValidHttpsTarget(queueUrl);
 
   return [
     {
@@ -765,14 +784,20 @@ function escalationDeliveryChannels(): ExtractedEntityEscalationDeliveryChannel[
     },
     {
       provider: "internal_notification_queue",
-      status: internalQueueConfigured ? "manual_only" : "blocked",
+      status: queueUrlReady ? "ready" : internalQueueConfigured ? "manual_only" : "blocked",
       label: "Internal notification queue",
-      blockers: internalQueueConfigured
-        ? ["Internal queue configuration is present, but the import escalation queue adapter is not enabled for live dispatch yet."]
-        : ["INTERNAL_NOTIFICATION_QUEUE_URL or INTERNAL_NOTIFICATION_QUEUE_TOPIC is required before queue-backed escalation delivery can run."],
-      nextActions: internalQueueConfigured
-        ? ["Wire the queue adapter and delivery audit callback before live import escalation dispatch."]
-        : ["Keep import escalation delivery in manual export mode and park live queue/provider choice for owner approval."]
+      target: internalQueueTarget(),
+      blockers: [
+        ...(!internalQueueConfigured
+          ? ["INTERNAL_NOTIFICATION_QUEUE_URL is required before queue-backed escalation delivery can run."]
+          : []),
+        ...(internalQueueConfigured && !queueUrlReady
+          ? ["INTERNAL_NOTIFICATION_QUEUE_URL must be an HTTPS endpoint before live queue-backed escalation delivery can run."]
+          : [])
+      ],
+      nextActions: queueUrlReady
+        ? ["Use dry-run previews first, then dispatch to the configured internal queue endpoint with audit evidence."]
+        : ["Keep import escalation delivery in manual export mode and park live queue endpoint approval for the owner."]
     }
   ];
 }
@@ -795,6 +820,57 @@ export async function getExtractedEntityEscalationDeliveryReadiness(): Promise<E
       "Keep import escalation delivery in manual export mode until a non-manual provider reports ready.",
       ...channels.flatMap((channel) => channel.nextActions)
     ]
+  };
+}
+
+async function dispatchInternalEscalationQueue(input: {
+  payloadPreview: ExtractedEntityEscalationNotificationResult["payloadPreview"];
+  summary: ExtractedEntityReviewEscalationSummary;
+  actorId?: string;
+}) {
+  const queueUrl = process.env.INTERNAL_NOTIFICATION_QUEUE_URL?.trim();
+
+  if (!queueUrl || !isValidHttpsTarget(queueUrl)) {
+    throw new Error("INTERNAL_NOTIFICATION_QUEUE_URL must be a valid HTTPS endpoint for live queue dispatch");
+  }
+
+  const response = await fetch(queueUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(process.env.INTERNAL_NOTIFICATION_QUEUE_TOKEN
+        ? { authorization: `Bearer ${process.env.INTERNAL_NOTIFICATION_QUEUE_TOKEN}` }
+        : {}),
+      ...(process.env.INTERNAL_NOTIFICATION_QUEUE_TOPIC
+        ? { "x-notification-topic": process.env.INTERNAL_NOTIFICATION_QUEUE_TOPIC }
+        : {})
+    },
+    body: JSON.stringify({
+      eventType: "extracted_entity.review_escalation",
+      generatedAt: new Date().toISOString(),
+      actorId: input.actorId,
+      totals: input.summary.totals,
+      payload: input.payloadPreview
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Internal notification queue returned HTTP ${response.status}${body ? `: ${body.slice(0, 180)}` : ""}`);
+  }
+
+  const providerMessageId =
+    response.headers.get("x-message-id") ??
+    response.headers.get("x-request-id") ??
+    response.headers.get("x-vercel-id") ??
+    undefined;
+
+  return {
+    provider: "internal_notification_queue" as const,
+    target: queueUrl,
+    statusCode: response.status,
+    providerMessageId,
+    deliveredAt: new Date().toISOString()
   };
 }
 
@@ -851,6 +927,10 @@ export async function notifyExtractedEntityReviewEscalations(
   };
   const resultStatus =
     blockers.length ? "blocked" : summary.status === "ready" ? "no_action" : dryRun ? "ready" : "sent";
+  const deliveryAttempt =
+    !dryRun && !blockers.length && summary.status !== "ready" && deliveryProvider === "internal_notification_queue"
+      ? await dispatchInternalEscalationQueue({ payloadPreview, summary, actorId: input.actorId })
+      : undefined;
 
   if (!dryRun && !blockers.length && summary.status !== "ready") {
     await recordAuditEvent({
@@ -862,7 +942,8 @@ export async function notifyExtractedEntityReviewEscalations(
         deliveryProvider,
         totals: summary.totals,
         escalationCount: items.length,
-        policyDecision: policy.decision
+        policyDecision: policy.decision,
+        deliveryAttempt
       }
     });
   }
@@ -874,6 +955,7 @@ export async function notifyExtractedEntityReviewEscalations(
     deliveryReadiness,
     status: resultStatus,
     recipients: ["launch-ops"],
+    deliveryAttempt,
     escalationSummary: summary,
     payloadPreview,
     blockers,
@@ -882,6 +964,7 @@ export async function notifyExtractedEntityReviewEscalations(
       ...(dryRun && summary.status !== "ready" && !blockers.length ? ["Review the payload preview, then run with dryRun=false after choosing the delivery provider."] : []),
       ...(!dryRun && blockers.length ? ["Keep delivery in manual export mode until the internal notification queue is configured."] : []),
       ...(dryRun && blockers.length ? ["Resolve delivery readiness blockers or switch to manual_export before live escalation dispatch."] : []),
+      ...(!dryRun && deliveryAttempt ? ["Internal notification queue accepted the escalation payload and audit evidence was recorded."] : []),
       ...(!dryRun && !blockers.length && summary.status !== "ready" ? ["Escalation notification was recorded for launch operations follow-up."] : [])
     ]
   };

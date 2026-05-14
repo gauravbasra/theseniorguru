@@ -248,6 +248,7 @@ export type ExtractedEntityEscalationDeliveryChannel = {
   provider: ExtractedEntityEscalationDeliveryProvider;
   status: "ready" | "manual_only" | "blocked";
   label: string;
+  target?: string;
   blockers: string[];
   nextActions: string[];
 };
@@ -275,6 +276,13 @@ export type ExtractedEntityEscalationNotificationResult = {
   deliveryReadiness: ExtractedEntityEscalationDeliveryChannel;
   status: "ready" | "blocked" | "sent" | "no_action";
   recipients: string[];
+  deliveryAttempt?: {
+    provider: ExtractedEntityEscalationDeliveryProvider;
+    target?: string;
+    statusCode?: number;
+    providerMessageId?: string;
+    deliveredAt?: string;
+  };
   escalationSummary: ExtractedEntityReviewEscalationSummary;
   payloadPreview: {
     subject: string;

@@ -297,7 +297,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Live import escalation queue adapter", "Source manifest signed object fetch executor", "Provider website parser source-specific rule overrides"]
+    nextBackendWork: ["Source manifest signed object fetch executor", "Provider website parser source-specific rule overrides", "Import escalation delivery callback reconciliation"]
   },
   {
     key: "reviews",

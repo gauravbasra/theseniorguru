@@ -409,10 +409,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["Aggregation"], summary: "Summarize overdue, due-soon, unassigned, and blocked extracted-entity reviews" }
       },
       "/api/v1/admin/extracted-entities/escalations/delivery-readiness": {
-        get: { tags: ["Aggregation"], summary: "Report manual export and internal queue readiness for extracted entity escalation delivery" }
+        get: { tags: ["Aggregation"], summary: "Report manual export and HTTPS internal queue readiness for extracted entity escalation delivery" }
       },
       "/api/v1/admin/extracted-entities/escalations/notify": {
-        post: { tags: ["Aggregation"], summary: "Preview or record import review escalation delivery with provider readiness guards" }
+        post: { tags: ["Aggregation"], summary: "Preview, manually record, or dispatch import review escalations to the configured HTTPS internal queue" }
       },
       "/api/v1/admin/data-sources": {
         get: { tags: ["Aggregation"], summary: "List source registry entries with approval, robots, and terms status" },
