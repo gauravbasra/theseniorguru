@@ -299,6 +299,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
+          label="Import adapters"
+          loading={loadingKey === "import-adapters"}
+          onClick={() =>
+            runOperation("Import adapter readiness", "import-adapters", () =>
+              fetch("/api/v1/admin/import-adapters")
+            )
+          }
+        />
+        <OpsButton
           icon={<ListChecks aria-hidden="true" />}
           label="Worker health"
           loading={loadingKey === "worker-health"}
@@ -464,6 +474,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "aggregation-readiness") {
     return `Inventory launch readiness was refreshed across sources, imports, crawling, and data quality.`;
+  }
+
+  if (key === "import-adapters") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.ready ?? 0)} ready, ${String(totals?.manualReady ?? 0)} manual-ready, and ${String(totals?.blocked ?? 0)} blocked import adapters.`;
   }
 
   if (key === "entity-review-queue") {

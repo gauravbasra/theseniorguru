@@ -188,6 +188,39 @@ export type LaunchImportExecutionSummary = {
   nextActions: string[];
 };
 
+export type ImportAdapterMode = "manual_export" | "live_api" | "crawler_parser" | "vendor_feed" | "not_supported";
+
+export type ImportAdapterReadinessItem = {
+  sourceId: string;
+  sourceName: string;
+  sourceType: string;
+  adapterKey: string;
+  mode: ImportAdapterMode;
+  status: "ready" | "manual_ready" | "blocked";
+  reviewStatus: string;
+  jurisdiction?: string;
+  baseUrl?: string;
+  existingBatches: number;
+  supportedActions: string[];
+  requiredFields: string[];
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ImportAdapterReadinessSummary = {
+  generatedAt: string;
+  totals: {
+    sources: number;
+    ready: number;
+    manualReady: number;
+    blocked: number;
+    existingBatches: number;
+  };
+  adapters: ImportAdapterReadinessItem[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "blocked_by_policy";
 
 export type CrawlJobRecord = {
