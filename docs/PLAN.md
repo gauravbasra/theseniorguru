@@ -25,6 +25,7 @@ Deliverables:
 - Provider-facing claim evidence submission API and console action. Completed.
 - License/document review decision API with auditable review persistence and admin console action. Completed.
 - Business email/domain and business phone verification code issue/confirm APIs with hashed code storage. Completed.
+- Provider profile completion assistant API and dashboard action. Completed.
 - Provider onboarding readiness API across claim, verification, outreach, reputation, and growth. Completed.
 - Provider visibility report API and dashboard panel for profile completion, discovery, reputation, growth readiness, missing fields, entitlements, and next-best-actions. Completed.
 - Admin claim approve/reject workflow. Completed.
@@ -161,7 +162,7 @@ Deliverables:
 - Verification evidence and attempt workflow. Completed.
 - Provider-facing claim checklist/status API. Completed.
 - Policy-gated verification delivery worker and audit payload. Completed.
-- Profile completion assistant.
+- Profile completion assistant. Completed.
 - Provider visibility report. Completed.
 
 ## Phase 4: Events Marketplace

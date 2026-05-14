@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarPlus, FileCheck2, ListChecks, Megaphone, Send, ShieldCheck, Sparkles, Star } from "lucide-react";
+import { CalendarPlus, FileCheck2, ListChecks, Megaphone, Send, ShieldCheck, Sparkles, Star, Wand2 } from "lucide-react";
 
 type ActionResult = {
   label: string;
@@ -112,6 +112,17 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
                   }
                 })
               })
+            )
+          }
+        />
+        <ConsoleButton
+          icon={<Wand2 aria-hidden="true" />}
+          disabled={disabled}
+          loading={loadingKey === "profile-assistant"}
+          label="Profile assistant"
+          onClick={() =>
+            runAction("Profile assistant", "profile-assistant", () =>
+              fetch(`/api/v1/provider/profile-completion-assistant?providerId=${providerId}`)
             )
           }
         />
@@ -231,6 +242,12 @@ function summarizeProviderAction(key: string, data: unknown) {
 
   if (key === "claim-evidence") {
     return `Verification evidence was saved and moved into review.`;
+  }
+
+  if (key === "profile-assistant") {
+    const suggestions = Array.isArray(record.suggestions) ? record.suggestions.length : 0;
+    const readyFields = Array.isArray(record.readyToSubmitFields) ? record.readyToSubmitFields.length : 0;
+    return `${suggestions} profile suggestions found; ${readyFields} fields are ready for audit submission.`;
   }
 
   if (key === "event") {

@@ -83,6 +83,26 @@ export default async function ProviderDashboardPage() {
         </section>
       ) : null}
 
+      {dashboard.profileAssistant ? (
+        <section className="visibility-report">
+          <div className="visibility-score-card">
+            <p className="eyebrow">Profile completion assistant</p>
+            <h2>{dashboard.profileAssistant.completionScore}%</h2>
+            <p>{dashboard.profileAssistant.nextAction}</p>
+          </div>
+          <div className="visibility-actions">
+            <p className="eyebrow">Suggested fixes</p>
+            {dashboard.profileAssistant.suggestions.slice(0, 4).map((suggestion) => (
+              <article className={`visibility-action ${suggestion.priority === "critical" ? "high" : suggestion.priority === "recommended" ? "medium" : "low"}`} key={suggestion.key}>
+                <span>{suggestion.priority}</span>
+                <strong>{suggestion.label}</strong>
+                <small>{suggestion.reason}</small>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="task-list">
         <p className="eyebrow">Recommended growth path</p>
         {dashboard.growthTasks.map((task) => (

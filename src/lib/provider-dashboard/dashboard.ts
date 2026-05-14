@@ -2,6 +2,7 @@ import { getAdPlacement } from "@/lib/ads/ads";
 import { listCampaigns } from "@/lib/campaigns/campaigns";
 import { listProviderClaims } from "@/lib/claims/provider-claims";
 import { listEvents } from "@/lib/events/events";
+import { getProviderProfileCompletionAssistant } from "@/lib/provider-dashboard/profile-completion-assistant";
 import { getProviderVisibilityReport } from "@/lib/provider-dashboard/visibility-report";
 import { listProviders } from "@/lib/providers";
 
@@ -19,10 +20,12 @@ export async function getProviderDashboard() {
   const providerCampaigns = provider ? campaigns.filter((campaign) => campaign.providerId === provider.id) : [];
   const providerEvents = provider ? events.filter((event) => event.providerId === provider.id) : [];
   const visibilityReport = provider ? await getProviderVisibilityReport(provider.id) : null;
+  const profileAssistant = provider ? await getProviderProfileCompletionAssistant(provider.id) : null;
 
   return {
     provider,
     visibilityReport,
+    profileAssistant,
     stats: {
       claimStatus: providerClaims[0]?.status ?? "not_claimed",
       campaigns: providerCampaigns.length,
