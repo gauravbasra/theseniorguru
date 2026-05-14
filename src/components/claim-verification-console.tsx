@@ -177,6 +177,55 @@ export function ClaimVerificationConsole({ initialClaims }: ClaimVerificationCon
     });
   }
 
+  async function reviewDocumentAttempt(attempt: ProviderVerificationAttemptRecord, decision: "approved" | "rejected") {
+    if (!selectedClaim) return;
+
+    const key = `document-${decision}-${attempt.id}`;
+    const documentUrl =
+      typeof attempt.attemptPayload.documentUrl === "string"
+        ? attempt.attemptPayload.documentUrl
+        : attempt.target?.startsWith("http")
+          ? attempt.target
+          : undefined;
+    setLoadingKey(key);
+    const response = await fetch(`/api/v1/admin/provider-claims/${selectedClaim.id}/document-review`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        attemptId: attempt.id,
+        decision,
+        reviewerId: ownerActorId,
+        reviewerNotes: `${decision === "approved" ? "Approved" : "Rejected"} license document from admin claim console.`,
+        evidence: {
+          documentType: "license",
+          documentUrl,
+          matchedProviderName: decision === "approved",
+          matchedProviderAddress: decision === "approved",
+          attestationAccepted: true
+        }
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    setLoadingKey(null);
+
+    if (response.ok && payload.data?.attempt) {
+      setAttemptsByClaim((current) => ({
+        ...current,
+        [attempt.providerClaimId]: (current[attempt.providerClaimId] ?? []).map((item) =>
+          item.id === attempt.id ? payload.data.attempt : item
+        )
+      }));
+      await refreshClaims();
+    }
+
+    setActionState({
+      ok: response.ok,
+      message: response.ok
+        ? `Document review ${decision}; verification marked ${payload.data?.attempt?.status ?? "updated"}.`
+        : payload.error ?? "Document review failed."
+    });
+  }
+
   async function decideClaim(decision: "approve" | "reject") {
     if (!selectedClaim) return;
 
@@ -335,6 +384,18 @@ export function ClaimVerificationConsole({ initialClaims }: ClaimVerificationCon
                       {loadingKey === `failed-${attempt.id}` ? <Loader2 className="spin-icon" aria-hidden="true" /> : <XCircle aria-hidden="true" />}
                       Fail
                     </button>
+                    {attempt.method === "license_document" ? (
+                      <>
+                        <button className="tiny-icon-button approve" type="button" disabled={Boolean(loadingKey)} onClick={() => reviewDocumentAttempt(attempt, "approved")}>
+                          {loadingKey === `document-approved-${attempt.id}` ? <Loader2 className="spin-icon" aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
+                          Review
+                        </button>
+                        <button className="tiny-icon-button block" type="button" disabled={Boolean(loadingKey)} onClick={() => reviewDocumentAttempt(attempt, "rejected")}>
+                          {loadingKey === `document-rejected-${attempt.id}` ? <Loader2 className="spin-icon" aria-hidden="true" /> : <XCircle aria-hidden="true" />}
+                          Reject doc
+                        </button>
+                      </>
+                    ) : null}
                   </>
                 ) : (
                   <b>{attempt.status}</b>

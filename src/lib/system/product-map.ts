@@ -37,7 +37,8 @@ const productPillars: ProductPillar[] = [
       "PATCH /api/v1/provider-portal/providers/{id}",
       "GET /api/v1/provider-portal/claims/{id}/status",
       "POST /api/v1/provider-portal/claims/{id}/verification-evidence",
-      "POST /api/v1/admin/provider-verification-attempts/{id}/send"
+      "POST /api/v1/admin/provider-verification-attempts/{id}/send",
+      "POST /api/v1/admin/provider-claims/{id}/document-review"
     ],
     requiredTables: [
       "providers",

@@ -76,7 +76,8 @@ export const migrationManifest = [
   "20260511141401_scheduled_worker_runs.sql",
   "20260511142434_approved_current_site_source.sql",
   "20260511202000_event_reminder_followups.sql",
-  "20260512034500_event_attendance_capture.sql"
+  "20260512034500_event_attendance_capture.sql",
+  "20260513191500_provider_claim_document_reviews.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -203,6 +204,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260512034500_event_attendance_capture.sql": {
     capability: "events",
     summary: "Event attendance capture and no-show tracking for RSVP conversion analytics."
+  },
+  "20260513191500_provider_claim_document_reviews.sql": {
+    capability: "claims",
+    summary: "Auditable provider claim document review decisions tied to license-document verification attempts."
   }
 };
 
@@ -221,6 +226,7 @@ const requiredTables: RequiredTable[] = [
   { table: "entity_match_candidates", requiredFor: "Duplicate detection", capability: "aggregation" },
   { table: "provider_claims", requiredFor: "Free listing claim workflow", capability: "claims" },
   { table: "provider_verification_attempts", requiredFor: "Claim verification workflow", capability: "claims" },
+  { table: "provider_claim_document_reviews", requiredFor: "License document review decisions", capability: "claims" },
   { table: "provider_outreach_sequences", requiredFor: "Claim outreach queue", capability: "claims" },
   { table: "events", requiredFor: "Provider events marketplace", capability: "events" },
   { table: "event_rsvps", requiredFor: "Family event RSVP capture", capability: "events" },

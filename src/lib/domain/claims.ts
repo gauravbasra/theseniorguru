@@ -109,6 +109,37 @@ export type SubmitProviderClaimEvidenceInput = {
   actorId?: string;
 };
 
+export type ProviderClaimDocumentReviewDecision = "approved" | "rejected";
+
+export type ProviderClaimDocumentReviewInput = {
+  claimId: string;
+  attemptId?: string;
+  decision: ProviderClaimDocumentReviewDecision;
+  reviewerId?: string;
+  reviewerNotes?: string;
+  evidence: {
+    documentUrl?: string;
+    documentType?: "license" | "certification" | "insurance" | "state_registration" | "other";
+    issuingAuthority?: string;
+    licenseNumberLast4?: string;
+    expirationDate?: string;
+    matchedProviderName?: boolean;
+    matchedProviderAddress?: boolean;
+    attestationAccepted?: boolean;
+  };
+};
+
+export type ProviderClaimDocumentReviewRecord = {
+  id: string;
+  claimId: string;
+  attemptId?: string;
+  decision: ProviderClaimDocumentReviewDecision;
+  reviewerId?: string;
+  reviewerNotes?: string;
+  evidence: Record<string, unknown>;
+  createdAt: string;
+};
+
 export type ProviderClaimChecklistItem = {
   key: string;
   label: string;

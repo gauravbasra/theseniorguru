@@ -23,6 +23,7 @@ Deliverables:
 - Provider-facing claim status and verification checklist API. Completed.
 - Automatic initial verification attempt after claim submission. Completed.
 - Provider-facing claim evidence submission API and console action. Completed.
+- License/document review decision API with auditable review persistence and admin console action. Completed.
 - Provider onboarding readiness API across claim, verification, outreach, reputation, and growth. Completed.
 - Provider visibility report API and dashboard panel for profile completion, discovery, reputation, growth readiness, missing fields, entitlements, and next-best-actions. Completed.
 - Admin claim approve/reject workflow. Completed.
@@ -155,7 +156,7 @@ Deliverables:
 - Free claim flow.
 - Business email/domain verification.
 - Business phone verification.
-- License/document review.
+- License/document review. Completed.
 - Verification evidence and attempt workflow. Completed.
 - Provider-facing claim checklist/status API. Completed.
 - Policy-gated verification delivery worker and audit payload. Completed.
