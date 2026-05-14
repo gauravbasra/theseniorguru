@@ -310,6 +310,60 @@ export type SourceAdapterWorkerRunResult = {
   nextActions: string[];
 };
 
+export type SourceAdapterManifestStorageStatus = "registered" | "verified" | "blocked";
+export type SourceAdapterManifestMappingStatus = "pending" | "approved" | "blocked";
+
+export type SourceAdapterManifestRecord = {
+  id: string;
+  dataSourceId: string;
+  dataSourceName?: string;
+  sourceType?: string;
+  payloadKind: string;
+  fileName: string;
+  fileUrl?: string;
+  checksumSha256: string;
+  recordCount: number;
+  storageStatus: SourceAdapterManifestStorageStatus;
+  mappingStatus: SourceAdapterManifestMappingStatus;
+  approvedBy?: string;
+  receivedAt: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type SourceAdapterManifestInput = {
+  dataSourceId: string;
+  payloadKind: string;
+  fileName: string;
+  fileUrl?: string;
+  checksumSha256: string;
+  recordCount: number;
+  storageStatus?: SourceAdapterManifestStorageStatus;
+  mappingStatus?: SourceAdapterManifestMappingStatus;
+  approvedBy?: string;
+  receivedAt?: string;
+};
+
+export type SourceAdapterManifestReadinessItem = SourceAdapterManifestRecord & {
+  status: "ready" | "blocked";
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type SourceAdapterManifestReadinessSummary = {
+  generatedAt: string;
+  totals: {
+    manifests: number;
+    ready: number;
+    blocked: number;
+    verifiedStorage: number;
+    approvedMappings: number;
+  };
+  manifests: SourceAdapterManifestReadinessItem[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type VendorFeedAuthType = "api_key" | "sftp" | "oauth" | "manual_upload";
 export type VendorFeedReviewStatus = "missing" | "pending" | "approved" | "blocked";
 export type VendorFeedCredentialStorageStatus = "missing" | "reference_recorded" | "verified";

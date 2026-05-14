@@ -344,6 +344,16 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<GitMerge aria-hidden="true" />}
+          label="Source manifests"
+          loading={loadingKey === "source-adapter-manifests"}
+          onClick={() =>
+            runOperation("Source adapter file manifests", "source-adapter-manifests", () =>
+              fetch("/api/v1/admin/source-adapter-manifests")
+            )
+          }
+        />
+        <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
           label="Vendor feeds"
           loading={loadingKey === "vendor-feeds"}
           onClick={() =>
@@ -556,6 +566,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "source-adapter-worker") {
     return `${String(record.executedAdapters ?? 0)} source adapters executed, ${String(record.skippedAdapters ?? 0)} skipped for missing payloads, and ${String(record.blockedAdapters ?? 0)} blocked by readiness gates.`;
+  }
+
+  if (key === "source-adapter-manifests") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.ready ?? 0)} source manifests ready, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.verifiedStorage ?? 0)} verified storage checks.`;
   }
 
   if (key === "provider-website-parser") {
