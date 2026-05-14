@@ -5,6 +5,7 @@ import { FreeListingForm } from "@/components/free-listing-form";
 import { OperatorDemoForm } from "@/components/operator-demo-form";
 import { ProductVisual } from "@/components/product-visual";
 import { listProviders } from "@/lib/providers";
+import { visualAssets } from "@/lib/visual-assets";
 
 const careTypes = [
   "Assisted Living",
@@ -91,11 +92,7 @@ export default async function HomePage() {
         </div>
         <ProductVisual
           className="hero-visual"
-          src="/assets/seniorguru/family-decision-support.svg"
-          alt="Family care circle comparing senior living communities, tour notes, reviews, and direct inquiries in The Senior Guru"
-          eyebrow="Family decision support"
-          title="From stressful search to a shared shortlist."
-          copy="Families compare care type, budget, reviews, notes, and direct next steps without a referral-fee wall."
+          asset={visualAssets.familyDecisionSupport}
           priority
         />
       </section>
@@ -152,18 +149,10 @@ export default async function HomePage() {
 
       <section className="visual-story-section">
         <ProductVisual
-          src="/assets/seniorguru/senior-living-tour.svg"
-          alt="Senior living tour plan with checklist for meals, safety questions, pricing, availability, and family notes"
-          eyebrow="Tour preparation"
-          title="Families arrive with the right questions."
-          copy="Saved priorities turn search results into prepared community visits, clearer follow-up, and less guesswork."
+          asset={visualAssets.seniorLivingTour}
         />
         <ProductVisual
-          src="/assets/seniorguru/care-circle-mobile-app.svg"
-          alt="Senior-friendly mobile care circle showing saved tours, notes, and shared family planning"
-          eyebrow="Care circle app"
-          title="The decision stays organized after the first search."
-          copy="A mobile-friendly care circle keeps seniors and caregivers aligned around saved communities, events, and next steps."
+          asset={visualAssets.careCircleMobileApp}
         />
       </section>
 
@@ -208,11 +197,7 @@ export default async function HomePage() {
         </div>
         <ProductVisual
           className="local-search-visual"
-          src="/assets/seniorguru/local-search-map.svg"
-          alt="Local senior care search map with assisted living, memory care, sponsored event labels, and direct contact paths"
-          eyebrow="Local discovery"
-          title="City and care pages with honest labels."
-          copy="Organic listings, sponsored placements, and direct contact stay visually distinct for family trust."
+          asset={visualAssets.localSearchMap}
         />
       </section>
 
@@ -260,11 +245,7 @@ export default async function HomePage() {
         </div>
         <ProductVisual
           className="occupancy-response-visual"
-          src="/assets/seniorguru/operator-occupancy-response.svg"
-          alt="Senior living operator dashboard routing missed calls and family inquiries into admissions follow-up and tour opportunities"
-          eyebrow="Operator response"
-          title="Missed inquiries become visible recovery work."
-          copy="Operators see the occupancy impact of slow response and can route families to the right next step."
+          asset={visualAssets.operatorOccupancyResponse}
         />
       </section>
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { OperatorDemoForm } from "@/components/operator-demo-form";
 import { ProductVisual } from "@/components/product-visual";
+import { visualAssets } from "@/lib/visual-assets";
 
 const reputationFlow = [
   "Request reviews from families and residents with consent",
@@ -28,11 +29,7 @@ export default function ReputationPage() {
         </div>
         <ProductVisual
           className="audience-visual"
-          src="/assets/seniorguru/reputation-local-search.svg"
-          alt="Local senior care search listing with review sentiment, sponsored disclosure, organic trust signals, and reputation workflow"
-          eyebrow="Trust signals"
-          title="Reviews become search confidence."
-          copy="Reputation work connects review requests, moderation, sentiment, and profile trust signals families can understand."
+          asset={visualAssets.reputationLocalSearch}
           priority
         />
       </section>

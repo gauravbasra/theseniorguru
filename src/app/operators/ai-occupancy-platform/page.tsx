@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { OperatorDemoForm } from "@/components/operator-demo-form";
 import { ProductVisual } from "@/components/product-visual";
+import { visualAssets } from "@/lib/visual-assets";
 
 const features = [
   ["AI Admissions Assistant", "Answers common family questions and captures inquiry context around the clock."],
@@ -50,11 +51,7 @@ export default function AiOccupancyPlatformPage() {
 
       <section className="visual-story-section single">
         <ProductVisual
-          src="/assets/seniorguru/operator-occupancy-response.svg"
-          alt="AI occupancy platform visual showing missed senior living inquiries, fast response, and tour conversion signals"
-          eyebrow="AI occupancy layer"
-          title="Response speed, source, and tour conversion in one operator view."
-          copy="The platform is positioned around senior living admissions work, not a generic inbox or marketing dashboard."
+          asset={visualAssets.operatorOccupancyResponse}
         />
       </section>
     </main>

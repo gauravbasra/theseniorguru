@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ProductVisual } from "@/components/product-visual";
 import { getAppFeed } from "@/lib/community/feed";
 import { audienceMessaging } from "@/lib/messaging/audiences";
+import { visualAssets } from "@/lib/visual-assets";
 
 export default async function SeniorsPage() {
   const feed = await getAppFeed();
@@ -21,11 +22,7 @@ export default async function SeniorsPage() {
         </div>
         <ProductVisual
           className="audience-visual"
-          src="/assets/seniorguru/care-circle-mobile-app.svg"
-          alt="Senior-friendly mobile care circle with saved tours, family notes, and shared next steps"
-          eyebrow="Senior-friendly mobile"
-          title="Saved providers, family notes, and local events stay together."
-          copy="The consumer app keeps the care circle organized after the first search."
+          asset={visualAssets.careCircleMobileApp}
           priority
         />
       </section>

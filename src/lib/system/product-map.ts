@@ -339,6 +339,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/readiness",
       "GET /api/v1/system/launch-checklist",
       "GET /api/v1/system/supabase-schema",
+      "GET /api/v1/system/visual-assets",
       "GET /api/v1/admin/scheduled-worker-runs",
       "GET /api/cron/operations",
       "GET /api/cron/acquisition"

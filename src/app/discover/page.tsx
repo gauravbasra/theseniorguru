@@ -2,6 +2,7 @@ import Image from "next/image";
 import { ProductVisual } from "@/components/product-visual";
 import { listProviders } from "@/lib/providers";
 import { getAdPlacement } from "@/lib/ads/ads";
+import { visualAssets } from "@/lib/visual-assets";
 
 export default async function DiscoverPage() {
   const [providers, topPlacement] = await Promise.all([listProviders(), getAdPlacement("web.discover.top")]);
@@ -23,11 +24,7 @@ export default async function DiscoverPage() {
       </section>
       <section className="discover-visual-band">
         <ProductVisual
-          src="/assets/seniorguru/local-search-map.svg"
-          alt="Local senior care map showing organic provider listings, sponsored event placement, and direct contact options"
-          eyebrow="Transparent local search"
-          title="Every result keeps source, sponsorship, and contact intent visible."
-          copy="Families can compare organic listings and clearly labeled placements without losing direct access to providers."
+          asset={visualAssets.localSearchMap}
           priority
         />
       </section>

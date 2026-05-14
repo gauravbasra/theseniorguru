@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="690" viewBox="0 0 920 690" role="img" aria-labelledby="title desc">
-  <title id="title">Local senior care search map visual</title>
-  <desc id="desc">A local map with senior care listings, organic results, direct contact, and sponsored labels.</desc>
+  <title id="title">Transparent local senior care search map</title>
+  <desc id="desc">A local search map separating organic assisted living and memory care results from sponsored events while preserving source confidence and direct contact paths.</desc>
   <rect width="920" height="690" fill="#F8F3E9"/>
   <rect x="68" y="64" width="784" height="562" rx="30" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="3"/>
   <path d="M106 236h710M218 102v486M406 102v486M606 102v486" stroke="#E7DDCE" stroke-width="3"/>
@@ -9,19 +9,19 @@
     <circle cx="282" cy="282" r="30" fill="#174F49"/>
     <text x="272" y="292" fill="#FFFFFF" font-size="28" font-weight="900">1</text>
     <rect x="318" y="246" width="244" height="76" rx="18" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="2"/>
-    <text x="342" y="278" fill="#152238" font-size="18" font-weight="800">Assisted living</text>
-    <text x="342" y="302" fill="#66706F" font-size="14">Direct call and profile</text>
+    <text x="342" y="278" fill="#152238" font-size="18" font-weight="800">Organic assisted living</text>
+    <text x="342" y="302" fill="#66706F" font-size="14">Direct call · source 92%</text>
     <circle cx="604" cy="402" r="30" fill="#BF7D2A"/>
     <text x="594" y="412" fill="#FFFFFF" font-size="28" font-weight="900">2</text>
     <rect x="364" y="432" width="276" height="80" rx="18" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="2"/>
-    <text x="388" y="464" fill="#152238" font-size="18" font-weight="800">Memory care</text>
-    <text x="388" y="488" fill="#66706F" font-size="14">Reviews, pricing context, tours</text>
+    <text x="388" y="464" fill="#152238" font-size="18" font-weight="800">Memory care comparison</text>
+    <text x="388" y="488" fill="#66706F" font-size="14">Reviews · pricing context · tours</text>
     <circle cx="664" cy="190" r="30" fill="#9F5244"/>
     <text x="654" y="200" fill="#FFFFFF" font-size="28" font-weight="900">3</text>
     <rect x="418" y="122" width="292" height="72" rx="18" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="2"/>
-    <text x="442" y="154" fill="#152238" font-size="18" font-weight="800">Sponsored event</text>
-    <text x="442" y="178" fill="#66706F" font-size="14">Clearly labeled placement</text>
+    <text x="442" y="154" fill="#152238" font-size="18" font-weight="800">Sponsored open house</text>
+    <text x="442" y="178" fill="#66706F" font-size="14">Paid label remains visible</text>
   </g>
   <rect x="126" y="532" width="668" height="54" rx="18" fill="#174F49"/>
-  <text x="154" y="566" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">Families search locally. Providers stay reachable without referral gatekeeping.</text>
+  <text x="154" y="566" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">Organic listings, paid events, and direct provider contact stay separate.</text>
 </svg>

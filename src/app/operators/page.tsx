@@ -3,6 +3,7 @@ import { FreeListingForm } from "@/components/free-listing-form";
 import { OperatorDemoForm } from "@/components/operator-demo-form";
 import { ProductVisual } from "@/components/product-visual";
 import { getProviderDashboard } from "@/lib/provider-dashboard/dashboard";
+import { visualAssets } from "@/lib/visual-assets";
 
 export default async function OperatorsPage() {
   const dashboard = await getProviderDashboard();
@@ -24,11 +25,7 @@ export default async function OperatorsPage() {
         </div>
         <ProductVisual
           className="audience-visual"
-          src="/assets/seniorguru/operator-occupancy-response.svg"
-          alt="Senior living operator occupancy response board with missed calls, new inquiries, and tour opportunity analytics"
-          eyebrow="Occupancy response"
-          title="Show the missed opportunity, then route the next action."
-          copy="Free listings feed inquiry analytics before operators upgrade into chat, voice, tours, reviews, and campaigns."
+          asset={visualAssets.operatorOccupancyResponse}
           priority
         />
       </section>
