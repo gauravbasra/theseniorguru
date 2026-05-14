@@ -451,6 +451,46 @@ export type SourceAdapterManifestFetchResult = {
   nextActions: string[];
 };
 
+export type SourceAdapterManifestFetchWorkerInput = {
+  dryRun?: boolean;
+  actorId?: string;
+  maxManifests?: number;
+  maxBytes?: number;
+};
+
+export type SourceAdapterManifestFetchWorkerManifestSummary = {
+  manifestId: string;
+  dataSourceId: string;
+  dataSourceName?: string;
+  fileName: string;
+  fileUrl?: string;
+  status: "fetch_ready" | "manual_ready" | "blocked";
+  action: "executed" | "skipped" | "blocked";
+  reason?: string;
+  run?: SourceAdapterManifestFetchResult;
+};
+
+export type SourceAdapterManifestFetchWorkerResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  manifestsReviewed: number;
+  fetchReadyManifests: number;
+  executedManifests: number;
+  skippedManifests: number;
+  blockedManifests: number;
+  totals: {
+    recordsFetched: number;
+    totalRecords: number;
+    stagedRecords: number;
+    skippedRecords: number;
+    rejectedRecords: number;
+    errorRecords: number;
+  };
+  manifests: SourceAdapterManifestFetchWorkerManifestSummary[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type VendorFeedAuthType = "api_key" | "sftp" | "oauth" | "manual_upload";
 export type VendorFeedReviewStatus = "missing" | "pending" | "approved" | "blocked";
 export type VendorFeedCredentialStorageStatus = "missing" | "reference_recorded" | "verified";

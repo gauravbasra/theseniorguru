@@ -391,6 +391,20 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<GitMerge aria-hidden="true" />}
+          label="Fetch worker"
+          loading={loadingKey === "source-adapter-manifest-fetch-worker"}
+          onClick={() =>
+            runOperation("Source manifest signed object fetch worker", "source-adapter-manifest-fetch-worker", () =>
+              fetch("/api/v1/admin/source-adapter-manifests/fetch/worker", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, maxManifests: 10 })
+              })
+            )
+          }
+        />
+        <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
           label="Vendor feeds"
           loading={loadingKey === "vendor-feeds"}
           onClick={() =>
@@ -679,6 +693,10 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "source-adapter-manifest-fetch") {
     return `${String(record.recordsFetched ?? 0)} records fetched from the signed manifest object, checksum ${String(record.checksumSha256 ?? "pending").slice(0, 12)}, dry-run ${String(record.dryRun ?? true)}.`;
+  }
+
+  if (key === "source-adapter-manifest-fetch-worker") {
+    return `${String(record.executedManifests ?? 0)} fetch-ready manifests executed, ${String(record.skippedManifests ?? 0)} skipped, and ${String(record.blockedManifests ?? 0)} blocked by signed-object fetch gates.`;
   }
 
   if (key === "provider-website-parser") {

@@ -97,6 +97,7 @@ const routeContracts: LinkContract[] = [
   { label: "Source adapter manifest registration API", href: "/api/v1/admin/source-adapter-manifests", method: "POST", owner: "admin" },
   { label: "Source adapter manifest payload loader API", href: "/api/v1/admin/source-adapter-manifests/load", method: "POST", owner: "admin" },
   { label: "Source adapter signed object fetch API", href: "/api/v1/admin/source-adapter-manifests/fetch", method: "POST", owner: "admin" },
+  { label: "Source adapter signed object fetch worker API", href: "/api/v1/admin/source-adapter-manifests/fetch/worker", method: "POST", owner: "admin" },
   { label: "Source adapter storage readiness API", href: "/api/v1/admin/source-adapter-manifests/storage-readiness", method: "GET", owner: "admin" },
   { label: "Vendor feed connections API", href: "/api/v1/admin/vendor-feed-connections", method: "GET", owner: "admin" },
   { label: "Vendor feed import runner API", href: "/api/v1/admin/vendor-feed-imports", method: "POST", owner: "admin" },

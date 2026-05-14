@@ -4,9 +4,13 @@ import { loadSourceAdapterManifestPayload } from "@/lib/aggregation/source-adapt
 import { getSourceAdapterManifestReadiness } from "@/lib/aggregation/source-adapter-manifests";
 import type {
   ImportRecordInput,
+  SourceAdapterManifestFetchWorkerManifestSummary,
+  SourceAdapterManifestFetchWorkerInput,
+  SourceAdapterManifestFetchWorkerResult,
   SourceAdapterManifestFetchInput,
   SourceAdapterManifestFetchResult
 } from "@/lib/domain/imports";
+import { getSourceAdapterStorageReadiness } from "@/lib/aggregation/source-adapter-storage-readiness";
 
 const defaultMaxBytes = 2_500_000;
 
@@ -216,6 +220,137 @@ export async function runSourceAdapterManifestFetch(
       ...(records.length !== manifest.recordCount ? ["Review record count mismatch before scheduled non-dry-run fetch execution."] : []),
       ...(dryRun ? ["Review dry-run import coverage before enabling live scheduled signed object fetching."] : []),
       ...(!dryRun ? ["Review staged records in the extracted entity queue before publication approval."] : [])
+    ]
+  };
+}
+
+function normalizeMaxManifests(maxManifests?: number) {
+  if (!Number.isFinite(maxManifests)) return undefined;
+  const rounded = Math.floor(Number(maxManifests));
+  return rounded > 0 ? Math.min(rounded, 25) : undefined;
+}
+
+function emptyWorkerTotals() {
+  return {
+    recordsFetched: 0,
+    totalRecords: 0,
+    stagedRecords: 0,
+    skippedRecords: 0,
+    rejectedRecords: 0,
+    errorRecords: 0
+  };
+}
+
+function addFetchRunTotals(totals: ReturnType<typeof emptyWorkerTotals>, run?: SourceAdapterManifestFetchResult) {
+  if (!run) return;
+
+  totals.recordsFetched += run.recordsFetched;
+  totals.totalRecords += run.importResult.run.totalRecords;
+  totals.stagedRecords += run.importResult.run.stagedRecords;
+  totals.skippedRecords += run.importResult.run.skippedRecords;
+  totals.rejectedRecords += run.importResult.run.rejectedRecords;
+  totals.errorRecords += run.importResult.run.errorRecords;
+}
+
+export async function runSourceAdapterManifestFetchWorker(
+  input: SourceAdapterManifestFetchWorkerInput = {}
+): Promise<SourceAdapterManifestFetchWorkerResult> {
+  const dryRun = input.dryRun ?? true;
+  const maxManifests = normalizeMaxManifests(input.maxManifests);
+  const readiness = await getSourceAdapterStorageReadiness();
+  const manifests = maxManifests ? readiness.manifests.slice(0, maxManifests) : readiness.manifests;
+  const summaries: SourceAdapterManifestFetchWorkerManifestSummary[] = [];
+  const blockers: string[] = [];
+  const totals = emptyWorkerTotals();
+
+  for (const manifest of manifests) {
+    if (manifest.status === "blocked") {
+      const reason = manifest.blockers[0] ?? "Source manifest is blocked by readiness gates.";
+      blockers.push(`${manifest.fileName}: ${reason}`);
+      summaries.push({
+        manifestId: manifest.manifestId,
+        dataSourceId: manifest.dataSourceId,
+        dataSourceName: manifest.dataSourceName,
+        fileName: manifest.fileName,
+        fileUrl: manifest.fileUrl,
+        status: manifest.status,
+        action: "blocked",
+        reason
+      });
+      continue;
+    }
+
+    if (manifest.status !== "fetch_ready") {
+      const reason = "Manifest is manual-ready but does not have an HTTPS signed object URL.";
+      summaries.push({
+        manifestId: manifest.manifestId,
+        dataSourceId: manifest.dataSourceId,
+        dataSourceName: manifest.dataSourceName,
+        fileName: manifest.fileName,
+        fileUrl: manifest.fileUrl,
+        status: manifest.status,
+        action: "skipped",
+        reason
+      });
+      continue;
+    }
+
+    try {
+      const run = await runSourceAdapterManifestFetch({
+        manifestId: manifest.manifestId,
+        dryRun,
+        actorId: input.actorId,
+        maxBytes: input.maxBytes,
+        batchName: `${manifest.fileName} scheduled signed object fetch`
+      });
+      addFetchRunTotals(totals, run);
+      summaries.push({
+        manifestId: manifest.manifestId,
+        dataSourceId: manifest.dataSourceId,
+        dataSourceName: manifest.dataSourceName,
+        fileName: manifest.fileName,
+        fileUrl: manifest.fileUrl,
+        status: manifest.status,
+        action: "executed",
+        run
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown signed object fetch failure";
+      blockers.push(`${manifest.fileName}: ${reason}`);
+      summaries.push({
+        manifestId: manifest.manifestId,
+        dataSourceId: manifest.dataSourceId,
+        dataSourceName: manifest.dataSourceName,
+        fileName: manifest.fileName,
+        fileUrl: manifest.fileUrl,
+        status: manifest.status,
+        action: "blocked",
+        reason
+      });
+    }
+  }
+
+  const executedManifests = summaries.filter((summary) => summary.action === "executed").length;
+  const skippedManifests = summaries.filter((summary) => summary.action === "skipped").length;
+  const blockedManifests = summaries.filter((summary) => summary.action === "blocked").length;
+  const fetchReadyManifests = summaries.filter((summary) => summary.status === "fetch_ready").length;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    manifestsReviewed: summaries.length,
+    fetchReadyManifests,
+    executedManifests,
+    skippedManifests,
+    blockedManifests,
+    totals,
+    manifests: summaries,
+    blockers,
+    nextActions: [
+      ...(executedManifests ? ["Review fetched manifest import coverage before enabling live scheduled fetch runs."] : []),
+      ...(skippedManifests ? ["Use manual payload loading for manual-ready manifests or add HTTPS signed object URLs."] : []),
+      ...(blockedManifests ? ["Resolve manifest readiness, checksum, mapping, and fetch failures before unattended execution."] : []),
+      ...(!summaries.length ? ["Register verified source manifests before scheduling signed object fetches."] : [])
     ]
   };
 }
