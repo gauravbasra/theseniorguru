@@ -16,6 +16,8 @@ import type {
   NewsletterDeliveryPreviewInput,
   NewsletterDeliveryPreviewResult,
   NewsletterDeliveryProvider,
+  NewsletterDeliverySendInput,
+  NewsletterDeliverySendResult,
   NewsletterEditionActionInput,
   NewsletterEditionActionResult,
   NewsletterEditionRecord,
@@ -79,6 +81,7 @@ const seedNewsletterEditions: NewsletterEditionRecord[] = [
     createdAt: "2026-05-10T00:00:00.000Z"
   }
 ];
+const seedNewsletterDeliveryAttempts: NewsletterDeliverySendResult[] = [];
 const seedContentPerformanceMetrics: ContentPerformanceMetricRecord[] = [
   {
     id: "seed-content-metric-article-view",
@@ -1211,7 +1214,7 @@ export async function previewNewsletterDelivery(
   const env = getAppEnv();
   const providerConfigured = deliveryProvider === "manual_export"
     ? true
-    : Boolean(env.mailjetApiKey && env.mailjetApiSecret);
+    : Boolean(env.mailjetApiKey && env.mailjetApiSecret && env.newsletterMailjetSenderEmail);
   const policy = await policyCheckNewsletterAction(edition, "preview_newsletter_delivery", {
     actorId: input.actorId,
     notes: input.notes,
@@ -1233,7 +1236,15 @@ export async function previewNewsletterDelivery(
   }
 
   if (!providerConfigured) {
-    blockers.push("Mailjet credentials are not configured for live newsletter delivery.");
+    blockers.push("Mailjet credentials and sender email are not configured for live newsletter delivery.");
+  }
+
+  if (
+    deliveryProvider === "mailjet" &&
+    providerConfigured &&
+    env.newsletterMailjetSendMode !== "live"
+  ) {
+    blockers.push("Mailjet newsletter send mode is not live. Set NEWSLETTER_MAILJET_SEND_MODE=live after sender approval.");
   }
 
   return {
@@ -1264,6 +1275,134 @@ export async function previewNewsletterDelivery(
       : ["Newsletter delivery payload is ready for the configured provider adapter."],
     policyDecision: policy.decision
   };
+}
+
+async function persistNewsletterDeliveryAttempt(input: NewsletterDeliverySendResult) {
+  const supabase = getSupabaseAdminClient();
+  const createdAt = new Date().toISOString();
+
+  if (!supabase) {
+    seedNewsletterDeliveryAttempts.unshift(input);
+    return;
+  }
+
+  const { error } = await supabase.from("newsletter_delivery_attempts").insert({
+    id: input.deliveryId,
+    newsletter_edition_id: input.editionId,
+    delivery_provider: input.deliveryProvider,
+    delivery_mode: input.deliveryMode,
+    status: input.status,
+    recipient_segments: input.preview.recipientSegments,
+    payload_preview: input.preview.payloadPreview,
+    provider_message_id: input.providerMessageId,
+    error: input.blockers.join(" ") || undefined,
+    policy_decision: input.policyDecision,
+    actor_id: input.actorId,
+    created_at: createdAt,
+    sent_at: input.sentAt
+  });
+
+  if (error) {
+    throw new Error(`Newsletter delivery attempt persistence failed: ${error.message}`);
+  }
+}
+
+function deliveryModeForProvider(provider: NewsletterDeliveryProvider) {
+  const env = getAppEnv();
+
+  if (provider === "manual_export") {
+    return "live" as const;
+  }
+
+  return env.newsletterMailjetSendMode === "live" ? "live" as const : "preview" as const;
+}
+
+export async function sendNewsletterDelivery(input: NewsletterDeliverySendInput): Promise<NewsletterDeliverySendResult> {
+  const preview = await previewNewsletterDelivery(input);
+  const deliveryMode = deliveryModeForProvider(preview.deliveryProvider);
+  const deliveryId = input.deliveryId?.trim() || `newsletter-delivery-${Date.now()}`;
+  const blockers = [...preview.blockers];
+
+  if (preview.deliveryProvider === "mailjet") {
+    blockers.push(
+      "Mailjet live dispatch is parked until audience-recipient export, sender approval, and final owner approval are confirmed."
+    );
+  }
+
+  const policy = await policyCheckNewsletterAction(await getSeedOrPersistentNewsletter(input.editionId), "send_newsletter_delivery", {
+    actorId: input.actorId,
+    notes: input.notes,
+    deliveryProvider: preview.deliveryProvider
+  });
+
+  if (input.dryRun) {
+    const result: NewsletterDeliverySendResult = {
+      editionId: preview.editionId,
+      status: blockers.length ? "blocked" : "dry_run",
+      deliveryProvider: preview.deliveryProvider,
+      deliveryMode,
+      deliveryId,
+      actorId: input.actorId,
+      preview,
+      blockers,
+      nextActions: blockers.length
+        ? blockers
+        : ["Dry run passed. Run without dryRun after final editorial and delivery approval."],
+      policyDecision: policy.decision
+    };
+    await persistNewsletterDeliveryAttempt(result);
+    return result;
+  }
+
+  if (blockers.length) {
+    const result: NewsletterDeliverySendResult = {
+      editionId: preview.editionId,
+      status: "blocked",
+      deliveryProvider: preview.deliveryProvider,
+      deliveryMode,
+      deliveryId,
+      actorId: input.actorId,
+      preview,
+      blockers,
+      nextActions: blockers,
+      policyDecision: policy.decision
+    };
+    await persistNewsletterDeliveryAttempt(result);
+    return result;
+  }
+
+  const sent = await sendNewsletterEdition(input.editionId, {
+    actorId: input.actorId,
+    notes: input.notes,
+    deliveryProvider: preview.deliveryProvider
+  });
+  const result: NewsletterDeliverySendResult = {
+    editionId: preview.editionId,
+    status: "sent",
+    deliveryProvider: preview.deliveryProvider,
+    deliveryMode,
+    deliveryId,
+    providerMessageId: `manual-export:${deliveryId}`,
+    sentAt: sent.sentAt,
+    actorId: input.actorId,
+    preview,
+    blockers: [],
+    nextActions: ["Newsletter marked sent through manual export. Import open/click metrics as provider data becomes available."],
+    policyDecision: sent.policyDecision
+  };
+
+  await persistNewsletterDeliveryAttempt(result);
+  return result;
+}
+
+async function getSeedOrPersistentNewsletter(editionId: string) {
+  const edition = await getNewsletterEdition(editionId);
+
+  if (!edition) {
+    throw new Error("Newsletter edition not found");
+  }
+
+  return edition;
 }
 
 function isContentPerformanceMetricKey(value: unknown): value is ContentPerformanceMetricKey {

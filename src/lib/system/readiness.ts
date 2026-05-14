@@ -71,6 +71,20 @@ export function getSystemReadiness() {
       label: "Mailjet API secret",
       status: env.mailjetApiSecret ? "ready" : "missing",
       action: env.mailjetApiSecret ? undefined : "Provide Mailjet API secret for provider outreach."
+    },
+    {
+      key: "NEWSLETTER_MAILJET_SENDER_EMAIL",
+      label: "Newsletter sender email",
+      status: env.newsletterMailjetSenderEmail ? "ready" : "missing",
+      action: env.newsletterMailjetSenderEmail ? undefined : "Provide and verify the Mailjet sender email before live newsletter delivery."
+    },
+    {
+      key: "NEWSLETTER_MAILJET_SEND_MODE",
+      label: "Newsletter Mailjet send mode",
+      status: env.newsletterMailjetSendMode === "live" ? "ready" : "parked",
+      action: env.newsletterMailjetSendMode === "live"
+        ? undefined
+        : "Keep preview until sender approval, audience export, and owner approval are confirmed."
     }
   ];
   const adsChecks: ReadinessCheck[] = [

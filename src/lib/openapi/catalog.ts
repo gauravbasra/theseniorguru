@@ -338,7 +338,7 @@ export function getOpenApiCatalog() {
         post: { tags: ["Newsroom"], summary: "Schedule an approved newsletter edition for distribution" }
       },
       "/api/v1/admin/newsroom/newsletters/{id}/send": {
-        post: { tags: ["Newsroom"], summary: "Mark an approved or scheduled newsletter edition as sent with delivery metadata" }
+        post: { tags: ["Newsroom"], summary: "Run policy-gated newsletter delivery with provider readiness, dry-run, and delivery-attempt audit" }
       },
       "/api/v1/admin/newsroom/newsletters/{id}/delivery-preview": {
         post: { tags: ["Newsroom"], summary: "Preview provider-specific newsletter delivery payload, consent requirements, and credential blockers" }

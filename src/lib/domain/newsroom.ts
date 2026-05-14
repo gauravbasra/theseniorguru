@@ -207,6 +207,46 @@ export type NewsletterDeliveryPreviewResult = {
   policyDecision: string;
 };
 
+export type NewsletterDeliveryMode = "preview" | "live";
+
+export type NewsletterDeliveryAttemptStatus = "ready" | "sent" | "blocked" | "dry_run";
+
+export type NewsletterDeliverySendInput = NewsletterDeliveryPreviewInput & {
+  dryRun?: boolean;
+  deliveryId?: string;
+};
+
+export type NewsletterDeliverySendResult = {
+  editionId: string;
+  status: NewsletterDeliveryAttemptStatus;
+  deliveryProvider: NewsletterDeliveryProvider;
+  deliveryMode: NewsletterDeliveryMode;
+  deliveryId: string;
+  providerMessageId?: string;
+  sentAt?: string;
+  actorId?: string;
+  preview: NewsletterDeliveryPreviewResult;
+  blockers: string[];
+  nextActions: string[];
+  policyDecision: string;
+};
+
+export type NewsletterDeliveryAttemptRecord = {
+  id: string;
+  newsletterEditionId: string;
+  deliveryProvider: NewsletterDeliveryProvider;
+  deliveryMode: NewsletterDeliveryMode;
+  status: NewsletterDeliveryAttemptStatus;
+  recipientSegments: NewsletterDeliveryPreviewResult["recipientSegments"];
+  payloadPreview: NewsletterDeliveryPreviewResult["payloadPreview"];
+  providerMessageId?: string;
+  error?: string;
+  policyDecision: string;
+  actorId?: string;
+  createdAt: string;
+  sentAt?: string;
+};
+
 export type ContentPerformanceSubjectType = "article" | "newsletter" | "derivative";
 
 export type ContentPerformanceMetricKey =

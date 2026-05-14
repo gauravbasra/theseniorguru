@@ -335,9 +335,10 @@ const productPillars: ProductPillar[] = [
       "editorial_approvals",
       "podcast_episodes",
       "newsletter_editions",
+      "newsletter_delivery_attempts",
       "content_performance_metrics"
     ],
-    nextBackendWork: ["Newsletter live provider send", "Editorial performance trend exports", "Newsroom cron live-mode approval"]
+    nextBackendWork: ["Mailjet audience-recipient export and live send approval", "Editorial performance trend exports", "Newsroom cron live-mode approval"]
   },
   {
     key: "policy",

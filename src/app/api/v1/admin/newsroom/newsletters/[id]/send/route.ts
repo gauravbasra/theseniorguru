@@ -1,19 +1,32 @@
 import { NextResponse } from "next/server";
-import { sendNewsletterEdition } from "@/lib/newsroom/newsroom";
+import { sendNewsletterDelivery } from "@/lib/newsroom/newsroom";
 
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<unknown> }) {
   try {
-    const { id } = await context.params;
+    const params = await context.params;
+    const id = typeof params === "object" && params && "id" in params ? String(params.id) : "";
     const body = await request.json().catch(() => ({}));
 
-    return NextResponse.json({
-      data: await sendNewsletterEdition(id, {
-        actorId: body.actorId,
-        notes: body.notes,
-        deliveryProvider: body.deliveryProvider
-      })
+    if (!id) {
+      return NextResponse.json({ error: "Newsletter id is required" }, { status: 422 });
+    }
+
+    const result = await sendNewsletterDelivery({
+      editionId: id,
+      actorId: body.actorId,
+      notes: body.notes,
+      deliveryProvider: body.deliveryProvider,
+      dryRun: Boolean(body.dryRun),
+      deliveryId: typeof body.deliveryId === "string" ? body.deliveryId : undefined
     });
+
+    return NextResponse.json({
+      data: result
+    }, { status: result.status === "blocked" ? 424 : 200 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const status = message.includes("not found") ? 404 : 500;
+
+    return NextResponse.json({ error: message }, { status });
   }
 }

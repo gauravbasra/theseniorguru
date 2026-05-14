@@ -78,7 +78,8 @@ export const migrationManifest = [
   "20260511202000_event_reminder_followups.sql",
   "20260512034500_event_attendance_capture.sql",
   "20260513191500_provider_claim_document_reviews.sql",
-  "20260514070334_newsroom_content_performance_metrics.sql"
+  "20260514070334_newsroom_content_performance_metrics.sql",
+  "20260514073400_newsletter_delivery_attempts.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -213,6 +214,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260514070334_newsroom_content_performance_metrics.sql": {
     capability: "newsroom",
     summary: "Article, newsletter, and derivative performance metrics for editorial optimization."
+  },
+  "20260514073400_newsletter_delivery_attempts.sql": {
+    capability: "newsroom",
+    summary: "Newsletter delivery attempts, provider payload previews, send blockers, and sent evidence."
   }
 };
 
@@ -259,6 +264,7 @@ const requiredTables: RequiredTable[] = [
   { table: "content_sources", requiredFor: "AI newsroom source intake", capability: "newsroom" },
   { table: "published_articles", requiredFor: "AI newsroom publishing", capability: "newsroom" },
   { table: "content_performance_metrics", requiredFor: "Newsroom content performance reporting", capability: "newsroom" },
+  { table: "newsletter_delivery_attempts", requiredFor: "Newsletter provider send audit", capability: "newsroom" },
   { table: "api_clients", requiredFor: "Open API clients", capability: "openApi" },
   { table: "webhook_subscriptions", requiredFor: "Open API webhooks", capability: "openApi" },
   { table: "webhook_deliveries", requiredFor: "Webhook delivery queue", capability: "openApi" },
@@ -277,6 +283,7 @@ const requiredColumns: RequiredColumn[] = [
   { table: "news_items", column: "source_url", requiredFor: "RSS source URL dedupe", capability: "newsroom" },
   { table: "published_articles", column: "approval_payload", requiredFor: "Editorial approval audit", capability: "newsroom" },
   { table: "content_performance_metrics", column: "metric_payload", requiredFor: "Newsroom metric attribution and audit metadata", capability: "newsroom" },
+  { table: "newsletter_delivery_attempts", column: "payload_preview", requiredFor: "Newsletter provider payload audit", capability: "newsroom" },
   { table: "api_keys", column: "last_used_at", requiredFor: "Partner API key usage monitoring", capability: "openApi" },
   { table: "webhook_subscriptions", column: "signing_secret_ciphertext", requiredFor: "Partner webhook request signing", capability: "openApi" },
   { table: "review_responses", column: "provider_id", requiredFor: "Provider-owned review responses", capability: "reviews" }

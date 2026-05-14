@@ -111,6 +111,12 @@ const routeContracts: LinkContract[] = [
     method: "POST",
     owner: "admin"
   },
+  {
+    label: "Newsletter delivery send API",
+    href: "/api/v1/admin/newsroom/newsletters/seed-newsletter-family-tour-planning/send",
+    method: "POST",
+    owner: "admin"
+  },
   { label: "Newsroom readiness API", href: "/api/v1/admin/newsroom/readiness", method: "GET", owner: "admin" },
   { label: "Partner providers API", href: "/api/v1/partner/providers", method: "GET", owner: "provider" },
   { label: "Partner events API", href: "/api/v1/partner/events", method: "GET", owner: "provider" },

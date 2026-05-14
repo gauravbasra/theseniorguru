@@ -32,6 +32,7 @@ These items require owner credentials, production access, or confirmation. Imple
 
 - Confirm Mailjet credentials and approved sender domains.
 - Confirm when newsletter delivery can use live Mailjet send mode; `/api/v1/admin/newsroom/newsletters/{id}/delivery-preview` currently exposes the provider payload and blocks live Mailjet readiness until credentials are installed.
+- Provide `NEWSLETTER_MAILJET_SENDER_EMAIL` and confirm `NEWSLETTER_MAILJET_SEND_MODE=live` only after sender approval, audience-recipient export policy, unsubscribe handling, and owner approval are complete; `/api/v1/admin/newsroom/newsletters/{id}/send` records blocked/dry-run/manual-export delivery attempts until then.
 - Confirm Google Workspace inboxes needed for provider outreach.
 
 ## Legal/Policy Review

@@ -13,6 +13,8 @@ export type AppEnv = {
   newsroomRssCronLimit?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
+  newsletterMailjetSenderEmail?: string;
+  newsletterMailjetSendMode?: string;
   googleAdsClientId?: string;
   googleAdsClientSecret?: string;
   googleAdsDeveloperToken?: string;
@@ -37,6 +39,8 @@ export function getAppEnv(): AppEnv {
     newsroomRssCronLimit: process.env.NEWSROOM_RSS_CRON_LIMIT,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
+    newsletterMailjetSenderEmail: process.env.NEWSLETTER_MAILJET_SENDER_EMAIL,
+    newsletterMailjetSendMode: process.env.NEWSLETTER_MAILJET_SEND_MODE,
     googleAdsClientId: process.env.GOOGLE_ADS_CLIENT_ID,
     googleAdsClientSecret: process.env.GOOGLE_ADS_CLIENT_SECRET,
     googleAdsDeveloperToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN,
