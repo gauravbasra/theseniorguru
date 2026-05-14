@@ -275,6 +275,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/source-adapter-manifests/fetch",
       "POST /api/v1/admin/source-adapter-manifests/fetch/worker",
       "GET /api/v1/admin/source-adapter-manifests/storage-readiness",
+      "GET /api/cron/source-manifests",
       "GET /api/v1/admin/vendor-feed-connections",
       "POST /api/v1/admin/vendor-feed-connections",
       "POST /api/v1/admin/vendor-feed-imports",
@@ -306,7 +307,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Provider website parser override replacement workflow", "Import escalation retry cron wiring", "Source manifest signed object fetch cron wiring"]
+    nextBackendWork: ["Provider website parser override replacement workflow", "Import escalation retry cron wiring", "Source manifest fetch cron Vercel schedule config"]
   },
   {
     key: "reviews",
@@ -410,7 +411,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/policy-overrides/{id}/decide",
       "GET /api/cron/operations",
       "GET /api/cron/acquisition",
-      "GET /api/cron/newsroom"
+      "GET /api/cron/newsroom",
+      "GET /api/cron/source-manifests"
     ],
     requiredTables: [
       "policy_rules",

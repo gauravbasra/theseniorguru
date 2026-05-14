@@ -183,6 +183,15 @@ export function getSystemReadiness() {
         env.webhookRetryCronMode === "live"
           ? undefined
           : "Set WEBHOOK_RETRY_CRON_MODE=live only after partner target endpoints and signing secrets are confirmed; preview mode is non-mutating."
+    },
+    {
+      key: "SOURCE_MANIFEST_FETCH_CRON_MODE",
+      label: "Source manifest fetch cron mode",
+      status: env.sourceManifestFetchCronMode === "live" ? "ready" : "partial",
+      action:
+        env.sourceManifestFetchCronMode === "live"
+          ? undefined
+          : "Set SOURCE_MANIFEST_FETCH_CRON_MODE=live only after fetch-ready source manifests are approved for unattended imports; preview mode is non-mutating."
     }
   ];
   const parkedChecks: ReadinessCheck[] = [
