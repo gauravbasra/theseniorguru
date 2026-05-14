@@ -615,6 +615,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/usage": {
         get: { tags: ["System"], summary: "Partner-scoped API usage summary, retention policy, or CSV export requiring usage:read scope" }
       },
+      "/api/v1/partner/onboarding-checklist": {
+        get: { tags: ["System"], summary: "Return the partner sandbox onboarding checklist with scopes, evidence, and production promotion blockers" }
+      },
       "/api/v1/partner/developer-docs": {
         get: { tags: ["System"], summary: "Return partner developer documentation, SDK examples, OpenAPI endpoints, and webhook signing contracts" }
       },

@@ -12,10 +12,21 @@ type SdkExample = {
   code: string;
 };
 
+type SandboxChecklistStep = {
+  key: string;
+  title: string;
+  owner: "platform_admin" | "partner_engineer" | "partner_ops";
+  requiredScopes: string[];
+  endpoint: string;
+  completionSignal: string;
+  blocker: string;
+};
+
 const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/events",
   "/api/v1/partner/usage",
+  "/api/v1/partner/onboarding-checklist",
   "/api/v1/partner/webhooks/signing-guide",
   "/api/v1/partner/webhooks/verify"
 ];
@@ -80,6 +91,107 @@ function buildSdkExamples(signingGuide: ReturnType<typeof getWebhookSigningGuide
   ];
 }
 
+export function getPartnerSandboxOnboardingChecklist() {
+  const signingGuide = getWebhookSigningGuide();
+
+  const steps: SandboxChecklistStep[] = [
+    {
+      key: "create-sandbox-client",
+      title: "Create a sandbox API client with least-privilege scopes",
+      owner: "platform_admin",
+      requiredScopes: [],
+      endpoint: "POST /api/v1/admin/api-clients",
+      completionSignal: "Client has sandboxMode=true, status=active, rate limit, owner type, and approved scopes.",
+      blocker: "Do not issue live-mode clients until partner business owner, data use, and webhook purpose are approved."
+    },
+    {
+      key: "mint-sandbox-key",
+      title: "Mint one sandbox key and store the secret outside The Senior Guru",
+      owner: "platform_admin",
+      requiredScopes: [],
+      endpoint: "POST /api/v1/admin/api-clients/{id}/keys",
+      completionSignal: "Key preview is visible in admin records and the full secret was copied once into the partner vault.",
+      blocker: "Lost secrets must be revoked and reissued; backend never exposes stored key material."
+    },
+    {
+      key: "read-provider-inventory",
+      title: "Call provider inventory from the partner environment",
+      owner: "partner_engineer",
+      requiredScopes: ["providers:read"],
+      endpoint: "GET /api/v1/partner/providers",
+      completionSignal: "Response includes provider records and rate-limit headers with x-senior-guru-sandbox=true.",
+      blocker: "403 responses mean the key is missing providers:read scope or the client is paused/revoked."
+    },
+    {
+      key: "read-community-events",
+      title: "Call event inventory and confirm date/location handling",
+      owner: "partner_engineer",
+      requiredScopes: ["events:read"],
+      endpoint: "GET /api/v1/partner/events",
+      completionSignal: "Response includes event records with community-safe metadata for sandbox validation.",
+      blocker: "Do not mirror events publicly until partner display rules and sponsorship disclosures are reviewed."
+    },
+    {
+      key: "verify-usage-evidence",
+      title: "Review JSON and CSV usage evidence",
+      owner: "partner_ops",
+      requiredScopes: ["usage:read"],
+      endpoint: "GET /api/v1/partner/usage?format=csv",
+      completionSignal: "Usage export shows allowed, blocked, and rate-limited calls for partner operations review.",
+      blocker: "Missing usage evidence blocks production promotion because launch operations cannot audit partner access."
+    },
+    {
+      key: "create-webhook-subscription",
+      title: "Register the sandbox webhook endpoint",
+      owner: "platform_admin",
+      requiredScopes: ["webhooks:write"],
+      endpoint: "POST /api/v1/admin/webhook-subscriptions",
+      completionSignal: "Subscription uses HTTPS, approved event types, active status, and a one-time signing secret.",
+      blocker: "HTTP targets, unsupported events, and missing signing-secret custody block subscription approval."
+    },
+    {
+      key: "verify-webhook-signatures",
+      title: "Verify webhook signatures against the deterministic sample",
+      owner: "partner_engineer",
+      requiredScopes: ["webhooks:write"],
+      endpoint: "POST /api/v1/partner/webhooks/verify",
+      completionSignal: `Partner code validates ${signingGuide.signatureHeader} using ${signingGuide.algorithm} over ${signingGuide.signedContent}.`,
+      blocker: "Parsing JSON before verifying the raw body can invalidate signatures and blocks production approval."
+    },
+    {
+      key: "review-production-promotion",
+      title: "Review sandbox evidence before live promotion",
+      owner: "partner_ops",
+      requiredScopes: ["providers:read", "events:read", "usage:read", "webhooks:write"],
+      endpoint: "GET /api/v1/admin/api-usage-analytics",
+      completionSignal: "Admin usage analytics, webhook delivery evidence, link-health, and OpenAPI coverage are reviewed.",
+      blocker: "Production mode remains blocked until owner approves partner purpose, scopes, rate limits, and webhook events."
+    }
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Partner Sandbox Onboarding Checklist",
+    mode: "sandbox",
+    objective:
+      "Move a partner from scoped sandbox access to production approval with auditable API usage, webhook verification, and explicit owner review.",
+    minimumScopes: ["providers:read", "events:read", "usage:read"],
+    optionalScopes: ["webhooks:write", "reviews:read", "campaigns:read", "ads:read", "claims:write"],
+    promotionControls: [
+      "Sandbox clients must keep sandboxMode=true until owner approval is recorded.",
+      "Partner keys are secret-once and revocation-first if custody is uncertain.",
+      "Webhook subscriptions require HTTPS, approved event types, and raw-body signature verification.",
+      "Usage evidence and rate-limit headers must be reviewed before live promotion."
+    ],
+    steps,
+    nextActions: [
+      "Create or confirm a sandbox API client in the admin Open API console.",
+      "Run provider, event, usage, and webhook signature checks from the partner environment.",
+      "Export usage and webhook evidence before requesting production promotion."
+    ]
+  };
+}
+
 export function getPartnerDeveloperDocs() {
   const catalog = getOpenApiCatalog();
   const signingGuide = getWebhookSigningGuide();
@@ -133,6 +245,7 @@ export function getPartnerDeveloperDocs() {
       verificationSteps: signingGuide.verificationSteps
     },
     sdkExamples: buildSdkExamples(signingGuide),
+    sandboxOnboarding: getPartnerSandboxOnboardingChecklist(),
     operationalControls: [
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",

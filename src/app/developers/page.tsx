@@ -82,6 +82,31 @@ export default function DevelopersPage() {
         ))}
       </section>
 
+      <section className="operator-band">
+        <div>
+          <p className="eyebrow">Sandbox onboarding</p>
+          <h2>{docs.sandboxOnboarding.title}</h2>
+          <p>{docs.sandboxOnboarding.objective}</p>
+        </div>
+        <article className="profile-card">
+          <p className="eyebrow">Minimum scopes</p>
+          <h2>{docs.sandboxOnboarding.minimumScopes.length}</h2>
+          <p>{docs.sandboxOnboarding.minimumScopes.join(", ")}</p>
+        </article>
+      </section>
+
+      <section className="operator-funnel">
+        {docs.sandboxOnboarding.steps.map((step) => (
+          <article key={step.key}>
+            <span>{step.owner.replaceAll("_", " ")}</span>
+            <h2>{step.title}</h2>
+            <p><strong>{step.endpoint}</strong></p>
+            <p>{step.completionSignal}</p>
+            <p>{step.blocker}</p>
+          </article>
+        ))}
+      </section>
+
       <section className="category-strip">
         <div>
           <p className="eyebrow">Operations controls</p>
