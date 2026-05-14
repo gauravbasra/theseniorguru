@@ -317,6 +317,43 @@ export type ContentPerformanceSummary = {
   nextActions: string[];
 };
 
+export type ContentPerformanceTrendBucket = "day" | "week";
+
+export type ContentPerformanceTrendExportInput = {
+  subjectType?: ContentPerformanceSubjectType;
+  subjectId?: string;
+  channel?: string;
+  bucket?: ContentPerformanceTrendBucket;
+};
+
+export type ContentPerformanceTrendExportRow = {
+  bucketStart: string;
+  channel: string;
+  subjectType: ContentPerformanceSubjectType;
+  subjectId: string;
+  title: string;
+  views: number;
+  clicks: number;
+  shares: number;
+  saves: number;
+  newsletterOpens: number;
+  newsletterClicks: number;
+  leads: number;
+  clickThroughRate: number;
+};
+
+export type ContentPerformanceTrendExport = {
+  generatedAt: string;
+  filters: Required<Pick<ContentPerformanceTrendExportInput, "bucket">> &
+    Omit<ContentPerformanceTrendExportInput, "bucket">;
+  rowCount: number;
+  totals: ContentPerformanceSummary["totals"];
+  rows: ContentPerformanceTrendExportRow[];
+  csv: string;
+  nextActions: string[];
+  policyDecision: string;
+};
+
 export type NewsroomReadinessSummary = {
   generatedAt: string;
   status: "ready" | "action_required" | "blocked";

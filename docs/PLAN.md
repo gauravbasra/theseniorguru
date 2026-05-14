@@ -241,3 +241,4 @@ Deliverables:
 - Protected newsroom RSS cron route with preview/live mode safety and scheduled worker run observability. Completed.
 - Newsletter delivery provider preview adapter with consent/tracking payload, credential checks, and safe live-send blockers. Completed.
 - Policy-gated newsletter delivery send API with dry-run support, delivery-attempt persistence, manual export sent evidence, and Mailjet live-send blockers. Completed.
+- Editorial performance trend export API with daily/weekly aggregation, CSV output, policy checks, and OpenAPI/link-health coverage. Completed.

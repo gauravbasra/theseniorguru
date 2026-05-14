@@ -5,6 +5,10 @@ import type {
   ContentPerformanceMetricKey,
   ContentPerformanceSubjectType,
   ContentPerformanceSummary,
+  ContentPerformanceTrendBucket,
+  ContentPerformanceTrendExport,
+  ContentPerformanceTrendExportInput,
+  ContentPerformanceTrendExportRow,
   ContentSourceRecord,
   CreateArticleInput,
   CreateContentSourceInput,
@@ -1586,6 +1590,29 @@ function contentCtr(views: number, clicks: number) {
   return views > 0 ? Number((clicks / views).toFixed(4)) : 0;
 }
 
+function normalizeTrendBucket(value?: string): ContentPerformanceTrendBucket {
+  return value === "week" ? "week" : "day";
+}
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function performanceBucketStart(recordedAt: string, bucket: ContentPerformanceTrendBucket) {
+  const date = new Date(recordedAt);
+  const day = startOfUtcDay(date);
+
+  if (bucket === "day") {
+    return day.toISOString().slice(0, 10);
+  }
+
+  const dayOfWeek = day.getUTCDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  day.setUTCDate(day.getUTCDate() + mondayOffset);
+
+  return day.toISOString().slice(0, 10);
+}
+
 function buildContentTitleLookup(input: {
   articles: ArticleRecord[];
   newsletters: NewsletterEditionRecord[];
@@ -1606,6 +1633,51 @@ function buildContentTitleLookup(input: {
   }
 
   return lookup;
+}
+
+function csvEscape(value: string | number) {
+  const raw = String(value);
+  return /[",\n]/.test(raw) ? `"${raw.replaceAll("\"", "\"\"")}"` : raw;
+}
+
+function trendRowsToCsv(rows: ContentPerformanceTrendExportRow[]) {
+  const headers: Array<keyof ContentPerformanceTrendExportRow> = [
+    "bucketStart",
+    "channel",
+    "subjectType",
+    "subjectId",
+    "title",
+    "views",
+    "clicks",
+    "shares",
+    "saves",
+    "newsletterOpens",
+    "newsletterClicks",
+    "leads",
+    "clickThroughRate"
+  ];
+
+  return [
+    headers.join(","),
+    ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(","))
+  ].join("\n");
+}
+
+function summarizeTrendRows(rows: ContentPerformanceTrendExportRow[]): ContentPerformanceSummary["totals"] {
+  const views = rows.reduce((total, row) => total + row.views, 0);
+  const clicks = rows.reduce((total, row) => total + row.clicks, 0);
+
+  return {
+    metrics: rows.length,
+    views,
+    clicks,
+    shares: rows.reduce((total, row) => total + row.shares, 0),
+    saves: rows.reduce((total, row) => total + row.saves, 0),
+    newsletterOpens: rows.reduce((total, row) => total + row.newsletterOpens, 0),
+    newsletterClicks: rows.reduce((total, row) => total + row.newsletterClicks, 0),
+    leads: rows.reduce((total, row) => total + row.leads, 0),
+    clickThroughRate: contentCtr(views, clicks)
+  };
 }
 
 export async function getContentPerformanceSummary(input: {
@@ -1704,6 +1776,110 @@ export async function getContentPerformanceSummary(input: {
       };
     }).sort((a, b) => (b.views + b.clicks + b.leads) - (a.views + a.clicks + a.leads)).slice(0, 10),
     nextActions
+  };
+}
+
+export async function getContentPerformanceTrendExport(
+  input: ContentPerformanceTrendExportInput = {}
+): Promise<ContentPerformanceTrendExport> {
+  if (input.subjectType && !isContentPerformanceSubjectType(input.subjectType)) {
+    throw new Error("subjectType must be article, newsletter, or derivative");
+  }
+
+  const bucket = normalizeTrendBucket(input.bucket);
+  const policy = await runPolicyCheck({
+    subjectType: "content_performance_export",
+    actionKey: "export_content_performance_trends",
+    input: {
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      channel: input.channel,
+      bucket
+    }
+  });
+
+  assertPolicyAllowsNewsroomAction(policy, "Content performance trend export requires policy clearance");
+
+  const [metrics, articles, newsletters, derivatives] = await Promise.all([
+    listContentPerformanceMetrics(input),
+    listArticles(),
+    listNewsletterEditions(),
+    listArticleDerivatives()
+  ]);
+  const titleLookup = buildContentTitleLookup({ articles, newsletters, derivatives });
+  const grouped = new Map<string, ContentPerformanceTrendExportRow>();
+
+  for (const metric of metrics) {
+    const bucketStart = performanceBucketStart(metric.recordedAt, bucket);
+    const key = `${bucketStart}:${metric.channel}:${metric.subjectType}:${metric.subjectId}`;
+    const current = grouped.get(key) ?? {
+      bucketStart,
+      channel: metric.channel,
+      subjectType: metric.subjectType,
+      subjectId: metric.subjectId,
+      title: titleLookup.get(`${metric.subjectType}:${metric.subjectId}`) ?? metric.subjectId,
+      views: 0,
+      clicks: 0,
+      shares: 0,
+      saves: 0,
+      newsletterOpens: 0,
+      newsletterClicks: 0,
+      leads: 0,
+      clickThroughRate: 0
+    };
+
+    if (metric.metricKey === "view") current.views += metric.metricValue;
+    if (metric.metricKey === "click") current.clicks += metric.metricValue;
+    if (metric.metricKey === "share") current.shares += metric.metricValue;
+    if (metric.metricKey === "save") current.saves += metric.metricValue;
+    if (metric.metricKey === "newsletter_open") current.newsletterOpens += metric.metricValue;
+    if (metric.metricKey === "newsletter_click") {
+      current.newsletterClicks += metric.metricValue;
+      current.clicks += metric.metricValue;
+    }
+    if (metric.metricKey === "lead") current.leads += metric.metricValue;
+
+    current.clickThroughRate = contentCtr(current.views, current.clicks);
+    grouped.set(key, current);
+  }
+
+  const rows = Array.from(grouped.values()).sort((a, b) =>
+    a.bucketStart === b.bucketStart
+      ? (b.views + b.clicks + b.leads) - (a.views + a.clicks + a.leads)
+      : b.bucketStart.localeCompare(a.bucketStart)
+  );
+  const nextActions: string[] = [];
+
+  if (!rows.length) {
+    nextActions.push("No performance rows are available for this export filter.");
+  }
+
+  if (rows.some((row) => row.views > 0 && row.clickThroughRate < 0.02)) {
+    nextActions.push("Some content has views but weak click-through; review headings, CTAs, and provider links.");
+  }
+
+  if (rows.some((row) => row.newsletterOpens > 0 && row.newsletterClicks === 0)) {
+    nextActions.push("Newsletter opens without clicks need link-tracking or edition CTA review.");
+  }
+
+  if (!nextActions.length) {
+    nextActions.push("Trend export is ready for weekly editorial review.");
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    filters: {
+      bucket,
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      channel: input.channel
+    },
+    rowCount: rows.length,
+    totals: summarizeTrendRows(rows),
+    rows,
+    csv: trendRowsToCsv(rows),
+    nextActions,
+    policyDecision: policy.decision
   };
 }
 

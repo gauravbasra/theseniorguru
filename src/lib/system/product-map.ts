@@ -319,6 +319,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/newsroom/newsletters/{id}/delivery-preview",
       "GET /api/v1/admin/newsroom/performance",
       "POST /api/v1/admin/newsroom/performance",
+      "GET /api/v1/admin/newsroom/performance/export",
       "GET /api/v1/admin/newsroom/readiness",
       "GET /api/v1/articles",
       "GET /api/v1/articles/{slug}",
@@ -338,7 +339,7 @@ const productPillars: ProductPillar[] = [
       "newsletter_delivery_attempts",
       "content_performance_metrics"
     ],
-    nextBackendWork: ["Mailjet audience-recipient export and live send approval", "Editorial performance trend exports", "Newsroom cron live-mode approval"]
+    nextBackendWork: ["Mailjet audience-recipient export and live send approval", "Newsroom cron live-mode approval", "Provider-facing newsletter analytics"]
   },
   {
     key: "policy",
