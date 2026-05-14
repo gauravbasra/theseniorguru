@@ -499,6 +499,9 @@ export function getOpenApiCatalog() {
       },
       "/api/v1/policy/check": {
         post: { tags: ["Policy"], summary: "Run a policy guardrail check" }
+      },
+      "/api/v1/admin/policy-queue": {
+        get: { tags: ["Policy"], summary: "List policy checks requiring review, disclosure verification, or blocked-action resolution" }
       }
     },
     security: [

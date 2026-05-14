@@ -124,3 +124,39 @@ export type PolicyCheckResult = {
   requiredDisclosures: string[];
   nonOverridable: boolean;
 };
+
+export type PolicyQueueItem = {
+  id: string;
+  subjectType: string;
+  subjectId?: string;
+  actionKey: string;
+  decision: PolicyDecision;
+  severity: "low" | "medium" | "high" | "critical";
+  reasons: string[];
+  requiredDisclosures: string[];
+  checkedAt: string;
+  nextActions: string[];
+  inputPreview: Record<string, unknown>;
+};
+
+export type PolicyQueueSummary = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  totals: {
+    checks: number;
+    approved: number;
+    disclosureRequired: number;
+    humanReview: number;
+    legalReview: number;
+    expertReview: number;
+    blocked: number;
+    nonOverridable: number;
+  };
+  queues: {
+    reviewRequired: PolicyQueueItem[];
+    blocked: PolicyQueueItem[];
+    disclosureRequired: PolicyQueueItem[];
+    approved: PolicyQueueItem[];
+  };
+  nextActions: string[];
+};
