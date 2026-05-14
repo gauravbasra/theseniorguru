@@ -1,6 +1,8 @@
 import type {
+  AssignExtractedEntityReviewInput,
   CreateExtractedEntityInput,
   ExtractedEntityDecisionInput,
+  ExtractedEntityReviewAssignmentRecord,
   ExtractedEntityQualityAuditRecord,
   ExtractedEntityQualityAuditResult,
   ExtractedEntityRecord,
@@ -32,6 +34,7 @@ const seedExtractedEntities: ExtractedEntityRecord[] = [
   }
 ];
 const seedQualityFlags: DataQualityFlagRecord[] = [];
+const seedReviewAssignments: ExtractedEntityReviewAssignmentRecord[] = [];
 
 function slugify(value: string) {
   const slug = value
@@ -98,6 +101,21 @@ function mapExtractedEntity(row: Record<string, unknown>): ExtractedEntityRecord
     confidenceScore: Number(row.confidence_score ?? 0),
     matchedProviderId: row.matched_provider_id ? String(row.matched_provider_id) : undefined,
     createdAt: String(row.created_at)
+  };
+}
+
+function mapReviewAssignment(row: Record<string, unknown>): ExtractedEntityReviewAssignmentRecord {
+  return {
+    id: String(row.id),
+    entityId: String(row.extracted_entity_id),
+    route: row.route as ExtractedEntityReviewAssignmentRecord["route"],
+    status: row.status as ExtractedEntityReviewAssignmentRecord["status"],
+    assignedTo: String(row.assigned_to),
+    assignedBy: row.assigned_by ? String(row.assigned_by) : undefined,
+    dueAt: String(row.due_at),
+    notes: row.notes ? String(row.notes) : undefined,
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    completedAt: row.completed_at ? String(row.completed_at) : undefined
   };
 }
 
@@ -406,6 +424,14 @@ function priorityForReview(
 }
 
 function nextActionsForReviewItem(item: Omit<ExtractedEntityReviewQueueItem, "nextActions">): string[] {
+  if (item.slaStatus === "overdue") {
+    return ["Escalate this assigned review because it is past its SLA due date."];
+  }
+
+  if (item.slaStatus === "unassigned" && item.route !== "approve_ready") {
+    return ["Assign this review to an owner with a due date before approving or publishing the listing."];
+  }
+
   if (item.route === "legal_review") {
     return ["Route the source and extracted fields to owner/legal review before publication."];
   }
@@ -425,21 +451,53 @@ function nextActionsForReviewItem(item: Omit<ExtractedEntityReviewQueueItem, "ne
   return ["Approve the extracted entity or enrich optional profile content before launch publication."];
 }
 
-function toReviewQueueItem(entity: ExtractedEntityRecord, minImages: number): ExtractedEntityReviewQueueItem {
+function slaStatusForAssignment(
+  assignment: ExtractedEntityReviewAssignmentRecord | undefined,
+  route: ExtractedEntityReviewQueueItem["route"]
+): ExtractedEntityReviewQueueItem["slaStatus"] {
+  if (!assignment) return route === "approve_ready" ? "on_track" : "unassigned";
+  if (assignment.status === "completed") return "completed";
+
+  const dueAt = new Date(assignment.dueAt).getTime();
+  const now = Date.now();
+  const hoursUntilDue = (dueAt - now) / (1000 * 60 * 60);
+
+  if (hoursUntilDue < 0) return "overdue";
+  if (hoursUntilDue <= 12) return "due_soon";
+  return "on_track";
+}
+
+function latestAssignmentForEntity(
+  assignments: ExtractedEntityReviewAssignmentRecord[],
+  entityId: string
+): ExtractedEntityReviewAssignmentRecord | undefined {
+  return assignments
+    .filter((assignment) => assignment.entityId === entityId)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0];
+}
+
+function toReviewQueueItem(
+  entity: ExtractedEntityRecord,
+  minImages: number,
+  assignment?: ExtractedEntityReviewAssignmentRecord
+): ExtractedEntityReviewQueueItem {
   const quality = scoreEntityQuality(entity, minImages);
   const confidence = confidenceBand(entity);
   const duplicate = duplicateRisk(entity);
   const route = routeForReview(entity, quality, duplicate);
+  const slaStatus = slaStatusForAssignment(assignment, route);
   const blockers = quality.findings
     .filter((finding) => finding.severity === "critical" || finding.severity === "high")
     .map((finding) => finding.message);
   const item = {
     entity,
     quality,
+    assignment,
     priority: priorityForReview(route, quality, confidence),
     confidenceBand: confidence,
     duplicateRisk: duplicate,
     route,
+    slaStatus,
     blockers
   };
 
@@ -461,8 +519,9 @@ export async function getExtractedEntityReviewQueue(input: {
   const entities = (await listExtractedEntities(status))
     .filter((entity) => status !== "all" || reviewableStatuses.has(entity.reviewStatus))
     .slice(0, limit);
+  const assignments = await listExtractedEntityReviewAssignments(entities.map((entity) => entity.id));
   const items = entities
-    .map((entity) => toReviewQueueItem(entity, minImages))
+    .map((entity) => toReviewQueueItem(entity, minImages, latestAssignmentForEntity(assignments, entity.id)))
     .sort((left, right) => {
       const rank = { critical: 0, high: 1, medium: 2, low: 3 };
       return rank[left.priority] - rank[right.priority] || left.quality.qualityScore - right.quality.qualityScore;
@@ -474,16 +533,18 @@ export async function getExtractedEntityReviewQueue(input: {
     legalReview: items.filter((item) => item.route === "legal_review").length,
     imageRightsReview: items.filter((item) => item.route === "image_rights_review").length,
     duplicateReview: items.filter((item) => item.route === "duplicate_review").length,
-    lowConfidence: items.filter((item) => item.confidenceBand === "low").length
+    lowConfidence: items.filter((item) => item.confidenceBand === "low").length,
+    unassigned: items.filter((item) => item.slaStatus === "unassigned").length,
+    overdue: items.filter((item) => item.slaStatus === "overdue").length
   };
   const blockers = items
     .filter((item) => item.priority === "critical" || item.priority === "high")
     .flatMap((item) => item.blockers.map((blocker) => `${item.entity.name}: ${blocker}`))
     .slice(0, 10);
   const statusValue =
-    totals.legalReview > 0 || totals.imageRightsReview > 0
+    totals.overdue > 0 || totals.legalReview > 0 || totals.imageRightsReview > 0
       ? "blocked"
-      : totals.humanReview > 0 || totals.duplicateReview > 0 || totals.lowConfidence > 0
+      : totals.unassigned > 0 || totals.humanReview > 0 || totals.duplicateReview > 0 || totals.lowConfidence > 0
         ? "action_required"
         : "ready";
 
@@ -501,10 +562,134 @@ export async function getExtractedEntityReviewQueue(input: {
             ...(totals.legalReview + totals.imageRightsReview > 0
               ? ["Clear legal and image-rights review items before approving imported listings."]
               : []),
+            ...(totals.overdue > 0 ? ["Escalate overdue extracted entity review assignments."] : []),
+            ...(totals.unassigned > 0 ? ["Assign all human, legal, image-rights, and duplicate review records to owners."] : []),
             ...(totals.duplicateReview > 0 ? ["Resolve duplicate-review records before approving new provider inventory."] : []),
             ...(totals.approveReady > 0 ? ["Approve ready records after a final admin spot-check."] : [])
           ]
   };
+}
+
+async function listExtractedEntityReviewAssignments(entityIds: string[]): Promise<ExtractedEntityReviewAssignmentRecord[]> {
+  if (entityIds.length === 0) return [];
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedReviewAssignments.filter((assignment) => entityIds.includes(assignment.entityId));
+  }
+
+  const { data, error } = await supabase
+    .from("extracted_entity_review_assignments")
+    .select("*")
+    .in("extracted_entity_id", entityIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Extracted entity review assignment query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapReviewAssignment);
+}
+
+async function getExtractedEntityById(entityId: string): Promise<ExtractedEntityRecord | null> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedExtractedEntities.find((entity) => entity.id === entityId) ?? null;
+  }
+
+  const { data, error } = await supabase.from("extracted_entities").select("*").eq("id", entityId).maybeSingle();
+
+  if (error) {
+    throw new Error(`Extracted entity lookup failed: ${error.message}`);
+  }
+
+  return data ? mapExtractedEntity(data) : null;
+}
+
+export async function assignExtractedEntityReview(
+  input: AssignExtractedEntityReviewInput
+): Promise<ExtractedEntityReviewAssignmentRecord> {
+  const entity = await getExtractedEntityById(input.entityId);
+
+  if (!entity) {
+    throw new Error("Extracted entity not found");
+  }
+
+  const previewItem = toReviewQueueItem(entity, 3);
+  const route = input.route ?? previewItem.route;
+  const dueAt = input.dueAt ?? new Date(Date.now() + (route === "legal_review" || route === "image_rights_review" ? 24 : 48) * 60 * 60 * 1000).toISOString();
+  const policy = await runPolicyCheck({
+    subjectType: "extracted_entity_review_assignment",
+    subjectId: input.entityId,
+    actionKey: "assign_extracted_entity_review",
+    input: {
+      entityId: input.entityId,
+      assignedTo: input.assignedTo,
+      route,
+      dueAt,
+      notes: input.notes
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Extracted entity review assignment blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const assignment: ExtractedEntityReviewAssignmentRecord = {
+      id: `extracted-entity-review-assignment-${Date.now()}`,
+      entityId: input.entityId,
+      route,
+      status: "assigned",
+      assignedTo: input.assignedTo,
+      assignedBy: input.assignedBy,
+      dueAt,
+      notes: input.notes,
+      createdAt: new Date().toISOString()
+    };
+
+    seedReviewAssignments.unshift(assignment);
+    return assignment;
+  }
+
+  await supabase
+    .from("extracted_entity_review_assignments")
+    .update({ status: "escalated" })
+    .eq("extracted_entity_id", input.entityId)
+    .in("status", ["assigned", "in_review"]);
+
+  const { data, error } = await supabase
+    .from("extracted_entity_review_assignments")
+    .insert({
+      extracted_entity_id: input.entityId,
+      route,
+      status: "assigned",
+      assigned_to: input.assignedTo,
+      assigned_by: input.assignedBy,
+      due_at: dueAt,
+      notes: input.notes
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Extracted entity review assignment failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.assignedBy,
+    actor_type: input.assignedBy ? "admin" : "system",
+    event_type: "extracted_entity.review_assigned",
+    subject_type: "extracted_entity",
+    subject_id: input.entityId,
+    payload: { assignedTo: input.assignedTo, route, dueAt, notes: input.notes, policyDecision: policy.decision }
+  });
+
+  return mapReviewAssignment(data);
 }
 
 export async function createExtractedEntity(input: CreateExtractedEntityInput): Promise<ExtractedEntityRecord> {

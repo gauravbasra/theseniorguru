@@ -171,10 +171,12 @@ export type ExtractedEntityReviewQueuePriority = "critical" | "high" | "medium" 
 export type ExtractedEntityReviewQueueItem = {
   entity: ExtractedEntityRecord;
   quality: ExtractedEntityQualityAuditRecord;
+  assignment?: ExtractedEntityReviewAssignmentRecord;
   priority: ExtractedEntityReviewQueuePriority;
   confidenceBand: "high" | "medium" | "low";
   duplicateRisk: "high" | "medium" | "low";
   route: "approve_ready" | "human_review" | "legal_review" | "image_rights_review" | "duplicate_review";
+  slaStatus: "unassigned" | "on_track" | "due_soon" | "overdue" | "completed";
   blockers: string[];
   nextActions: string[];
 };
@@ -191,8 +193,34 @@ export type ExtractedEntityReviewQueueSummary = {
     imageRightsReview: number;
     duplicateReview: number;
     lowConfidence: number;
+    unassigned: number;
+    overdue: number;
   };
   items: ExtractedEntityReviewQueueItem[];
   blockers: string[];
   nextActions: string[];
+};
+
+export type ExtractedEntityReviewAssignmentStatus = "assigned" | "in_review" | "completed" | "escalated";
+
+export type ExtractedEntityReviewAssignmentRecord = {
+  id: string;
+  entityId: string;
+  route: ExtractedEntityReviewQueueItem["route"];
+  status: ExtractedEntityReviewAssignmentStatus;
+  assignedTo: string;
+  assignedBy?: string;
+  dueAt: string;
+  notes?: string;
+  createdAt: string;
+  completedAt?: string;
+};
+
+export type AssignExtractedEntityReviewInput = {
+  entityId: string;
+  assignedTo: string;
+  assignedBy?: string;
+  route?: ExtractedEntityReviewQueueItem["route"];
+  dueAt?: string;
+  notes?: string;
 };

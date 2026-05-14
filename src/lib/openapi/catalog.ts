@@ -378,6 +378,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/{id}/match": {
         post: { tags: ["Aggregation"], summary: "Score and store duplicate match candidates for an extracted entity" }
       },
+      "/api/v1/admin/extracted-entities/{id}/assignment": {
+        post: { tags: ["Aggregation"], summary: "Assign an extracted entity review owner and SLA due date" }
+      },
       "/api/v1/admin/extracted-entities/quality-audit": {
         post: { tags: ["Aggregation"], summary: "Run launch-quality checks and flag staged provider records" }
       },

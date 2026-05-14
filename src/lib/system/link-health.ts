@@ -200,6 +200,12 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Extracted entity review assignment",
+    href: "/api/v1/admin/extracted-entities/seed-extracted-denver-care/assignment",
+    method: "POST",
+    owner: "admin"
+  },
+  {
     label: "Public-source acquisition sample run",
     href: "/api/v1/admin/public-source-acquisition/sample-run",
     method: "POST",

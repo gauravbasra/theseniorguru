@@ -128,6 +128,24 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Send aria-hidden="true" />}
+          label="Assign review"
+          loading={loadingKey === "entity-review-assignment"}
+          onClick={() =>
+            runOperation("Assign extracted entity review", "entity-review-assignment", () =>
+              fetch("/api/v1/admin/extracted-entities/seed-extracted-denver-care/assignment", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  assignedTo: "launch-ops",
+                  assignedBy: "admin-console",
+                  notes: "Admin console review ownership smoke assignment"
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Approve entity"
           loading={loadingKey === "approve"}
@@ -362,7 +380,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "entity-review-queue") {
     const totals = record.totals as Record<string, unknown> | undefined;
-    return `${String(totals?.approveReady ?? 0)} ready to approve, ${String(totals?.humanReview ?? 0)} need human review, ${String(totals?.duplicateReview ?? 0)} duplicate reviews, and ${String(totals?.legalReview ?? 0)} legal reviews.`;
+    return `${String(totals?.approveReady ?? 0)} ready to approve, ${String(totals?.humanReview ?? 0)} need human review, ${String(totals?.unassigned ?? 0)} unassigned, and ${String(totals?.overdue ?? 0)} overdue.`;
+  }
+
+  if (key === "entity-review-assignment") {
+    return `Extracted entity review was assigned to ${String(record.assignedTo ?? "the review owner")} with an SLA due date.`;
   }
 
   if (key === "worker-health") {

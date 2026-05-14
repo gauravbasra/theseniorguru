@@ -242,6 +242,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/import-batches/{id}/requeue",
       "GET /api/v1/admin/extracted-entities",
       "POST /api/v1/admin/extracted-entities/{id}/match",
+      "POST /api/v1/admin/extracted-entities/{id}/assignment",
       "POST /api/v1/admin/extracted-entities/quality-audit",
       "GET /api/v1/admin/extracted-entities/review-queue",
       "POST /api/v1/admin/extracted-entities/{id}/approve",
@@ -264,12 +265,13 @@ const productPillars: ProductPillar[] = [
       "crawl_jobs",
       "crawl_pages",
       "extracted_entities",
+      "extracted_entity_review_assignments",
       "entity_matches",
       "source_field_values",
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["CMS/state import adapters", "Provider website extraction parser", "Review assignment ownership and SLA timers"]
+    nextBackendWork: ["CMS/state import adapters", "Provider website extraction parser", "Import operator escalation reporting"]
   },
   {
     key: "reviews",
