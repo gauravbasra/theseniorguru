@@ -15,6 +15,8 @@ import type {
   EnqueueWebhookDeliveryInput,
   ProcessWebhookDeliveriesInput,
   ProcessWebhookDeliveriesResult,
+  ReplayWebhookDeliveriesInput,
+  ReplayWebhookDeliveriesResult,
   RetryWebhookDeliveriesInput,
   RetryWebhookDeliveriesResult,
   WebhookRetrySchedulerInput,
@@ -1043,6 +1045,158 @@ export async function retryWebhookDeliveries(
   return {
     requeued: updatedIds.length,
     deliveryIds: updatedIds,
+    status: "queued"
+  };
+}
+
+export async function replayWebhookDeliveries(
+  input: ReplayWebhookDeliveriesInput = {}
+): Promise<ReplayWebhookDeliveriesResult> {
+  const replayableStatuses: WebhookDeliveryRecord["status"][] = ["failed", "blocked", "delivered"];
+  const status = input.status ?? "failed";
+  const deliveryIds = Array.from(new Set(input.deliveryIds?.map((id) => String(id).trim()).filter(Boolean) ?? []));
+  const requestedLimit = input.limit ?? (deliveryIds.length || 10);
+  const limit = Math.max(1, Math.min(requestedLimit, 50));
+
+  if (!replayableStatuses.includes(status)) {
+    throw new Error("Only failed, blocked, or delivered webhook deliveries can be replayed");
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "webhook_delivery",
+    actionKey: "replay_webhook_delivery",
+    input: {
+      deliveryIds,
+      status,
+      limit,
+      reason: input.reason,
+      actorId: input.actorId
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Webhook delivery replay blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const candidates = seedWebhookDeliveries
+      .filter((delivery) => replayableStatuses.includes(delivery.status))
+      .filter((delivery) => (deliveryIds.length ? deliveryIds.includes(delivery.id) : delivery.status === status))
+      .slice(0, limit);
+    const replayed = candidates.map((delivery) => ({
+      id: `webhook-delivery-${crypto.randomUUID()}`,
+      subscriptionId: delivery.subscriptionId,
+      eventType: delivery.eventType,
+      subjectId: delivery.subjectId,
+      payload: {
+        ...delivery.payload,
+        replayOfDeliveryId: delivery.id
+      },
+      status: "queued" as const,
+      attempts: 0,
+      createdAt: new Date().toISOString()
+    }));
+
+    seedWebhookDeliveries.unshift(...replayed);
+
+    await recordApiAuditEvent({
+      eventType: "webhook_delivery.replayed",
+      subjectType: "webhook_delivery",
+      subjectId: candidates.map((delivery) => delivery.id).join(",") || undefined,
+      status: "allowed",
+      requestMetadata: {
+        reason: input.reason,
+        actorId: input.actorId,
+        sourceStatus: status,
+        replayed: replayed.length,
+        replayedDeliveryIds: replayed.map((delivery) => delivery.id)
+      }
+    });
+
+    return {
+      replayed: replayed.length,
+      sourceDeliveryIds: candidates.map((delivery) => delivery.id),
+      replayedDeliveryIds: replayed.map((delivery) => delivery.id),
+      status: "queued"
+    };
+  }
+
+  let query = supabase
+    .from("webhook_deliveries")
+    .select("*")
+    .in("status", replayableStatuses)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (deliveryIds.length) {
+    query = query.in("id", deliveryIds.slice(0, limit));
+  } else {
+    query = query.eq("status", status);
+  }
+
+  const { data: candidates, error: selectError } = await query;
+
+  if (selectError) {
+    throw new Error(`Webhook delivery replay selection failed: ${selectError.message}`);
+  }
+
+  const sourceDeliveries = (candidates ?? []).map(mapWebhookDelivery);
+
+  if (!sourceDeliveries.length) {
+    await recordApiAuditEvent({
+      eventType: "webhook_delivery.replayed",
+      subjectType: "webhook_delivery",
+      status: "allowed",
+      requestMetadata: {
+        reason: input.reason,
+        actorId: input.actorId,
+        sourceStatus: status,
+        replayed: 0
+      }
+    });
+
+    return { replayed: 0, sourceDeliveryIds: [], replayedDeliveryIds: [], status: "queued" };
+  }
+
+  const rows = sourceDeliveries.map((delivery) => ({
+    subscription_id: delivery.subscriptionId,
+    event_type: delivery.eventType,
+    subject_id: delivery.subjectId,
+    payload: {
+      ...delivery.payload,
+      replayOfDeliveryId: delivery.id
+    },
+    status: "queued",
+    attempts: 0
+  }));
+  const { data: replayedRows, error: insertError } = await supabase.from("webhook_deliveries").insert(rows).select("*");
+
+  if (insertError) {
+    throw new Error(`Webhook delivery replay insert failed: ${insertError.message}`);
+  }
+
+  const replayedDeliveryIds = (replayedRows ?? []).map((delivery) => String(delivery.id));
+
+  await recordApiAuditEvent({
+    eventType: "webhook_delivery.replayed",
+    subjectType: "webhook_delivery",
+    subjectId: sourceDeliveries.map((delivery) => delivery.id).join(",") || undefined,
+    status: "allowed",
+    requestMetadata: {
+      reason: input.reason,
+      actorId: input.actorId,
+      sourceStatus: status,
+      replayed: replayedDeliveryIds.length,
+      replayedDeliveryIds
+    }
+  });
+
+  return {
+    replayed: replayedDeliveryIds.length,
+    sourceDeliveryIds: sourceDeliveries.map((delivery) => delivery.id),
+    replayedDeliveryIds,
     status: "queued"
   };
 }

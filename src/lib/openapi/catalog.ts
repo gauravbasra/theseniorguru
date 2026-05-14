@@ -572,6 +572,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/webhook-deliveries/retry": {
         post: { tags: ["System"], summary: "Requeue failed or blocked webhook deliveries for another signed attempt" }
       },
+      "/api/v1/admin/webhook-deliveries/replay": {
+        post: { tags: ["System"], summary: "Replay failed, blocked, or delivered webhook deliveries as fresh queued records with audit evidence" }
+      },
       "/api/v1/admin/webhook-deliveries/scheduler": {
         post: { tags: ["System"], summary: "Preview or run the scheduled webhook retry worker with failed and blocked candidate counts" }
       },

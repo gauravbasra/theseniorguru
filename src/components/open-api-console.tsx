@@ -265,6 +265,23 @@ export function OpenApiConsole({
     }
   }
 
+  async function replayDeliveries() {
+    const data = await runAction<{ replayed: number }>(
+      "replay",
+      () => fetch("/api/v1/admin/webhook-deliveries/replay", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "failed", limit: 10, reason: "Admin console replay", actorId })
+      }),
+      (result) => `${result.replayed} historical webhook deliver${result.replayed === 1 ? "y" : "ies"} replayed as fresh queued records.`
+    );
+
+    if (data) {
+      await refreshDeliveries();
+      await refreshAuditEvents();
+    }
+  }
+
   async function refreshDeliveries() {
     const response = await fetch("/api/v1/admin/webhook-deliveries");
     const payload = await response.json().catch(() => ({}));
@@ -385,6 +402,10 @@ export function OpenApiConsole({
           <button className="small-action" type="button" disabled={Boolean(loadingKey)} onClick={retryDeliveries}>
             {loadingKey === "retry" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />}
             Retry failed
+          </button>
+          <button className="small-action" type="button" disabled={Boolean(loadingKey)} onClick={replayDeliveries}>
+            {loadingKey === "replay" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <Webhook aria-hidden="true" />}
+            Replay failed
           </button>
         </div>
 

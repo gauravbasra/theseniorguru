@@ -159,6 +159,7 @@ const routeContracts: LinkContract[] = [
   { label: "Webhook subscriptions API", href: "/api/v1/admin/webhook-subscriptions", method: "GET", owner: "admin" },
   { label: "Webhook deliveries API", href: "/api/v1/admin/webhook-deliveries", method: "GET", owner: "admin" },
   { label: "Webhook retry API", href: "/api/v1/admin/webhook-deliveries/retry", method: "POST", owner: "admin" },
+  { label: "Webhook replay API", href: "/api/v1/admin/webhook-deliveries/replay", method: "POST", owner: "admin" },
   { label: "Webhook retry scheduler API", href: "/api/v1/admin/webhook-deliveries/scheduler", method: "POST", owner: "admin" },
   { label: "Webhook retry cron API", href: "/api/cron/webhooks", method: "GET", owner: "admin" },
   { label: "Source manifest fetch cron API", href: "/api/cron/source-manifests", method: "GET", owner: "admin" },

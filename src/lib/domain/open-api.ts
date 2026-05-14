@@ -235,6 +235,21 @@ export type RetryWebhookDeliveriesResult = {
   status: "queued";
 };
 
+export type ReplayWebhookDeliveriesInput = {
+  deliveryIds?: string[];
+  status?: Extract<WebhookDeliveryRecord["status"], "failed" | "blocked" | "delivered">;
+  limit?: number;
+  reason?: string;
+  actorId?: string;
+};
+
+export type ReplayWebhookDeliveriesResult = {
+  replayed: number;
+  sourceDeliveryIds: string[];
+  replayedDeliveryIds: string[];
+  status: "queued";
+};
+
 export type WebhookRetrySchedulerInput = {
   retryLimit?: number;
   deliveryLimit?: number;
