@@ -461,9 +461,11 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/webhook-deliveries/scheduler",
       "GET /api/v1/admin/api-audit-events",
       "GET /api/v1/admin/api-usage-analytics",
+      "GET /api/v1/admin/api-usage-analytics?format=csv",
       "GET /api/v1/partner/providers",
       "GET /api/v1/partner/events",
       "GET /api/v1/partner/usage",
+      "GET /api/v1/partner/usage?format=csv",
       "GET /api/cron/webhooks"
     ],
     requiredTables: [
@@ -474,7 +476,7 @@ const productPillars: ProductPillar[] = [
       "webhook_delivery_attempts",
       "api_audit_events"
     ],
-    nextBackendWork: ["Partner developer docs UI", "Webhook event signing docs", "Partner usage dashboard export"]
+    nextBackendWork: ["Partner developer docs UI", "Webhook event signing docs", "Partner usage retention policy"]
   }
 ];
 

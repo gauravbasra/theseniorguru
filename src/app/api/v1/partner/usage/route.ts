@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticatePartnerApiRequest, getApiUsageAnalytics } from "@/lib/openapi/platform";
+import { authenticatePartnerApiRequest, exportApiUsageAnalytics, getApiUsageAnalytics } from "@/lib/openapi/platform";
 import { partnerAuthErrorResponse, partnerSuccessHeaders } from "@/lib/openapi/responses";
 
 export async function GET(request: Request) {
@@ -15,19 +15,33 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const windowDays = Number(searchParams.get("windowDays") ?? 30);
+    const input = {
+      apiClientId: auth.client.id,
+      windowDays: Number.isFinite(windowDays) ? windowDays : 30
+    };
+    const headers = partnerSuccessHeaders(auth);
+
+    if (searchParams.get("format") === "csv") {
+      const exportPayload = await exportApiUsageAnalytics(input);
+
+      return new NextResponse(exportPayload.csv, {
+        headers: {
+          ...headers,
+          "content-type": "text/csv; charset=utf-8",
+          "content-disposition": `attachment; filename="${exportPayload.filename}"`
+        }
+      });
+    }
 
     return NextResponse.json(
       {
-        data: await getApiUsageAnalytics({
-          apiClientId: auth.client.id,
-          windowDays: Number.isFinite(windowDays) ? windowDays : 30
-        }),
+        data: await getApiUsageAnalytics(input),
         meta: {
           apiClientId: auth.client.id,
           sandboxMode: auth.client.sandboxMode
         }
       },
-      { headers: partnerSuccessHeaders(auth) }
+      { headers }
     );
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });

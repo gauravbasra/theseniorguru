@@ -165,6 +165,7 @@ const routeContracts: LinkContract[] = [
   { label: "Import escalation retry cron API", href: "/api/cron/import-escalation-retries", method: "GET", owner: "admin" },
   { label: "API audit events API", href: "/api/v1/admin/api-audit-events", method: "GET", owner: "admin" },
   { label: "API usage analytics API", href: "/api/v1/admin/api-usage-analytics", method: "GET", owner: "admin" },
+  { label: "API usage analytics CSV export", href: "/api/v1/admin/api-usage-analytics?format=csv", method: "GET", owner: "admin" },
   { label: "Scheduled worker runs API", href: "/api/v1/admin/scheduled-worker-runs", method: "GET", owner: "admin" },
   { label: "Scheduled worker health API", href: "/api/v1/admin/scheduled-worker-health", method: "GET", owner: "admin" },
   { label: "Scheduled worker alert API", href: "/api/v1/admin/scheduled-worker-alerts", method: "POST", owner: "admin" },
@@ -204,6 +205,7 @@ const routeContracts: LinkContract[] = [
   { label: "Partner providers API", href: "/api/v1/partner/providers", method: "GET", owner: "provider" },
   { label: "Partner events API", href: "/api/v1/partner/events", method: "GET", owner: "provider" },
   { label: "Partner usage analytics API", href: "/api/v1/partner/usage", method: "GET", owner: "provider" },
+  { label: "Partner usage analytics CSV export", href: "/api/v1/partner/usage?format=csv", method: "GET", owner: "provider" },
   {
     label: "Provider onboarding readiness API",
     href: "/api/v1/admin/provider-onboarding-readiness?providerId=seed-cottages-dayton-place",

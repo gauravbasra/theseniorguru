@@ -417,6 +417,7 @@ export function OpenApiConsole({
       <article className="open-api-panel">
         <p className="eyebrow">Usage analytics</p>
         <h3>{usageAnalytics.totals.requests} partner API calls</h3>
+        <a className="mini-link" href="/api/v1/admin/api-usage-analytics?format=csv">Export usage CSV</a>
 
         <div className="open-api-status-grid">
           <div><strong>{usageAnalytics.totals.allowed}</strong><span>Allowed</span></div>

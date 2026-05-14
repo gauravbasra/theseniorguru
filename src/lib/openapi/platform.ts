@@ -1380,6 +1380,56 @@ export async function getApiUsageAnalytics(input: { apiClientId?: string; window
   };
 }
 
+function csvCell(value: string | number | undefined) {
+  const text = value === undefined ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+export async function exportApiUsageAnalytics(input: { apiClientId?: string; windowDays?: number } = {}) {
+  const summary = await getApiUsageAnalytics(input);
+  const headers = [
+    "api_client_id",
+    "name",
+    "owner_type",
+    "status",
+    "requests",
+    "allowed",
+    "blocked",
+    "rate_limited",
+    "active_keys",
+    "revoked_keys",
+    "webhook_subscriptions",
+    "webhook_deliveries",
+    "last_request_at",
+    "top_events"
+  ];
+  const rows = summary.clients.map((client) => [
+    client.apiClientId,
+    client.name,
+    client.ownerType,
+    client.status,
+    client.requests,
+    client.allowed,
+    client.blocked,
+    client.rateLimited,
+    client.activeKeys,
+    client.revokedKeys,
+    client.webhookSubscriptions,
+    client.webhookDeliveries,
+    client.lastRequestAt,
+    client.topEvents.map((event) => `${event.eventType}:${event.count}`).join("|")
+  ]);
+
+  return {
+    summary,
+    csv: [
+      headers.map(csvCell).join(","),
+      ...rows.map((row) => row.map(csvCell).join(","))
+    ].join("\n"),
+    filename: `senior-guru-api-usage-${summary.windowDays}d-${summary.generatedAt.slice(0, 10)}.csv`
+  };
+}
+
 export async function authenticatePartnerApiRequest(
   request: Request,
   requiredScope: ApiClientScope,
