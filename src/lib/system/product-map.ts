@@ -310,7 +310,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Provider website parser impact evidence retention", "Import escalation retry cron Vercel schedule config", "Source manifest fetch cron Vercel schedule config"]
+    nextBackendWork: ["Provider website parser impact evidence export", "Import escalation retry cron Vercel schedule config", "Source manifest fetch cron Vercel schedule config"]
   },
   {
     key: "reviews",

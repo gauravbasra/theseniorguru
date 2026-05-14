@@ -783,7 +783,7 @@ export async function rollbackProviderWebsiteParserRuleOverride(
 }
 
 export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promise<ProviderWebsiteParserRuleOverrideAuditSummary> {
-  const [overrides, upsertAuditSummary, rollbackAuditSummary, replacementAuditSummary] = await Promise.all([
+  const [overrides, upsertAuditSummary, rollbackAuditSummary, replacementAuditSummary, impactAuditSummary] = await Promise.all([
     listProviderWebsiteParserRuleOverrides(),
     listAuditEvents({
       eventType: "provider_website_parser.rule_override_upserted",
@@ -799,11 +799,19 @@ export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promis
       eventType: "provider_website_parser.rule_override_replaced",
       subjectType: "provider_website_parser_rule_override",
       limit: 250
+    }),
+    listAuditEvents({
+      eventType: "provider_website_parser.rule_impact_compared",
+      subjectType: "provider_website_parser_rule_override",
+      limit: 250
     })
   ]);
-  const auditEvents = [...upsertAuditSummary.events, ...rollbackAuditSummary.events, ...replacementAuditSummary.events].sort(
-    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
-  );
+  const auditEvents = [
+    ...upsertAuditSummary.events,
+    ...rollbackAuditSummary.events,
+    ...replacementAuditSummary.events,
+    ...impactAuditSummary.events
+  ].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
   const overrideRows = overrides.map((override) => {
     const overrideAuditEvents = auditEvents.filter(
       (event) =>
@@ -829,6 +837,7 @@ export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promis
       activeOverrides: overrideRows.filter((override) => override.status === "active").length,
       inactiveOverrides: overrideRows.filter((override) => override.status === "inactive").length,
       auditEvents: auditEvents.length,
+      impactAuditEvents: impactAuditSummary.events.length,
       unauditedOverrides: overrideRows.filter((override) => override.auditStatus === "missing_audit_event").length
     },
     overrides: overrideRows,
@@ -837,8 +846,11 @@ export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promis
     nextActions: [
       ...(blockers.length ? ["Review legacy parser rule overrides missing audit evidence before launch sign-off."] : []),
       ...(overrideRows.some((override) => override.status === "active")
-        ? ["Use audited active overrides during parser dry-runs and staging decisions."]
+        ? ["Use audited active overrides and impact comparison evidence during parser dry-runs and staging decisions."]
         : []),
+      ...(impactAuditSummary.events.length
+        ? ["Review retained parser impact comparisons before replacing or rolling back source-specific parser overrides."]
+        : ["Run parser rule impact comparison with audit evidence before replacing or rolling back source-specific parser overrides."]),
       ...(!overrideRows.length ? ["Create governed source-specific parser rule overrides only after source approval and crawl evidence review."] : [])
     ]
   };

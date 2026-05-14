@@ -740,7 +740,7 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "provider-website-parser-rule-audit") {
     const totals = record.totals as Record<string, unknown> | undefined;
-    return `${String(totals?.auditEvents ?? 0)} parser rule override audit event${totals?.auditEvents === 1 ? "" : "s"}, ${String(totals?.activeOverrides ?? 0)} active override${totals?.activeOverrides === 1 ? "" : "s"}, and ${String(totals?.unauditedOverrides ?? 0)} override${totals?.unauditedOverrides === 1 ? "" : "s"} missing audit evidence.`;
+    return `${String(totals?.auditEvents ?? 0)} parser rule audit event${totals?.auditEvents === 1 ? "" : "s"}, including ${String(totals?.impactAuditEvents ?? 0)} impact comparison event${totals?.impactAuditEvents === 1 ? "" : "s"}, ${String(totals?.activeOverrides ?? 0)} active override${totals?.activeOverrides === 1 ? "" : "s"}, and ${String(totals?.unauditedOverrides ?? 0)} override${totals?.unauditedOverrides === 1 ? "" : "s"} missing audit evidence.`;
   }
 
   if (key === "provider-website-parser-rule-impact") {

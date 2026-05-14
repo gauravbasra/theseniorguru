@@ -135,6 +135,7 @@ Deliverables:
 - Provider website parser override rollback workflow with dry-run candidate preview, inactive status transition, audit evidence, and admin console access. Completed.
 - Provider website parser override replacement workflow with dry-run candidate preview, audited previous/new profile evidence, and admin console access. Completed.
 - Provider website parser override impact compare workflow with default/active/replacement stageable deltas, blocker evidence, optional audit event, and admin console access. Completed.
+- Provider website parser impact evidence retention in the override audit dashboard, including counted impact comparison events for replacement and rollback review. Completed.
 - Extracted entity confidence review queue API for approval-ready, human-review, legal-review, image-rights, and duplicate routing. Completed.
 - Extracted entity review assignment and SLA API with Supabase migration, local fallback, and admin console action. Completed.
 - Import operator escalation report API for overdue, due-soon, unassigned, and blocked extracted-entity reviews. Completed.
@@ -163,7 +164,7 @@ Deliverables:
 - Current live TheSeniorGuru listing crawler and staging adapter. Completed.
 - Current-site public JSON acquisition worker for real production listing records. Completed.
 - Current-site parsed record preview/export API. Completed.
-- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, signed object fetch executor, scheduled signed-object fetch worker, protected source manifest fetch cron route, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, override rollback workflow, override replacement workflow, and override impact comparison completed; Vercel cron schedule config remains.
+- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, signed object fetch executor, scheduled signed-object fetch worker, protected source manifest fetch cron route, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, override rollback workflow, override replacement workflow, override impact comparison, and impact evidence retention completed; Vercel cron schedule config remains.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.

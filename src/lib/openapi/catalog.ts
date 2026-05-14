@@ -527,7 +527,7 @@ export function getOpenApiCatalog() {
         post: { tags: ["Aggregation"], summary: "Create or update governed source-specific provider website parser rule overrides" }
       },
       "/api/v1/admin/provider-website-parser/rules/audit": {
-        get: { tags: ["Aggregation"], summary: "Summarize provider website parser override audit events and unaudited override gaps" }
+        get: { tags: ["Aggregation"], summary: "Summarize provider website parser override, rollback, replacement, impact comparison, and unaudited override gaps" }
       },
       "/api/v1/admin/provider-website-parser/rules/impact": {
         post: { tags: ["Aggregation"], summary: "Compare default, active, and proposed provider website parser rule impact before override changes" }

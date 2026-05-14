@@ -853,6 +853,7 @@ export type ProviderWebsiteParserRuleOverrideAuditSummary = {
     activeOverrides: number;
     inactiveOverrides: number;
     auditEvents: number;
+    impactAuditEvents: number;
     unauditedOverrides: number;
   };
   overrides: Array<
