@@ -306,12 +306,16 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/newsroom/sources",
       "POST /api/v1/admin/newsroom/rss/import",
       "POST /api/v1/admin/newsroom/articles",
+      "POST /api/v1/admin/newsroom/articles/{id}/approve",
       "POST /api/v1/admin/newsroom/articles/{id}/publish",
       "POST /api/v1/admin/newsroom/articles/{id}/generate-social",
       "POST /api/v1/admin/newsroom/articles/{id}/generate-podcast-brief",
+      "GET /api/v1/admin/newsroom/newsletters",
+      "POST /api/v1/admin/newsroom/newsletters",
       "GET /api/v1/admin/newsroom/readiness",
       "GET /api/v1/articles",
-      "GET /api/v1/articles/{slug}"
+      "GET /api/v1/articles/{slug}",
+      "GET /api/v1/newsletters/{id}"
     ],
     requiredTables: [
       "content_sources",
@@ -324,7 +328,7 @@ const productPillars: ProductPillar[] = [
       "podcast_episodes",
       "newsletter_editions"
     ],
-    nextBackendWork: ["Article compliance approval endpoint", "Newsletter edition API", "RSS scheduling job"]
+    nextBackendWork: ["Newsletter approval/send workflow", "RSS scheduling job", "Content performance metrics"]
   },
   {
     key: "policy",

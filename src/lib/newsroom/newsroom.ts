@@ -5,9 +5,11 @@ import type {
   CreateArticleInput,
   CreateContentSourceInput,
   CreateNewsItemInput,
+  CreateNewsletterEditionInput,
   ImportRssFeedInput,
   ImportRssFeedResult,
   NewsItemRecord,
+  NewsletterEditionRecord,
   NewsroomReadinessSummary
 } from "@/lib/domain/newsroom";
 import { runPolicyCheck } from "@/lib/policy";
@@ -52,6 +54,18 @@ const seedArticles: ArticleRecord[] = [
   }
 ];
 const seedDerivatives: ArticleDerivativeRecord[] = [];
+const seedNewsletterEditions: NewsletterEditionRecord[] = [
+  {
+    id: "seed-newsletter-family-tour-planning",
+    status: "sent",
+    subject: "Senior Guru weekly: better memory care tour questions",
+    audience: ["families", "caregivers"],
+    articleIds: ["seed-article-memory-care-tour-questions"],
+    intro: "A practical weekly edition for families comparing senior living options without referral pressure.",
+    sentAt: "2026-05-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  }
+];
 const seedContentSources: ContentSourceRecord[] = [
   {
     id: "seed-content-source-senior-care-news",
@@ -112,6 +126,20 @@ function mapArticle(row: Record<string, unknown>): ArticleRecord {
     sourceLinks: Array.isArray(row.source_links) ? row.source_links as ArticleRecord["sourceLinks"] : [],
     aiAssisted: Boolean(row.ai_assisted),
     publishedAt: row.published_at ? String(row.published_at) : undefined,
+    createdAt: String(row.created_at)
+  };
+}
+
+function mapNewsletterEdition(row: Record<string, unknown>): NewsletterEditionRecord {
+  return {
+    id: String(row.id),
+    status: row.status as NewsletterEditionRecord["status"],
+    subject: String(row.subject),
+    audience: Array.isArray(row.audience) ? row.audience.map(String) : [],
+    articleIds: Array.isArray(row.article_ids) ? row.article_ids.map(String) : [],
+    intro: row.intro ? String(row.intro) : undefined,
+    scheduledFor: row.scheduled_for ? String(row.scheduled_for) : undefined,
+    sentAt: row.sent_at ? String(row.sent_at) : undefined,
     createdAt: String(row.created_at)
   };
 }
@@ -697,6 +725,122 @@ export async function generateArticlePodcastBrief(articleId: string): Promise<Ar
   await persistDerivatives([derivative], supabase);
 
   return derivative;
+}
+
+function publicNewsletterStatuses(status: NewsletterEditionRecord["status"]) {
+  return status === "approved" || status === "scheduled" || status === "sent";
+}
+
+export async function listNewsletterEditions(): Promise<NewsletterEditionRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedNewsletterEditions;
+  }
+
+  const { data, error } = await supabase.from("newsletter_editions").select("*").order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Newsletter edition query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapNewsletterEdition);
+}
+
+export async function getNewsletterEdition(id: string, options: { publicOnly?: boolean } = {}) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const edition = seedNewsletterEditions.find((candidate) => candidate.id === id) ?? null;
+    if (!edition || (options.publicOnly && !publicNewsletterStatuses(edition.status))) {
+      return null;
+    }
+    return edition;
+  }
+
+  let query = supabase.from("newsletter_editions").select("*").eq("id", id);
+  if (options.publicOnly) {
+    query = query.in("status", ["approved", "scheduled", "sent"]);
+  }
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    throw new Error(`Newsletter edition lookup failed: ${error.message}`);
+  }
+
+  return data ? mapNewsletterEdition(data) : null;
+}
+
+export async function createNewsletterEdition(input: CreateNewsletterEditionInput): Promise<NewsletterEditionRecord> {
+  if (!input.subject?.trim()) {
+    throw new Error("subject is required");
+  }
+
+  const scheduledFor = input.scheduledFor;
+  if (scheduledFor && Number.isNaN(new Date(scheduledFor).getTime())) {
+    throw new Error("scheduledFor must be a valid ISO date when provided");
+  }
+
+  const articles = await listArticles();
+  const articleIds = input.articleIds?.length
+    ? input.articleIds
+    : articles.filter((article) => article.status === "published").slice(0, 3).map((article) => article.id);
+
+  const missingArticle = articleIds.find((articleId) => !articles.some((article) => article.id === articleId));
+  if (missingArticle) {
+    throw new Error(`Newsletter article not found: ${missingArticle}`);
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "newsletter_edition",
+    actionKey: "create_newsletter_edition",
+    input: {
+      subject: input.subject,
+      audience: input.audience ?? ["families", "providers"],
+      articleIds,
+      intro: input.intro,
+      scheduledFor
+    }
+  });
+
+  const status: NewsletterEditionRecord["status"] = policy.decision.startsWith("blocked") ? "blocked_by_policy" : "draft";
+  const createdAt = new Date().toISOString();
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const edition: NewsletterEditionRecord = {
+      id: `newsletter-${Date.now()}`,
+      status,
+      subject: input.subject,
+      audience: input.audience ?? ["families", "providers"],
+      articleIds,
+      intro: input.intro,
+      scheduledFor,
+      createdAt
+    };
+    seedNewsletterEditions.unshift(edition);
+    return edition;
+  }
+
+  const { data, error } = await supabase
+    .from("newsletter_editions")
+    .insert({
+      status,
+      subject: input.subject,
+      audience: input.audience ?? ["families", "providers"],
+      article_ids: articleIds,
+      intro: input.intro,
+      scheduled_for: scheduledFor
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Newsletter edition creation failed: ${error.message}`);
+  }
+
+  return mapNewsletterEdition(data);
 }
 
 export async function getNewsroomReadiness(): Promise<NewsroomReadinessSummary> {

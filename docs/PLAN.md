@@ -233,3 +233,4 @@ Deliverables:
 - Compliance review.
 - Social/newsletter/podcast derivatives.
 - Byline approval.
+- Newsletter edition schema and admin/public APIs. Completed.

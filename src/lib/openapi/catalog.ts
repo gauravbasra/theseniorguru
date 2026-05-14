@@ -321,6 +321,13 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/newsroom/articles/{id}/generate-podcast-brief": {
         post: { tags: ["Newsroom"], summary: "Generate a podcast/interview brief for an article" }
       },
+      "/api/v1/admin/newsroom/newsletters": {
+        get: { tags: ["Newsroom"], summary: "List newsletter editions assembled by the newsroom workflow" },
+        post: { tags: ["Newsroom"], summary: "Create a policy-gated newsletter edition from approved articles" }
+      },
+      "/api/v1/newsletters/{id}": {
+        get: { tags: ["Newsroom"], summary: "Get an approved, scheduled, or sent newsletter edition" }
+      },
       "/api/v1/admin/newsroom/readiness": {
         get: { tags: ["Newsroom"], summary: "Return newsroom source, article, derivative, and policy readiness" }
       },

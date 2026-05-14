@@ -103,6 +103,34 @@ export type ArticleDerivativeRecord = {
   payload: Record<string, unknown>;
 };
 
+export type NewsletterEditionStatus =
+  | "draft"
+  | "pending_approval"
+  | "approved"
+  | "scheduled"
+  | "sent"
+  | "blocked_by_policy";
+
+export type NewsletterEditionRecord = {
+  id: string;
+  status: NewsletterEditionStatus;
+  subject: string;
+  audience: string[];
+  articleIds: string[];
+  intro?: string;
+  scheduledFor?: string;
+  sentAt?: string;
+  createdAt: string;
+};
+
+export type CreateNewsletterEditionInput = {
+  subject: string;
+  audience?: string[];
+  articleIds?: string[];
+  intro?: string;
+  scheduledFor?: string;
+};
+
 export type NewsroomReadinessSummary = {
   generatedAt: string;
   status: "ready" | "action_required" | "blocked";
