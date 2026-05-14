@@ -104,6 +104,7 @@ const routeContracts: LinkContract[] = [
   { label: "Webhook retry cron API", href: "/api/cron/webhooks", method: "GET", owner: "admin" },
   { label: "API audit events API", href: "/api/v1/admin/api-audit-events", method: "GET", owner: "admin" },
   { label: "Scheduled worker runs API", href: "/api/v1/admin/scheduled-worker-runs", method: "GET", owner: "admin" },
+  { label: "Operational audit events API", href: "/api/v1/admin/audit-events", method: "GET", owner: "admin" },
   { label: "Policy queue API", href: "/api/v1/admin/policy-queue", method: "GET", owner: "admin" },
   { label: "Policy overrides API", href: "/api/v1/admin/policy-overrides", method: "GET", owner: "admin" },
   { label: "Policy override expiry API", href: "/api/v1/admin/policy-overrides/expire", method: "POST", owner: "admin" },

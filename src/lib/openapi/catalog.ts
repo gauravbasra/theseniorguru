@@ -461,6 +461,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/scheduled-worker-runs": {
         get: { tags: ["System"], summary: "List scheduled backend worker run history with status, duration, and summaries" }
       },
+      "/api/v1/admin/audit-events": {
+        get: { tags: ["Policy"], summary: "List immutable operational audit events for policy, claims, imports, and publishing workflows" }
+      },
       "/api/v1/partner/providers": {
         get: { tags: ["Providers"], summary: "Partner provider directory API requiring providers:read scope" }
       },

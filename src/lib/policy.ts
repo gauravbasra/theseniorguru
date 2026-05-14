@@ -10,6 +10,7 @@ import type {
   PolicyQueueItem,
   PolicyQueueSummary
 } from "@/lib/domain/providers";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const hardBlockPatterns = [
@@ -302,6 +303,13 @@ export async function createPolicyOverrideRequest(input: {
     };
 
     localPolicyOverrides.unshift(request);
+    await recordAuditEvent({
+      actorType: "admin",
+      eventType: "policy.override_requested",
+      subjectType: "policy_check",
+      subjectId: input.policyCheckId,
+      payload: { reason, requestedBy: input.requestedBy ?? "admin", approvalRequestId: request.id }
+    });
     return request;
   }
 
@@ -341,11 +349,11 @@ export async function createPolicyOverrideRequest(input: {
     throw new Error(`Policy override request creation failed: ${error.message}`);
   }
 
-  await supabase.from("audit_events").insert({
-    actor_type: "admin",
-    event_type: "policy.override_requested",
-    subject_type: "policy_check",
-    subject_id: input.policyCheckId,
+  await recordAuditEvent({
+    actorType: "admin",
+    eventType: "policy.override_requested",
+    subjectType: "policy_check",
+    subjectId: input.policyCheckId,
     payload: { reason, requestedBy: input.requestedBy ?? "admin" }
   });
 
@@ -437,6 +445,13 @@ export async function decidePolicyOverrideRequest(input: {
     request.reviewedBy = input.reviewedBy ?? "admin";
     request.reviewNotes = input.reviewNotes;
     request.reviewedAt = reviewedAt;
+    await recordAuditEvent({
+      actorType: "admin",
+      eventType: `policy.override_${input.decision}`,
+      subjectType: "policy_approval_request",
+      subjectId: input.id,
+      payload: { reviewedBy: input.reviewedBy ?? "admin", reviewNotes: input.reviewNotes }
+    });
     return request;
   }
 
@@ -484,11 +499,11 @@ export async function decidePolicyOverrideRequest(input: {
     }
   }
 
-  await supabase.from("audit_events").insert({
-    actor_type: "admin",
-    event_type: `policy.override_${input.decision}`,
-    subject_type: "policy_approval_request",
-    subject_id: input.id,
+  await recordAuditEvent({
+    actorType: "admin",
+    eventType: `policy.override_${input.decision}`,
+    subjectType: "policy_approval_request",
+    subjectId: input.id,
     payload: { reviewedBy: input.reviewedBy ?? "admin", reviewNotes: input.reviewNotes }
   });
 
@@ -510,6 +525,15 @@ export async function expirePolicyOverrideRequests(input: { now?: string; limit?
       request.status = "expired";
       request.reviewedAt = request.reviewedAt ?? now;
       request.reviewNotes = request.reviewNotes ?? "Expired automatically by policy override expiry worker.";
+    }
+
+    if (candidates.length) {
+      await recordAuditEvent({
+        actorType: "system",
+        eventType: "policy.overrides_expired",
+        subjectType: "policy_approval_request",
+        payload: { expiredRequestIds: candidates.map((request) => request.id), expired: candidates.length, now }
+      });
     }
 
     return {
@@ -560,10 +584,10 @@ export async function expirePolicyOverrideRequests(input: { now?: string; limit?
     throw new Error(`Policy override expiry update failed: ${error.message}`);
   }
 
-  await supabase.from("audit_events").insert({
-    actor_type: "system",
-    event_type: "policy.overrides_expired",
-    subject_type: "policy_approval_request",
+  await recordAuditEvent({
+    actorType: "system",
+    eventType: "policy.overrides_expired",
+    subjectType: "policy_approval_request",
     payload: { expiredRequestIds: ids, expired: ids.length, now }
   });
 
