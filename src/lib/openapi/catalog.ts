@@ -471,6 +471,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/scheduled-worker-runs": {
         get: { tags: ["System"], summary: "List scheduled backend worker run history with status, duration, and summaries" }
       },
+      "/api/v1/admin/scheduled-worker-health": {
+        get: { tags: ["System"], summary: "Summarize expected cron worker health, stale runs, failures, and launch blockers" }
+      },
       "/api/v1/admin/audit-events": {
         get: { tags: ["Policy"], summary: "List immutable operational audit events for policy, claims, imports, and publishing workflows" }
       },

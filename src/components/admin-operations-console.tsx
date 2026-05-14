@@ -204,6 +204,16 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<ListChecks aria-hidden="true" />}
+          label="Worker health"
+          loading={loadingKey === "worker-health"}
+          onClick={() =>
+            runOperation("Scheduled worker health", "worker-health", () =>
+              fetch("/api/v1/admin/scheduled-worker-health")
+            )
+          }
+        />
+        <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
           label="Import launch plan"
           loading={loadingKey === "import-plan"}
           onClick={() =>
@@ -338,6 +348,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "aggregation-readiness") {
     return `Inventory launch readiness was refreshed across sources, imports, crawling, and data quality.`;
+  }
+
+  if (key === "worker-health") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.healthy ?? 0)} workers healthy, ${String(totals?.stale ?? 0)} stale, ${String(totals?.failing ?? 0)} failing, and ${String(totals?.neverRun ?? 0)} never run.`;
   }
 
   if (key === "import-plan") {

@@ -363,6 +363,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/supabase-schema",
       "GET /api/v1/system/visual-assets",
       "GET /api/v1/admin/scheduled-worker-runs",
+      "GET /api/v1/admin/scheduled-worker-health",
       "GET /api/v1/admin/audit-events",
       "GET /api/v1/admin/policy-queue",
       "GET /api/v1/admin/policy-overrides",
@@ -383,7 +384,7 @@ const productPillars: ProductPillar[] = [
       "audit_events",
       "scheduled_worker_runs"
     ],
-    nextBackendWork: ["Legal reviewer assignment workflow", "Policy reviewer assignment workflow", "Audit retention/export controls"]
+    nextBackendWork: ["Legal reviewer assignment workflow", "Policy reviewer assignment workflow", "Audit retention/export controls", "Cron alert delivery"]
   },
   {
     key: "open-api",
