@@ -211,6 +211,51 @@ export type ProviderVerificationQueueSummary = {
   nextActions: string[];
 };
 
+export type ProviderVerificationSlaItem = {
+  claimId: string;
+  providerId: string;
+  claimantEmail: string;
+  claimStatus: ProviderClaimStatus;
+  queueStatus: ProviderVerificationQueueItem["queueStatus"];
+  priority: ProviderVerificationQueueItem["priority"];
+  ageHours: number;
+  attemptId?: string;
+  method?: ProviderVerificationMethod;
+  target?: string;
+  attemptStatus?: ProviderVerificationAttemptStatus;
+  dueAt?: string;
+  hoursUntilDue?: number;
+  hoursOverdue?: number;
+  nextAction: string;
+};
+
+export type ProviderVerificationSlaSummary = {
+  generatedAt: string;
+  status: "ready" | "attention_needed" | "blocked";
+  slaHours: {
+    startVerification: number;
+    sendDelivery: number;
+    providerResponse: number;
+    adminReview: number;
+  };
+  totals: {
+    claims: number;
+    notStarted: number;
+    pendingDelivery: number;
+    dueSoon: number;
+    overdue: number;
+    failedOrExpired: number;
+    readyForAdminReview: number;
+  };
+  overdue: ProviderVerificationSlaItem[];
+  dueSoon: ProviderVerificationSlaItem[];
+  pendingDelivery: ProviderVerificationSlaItem[];
+  failedOrExpired: ProviderVerificationSlaItem[];
+  readyForAdminReview: ProviderVerificationSlaItem[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ProviderOnboardingReadinessSummary = {
   generatedAt: string;
   providerId: string;

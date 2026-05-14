@@ -212,6 +212,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Radar aria-hidden="true" />}
+          label="Verification SLA"
+          loading={loadingKey === "verification-sla"}
+          onClick={() =>
+            runOperation("Provider verification SLA", "verification-sla", () =>
+              fetch("/api/v1/admin/provider-verification-sla")
+            )
+          }
+        />
+        <OpsButton
           icon={<Send aria-hidden="true" />}
           label="Queue outreach"
           loading={loadingKey === "outreach"}
@@ -383,6 +393,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "verification-queue") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.claims ?? 0)} claims reviewed, ${String(totals?.readyForAdminReview ?? 0)} ready for admin review, ${String(totals?.pendingDelivery ?? 0)} waiting on delivery, and ${String(totals?.failedOrExpired ?? 0)} failed or expired.`;
+  }
+
+  if (key === "verification-sla") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.overdue ?? 0)} overdue, ${String(totals?.dueSoon ?? 0)} due soon, ${String(totals?.pendingDelivery ?? 0)} awaiting delivery, and ${String(totals?.readyForAdminReview ?? 0)} ready for review.`;
   }
 
   if (key === "outreach") {

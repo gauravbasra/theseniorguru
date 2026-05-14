@@ -39,6 +39,7 @@ const routeContracts: LinkContract[] = [
   { label: "Owner logout API", href: "/api/v1/auth/logout", method: "POST", owner: "admin" },
   { label: "OpenAPI", href: "/api/v1/openapi", method: "GET", owner: "admin" },
   { label: "Provider verification queue API", href: "/api/v1/admin/provider-verification-queue", method: "GET", owner: "admin" },
+  { label: "Provider verification SLA API", href: "/api/v1/admin/provider-verification-sla", method: "GET", owner: "admin" },
   { label: "Providers API", href: "/api/v1/providers", method: "GET", owner: "public" },
   { label: "Categories API", href: "/api/v1/categories", method: "GET", owner: "public" },
   { label: "Location search API", href: "/api/v1/locations/search", method: "GET", owner: "public" },
