@@ -17,6 +17,7 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import { createHash, randomInt } from "node:crypto";
 
 const seedVerificationAttempts: ProviderVerificationAttemptRecord[] = [];
+let fallbackVerificationAttemptSequence = 0;
 const verificationTtlMs = 7 * 24 * 60 * 60 * 1000;
 const verificationCodeTtlMs = 30 * 60 * 1000;
 
@@ -229,8 +230,9 @@ export async function createProviderVerificationAttempt(
       return existing;
     }
 
+    fallbackVerificationAttemptSequence += 1;
     const attempt: ProviderVerificationAttemptRecord = {
-      id: `pending-verification-${Date.now()}`,
+      id: `pending-verification-${Date.now()}-${fallbackVerificationAttemptSequence}`,
       providerClaimId: input.claimId,
       method: input.method,
       status: "pending",

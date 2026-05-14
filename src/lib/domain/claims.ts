@@ -177,6 +177,40 @@ export type ProviderClaimStatusSummary = {
   canEditProfile: boolean;
 };
 
+export type ProviderVerificationQueueItem = {
+  claim: ProviderClaimRecord;
+  statusSummary: ProviderClaimStatusSummary;
+  latestAttempt?: ProviderVerificationAttemptRecord;
+  queueStatus:
+    | "ready_for_admin_review"
+    | "needs_verification_start"
+    | "pending_delivery"
+    | "pending_provider_action"
+    | "failed_or_expired"
+    | "approved"
+    | "rejected";
+  priority: "low" | "medium" | "high" | "critical";
+  ageHours: number;
+  nextAction: string;
+};
+
+export type ProviderVerificationQueueSummary = {
+  generatedAt: string;
+  totals: {
+    claims: number;
+    readyForAdminReview: number;
+    needsVerificationStart: number;
+    pendingDelivery: number;
+    pendingProviderAction: number;
+    failedOrExpired: number;
+    approved: number;
+    rejected: number;
+  };
+  items: ProviderVerificationQueueItem[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ProviderOnboardingReadinessSummary = {
   generatedAt: string;
   providerId: string;

@@ -85,6 +85,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-verification-attempts/expire": {
         post: { tags: ["Claims"], summary: "Expire pending provider claim verification attempts whose deadline has passed" }
       },
+      "/api/v1/admin/provider-verification-queue": {
+        get: { tags: ["Claims"], summary: "Return owner claim verification queue by readiness, delivery, failure, and approval status" }
+      },
       "/api/v1/admin/provider-outreach": {
         get: { tags: ["Claims"], summary: "List provider claim outreach queue items" },
         post: { tags: ["Claims"], summary: "Create a policy-gated free-claim outreach sequence item" }

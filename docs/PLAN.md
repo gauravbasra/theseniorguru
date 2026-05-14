@@ -29,6 +29,7 @@ Deliverables:
 - Provider onboarding readiness API across claim, verification, outreach, reputation, and growth. Completed.
 - Provider visibility report API and dashboard panel for profile completion, discovery, reputation, growth readiness, missing fields, entitlements, and next-best-actions. Completed.
 - Admin claim approve/reject workflow. Completed.
+- Admin provider verification queue API for ready, pending-delivery, failed/expired, and not-started claim work. Completed.
 - Event marketplace schema. Completed.
 - Event publish and RSVP APIs. Completed.
 - Sponsored event promotion APIs. Completed.
@@ -173,6 +174,7 @@ Deliverables:
 - Verification evidence and attempt workflow. Completed.
 - Provider-facing claim checklist/status API. Completed.
 - Policy-gated verification delivery worker and audit payload. Completed.
+- Owner claim verification queue with readiness, delivery, and blocker status. Completed.
 - Profile completion assistant. Completed.
 - Provider visibility report. Completed.
 

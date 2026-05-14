@@ -32,6 +32,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/inquiries",
       "POST /api/v1/operator/free-listing-requests",
       "GET /api/v1/admin/leads",
+      "GET /api/v1/admin/provider-verification-queue",
       "GET /api/v1/admin/provider-onboarding-readiness",
       "POST /api/v1/admin/provider-outreach/{id}/requeue",
       "PATCH /api/v1/provider-portal/providers/{id}",
@@ -54,7 +55,7 @@ const productPillars: ProductPillar[] = [
       "provider_source_records",
       "provider_profile_audits"
     ],
-    nextBackendWork: ["Claimed-provider edit approval UI", "Messaging provider adapter for verification delivery"]
+    nextBackendWork: ["Claimed-provider edit approval UI", "Messaging provider adapter for verification delivery", "Claim verification SLA reporting"]
   },
   {
     key: "mobile",

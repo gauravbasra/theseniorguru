@@ -150,6 +150,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
+          label="Verification queue"
+          loading={loadingKey === "verification-queue"}
+          onClick={() =>
+            runOperation("Provider verification queue", "verification-queue", () =>
+              fetch("/api/v1/admin/provider-verification-queue")
+            )
+          }
+        />
+        <OpsButton
           icon={<Send aria-hidden="true" />}
           label="Queue outreach"
           loading={loadingKey === "outreach"}
@@ -306,6 +316,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "verify") {
     return `Claim verification step created for operator review.`;
+  }
+
+  if (key === "verification-queue") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.claims ?? 0)} claims reviewed, ${String(totals?.readyForAdminReview ?? 0)} ready for admin review, ${String(totals?.pendingDelivery ?? 0)} waiting on delivery, and ${String(totals?.failedOrExpired ?? 0)} failed or expired.`;
   }
 
   if (key === "outreach") {

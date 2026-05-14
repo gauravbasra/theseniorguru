@@ -13,6 +13,7 @@ import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedDocumentReviews: ProviderClaimDocumentReviewRecord[] = [];
+let fallbackDocumentReviewSequence = 0;
 
 function mapDocumentReview(row: Record<string, unknown>): ProviderClaimDocumentReviewRecord {
   return {
@@ -136,8 +137,9 @@ export async function reviewProviderClaimDocument(
   };
 
   if (!supabase) {
+    fallbackDocumentReviewSequence += 1;
     const review: ProviderClaimDocumentReviewRecord = {
-      id: `document-review-${Date.now()}`,
+      id: `document-review-${Date.now()}-${fallbackDocumentReviewSequence}`,
       claimId: input.claimId,
       attemptId: attempt.id,
       decision: input.decision,

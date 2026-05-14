@@ -6,6 +6,7 @@ import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedClaims: ProviderClaimRecord[] = [];
+let fallbackClaimSequence = 0;
 
 function mapProviderClaim(row: Record<string, unknown>): ProviderClaimRecord {
   return {
@@ -62,8 +63,9 @@ export async function submitProviderClaim(input: ProviderClaimInput): Promise<Pr
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
+    fallbackClaimSequence += 1;
     const claim: ProviderClaimRecord = {
-      id: `pending-claim-${Date.now()}`,
+      id: `pending-claim-${Date.now()}-${fallbackClaimSequence}`,
       ...input,
       status: nextStatus,
       verificationMethod: input.businessDomain ? "business_email" : "admin_manual",
