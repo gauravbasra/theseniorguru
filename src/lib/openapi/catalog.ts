@@ -401,6 +401,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Aggregation"], summary: "Calculate launch import waves toward the 5,000-listing target" },
         post: { tags: ["Aggregation"], summary: "Optionally create queued launch import batches from the calculated plan" }
       },
+      "/api/v1/admin/import-launch-sources/seed": {
+        post: { tags: ["Aggregation"], summary: "Idempotently seed approved launch import sources and optional starter batches" }
+      },
       "/api/v1/admin/current-site-inventory/import": {
         post: { tags: ["Aggregation"], summary: "Crawl current TheSeniorGuru listing pages and stage real inventory records" }
       },

@@ -82,6 +82,7 @@ const routeContracts: LinkContract[] = [
   { label: "Data source approval API", href: "/api/v1/admin/data-sources/demo/approve", method: "POST", owner: "admin" },
   { label: "Data source block API", href: "/api/v1/admin/data-sources/demo/block", method: "POST", owner: "admin" },
   { label: "Import launch plan API", href: "/api/v1/admin/import-launch-plan", method: "GET", owner: "admin" },
+  { label: "Launch import source seeding API", href: "/api/v1/admin/import-launch-sources/seed", method: "POST", owner: "admin" },
   { label: "Import batch requeue API", href: "/api/v1/admin/import-batches/demo/requeue", method: "POST", owner: "admin" },
   { label: "Ad readiness API", href: "/api/v1/admin/ad-readiness", method: "GET", owner: "admin" },
   { label: "Ad placements admin API", href: "/api/v1/admin/ads/placements", method: "GET", owner: "admin" },

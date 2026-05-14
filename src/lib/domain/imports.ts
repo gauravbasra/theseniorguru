@@ -136,6 +136,26 @@ export type ImportLaunchPlanSummary = {
   nextActions: string[];
 };
 
+export type LaunchImportSourceSeedSummary = {
+  generatedAt: string;
+  sourcesReviewed: number;
+  sourcesCreated: number;
+  sourcesUpdated: number;
+  readyForImport: number;
+  starterBatchesCreated: number;
+  sources: Array<{
+    id: string;
+    name: string;
+    sourceType: string;
+    reviewStatus: string;
+    robotsStatus?: string;
+    action: "created" | "updated" | "already_ready";
+  }>;
+  createdBatches: ImportBatchRecord[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "blocked_by_policy";
 
 export type CrawlJobRecord = {
