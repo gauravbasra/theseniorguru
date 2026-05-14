@@ -529,6 +529,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-website-parser/rules/audit": {
         get: { tags: ["Aggregation"], summary: "Summarize provider website parser override audit events and unaudited override gaps" }
       },
+      "/api/v1/admin/provider-website-parser/rules/impact": {
+        post: { tags: ["Aggregation"], summary: "Compare default, active, and proposed provider website parser rule impact before override changes" }
+      },
       "/api/v1/admin/provider-website-parser/rules/rollback": {
         post: { tags: ["Aggregation"], summary: "Preview or deactivate a governed provider website parser rule override with rollback audit evidence" }
       },

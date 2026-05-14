@@ -762,6 +762,90 @@ export type ProviderWebsiteParserRuleOverrideReplaceResult = {
   nextActions: string[];
 };
 
+export type ProviderWebsiteParserRuleImpactCompareInput = {
+  dataSourceId?: string;
+  crawlJobId?: string;
+  dryRun?: boolean;
+  actorId?: string;
+  reason?: string;
+  minConfidence?: number;
+  minContentCharacters?: number;
+  serviceKeywords?: string[];
+  conversionKeywords?: string[];
+  pricingKeywords?: string[];
+  approvedBy?: string;
+  notes?: string;
+};
+
+export type ProviderWebsiteParserRuleImpactMetrics = {
+  candidatePages: number;
+  stageableCandidates: number;
+  rejectedCandidates: number;
+  averageConfidence: number;
+  blockerCount: number;
+  minConfidence: number;
+  minContentCharacters: number;
+  signalCoverage: Record<string, number>;
+};
+
+export type ProviderWebsiteParserRuleImpactComparison = {
+  crawlPageId: string;
+  sourceUrl: string;
+  candidateName?: string;
+  defaultConfidence: number;
+  activeConfidence?: number;
+  replacementConfidence?: number;
+  defaultStageable: boolean;
+  activeStageable?: boolean;
+  replacementStageable?: boolean;
+  defaultBlockers: string[];
+  activeBlockers?: string[];
+  replacementBlockers?: string[];
+};
+
+export type ProviderWebsiteParserRuleImpactSourceCandidate = {
+  dataSourceId: string;
+  dataSourceName?: string;
+  overrideId?: string;
+  activeOverride?: ProviderWebsiteParserRuleOverrideRecord;
+  completedCrawlJobs: number;
+  stagedPages: number;
+  status: "ready" | "blocked";
+  blockers: string[];
+};
+
+export type ProviderWebsiteParserRuleImpactCompareResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  status: "overview" | "compared";
+  candidates?: ProviderWebsiteParserRuleImpactSourceCandidate[];
+  dataSourceId?: string;
+  dataSourceName?: string;
+  crawlJobId?: string;
+  activeOverride?: ProviderWebsiteParserRuleOverrideRecord;
+  replacementPreview?: ProviderWebsiteParserRuleOverrideRecord;
+  totals?: {
+    pagesCompared: number;
+    defaultStageable: number;
+    activeStageable?: number;
+    replacementStageable?: number;
+    activeStageableDelta?: number;
+    replacementStageableDelta?: number;
+    defaultAverageConfidence: number;
+    activeAverageConfidence?: number;
+    replacementAverageConfidence?: number;
+  };
+  profiles?: {
+    default: ProviderWebsiteParserRuleImpactMetrics;
+    active?: ProviderWebsiteParserRuleImpactMetrics;
+    replacement?: ProviderWebsiteParserRuleImpactMetrics;
+  };
+  comparisons?: ProviderWebsiteParserRuleImpactComparison[];
+  auditEventId?: string;
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ProviderWebsiteParserRuleOverrideAuditSummary = {
   generatedAt: string;
   totals: {

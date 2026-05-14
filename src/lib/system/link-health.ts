@@ -112,6 +112,12 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Provider website parser rule impact API",
+    href: "/api/v1/admin/provider-website-parser/rules/impact",
+    method: "POST",
+    owner: "admin"
+  },
+  {
     label: "Provider website parser rule rollback API",
     href: "/api/v1/admin/provider-website-parser/rules/rollback",
     method: "POST",

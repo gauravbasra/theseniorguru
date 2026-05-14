@@ -458,6 +458,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Radar aria-hidden="true" />}
+          label="Rule impact"
+          loading={loadingKey === "provider-website-parser-rule-impact"}
+          onClick={() =>
+            runOperation("Provider website parser rule impact", "provider-website-parser-rule-impact", () =>
+              fetch("/api/v1/admin/provider-website-parser/rules/impact", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<ShieldAlert aria-hidden="true" />}
           label="Rollback rules"
           loading={loadingKey === "provider-website-parser-rule-rollback"}
@@ -727,6 +741,14 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "provider-website-parser-rule-audit") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.auditEvents ?? 0)} parser rule override audit event${totals?.auditEvents === 1 ? "" : "s"}, ${String(totals?.activeOverrides ?? 0)} active override${totals?.activeOverrides === 1 ? "" : "s"}, and ${String(totals?.unauditedOverrides ?? 0)} override${totals?.unauditedOverrides === 1 ? "" : "s"} missing audit evidence.`;
+  }
+
+  if (key === "provider-website-parser-rule-impact") {
+    const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return totals
+      ? `${String(totals.pagesCompared ?? 0)} parser page${totals.pagesCompared === 1 ? "" : "s"} compared, default stageable ${String(totals.defaultStageable ?? 0)}, active stageable ${String(totals.activeStageable ?? "n/a")}, replacement stageable ${String(totals.replacementStageable ?? "n/a")}.`
+      : `${String(candidates)} provider website parser rule impact candidate${candidates === 1 ? "" : "s"} found for comparison.`;
   }
 
   if (key === "provider-website-parser-rule-rollback") {

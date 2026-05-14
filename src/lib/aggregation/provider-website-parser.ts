@@ -10,6 +10,9 @@ import type {
   ProviderWebsiteParserCandidate,
   ProviderWebsiteParserReadinessSource,
   ProviderWebsiteParserReadinessSummary,
+  ProviderWebsiteParserRuleImpactCompareInput,
+  ProviderWebsiteParserRuleImpactCompareResult,
+  ProviderWebsiteParserRuleImpactMetrics,
   ProviderWebsiteParserRuleOverrideInput,
   ProviderWebsiteParserRuleOverrideAuditSummary,
   ProviderWebsiteParserRuleOverrideRecord,
@@ -135,6 +138,28 @@ function buildOverrideRecord(
     notes: input.notes ?? existing?.notes,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now
+  };
+}
+
+function hasReplacementRuleInput(input: ProviderWebsiteParserRuleImpactCompareInput) {
+  return (
+    typeof input.minConfidence === "number" ||
+    typeof input.minContentCharacters === "number" ||
+    Array.isArray(input.serviceKeywords) ||
+    Array.isArray(input.conversionKeywords) ||
+    Array.isArray(input.pricingKeywords) ||
+    typeof input.notes === "string"
+  );
+}
+
+function profileFromOverride(override: ProviderWebsiteParserRuleOverrideRecord): ParserRuleProfile {
+  return {
+    minConfidence: override.minConfidence,
+    minContentCharacters: override.minContentCharacters,
+    serviceKeywords: cleanKeywordArray(override.serviceKeywords, serviceKeywords),
+    conversionKeywords: cleanKeywordArray(override.conversionKeywords, tourKeywords),
+    pricingKeywords: cleanKeywordArray(override.pricingKeywords, pricingKeywords),
+    override
   };
 }
 
@@ -841,6 +866,22 @@ function coverageFor(candidates: ProviderWebsiteParserCandidate[]) {
   return coverage;
 }
 
+function impactMetrics(
+  candidates: ProviderWebsiteParserCandidate[],
+  profile: ParserRuleProfile
+): ProviderWebsiteParserRuleImpactMetrics {
+  return {
+    candidatePages: candidates.length,
+    stageableCandidates: candidates.filter((candidate) => !candidate.blockers.length).length,
+    rejectedCandidates: candidates.filter((candidate) => candidate.blockers.length).length,
+    averageConfidence: averageConfidence(candidates),
+    blockerCount: candidates.reduce((total, candidate) => total + candidate.blockers.length, 0),
+    minConfidence: profile.minConfidence,
+    minContentCharacters: profile.minContentCharacters,
+    signalCoverage: coverageFor(candidates)
+  };
+}
+
 function buildSourceReadiness(
   source: DataSourceRecord,
   jobs: CrawlJobRecord[],
@@ -987,6 +1028,220 @@ export async function getProviderWebsiteParserRuleReadiness(): Promise<ProviderW
         : []),
       ...(blockers.length ? ["Tune source pages or extraction rules before running parser write-mode at scale."] : []),
       ...(!sourceSummaries.length ? ["Register approved provider website sources and completed crawl jobs before rule tuning."] : [])
+    ]
+  };
+}
+
+export async function compareProviderWebsiteParserRuleImpact(
+  input: ProviderWebsiteParserRuleImpactCompareInput
+): Promise<ProviderWebsiteParserRuleImpactCompareResult> {
+  const dryRun = input.dryRun ?? true;
+  const [sources, jobs, pages, overrides] = await Promise.all([
+    listDataSources(),
+    listCrawlJobs(),
+    listCrawlPages(),
+    listProviderWebsiteParserRuleOverrides()
+  ]);
+  const providerSources = sources.filter((source) => source.sourceType === "provider_website");
+
+  if (!input.dataSourceId && !input.crawlJobId) {
+    const candidates = providerSources.map((source) => {
+      const sourceJobs = jobs.filter((job) => job.dataSourceId === source.id && job.status === "completed");
+      const sourcePages = pages.filter((page) => sourceJobs.some((job) => job.id === page.crawlJobId));
+      const blockers = [
+        ...sourceBlockers(source),
+        ...(!sourceJobs.length ? ["No completed crawl job is available for impact comparison."] : []),
+        ...(!sourcePages.length ? ["No staged crawl pages are available for impact comparison."] : [])
+      ];
+      const activeOverride = overrides.find((override) => override.dataSourceId === source.id && override.status === "active");
+
+      return {
+        dataSourceId: source.id,
+        dataSourceName: source.name,
+        overrideId: activeOverride?.id,
+        activeOverride,
+        completedCrawlJobs: sourceJobs.length,
+        stagedPages: sourcePages.length,
+        status: blockers.length ? ("blocked" as const) : ("ready" as const),
+        blockers
+      };
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      dryRun,
+      status: "overview",
+      candidates,
+      blockers: candidates.flatMap((candidate) =>
+        candidate.blockers.map((blocker) => `${candidate.dataSourceName ?? candidate.dataSourceId}: ${blocker}`)
+      ),
+      nextActions: [
+        ...(candidates.some((candidate) => candidate.status === "ready")
+          ? ["Select a ready provider website source and compare default, active, and proposed replacement rule profiles before changing overrides."]
+          : []),
+        ...(candidates.some((candidate) => candidate.status === "blocked")
+          ? ["Resolve source approval, robots, crawl completion, and staged page blockers before parser rule impact comparison."]
+          : []),
+        ...(!candidates.length ? ["Register provider website sources before parser rule impact comparison can run."] : [])
+      ]
+    };
+  }
+
+  const selectedJob = input.crawlJobId ? jobs.find((job) => job.id === input.crawlJobId) : undefined;
+
+  if (input.crawlJobId && !selectedJob) {
+    throw new Error("Crawl job not found");
+  }
+
+  if (selectedJob && selectedJob.status !== "completed") {
+    throw new Error("Parser rule impact comparison requires a completed crawl job");
+  }
+
+  const source = sources.find((item) => item.id === (input.dataSourceId ?? selectedJob?.dataSourceId));
+
+  if (!source) {
+    throw new Error("Data source not found");
+  }
+
+  if (source.sourceType !== "provider_website") {
+    throw new Error("Parser rule impact comparison requires a provider website data source");
+  }
+
+  const sourceJobs = selectedJob
+    ? [selectedJob]
+    : jobs.filter((job) => job.dataSourceId === source.id && job.status === "completed");
+  const sourcePages = pages.filter((page) => sourceJobs.some((job) => job.id === page.crawlJobId));
+  const blockers = [
+    ...sourceBlockers(source),
+    ...(!sourceJobs.length ? ["No completed crawl job is available for impact comparison."] : []),
+    ...(!sourcePages.length ? ["No staged crawl pages are available for impact comparison."] : [])
+  ];
+
+  if (blockers.length) {
+    throw new Error(blockers[0]);
+  }
+
+  const activeOverride = overrides.find((override) => override.dataSourceId === source.id && override.status === "active");
+  const defaultProfile = defaultRuleProfile();
+  const activeProfile = activeOverride ? profileFromOverride(activeOverride) : undefined;
+  const replacementPreview = hasReplacementRuleInput(input)
+    ? buildOverrideRecord(
+        {
+          dataSourceId: source.id,
+          minConfidence: input.minConfidence,
+          minContentCharacters: input.minContentCharacters,
+          serviceKeywords: input.serviceKeywords,
+          conversionKeywords: input.conversionKeywords,
+          pricingKeywords: input.pricingKeywords,
+          status: "active",
+          approvedBy: input.approvedBy,
+          notes: input.notes
+        },
+        source,
+        new Date().toISOString(),
+        activeOverride
+      )
+    : undefined;
+  const replacementProfile = replacementPreview ? profileFromOverride(replacementPreview) : undefined;
+  const defaultCandidates = sourcePages.map((page) => buildCandidate(page, source, defaultProfile));
+  const activeCandidates = activeProfile ? sourcePages.map((page) => buildCandidate(page, source, activeProfile)) : undefined;
+  const replacementCandidates = replacementProfile
+    ? sourcePages.map((page) => buildCandidate(page, source, replacementProfile))
+    : undefined;
+  const defaultMetrics = impactMetrics(defaultCandidates, defaultProfile);
+  const activeMetrics = activeCandidates && activeProfile ? impactMetrics(activeCandidates, activeProfile) : undefined;
+  const replacementMetrics = replacementCandidates && replacementProfile
+    ? impactMetrics(replacementCandidates, replacementProfile)
+    : undefined;
+  const stageableDeltaFromDefault = activeMetrics
+    ? activeMetrics.stageableCandidates - defaultMetrics.stageableCandidates
+    : undefined;
+  const replacementStageableDelta = replacementMetrics
+    ? replacementMetrics.stageableCandidates - (activeMetrics?.stageableCandidates ?? defaultMetrics.stageableCandidates)
+    : undefined;
+  const comparisons = defaultCandidates.map((candidate, index) => {
+    const activeCandidate = activeCandidates?.[index];
+    const replacementCandidate = replacementCandidates?.[index];
+
+    return {
+      crawlPageId: candidate.crawlPageId,
+      sourceUrl: candidate.sourceUrl,
+      candidateName: candidate.name,
+      defaultConfidence: candidate.extractionConfidence,
+      activeConfidence: activeCandidate?.extractionConfidence,
+      replacementConfidence: replacementCandidate?.extractionConfidence,
+      defaultStageable: !candidate.blockers.length,
+      activeStageable: activeCandidate ? !activeCandidate.blockers.length : undefined,
+      replacementStageable: replacementCandidate ? !replacementCandidate.blockers.length : undefined,
+      defaultBlockers: candidate.blockers,
+      activeBlockers: activeCandidate?.blockers,
+      replacementBlockers: replacementCandidate?.blockers
+    };
+  });
+  let auditEventId: string | undefined;
+
+  if (!dryRun) {
+    const audit = await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: "provider_website_parser.rule_impact_compared",
+      subjectType: "provider_website_parser_rule_override",
+      subjectId: activeOverride?.id ?? source.id,
+      payload: {
+        dataSourceId: source.id,
+        dataSourceName: source.name,
+        crawlJobId: input.crawlJobId,
+        activeOverrideId: activeOverride?.id,
+        replacementOverrideId: replacementPreview?.id,
+        dryRun,
+        pagesCompared: sourcePages.length,
+        defaultStageable: defaultMetrics.stageableCandidates,
+        activeStageable: activeMetrics?.stageableCandidates,
+        replacementStageable: replacementMetrics?.stageableCandidates,
+        activeStageableDelta: stageableDeltaFromDefault,
+        replacementStageableDelta,
+        reason: input.reason
+      }
+    });
+    auditEventId = audit.id;
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    status: "compared",
+    dataSourceId: source.id,
+    dataSourceName: source.name,
+    crawlJobId: input.crawlJobId,
+    activeOverride,
+    replacementPreview,
+    totals: {
+      pagesCompared: sourcePages.length,
+      defaultStageable: defaultMetrics.stageableCandidates,
+      activeStageable: activeMetrics?.stageableCandidates,
+      replacementStageable: replacementMetrics?.stageableCandidates,
+      activeStageableDelta: stageableDeltaFromDefault,
+      replacementStageableDelta,
+      defaultAverageConfidence: defaultMetrics.averageConfidence,
+      activeAverageConfidence: activeMetrics?.averageConfidence,
+      replacementAverageConfidence: replacementMetrics?.averageConfidence
+    },
+    profiles: {
+      default: defaultMetrics,
+      active: activeMetrics,
+      replacement: replacementMetrics
+    },
+    comparisons,
+    auditEventId,
+    blockers: [],
+    nextActions: [
+      ...(activeMetrics
+        ? ["Use active-vs-default stageable and blocker deltas before deciding whether the current parser override remains justified."]
+        : ["No active override exists; use the default profile as the baseline before creating a source-specific override."]),
+      ...(replacementMetrics
+        ? ["If replacement impact is acceptable, run the replacement workflow with approval notes and keep this comparison evidence in launch review."]
+        : ["Provide proposed replacement thresholds or keywords to compare replacement impact before changing an active override."]),
+      ...(!dryRun ? ["Review the operational audit event created for this impact comparison."] : [])
     ]
   };
 }

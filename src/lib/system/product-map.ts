@@ -291,6 +291,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/provider-website-parser/rules",
       "POST /api/v1/admin/provider-website-parser/rules",
       "GET /api/v1/admin/provider-website-parser/rules/audit",
+      "POST /api/v1/admin/provider-website-parser/rules/impact",
       "POST /api/v1/admin/provider-website-parser/rules/rollback",
       "POST /api/v1/admin/provider-website-parser/rules/replace",
       "GET /api/v1/admin/data-quality-flags"
@@ -309,7 +310,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Provider website parser override impact compare", "Import escalation retry cron Vercel schedule config", "Source manifest fetch cron Vercel schedule config"]
+    nextBackendWork: ["Provider website parser impact evidence retention", "Import escalation retry cron Vercel schedule config", "Source manifest fetch cron Vercel schedule config"]
   },
   {
     key: "reviews",
