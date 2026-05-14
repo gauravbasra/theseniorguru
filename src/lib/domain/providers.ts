@@ -61,6 +61,51 @@ export type ProviderPortalUpdateResult = {
   createdAt: string;
 };
 
+export type ProviderProfileAuditStatus = "pending_review" | "approved" | "rejected" | "applied";
+
+export type ProviderProfileAuditRecord = {
+  id: string;
+  providerId: string;
+  providerName?: string;
+  actorId?: string;
+  changeType: string;
+  changedFields: string[];
+  proposedPayload: Record<string, unknown>;
+  policyDecision: PolicyDecision;
+  status: ProviderProfileAuditStatus;
+  reviewerNotes?: string;
+  createdAt: string;
+  reviewedAt?: string;
+};
+
+export type ProviderProfileUpdateQueueSummary = {
+  generatedAt: string;
+  totals: {
+    updates: number;
+    pendingReview: number;
+    applied: number;
+    rejected: number;
+  };
+  pendingReview: ProviderProfileAuditRecord[];
+  applied: ProviderProfileAuditRecord[];
+  rejected: ProviderProfileAuditRecord[];
+  nextActions: string[];
+};
+
+export type ProviderProfileUpdateDecisionInput = {
+  auditId: string;
+  decision: "approve" | "reject";
+  reviewerId?: string;
+  reviewerNotes?: string;
+};
+
+export type ProviderProfileUpdateDecisionResult = {
+  audit: ProviderProfileAuditRecord;
+  appliedFields: string[];
+  skippedFields: string[];
+  nextActions: string[];
+};
+
 export type DataSourceReviewStatus = "pending" | "approved" | "blocked" | "needs_legal_review";
 
 export type DataSourceRecord = {

@@ -29,6 +29,7 @@ Deliverables:
 - Provider onboarding readiness API across claim, verification, outreach, reputation, and growth. Completed.
 - Provider visibility report API and dashboard panel for profile completion, discovery, reputation, growth readiness, missing fields, entitlements, and next-best-actions. Completed.
 - Admin claim approve/reject workflow. Completed.
+- Admin claimed-provider profile edit review queue and decision APIs with policy/audit controls. Completed.
 - Admin provider verification queue API for ready, pending-delivery, failed/expired, and not-started claim work. Completed.
 - Admin provider verification SLA API for overdue, due-soon, delivery, failed/expired, and review-ready claim work. Completed.
 - Admin provider verification SLA alert preview/record API with policy gate, manual export path, and blocked live queue adapter. Completed.

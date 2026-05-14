@@ -269,6 +269,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<FileCheck2 aria-hidden="true" />}
+          label="Profile edits"
+          loading={loadingKey === "profile-edits"}
+          onClick={() =>
+            runOperation("Provider profile edit queue", "profile-edits", () =>
+              fetch("/api/v1/admin/provider-profile-updates")
+            )
+          }
+        />
+        <OpsButton
           icon={<ListChecks aria-hidden="true" />}
           label="Aggregation readiness"
           loading={loadingKey === "aggregation-readiness"}
@@ -430,6 +440,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "provider-onboarding") {
     return `Provider onboarding readiness was refreshed for claim, reputation, and growth setup.`;
+  }
+
+  if (key === "profile-edits") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.pendingReview ?? 0)} provider profile edits are pending review, ${String(totals?.applied ?? 0)} applied, and ${String(totals?.rejected ?? 0)} rejected.`;
   }
 
   if (key === "aggregation-readiness") {

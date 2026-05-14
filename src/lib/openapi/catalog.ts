@@ -259,6 +259,12 @@ export function getOpenApiCatalog() {
       "/api/v1/provider-portal/providers/{id}": {
         patch: { tags: ["Providers"], summary: "Submit provider profile changes into the policy/audit review workflow" }
       },
+      "/api/v1/admin/provider-profile-updates": {
+        get: { tags: ["Providers"], summary: "List claimed-provider profile edit audit queue for admin review" }
+      },
+      "/api/v1/admin/provider-profile-updates/{id}/decide": {
+        post: { tags: ["Providers"], summary: "Approve/apply or reject a claimed-provider profile edit audit" }
+      },
       "/api/v1/provider/entitlements/check": {
         post: { tags: ["Billing"], summary: "Check whether a provider has access to a paid or free feature" }
       },
