@@ -660,6 +660,10 @@ export function getOpenApiCatalog() {
       "/api/v1/system/production-cutover": {
         get: { tags: ["System"], summary: "Return production DNS cutover readiness gates, blockers, owner actions, and rollback evidence requirements" }
       },
+      "/api/v1/system/dns-cutover-approval": {
+        get: { tags: ["System"], summary: "Return latest owner DNS cutover approval or deferral evidence" },
+        post: { tags: ["System"], summary: "Record an audited owner DNS cutover approval, deferral, or readiness review" }
+      },
       "/api/v1/system/rollback-evidence": {
         get: { tags: ["System"], summary: "Export production rollback evidence, deployment metadata, launch blockers, and recovery steps as JSON or CSV" }
       },

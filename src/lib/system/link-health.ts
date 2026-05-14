@@ -83,6 +83,8 @@ const routeContracts: LinkContract[] = [
   { label: "Supabase migration plan API", href: "/api/v1/system/supabase-migration-plan", method: "GET", owner: "admin" },
   { label: "Deployment API", href: "/api/v1/system/deployment", method: "GET", owner: "admin" },
   { label: "Production cutover readiness API", href: "/api/v1/system/production-cutover", method: "GET", owner: "admin" },
+  { label: "DNS cutover approval API", href: "/api/v1/system/dns-cutover-approval", method: "GET", owner: "admin" },
+  { label: "DNS cutover approval recorder API", href: "/api/v1/system/dns-cutover-approval", method: "POST", owner: "admin" },
   { label: "Production rollback evidence API", href: "/api/v1/system/rollback-evidence", method: "GET", owner: "admin" },
   { label: "Production rollback evidence CSV", href: "/api/v1/system/rollback-evidence?format=csv", method: "GET", owner: "admin" },
   { label: "Aggregation readiness API", href: "/api/v1/admin/aggregation-readiness", method: "GET", owner: "admin" },

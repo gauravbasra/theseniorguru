@@ -624,6 +624,26 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<CheckCheck aria-hidden="true" />}
+          label="DNS approval"
+          loading={loadingKey === "dns-cutover-approval"}
+          onClick={() =>
+            runOperation("DNS cutover approval", "dns-cutover-approval", () =>
+              fetch("/api/v1/system/dns-cutover-approval", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "admin-console",
+                  ownerApproved: false,
+                  targetDomain: "https://theseniorguru.com",
+                  rollbackAcknowledged: false,
+                  approvalNotes: "Admin console DNS cutover readiness review; owner approval still required before DNS change."
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Rollback evidence"
           loading={loadingKey === "rollback-evidence"}
@@ -970,6 +990,11 @@ function summarizeOperation(key: string, data: unknown) {
     const steps = Array.isArray(record.rollbackSteps) ? record.rollbackSteps.length : 0;
     const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
     return `Rollback evidence is ${String(record.status ?? "unknown")} with ${String(steps)} recovery step${steps === 1 ? "" : "s"} and ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
+  }
+
+  if (key === "dns-cutover-approval") {
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    return `DNS cutover approval record is ${String(record.status ?? "unknown")} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"} archived to audit evidence.`;
   }
 
   if (key === "import-plan") {

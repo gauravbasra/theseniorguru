@@ -113,6 +113,7 @@ Deliverables:
 - Deployment status API and admin link for active Vercel URL, commit, canonical domain, and owner DNS actions. Completed.
 - Production cutover readiness API for canonical domain, Vercel production alias, persistent Supabase mode, launch checklist, DNS owner approval, rollback evidence, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - Production rollback evidence export API with deployment metadata, cutover blockers, link-health status, rollback steps, JSON/CSV output, OpenAPI/link-health coverage, product map, and admin console action. Completed.
+- DNS cutover approval recorder API with audited owner approval/deferral evidence, cutover readiness integration, OpenAPI/link-health coverage, product map updates, and admin console action. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.

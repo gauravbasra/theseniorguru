@@ -30,6 +30,7 @@ These items require owner credentials, production access, or confirmation. Imple
 
 - Confirm whether `theseniorguru.com` should continue pointing to `143.198.188.246`, move to Vercel, or move to the selected hosting droplet.
 - Confirm approval before changing any live DNS record.
+- Record the final owner approval/deferral through `POST /api/v1/system/dns-cutover-approval` with the target domain, change window, rollback acknowledgement, and owner notes before DNS changes.
 
 ## Email and Sending
 

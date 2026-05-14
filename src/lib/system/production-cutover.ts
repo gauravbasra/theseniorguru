@@ -1,4 +1,5 @@
 import { getDeploymentStatus } from "@/lib/system/deployment";
+import { getLatestDnsCutoverApproval } from "@/lib/system/dns-cutover-approval";
 import { getLaunchChecklist } from "@/lib/system/launch-checklist";
 import { getPersistenceStatus } from "@/lib/system/persistence";
 
@@ -33,11 +34,16 @@ function checkStatus(blockers: string[], ownerActions: string[] = []): Productio
 }
 
 export async function getProductionCutoverReadiness(): Promise<ProductionCutoverReadiness> {
-  const [deployment, launchChecklist] = await Promise.all([Promise.resolve(getDeploymentStatus()), getLaunchChecklist()]);
+  const [deployment, launchChecklist, dnsApproval] = await Promise.all([
+    Promise.resolve(getDeploymentStatus()),
+    getLaunchChecklist(),
+    getLatestDnsCutoverApproval()
+  ]);
   const persistence = getPersistenceStatus();
   const targetDomain = "https://theseniorguru.com";
   const canonicalMatchesTarget = deployment.canonicalUrl === targetDomain;
   const vercelProductionReady = deployment.platform === "vercel" && deployment.environment === "production" && Boolean(deployment.activeDeploymentUrl);
+  const dnsApproved = dnsApproval?.status === "approved_ready_for_dns";
   const nonOwnerLaunchBlockers = launchChecklist.checklist
     .filter((item) => item.key !== "owner_items")
     .flatMap((item) => item.blockers);
@@ -95,17 +101,23 @@ export async function getProductionCutoverReadiness(): Promise<ProductionCutover
     {
       key: "owner_dns_approval",
       label: "Owner DNS cutover approval",
-      status: "owner_action_required",
+      status: dnsApproved ? "ready" : "owner_action_required",
       evidence: {
         targetDomain,
         activeDeploymentUrl: deployment.activeDeploymentUrl,
+        latestApprovalStatus: dnsApproval?.status ?? "not_recorded",
+        latestApprovalAt: dnsApproval?.auditEvent.createdAt,
+        latestApprovalId: dnsApproval?.auditEvent.id,
         requiredApproval: "Owner must approve DNS A/CNAME cutover timing."
       },
       blockers: [],
-      nextActions: [
-        "Confirm whether theseniorguru.com should point to Vercel now or remain on the existing host until production credentials are installed.",
-        "Archive the active deployment URL, commit SHA, and rollback target before changing DNS records."
-      ]
+      nextActions: dnsApproved
+        ? ["Run post-cutover production smoke checks immediately after DNS changes."]
+        : [
+            "Confirm whether theseniorguru.com should point to Vercel now or remain on the existing host until production credentials are installed.",
+            "Archive the active deployment URL, commit SHA, and rollback target before changing DNS records.",
+            "Record the owner DNS approval decision through /api/v1/system/dns-cutover-approval."
+          ]
     }
   ];
   const blockers = uniq(checks.flatMap((check) => check.blockers));
