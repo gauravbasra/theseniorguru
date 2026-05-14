@@ -22,6 +22,8 @@ import type {
   WebhookDeliveryAttemptRecord,
   WebhookDeliveryRecord,
   WebhookEventType,
+  WebhookSignatureVerificationInput,
+  WebhookSignatureVerificationResult,
   WebhookSubscriptionRecord
 } from "@/lib/domain/open-api";
 import { runPolicyCheck } from "@/lib/policy";
@@ -445,6 +447,28 @@ function previewSignature(signature: string) {
   return `${signature.slice(0, 24)}...${signature.slice(-8)}`;
 }
 
+function extractWebhookSignatureParts(signature: string) {
+  const parts = Object.fromEntries(
+    signature
+      .split(",")
+      .map((part) => part.split("="))
+      .filter(([key, value]) => key && value)
+      .map(([key, value]) => [key.trim(), value.trim()])
+  );
+
+  return {
+    timestamp: parts.t ? Number(parts.t) : undefined,
+    digest: parts.v1
+  };
+}
+
+function secureCompare(left: string, right: string) {
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 export async function listApiClients(): Promise<ApiClientRecord[]> {
   const supabase = getSupabaseAdminClient();
 
@@ -664,6 +688,26 @@ export async function listWebhookSubscriptions(apiClientId?: string): Promise<We
   return (data ?? []).map(mapWebhookSubscription);
 }
 
+async function getInternalWebhookSubscription(subscriptionId: string): Promise<InternalWebhookSubscription | null> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return (seedWebhookSubscriptions as InternalWebhookSubscription[]).find((subscription) => subscription.id === subscriptionId) ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from("webhook_subscriptions")
+    .select("*")
+    .eq("id", subscriptionId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Webhook subscription query failed: ${error.message}`);
+  }
+
+  return data ? mapInternalWebhookSubscription(data) : null;
+}
+
 export async function createWebhookSubscription(
   input: CreateWebhookSubscriptionInput
 ): Promise<CreatedWebhookSubscriptionRecord> {
@@ -716,6 +760,82 @@ export async function createWebhookSubscription(
   }
 
   return { ...mapWebhookSubscription(data), signingSecret };
+}
+
+export async function verifyWebhookSignature(input: WebhookSignatureVerificationInput): Promise<WebhookSignatureVerificationResult> {
+  const toleranceSeconds = Math.max(30, Math.min(Number(input.toleranceSeconds ?? 300), 3600));
+  const supplied = extractWebhookSignatureParts(input.signature);
+  const timestamp = Number.isFinite(input.timestamp) ? Number(input.timestamp) : supplied.timestamp ?? 0;
+  const timestampSkewSeconds = timestamp ? Math.abs(Math.floor(Date.now() / 1000) - timestamp) : Number.POSITIVE_INFINITY;
+  const subscription = await getInternalWebhookSubscription(input.subscriptionId);
+  const reasons: string[] = [];
+
+  if (!subscription) {
+    reasons.push("Webhook subscription was not found.");
+  } else if (subscription.apiClientId !== input.apiClientId) {
+    reasons.push("Webhook subscription does not belong to this API client.");
+  } else if (subscription.status !== "active") {
+    reasons.push("Webhook subscription is not active.");
+  }
+
+  if (!input.signature || !supplied.digest) {
+    reasons.push("Signature must include a v1 digest.");
+  }
+
+  if (!timestamp) {
+    reasons.push("Signature timestamp is missing or invalid.");
+  } else if (timestampSkewSeconds > toleranceSeconds) {
+    reasons.push("Signature timestamp is outside the allowed tolerance window.");
+  }
+
+  if (!input.payload) {
+    reasons.push("Payload is required for signature verification.");
+  }
+
+  const signingSecret = subscription?.signingSecret;
+
+  if (subscription && subscription.apiClientId === input.apiClientId && !signingSecret) {
+    reasons.push("Webhook signing secret is unavailable or cannot be decrypted.");
+  }
+
+  let valid = false;
+
+  if (!reasons.length && signingSecret && supplied.digest) {
+    const expected = signWebhookPayload(signingSecret, timestamp, input.payload);
+    const expectedDigest = extractWebhookSignatureParts(expected).digest;
+    valid = Boolean(expectedDigest && secureCompare(expectedDigest, supplied.digest));
+
+    if (!valid) {
+      reasons.push("Signature digest does not match the expected payload signature.");
+    }
+  }
+
+  await recordApiAuditEvent({
+    apiClientId: input.apiClientId,
+    eventType: "partner.webhook_signature.verified",
+    subjectType: "webhook_subscription",
+    subjectId: input.subscriptionId,
+    status: valid ? "allowed" : "blocked",
+    requestMetadata: {
+      valid,
+      timestamp,
+      timestampSkewSeconds: Number.isFinite(timestampSkewSeconds) ? timestampSkewSeconds : undefined,
+      toleranceSeconds,
+      reasons
+    }
+  });
+
+  return {
+    valid,
+    subscriptionId: input.subscriptionId,
+    apiClientId: input.apiClientId,
+    signaturePreview: input.signature ? previewSignature(input.signature) : undefined,
+    timestamp,
+    timestampSkewSeconds: Number.isFinite(timestampSkewSeconds) ? timestampSkewSeconds : 0,
+    toleranceSeconds,
+    eventTypes: subscription?.apiClientId === input.apiClientId ? subscription.eventTypes : [],
+    reasons
+  };
 }
 
 export async function listWebhookDeliveries(status?: WebhookDeliveryRecord["status"]): Promise<WebhookDeliveryRecord[]> {

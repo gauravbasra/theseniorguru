@@ -206,6 +206,7 @@ const routeContracts: LinkContract[] = [
   { label: "Partner events API", href: "/api/v1/partner/events", method: "GET", owner: "provider" },
   { label: "Partner usage analytics API", href: "/api/v1/partner/usage", method: "GET", owner: "provider" },
   { label: "Partner usage analytics CSV export", href: "/api/v1/partner/usage?format=csv", method: "GET", owner: "provider" },
+  { label: "Partner webhook signature verification API", href: "/api/v1/partner/webhooks/verify", method: "POST", owner: "provider" },
   {
     label: "Provider onboarding readiness API",
     href: "/api/v1/admin/provider-onboarding-readiness?providerId=seed-cottages-dayton-place",

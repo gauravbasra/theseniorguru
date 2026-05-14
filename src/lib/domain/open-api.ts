@@ -84,6 +84,27 @@ export type CreatedWebhookSubscriptionRecord = WebhookSubscriptionRecord & {
   signingSecret: string;
 };
 
+export type WebhookSignatureVerificationInput = {
+  apiClientId: string;
+  subscriptionId: string;
+  signature: string;
+  payload: string;
+  timestamp?: number;
+  toleranceSeconds?: number;
+};
+
+export type WebhookSignatureVerificationResult = {
+  valid: boolean;
+  subscriptionId: string;
+  apiClientId: string;
+  signaturePreview?: string;
+  timestamp: number;
+  timestampSkewSeconds: number;
+  toleranceSeconds: number;
+  eventTypes: WebhookEventType[];
+  reasons: string[];
+};
+
 export type WebhookDeliveryRecord = {
   id: string;
   subscriptionId: string;
