@@ -167,3 +167,24 @@ export type RetryWebhookDeliveriesResult = {
   deliveryIds: string[];
   status: "queued";
 };
+
+export type WebhookRetrySchedulerInput = {
+  retryLimit?: number;
+  deliveryLimit?: number;
+  includeBlocked?: boolean;
+  dryRun?: boolean;
+  actorId?: string;
+  reason?: string;
+};
+
+export type WebhookRetrySchedulerResult = {
+  dryRun: boolean;
+  retryLimit: number;
+  deliveryLimit: number;
+  failedCandidates: number;
+  blockedCandidates: number;
+  failedRetry: RetryWebhookDeliveriesResult;
+  blockedRetry?: RetryWebhookDeliveriesResult;
+  delivery: ProcessWebhookDeliveriesResult;
+  nextActions: string[];
+};

@@ -15,6 +15,8 @@ import type {
   ProcessWebhookDeliveriesResult,
   RetryWebhookDeliveriesInput,
   RetryWebhookDeliveriesResult,
+  WebhookRetrySchedulerInput,
+  WebhookRetrySchedulerResult,
   WebhookDeliveryAttemptRecord,
   WebhookDeliveryRecord,
   WebhookEventType,
@@ -918,6 +920,81 @@ export async function retryWebhookDeliveries(
     requeued: updatedIds.length,
     deliveryIds: updatedIds,
     status: "queued"
+  };
+}
+
+export async function runWebhookRetryScheduler(
+  input: WebhookRetrySchedulerInput = {}
+): Promise<WebhookRetrySchedulerResult> {
+  const retryLimit = Math.max(1, Math.min(Number(input.retryLimit ?? 25), 50));
+  const deliveryLimit = Math.max(1, Math.min(Number(input.deliveryLimit ?? 25), 50));
+  const dryRun = input.dryRun ?? true;
+  const includeBlocked = input.includeBlocked ?? true;
+  const [failedCandidates, blockedCandidates] = await Promise.all([
+    listWebhookDeliveries("failed"),
+    includeBlocked ? listWebhookDeliveries("blocked") : Promise.resolve([])
+  ]);
+
+  if (dryRun) {
+    return {
+      dryRun,
+      retryLimit,
+      deliveryLimit,
+      failedCandidates: failedCandidates.length,
+      blockedCandidates: blockedCandidates.length,
+      failedRetry: { requeued: 0, deliveryIds: [], status: "queued" },
+      blockedRetry: includeBlocked ? { requeued: 0, deliveryIds: [], status: "queued" } : undefined,
+      delivery: { processed: 0, delivered: 0, failed: 0, blocked: 0, dryRun: true, attempts: [] },
+      nextActions: [
+        failedCandidates.length || blockedCandidates.length
+          ? "Retry candidates exist. Run scheduler in live mode after confirming target endpoints and signing secrets."
+          : "No failed or blocked webhook deliveries currently need retry."
+      ]
+    };
+  }
+
+  const failedRetry = await retryWebhookDeliveries({
+    status: "failed",
+    limit: retryLimit,
+    actorId: input.actorId,
+    reason: input.reason ?? "scheduled webhook retry"
+  });
+  const blockedRetry = includeBlocked
+    ? await retryWebhookDeliveries({
+        status: "blocked",
+        limit: retryLimit,
+        actorId: input.actorId,
+        reason: input.reason ?? "scheduled webhook blocked retry"
+      })
+    : undefined;
+  const delivery = await processWebhookDeliveries({
+    limit: deliveryLimit,
+    dryRun: false
+  });
+  const nextActions: string[] = [];
+
+  if (failedRetry.requeued || blockedRetry?.requeued) {
+    nextActions.push("Retry scheduler requeued webhook deliveries and ran the delivery worker.");
+  }
+
+  if (delivery.failed || delivery.blocked) {
+    nextActions.push("Some webhook deliveries still failed or blocked; inspect attempt errors before the next live retry.");
+  }
+
+  if (!nextActions.length) {
+    nextActions.push("Webhook retry scheduler completed without pending retry work.");
+  }
+
+  return {
+    dryRun,
+    retryLimit,
+    deliveryLimit,
+    failedCandidates: failedCandidates.length,
+    blockedCandidates: blockedCandidates.length,
+    failedRetry,
+    blockedRetry,
+    delivery,
+    nextActions
   };
 }
 

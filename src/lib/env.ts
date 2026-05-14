@@ -11,6 +11,8 @@ export type AppEnv = {
   sourceAcquisitionCronMaxRecords?: string;
   newsroomRssCronMode?: string;
   newsroomRssCronLimit?: string;
+  webhookRetryCronMode?: string;
+  webhookRetryCronLimit?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
   newsletterMailjetSenderEmail?: string;
@@ -37,6 +39,8 @@ export function getAppEnv(): AppEnv {
     sourceAcquisitionCronMaxRecords: process.env.SOURCE_ACQUISITION_CRON_MAX_RECORDS,
     newsroomRssCronMode: process.env.NEWSROOM_RSS_CRON_MODE,
     newsroomRssCronLimit: process.env.NEWSROOM_RSS_CRON_LIMIT,
+    webhookRetryCronMode: process.env.WEBHOOK_RETRY_CRON_MODE,
+    webhookRetryCronLimit: process.env.WEBHOOK_RETRY_CRON_LIMIT,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     newsletterMailjetSenderEmail: process.env.NEWSLETTER_MAILJET_SENDER_EMAIL,

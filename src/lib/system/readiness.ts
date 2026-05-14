@@ -174,6 +174,15 @@ export function getSystemReadiness() {
         env.newsroomRssCronMode === "live"
           ? undefined
           : "Set NEWSROOM_RSS_CRON_MODE=live only after approving editorial RSS source intake; preview mode records safe dry-run worker evidence."
+    },
+    {
+      key: "WEBHOOK_RETRY_CRON_MODE",
+      label: "Webhook retry cron mode",
+      status: env.webhookRetryCronMode === "live" ? "ready" : "partial",
+      action:
+        env.webhookRetryCronMode === "live"
+          ? undefined
+          : "Set WEBHOOK_RETRY_CRON_MODE=live only after partner target endpoints and signing secrets are confirmed; preview mode is non-mutating."
     }
   ];
   const parkedChecks: ReadinessCheck[] = [

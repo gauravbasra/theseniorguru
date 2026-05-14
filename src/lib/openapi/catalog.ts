@@ -312,6 +312,9 @@ export function getOpenApiCatalog() {
       "/api/cron/newsroom": {
         get: { tags: ["Newsroom"], summary: "Run protected scheduled newsroom RSS intake and record worker observability" }
       },
+      "/api/cron/webhooks": {
+        get: { tags: ["System"], summary: "Run protected webhook retry scheduler in preview or live mode" }
+      },
       "/api/v1/admin/newsroom/articles": {
         post: { tags: ["Newsroom"], summary: "Create a policy-gated AI-assisted article draft" }
       },
@@ -445,6 +448,9 @@ export function getOpenApiCatalog() {
       },
       "/api/v1/admin/webhook-deliveries/retry": {
         post: { tags: ["System"], summary: "Requeue failed or blocked webhook deliveries for another signed attempt" }
+      },
+      "/api/v1/admin/webhook-deliveries/scheduler": {
+        post: { tags: ["System"], summary: "Preview or run the scheduled webhook retry worker with failed and blocked candidate counts" }
       },
       "/api/v1/admin/api-audit-events": {
         get: { tags: ["System"], summary: "List Open API audit events" }
