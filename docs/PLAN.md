@@ -125,6 +125,7 @@ Deliverables:
 - Source adapter signed object fetch executor API with HTTPS-only fetch, SHA-256 verification, JSON record parsing, governed dry-run import, and audit evidence. Completed.
 - Scheduled source manifest signed object fetch worker API for fetch-ready manifests with dry-run safety, per-manifest blockers, and governed import rollups. Completed.
 - Protected source manifest fetch cron route with preview/live mode safety and scheduled worker run observability. Completed.
+- Vercel daily source manifest fetch cron schedule with preview/live env gate and owner-dependent live-mode parking-lot notes. Completed.
 - Vendor feed credential metadata and readiness workflow with contract, vault reference, and field mapping gates. Completed.
 - Vendor feed import runner API for ready vendor metadata and source records through the governed import worker. Completed.
 - Scheduled vendor feed worker preview/run API for ready vendor metadata and supplied vendor payloads without fabricated records. Completed.
@@ -147,6 +148,7 @@ Deliverables:
 - Import escalation retry scheduler API with dry-run candidate detection, live retry scheduling audit evidence, and admin console access. Completed.
 - Import escalation retry delivery executor API with dry-run batch preview, manual export execution evidence, internal queue readiness gates, and admin console access. Completed.
 - Protected import escalation retry cron route with preview/live mode safety, retry scheduling, retry delivery rollups, and scheduled worker run observability. Completed.
+- Vercel hourly import escalation retry cron schedule with preview/manual-export default and owner-dependent live queue parking-lot notes. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
@@ -165,7 +167,7 @@ Deliverables:
 - Current live TheSeniorGuru listing crawler and staging adapter. Completed.
 - Current-site public JSON acquisition worker for real production listing records. Completed.
 - Current-site parsed record preview/export API. Completed.
-- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, signed object fetch executor, scheduled signed-object fetch worker, protected source manifest fetch cron route, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, override rollback workflow, override replacement workflow, override impact comparison, impact evidence retention, and impact evidence export completed; Vercel cron schedule config remains.
+- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, signed object fetch executor, scheduled signed-object fetch worker, protected source manifest fetch cron route, Vercel source-manifest cron schedule, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, override rollback workflow, override replacement workflow, override impact comparison, impact evidence retention, and impact evidence export completed.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.

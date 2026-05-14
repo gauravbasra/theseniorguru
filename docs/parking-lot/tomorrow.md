@@ -15,9 +15,11 @@ These items require owner credentials, production access, or confirmation. Imple
 ## Hosting
 
 - Review current Vercel work-in-progress deployment at `https://theseniorguru.vercel.app`.
-- Confirm/set `CRON_SECRET` in Vercel Production so `/api/cron/operations`, `/api/cron/acquisition`, and `/api/cron/newsroom` can run from Vercel Cron.
+- Confirm/set `CRON_SECRET` in Vercel Production so `/api/cron/operations`, `/api/cron/acquisition`, `/api/cron/newsroom`, `/api/cron/webhooks`, `/api/cron/source-manifests`, and `/api/cron/import-escalation-retries` can run from Vercel Cron.
 - Confirm when to set `WEBHOOK_RETRY_CRON_MODE=live`; `/api/cron/webhooks` defaults to preview-only candidate reporting until partner webhook targets and signing secrets are confirmed.
 - Confirm when to set `NEWSROOM_RSS_CRON_MODE=live`; it intentionally defaults to safe preview/dry-run mode until editorial RSS intake is approved.
+- Confirm when to set `SOURCE_MANIFEST_FETCH_CRON_MODE=live`; `/api/cron/source-manifests` is scheduled daily but defaults to preview-only manifest fetch evidence until owner-approved source objects are ready.
+- Confirm when to set `IMPORT_ESCALATION_RETRY_CRON_MODE=live` and `IMPORT_ESCALATION_RETRY_CRON_PROVIDER=internal_notification_queue`; `/api/cron/import-escalation-retries` is scheduled hourly but defaults to preview/manual-export safety until the live queue is approved.
 - Confirm whether `theseniorguru.com` should point to Vercel now or remain on DigitalOcean until the production Supabase/email/ads credentials are installed.
 - Confirm whether a droplet is still required for `theseniorguru.com` after the Vercel deployment.
 - Confirm whether TheVaulted server is distinct from `147.182.129.38`.
