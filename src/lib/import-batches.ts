@@ -9,6 +9,7 @@ import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedImportBatches: ImportBatchRecord[] = [];
+let fallbackImportBatchSequence = 0;
 
 function findSeedImportBatch(batchId: string) {
   return seedImportBatches.find((batch) => batch.id === batchId);
@@ -216,8 +217,9 @@ export async function createImportBatch(input: CreateImportBatchInput): Promise<
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
+    fallbackImportBatchSequence += 1;
     const batch: ImportBatchRecord = {
-      id: `pending-import-${Date.now()}`,
+      id: `pending-import-${Date.now()}-${fallbackImportBatchSequence}`,
       dataSourceId: input.dataSourceId,
       status,
       name: input.name,

@@ -9,6 +9,7 @@ import {
   ListChecks,
   Loader2,
   MessageSquareWarning,
+  PlayCircle,
   Radar,
   Send,
   SquareStack,
@@ -202,6 +203,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<PlayCircle aria-hidden="true" />}
+          label="Execute launch batch"
+          loading={loadingKey === "launch-execution"}
+          onClick={() =>
+            runOperation("Launch import execution", "launch-execution", () =>
+              fetch("/api/v1/admin/import-launch-execution", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, maxRecords: 25, starterBatchSize: 125 })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<SquareStack aria-hidden="true" />}
           label="Ad readiness"
           loading={loadingKey === "ad-readiness"}
@@ -312,6 +327,10 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "import-plan") {
     return `Launch import plan is ready for the 5,000-listing target.`;
+  }
+
+  if (key === "launch-execution") {
+    return `${String(record.executedBatches ?? 0)} launch batch${record.executedBatches === 1 ? "" : "es"} executed, ${String(record.blockedBatches ?? 0)} blocked for source adapters, and ${String((record.totals as Record<string, unknown> | undefined)?.stagedRecords ?? 0)} records staged in this run.`;
   }
 
   if (key === "ad-readiness") {

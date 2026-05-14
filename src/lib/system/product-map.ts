@@ -250,6 +250,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/import-launch-plan",
       "POST /api/v1/admin/import-launch-plan",
       "POST /api/v1/admin/import-launch-sources/seed",
+      "GET /api/v1/admin/import-launch-execution",
+      "POST /api/v1/admin/import-launch-execution",
       "GET /api/v1/admin/crawl-jobs",
       "POST /api/v1/admin/crawl-jobs",
       "POST /api/v1/admin/crawl-jobs/{id}/run",
@@ -265,7 +267,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["CMS/state import adapters", "Provider website extraction parser", "Launch import batch execution dashboard"]
+    nextBackendWork: ["CMS/state import adapters", "Provider website extraction parser", "Launch import execution persistence hardening"]
   },
   {
     key: "reviews",

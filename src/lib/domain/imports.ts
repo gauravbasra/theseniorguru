@@ -156,6 +156,38 @@ export type LaunchImportSourceSeedSummary = {
   nextActions: string[];
 };
 
+export type LaunchImportExecutionBatchSummary = {
+  batchId: string;
+  name: string;
+  sourceKind: string;
+  status: ImportBatchStatus;
+  estimatedRecords: number;
+  action: "executed" | "ready" | "skipped" | "blocked";
+  reason?: string;
+  run?: ImportBatchRunResult;
+};
+
+export type LaunchImportExecutionSummary = {
+  generatedAt: string;
+  mode: "status" | "execute";
+  dryRun: boolean;
+  batchesReviewed: number;
+  runnableBatches: number;
+  executedBatches: number;
+  skippedBatches: number;
+  blockedBatches: number;
+  totals: {
+    totalRecords: number;
+    stagedRecords: number;
+    skippedRecords: number;
+    rejectedRecords: number;
+    errorRecords: number;
+  };
+  batches: LaunchImportExecutionBatchSummary[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "blocked_by_policy";
 
 export type CrawlJobRecord = {

@@ -6,7 +6,7 @@ import type {
   ImportRecordInput,
   RunImportBatchInput
 } from "@/lib/domain/imports";
-import { completeImportBatch, failImportBatch, markImportBatchRunning } from "@/lib/import-batches";
+import { completeImportBatch, failImportBatch, getImportBatchRecord, markImportBatchRunning } from "@/lib/import-batches";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -143,12 +143,16 @@ async function getImportBatch(batchId: string): Promise<ImportBatchRow | null> {
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
-      id: batchId,
-      data_source_id: seedDataSources[0]?.id,
-      source_kind: "cms",
-      name: "Fallback import batch"
-    };
+    const batch = await getImportBatchRecord(batchId);
+
+    return batch
+      ? {
+          id: batch.id,
+          data_source_id: batch.dataSourceId,
+          source_kind: batch.sourceKind,
+          name: batch.name
+        }
+      : null;
   }
 
   const { data, error } = await supabase

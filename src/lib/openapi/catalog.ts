@@ -404,6 +404,10 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/import-launch-sources/seed": {
         post: { tags: ["Aggregation"], summary: "Idempotently seed approved launch import sources and optional starter batches" }
       },
+      "/api/v1/admin/import-launch-execution": {
+        get: { tags: ["Aggregation"], summary: "Return runnable, blocked, and skipped launch import batch execution status" },
+        post: { tags: ["Aggregation"], summary: "Execute runnable launch import batches through source-specific adapters" }
+      },
       "/api/v1/admin/current-site-inventory/import": {
         post: { tags: ["Aggregation"], summary: "Crawl current TheSeniorGuru listing pages and stage real inventory records" }
       },

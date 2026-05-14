@@ -108,6 +108,7 @@ Deliverables:
 - Policy override expiry worker API for requested or approved time-bound overrides with audit-ready behavior. Completed.
 - Immutable operational audit event browser API with policy override request, decision, and expiry evidence coverage. Completed.
 - Launch import source seeding API for approved CMS/current-site/state-license sources and optional starter batches. Completed.
+- Launch import execution API for current-site starter batches with explicit CMS/state adapter blockers. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
@@ -135,6 +136,7 @@ Deliverables:
 - Crawl job control plane for approved sources. Completed.
 - Launch import wave planner for the 5,000-listing target. Completed.
 - Launch import source seeding for approved starter sources and queued starter batches. Completed.
+- Launch import execution status/run API for real current-site starter batches. Completed.
 - Entity matching and duplicate detection.
 - Entity match scoring and candidate persistence. Completed.
 - Confidence scoring.
