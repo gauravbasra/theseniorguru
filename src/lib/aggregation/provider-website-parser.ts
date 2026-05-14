@@ -12,6 +12,8 @@ import type {
   ProviderWebsiteParserReadinessSummary,
   ProviderWebsiteParserRuleImpactCompareInput,
   ProviderWebsiteParserRuleImpactCompareResult,
+  ProviderWebsiteParserRuleImpactEvidenceAttachmentInput,
+  ProviderWebsiteParserRuleImpactEvidenceAttachmentResult,
   ProviderWebsiteParserRuleImpactEvidenceExport,
   ProviderWebsiteParserRuleImpactEvidenceExportRow,
   ProviderWebsiteParserRuleImpactMetrics,
@@ -785,7 +787,7 @@ export async function rollbackProviderWebsiteParserRuleOverride(
 }
 
 export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promise<ProviderWebsiteParserRuleOverrideAuditSummary> {
-  const [overrides, upsertAuditSummary, rollbackAuditSummary, replacementAuditSummary, impactAuditSummary] = await Promise.all([
+  const [overrides, upsertAuditSummary, rollbackAuditSummary, replacementAuditSummary, impactAuditSummary, attachmentAuditSummary] = await Promise.all([
     listProviderWebsiteParserRuleOverrides(),
     listAuditEvents({
       eventType: "provider_website_parser.rule_override_upserted",
@@ -806,13 +808,19 @@ export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promis
       eventType: "provider_website_parser.rule_impact_compared",
       subjectType: "provider_website_parser_rule_override",
       limit: 250
+    }),
+    listAuditEvents({
+      eventType: "provider_website_parser.rule_impact_evidence_attached",
+      subjectType: "provider_website_parser_rule_override",
+      limit: 250
     })
   ]);
   const auditEvents = [
     ...upsertAuditSummary.events,
     ...rollbackAuditSummary.events,
     ...replacementAuditSummary.events,
-    ...impactAuditSummary.events
+    ...impactAuditSummary.events,
+    ...attachmentAuditSummary.events
   ].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
   const overrideRows = overrides.map((override) => {
     const overrideAuditEvents = auditEvents.filter(
@@ -840,6 +848,7 @@ export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promis
       inactiveOverrides: overrideRows.filter((override) => override.status === "inactive").length,
       auditEvents: auditEvents.length,
       impactAuditEvents: impactAuditSummary.events.length,
+      impactAttachmentEvents: attachmentAuditSummary.events.length,
       unauditedOverrides: overrideRows.filter((override) => override.auditStatus === "missing_audit_event").length
     },
     overrides: overrideRows,
@@ -853,6 +862,9 @@ export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promis
       ...(impactAuditSummary.events.length
         ? ["Review retained parser impact comparisons before replacing or rolling back source-specific parser overrides."]
         : ["Run parser rule impact comparison with audit evidence before replacing or rolling back source-specific parser overrides."]),
+      ...(attachmentAuditSummary.events.length
+        ? ["Use attached impact evidence events as the launch-review trail for parser override replacement and rollback decisions."]
+        : ["Attach retained impact evidence to parser override decisions before final launch sign-off."]),
       ...(!overrideRows.length ? ["Create governed source-specific parser rule overrides only after source approval and crawl evidence review."] : [])
     ]
   };
@@ -1357,6 +1369,141 @@ export async function exportProviderWebsiteParserRuleImpactEvidence(input: {
         ? ["Attach this parser impact evidence export to override replacement, rollback, and launch-readiness review notes."]
         : ["Run audited parser rule impact comparisons before exporting launch review evidence."]),
       ...(input.dataSourceId ? ["Confirm the exported source-specific impact evidence matches the target parser override decision."] : [])
+    ]
+  };
+}
+
+export async function attachProviderWebsiteParserRuleImpactEvidence(
+  input: ProviderWebsiteParserRuleImpactEvidenceAttachmentInput
+): Promise<ProviderWebsiteParserRuleImpactEvidenceAttachmentResult> {
+  const dryRun = input.dryRun ?? true;
+  const [sources, overrides, impactSummary] = await Promise.all([
+    listDataSources(),
+    listProviderWebsiteParserRuleOverrides(),
+    listAuditEvents({
+      eventType: "provider_website_parser.rule_impact_compared",
+      subjectType: "provider_website_parser_rule_override",
+      limit: 250
+    })
+  ]);
+  const activeOverrides = overrides.filter((override) => override.status === "active");
+  const candidates = activeOverrides.map((override) => {
+    const source = sources.find((item) => item.id === override.dataSourceId);
+    const retainedImpactEvents = impactSummary.events.filter((event) => event.payload.dataSourceId === override.dataSourceId);
+    const blockers = [
+      ...(!source ? ["Data source not found for parser rule override."] : []),
+      ...(!retainedImpactEvents.length ? ["No retained parser impact comparison audit events exist for this source."] : [])
+    ];
+
+    return {
+      dataSourceId: override.dataSourceId,
+      dataSourceName: override.dataSourceName ?? source?.name,
+      overrideId: override.id,
+      activeOverride: override,
+      retainedImpactEvents: retainedImpactEvents.length,
+      status: blockers.length ? ("blocked" as const) : ("ready" as const),
+      blockers
+    };
+  });
+
+  if (!input.dataSourceId && !input.overrideId) {
+    return {
+      generatedAt: new Date().toISOString(),
+      dryRun,
+      status: "preview",
+      candidates,
+      attachedImpactEventIds: [],
+      blockers: candidates.flatMap((candidate) =>
+        candidate.blockers.map((blocker) => `${candidate.dataSourceName ?? candidate.dataSourceId}: ${blocker}`)
+      ),
+      nextActions: candidates.some((candidate) => candidate.status === "ready")
+        ? ["Select a ready parser override and attach retained impact evidence before replacement or rollback launch review."]
+        : ["Run audited parser impact comparisons before evidence can be attached to parser override decisions."]
+    };
+  }
+
+  const override = overrides.find(
+    (item) => item.id === input.overrideId || item.dataSourceId === input.dataSourceId
+  );
+
+  if (!override) {
+    throw new Error("Provider website parser rule override not found");
+  }
+
+  const source = sources.find((item) => item.id === override.dataSourceId);
+
+  if (!source) {
+    throw new Error("Data source not found for parser rule override");
+  }
+
+  const retainedImpactEvents = impactSummary.events.filter((event) => event.payload.dataSourceId === override.dataSourceId);
+  const selectedImpactEvents = input.auditEventIds?.length
+    ? retainedImpactEvents.filter((event) => input.auditEventIds?.includes(event.id))
+    : retainedImpactEvents.slice(0, 5);
+  const missingIds = (input.auditEventIds ?? []).filter((id) => !selectedImpactEvents.some((event) => event.id === id));
+  const blockers = [
+    ...(override.status !== "active" ? ["Parser impact evidence can only be attached to an active parser override."] : []),
+    ...(!retainedImpactEvents.length ? ["No retained parser impact comparison audit events exist for this source."] : []),
+    ...(missingIds.length ? [`Impact evidence event IDs were not found for this source: ${missingIds.join(", ")}`] : [])
+  ];
+
+  if (dryRun || blockers.length) {
+    return {
+      generatedAt: new Date().toISOString(),
+      dryRun,
+      status: "preview",
+      candidates: candidates.filter((candidate) => candidate.overrideId === override.id),
+      dataSourceId: override.dataSourceId,
+      dataSourceName: override.dataSourceName ?? source.name,
+      overrideId: override.id,
+      attachedImpactEventIds: selectedImpactEvents.map((event) => event.id),
+      blockers,
+      nextActions: blockers.length
+        ? ["Resolve parser impact evidence attachment blockers before replacement or rollback review."]
+        : ["Run with dryRun=false to record this impact evidence attachment in operational audit history."]
+    };
+  }
+
+  const audit = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: "provider_website_parser.rule_impact_evidence_attached",
+    subjectType: "provider_website_parser_rule_override",
+    subjectId: override.id,
+    payload: {
+      overrideId: override.id,
+      dataSourceId: override.dataSourceId,
+      dataSourceName: override.dataSourceName ?? source.name,
+      attachedImpactEventIds: selectedImpactEvents.map((event) => event.id),
+      attachedImpactEvents: selectedImpactEvents.map((event) => ({
+        id: event.id,
+        createdAt: event.createdAt,
+        pagesCompared: event.payload.pagesCompared,
+        defaultStageable: event.payload.defaultStageable,
+        activeStageable: event.payload.activeStageable,
+        replacementStageable: event.payload.replacementStageable,
+        activeStageableDelta: event.payload.activeStageableDelta,
+        replacementStageableDelta: event.payload.replacementStageableDelta,
+        reason: event.payload.reason
+      })),
+      reason: input.reason
+    }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    status: "attached",
+    candidates: candidates.filter((candidate) => candidate.overrideId === override.id),
+    dataSourceId: override.dataSourceId,
+    dataSourceName: override.dataSourceName ?? source.name,
+    overrideId: override.id,
+    attachedImpactEventIds: selectedImpactEvents.map((event) => event.id),
+    attachmentAuditEventId: audit.id,
+    blockers: [],
+    nextActions: [
+      "Use this attached parser impact evidence audit event before live replacement or rollback approval.",
+      "Export parser impact evidence for launch-review sign-off if a reviewer needs a portable package."
     ]
   };
 }

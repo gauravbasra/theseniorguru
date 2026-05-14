@@ -118,6 +118,12 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Provider website parser rule impact attach API",
+    href: "/api/v1/admin/provider-website-parser/rules/impact/attach",
+    method: "POST",
+    owner: "admin"
+  },
+  {
     label: "Provider website parser rule impact export API",
     href: "/api/v1/admin/provider-website-parser/rules/impact/export",
     method: "GET",

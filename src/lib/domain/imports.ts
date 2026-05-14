@@ -883,6 +883,39 @@ export type ProviderWebsiteParserRuleImpactEvidenceExport = {
   nextActions: string[];
 };
 
+export type ProviderWebsiteParserRuleImpactEvidenceAttachmentInput = {
+  dataSourceId?: string;
+  overrideId?: string;
+  auditEventIds?: string[];
+  dryRun?: boolean;
+  actorId?: string;
+  reason?: string;
+};
+
+export type ProviderWebsiteParserRuleImpactEvidenceAttachmentCandidate = {
+  dataSourceId: string;
+  dataSourceName?: string;
+  overrideId?: string;
+  activeOverride?: ProviderWebsiteParserRuleOverrideRecord;
+  retainedImpactEvents: number;
+  status: "ready" | "blocked";
+  blockers: string[];
+};
+
+export type ProviderWebsiteParserRuleImpactEvidenceAttachmentResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  status: "preview" | "attached";
+  candidates: ProviderWebsiteParserRuleImpactEvidenceAttachmentCandidate[];
+  dataSourceId?: string;
+  dataSourceName?: string;
+  overrideId?: string;
+  attachedImpactEventIds: string[];
+  attachmentAuditEventId?: string;
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ProviderWebsiteParserRuleOverrideAuditSummary = {
   generatedAt: string;
   totals: {
@@ -891,6 +924,7 @@ export type ProviderWebsiteParserRuleOverrideAuditSummary = {
     inactiveOverrides: number;
     auditEvents: number;
     impactAuditEvents: number;
+    impactAttachmentEvents: number;
     unauditedOverrides: number;
   };
   overrides: Array<

@@ -482,6 +482,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<FileCheck2 aria-hidden="true" />}
+          label="Attach impact"
+          loading={loadingKey === "provider-website-parser-rule-impact-attach"}
+          onClick={() =>
+            runOperation("Provider website parser rule impact attachment", "provider-website-parser-rule-impact-attach", () =>
+              fetch("/api/v1/admin/provider-website-parser/rules/impact/attach", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<ShieldAlert aria-hidden="true" />}
           label="Rollback rules"
           loading={loadingKey === "provider-website-parser-rule-rollback"}
@@ -750,7 +764,7 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "provider-website-parser-rule-audit") {
     const totals = record.totals as Record<string, unknown> | undefined;
-    return `${String(totals?.auditEvents ?? 0)} parser rule audit event${totals?.auditEvents === 1 ? "" : "s"}, including ${String(totals?.impactAuditEvents ?? 0)} impact comparison event${totals?.impactAuditEvents === 1 ? "" : "s"}, ${String(totals?.activeOverrides ?? 0)} active override${totals?.activeOverrides === 1 ? "" : "s"}, and ${String(totals?.unauditedOverrides ?? 0)} override${totals?.unauditedOverrides === 1 ? "" : "s"} missing audit evidence.`;
+    return `${String(totals?.auditEvents ?? 0)} parser rule audit event${totals?.auditEvents === 1 ? "" : "s"}, including ${String(totals?.impactAuditEvents ?? 0)} impact comparison event${totals?.impactAuditEvents === 1 ? "" : "s"} and ${String(totals?.impactAttachmentEvents ?? 0)} attachment event${totals?.impactAttachmentEvents === 1 ? "" : "s"}, ${String(totals?.activeOverrides ?? 0)} active override${totals?.activeOverrides === 1 ? "" : "s"}, and ${String(totals?.unauditedOverrides ?? 0)} override${totals?.unauditedOverrides === 1 ? "" : "s"} missing audit evidence.`;
   }
 
   if (key === "provider-website-parser-rule-impact") {
@@ -764,6 +778,12 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "provider-website-parser-rule-impact-export") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.events ?? 0)} parser impact evidence event${totals?.events === 1 ? "" : "s"} exported, ${String(totals?.pagesCompared ?? 0)} page${totals?.pagesCompared === 1 ? "" : "s"} compared, and ${String(totals?.replacementStageable ?? 0)} replacement-stageable candidate${totals?.replacementStageable === 1 ? "" : "s"} retained.`;
+  }
+
+  if (key === "provider-website-parser-rule-impact-attach") {
+    const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
+    const attached = Array.isArray(record.attachedImpactEventIds) ? record.attachedImpactEventIds.length : 0;
+    return `${String(candidates)} parser impact attachment candidate${candidates === 1 ? "" : "s"} reviewed, ${String(attached)} impact evidence event${attached === 1 ? "" : "s"} selected, status ${String(record.status ?? "preview")}.`;
   }
 
   if (key === "provider-website-parser-rule-rollback") {

@@ -292,6 +292,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/provider-website-parser/rules",
       "GET /api/v1/admin/provider-website-parser/rules/audit",
       "POST /api/v1/admin/provider-website-parser/rules/impact",
+      "POST /api/v1/admin/provider-website-parser/rules/impact/attach",
       "GET /api/v1/admin/provider-website-parser/rules/impact/export",
       "POST /api/v1/admin/provider-website-parser/rules/rollback",
       "POST /api/v1/admin/provider-website-parser/rules/replace",
@@ -311,7 +312,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Provider website parser impact evidence attachment workflow", "Cron live-mode owner approvals", "Source manifest fetch source-object production credentials"]
+    nextBackendWork: ["Parser impact attachment reviewer UI", "Cron live-mode owner approvals", "Source manifest fetch source-object production credentials"]
   },
   {
     key: "reviews",

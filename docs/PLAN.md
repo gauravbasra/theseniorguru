@@ -138,6 +138,7 @@ Deliverables:
 - Provider website parser override impact compare workflow with default/active/replacement stageable deltas, blocker evidence, optional audit event, and admin console access. Completed.
 - Provider website parser impact evidence retention in the override audit dashboard, including counted impact comparison events for replacement and rollback review. Completed.
 - Provider website parser impact evidence export API with JSON/CSV output, source filter, launch-review totals, OpenAPI/link-health coverage, and admin console access. Completed.
+- Provider website parser impact evidence attachment workflow with retained comparison validation, attachment audit event, audit dashboard counts, OpenAPI/link-health coverage, and admin console access. Completed.
 - Extracted entity confidence review queue API for approval-ready, human-review, legal-review, image-rights, and duplicate routing. Completed.
 - Extracted entity review assignment and SLA API with Supabase migration, local fallback, and admin console action. Completed.
 - Import operator escalation report API for overdue, due-soon, unassigned, and blocked extracted-entity reviews. Completed.
@@ -167,7 +168,7 @@ Deliverables:
 - Current live TheSeniorGuru listing crawler and staging adapter. Completed.
 - Current-site public JSON acquisition worker for real production listing records. Completed.
 - Current-site parsed record preview/export API. Completed.
-- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, signed object fetch executor, scheduled signed-object fetch worker, protected source manifest fetch cron route, Vercel source-manifest cron schedule, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, override rollback workflow, override replacement workflow, override impact comparison, impact evidence retention, and impact evidence export completed.
+- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, signed object fetch executor, scheduled signed-object fetch worker, protected source manifest fetch cron route, Vercel source-manifest cron schedule, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, override rollback workflow, override replacement workflow, override impact comparison, impact evidence retention, impact evidence export, and impact evidence attachment completed.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.
