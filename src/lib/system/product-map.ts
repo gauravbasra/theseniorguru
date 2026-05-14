@@ -268,6 +268,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/source-adapter-imports/worker",
       "GET /api/v1/admin/source-adapter-manifests",
       "POST /api/v1/admin/source-adapter-manifests",
+      "POST /api/v1/admin/source-adapter-manifests/load",
       "GET /api/v1/admin/vendor-feed-connections",
       "POST /api/v1/admin/vendor-feed-connections",
       "POST /api/v1/admin/vendor-feed-imports",
@@ -294,7 +295,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Provider website parser rule tuning", "Live import escalation queue adapter", "Source manifest payload loader"]
+    nextBackendWork: ["Provider website parser rule tuning", "Live import escalation queue adapter", "Source manifest object-storage fetch adapter"]
   },
   {
     key: "reviews",

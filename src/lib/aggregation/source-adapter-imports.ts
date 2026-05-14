@@ -48,14 +48,18 @@ function normalizeSourceRecord(
       ...(record.rawPayload ?? {}),
       dataSourceId: source.id,
       sourceType: source.sourceType,
-      adapterKey: adapter.adapterKey
+      adapterKey: adapter.adapterKey,
+      manifest: inputManifestForRecord(record)
     },
     extractedFields: {
       ...(record.extractedFields ?? {}),
       adapter: adapter.adapterKey,
       sourceType: source.sourceType,
       sourceName: source.name,
-      sourceReviewStatus: source.reviewStatus
+      sourceReviewStatus: source.reviewStatus,
+      manifestId: inputManifestForRecord(record)?.id,
+      manifestFileName: inputManifestForRecord(record)?.fileName,
+      manifestChecksumSha256: inputManifestForRecord(record)?.checksumSha256
     },
     auditTrail: [
       ...(record.auditTrail ?? []),
@@ -66,6 +70,22 @@ function normalizeSourceRecord(
         notes: `Mapped from ${source.name} ${source.sourceType} adapter payload.`
       }
     ]
+  };
+}
+
+function inputManifestForRecord(record: ImportRecordInput) {
+  const manifest = record.rawPayload?.sourceAdapterManifest;
+
+  if (!manifest || typeof manifest !== "object") {
+    return undefined;
+  }
+
+  return manifest as {
+    id: string;
+    fileName: string;
+    payloadKind: string;
+    checksumSha256: string;
+    recordCount: number;
   };
 }
 
@@ -144,7 +164,22 @@ export async function runSourceAdapterImport(input: SourceAdapterImportInput): P
   }
 
   const dryRun = input.dryRun ?? true;
-  const normalizedRecords = input.records.map((record, index) => normalizeSourceRecord(record, source, adapter, index));
+  const recordsWithManifest = input.manifest
+    ? input.records.map((record) => ({
+        ...record,
+        rawPayload: {
+          ...(record.rawPayload ?? {}),
+          sourceAdapterManifest: input.manifest
+        },
+        extractedFields: {
+          ...(record.extractedFields ?? {}),
+          sourceAdapterManifestId: input.manifest?.id,
+          sourceAdapterManifestFileName: input.manifest?.fileName,
+          sourceAdapterManifestChecksumSha256: input.manifest?.checksumSha256
+        }
+      }))
+    : input.records;
+  const normalizedRecords = recordsWithManifest.map((record, index) => normalizeSourceRecord(record, source, adapter, index));
   const batch = await createImportBatch({
     dataSourceId: source.id,
     name: input.batchName ?? `${source.name} source adapter import`,

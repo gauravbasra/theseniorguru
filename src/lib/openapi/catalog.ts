@@ -454,6 +454,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Aggregation"], summary: "Report CMS, state, and owner-controlled source file manifest checksum and mapping readiness" },
         post: { tags: ["Aggregation"], summary: "Register source adapter export file manifest metadata without storing file contents" }
       },
+      "/api/v1/admin/source-adapter-manifests/load": {
+        post: { tags: ["Aggregation"], summary: "Load supplied source payload records through a verified file manifest and governed import worker" }
+      },
       "/api/v1/admin/vendor-feed-connections": {
         get: { tags: ["Aggregation"], summary: "Report vendor feed contract, credential reference, and field mapping readiness" },
         post: { tags: ["Aggregation"], summary: "Record safe vendor feed credential metadata without storing vendor secrets" }

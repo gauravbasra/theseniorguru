@@ -227,6 +227,13 @@ export type SourceAdapterImportInput = {
   dryRun?: boolean;
   actorId?: string;
   batchName?: string;
+  manifest?: {
+    id: string;
+    fileName: string;
+    payloadKind: string;
+    checksumSha256: string;
+    recordCount: number;
+  };
 };
 
 export type SourceAdapterImportResult = {
@@ -361,6 +368,24 @@ export type SourceAdapterManifestReadinessSummary = {
   };
   manifests: SourceAdapterManifestReadinessItem[];
   blockers: string[];
+  nextActions: string[];
+};
+
+export type SourceAdapterManifestPayloadLoadInput = {
+  manifestId: string;
+  records: ImportRecordInput[];
+  dryRun?: boolean;
+  actorId?: string;
+  batchName?: string;
+};
+
+export type SourceAdapterManifestPayloadLoadResult = {
+  generatedAt: string;
+  manifest: SourceAdapterManifestReadinessItem;
+  dryRun: boolean;
+  recordsProvided: number;
+  recordCountMatchesManifest: boolean;
+  importResult: SourceAdapterImportResult;
   nextActions: string[];
 };
 
