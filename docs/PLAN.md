@@ -206,6 +206,7 @@ Deliverables:
 - AI chat/voice.
 - Provider dashboard and metrics.
 - Provider campaign metrics API and console action. Completed.
+- Campaign metric event ingestion API with validation, policy check, persistence, and reporting rollup. Completed.
 - Provider growth plans and feature entitlements. Completed.
 - Paid feature entitlement enforcement. Completed.
 

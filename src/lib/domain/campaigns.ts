@@ -64,6 +64,24 @@ export type CampaignMetricRecord = {
   recordedAt: string;
 };
 
+export const campaignMetricKeys = ["impressions", "clicks", "leads", "conversions"] as const;
+
+export type CampaignMetricKey = (typeof campaignMetricKeys)[number];
+
+export type RecordCampaignMetricInput = {
+  campaignId: string;
+  metricKey: CampaignMetricKey;
+  metricValue?: number;
+  metricPayload?: Record<string, unknown>;
+  recordedAt?: string;
+};
+
+export type RecordCampaignMetricResult = {
+  campaign: MarketingCampaignRecord;
+  metric: CampaignMetricRecord;
+  policyDecision: string;
+};
+
 export type ProviderCampaignMetricsSummary = {
   providerId?: string;
   generatedAt: string;

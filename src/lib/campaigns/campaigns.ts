@@ -1,9 +1,13 @@
+import { campaignMetricKeys } from "@/lib/domain/campaigns";
 import type {
   CampaignAssetRecord,
+  CampaignMetricKey,
   CampaignMetricRecord,
   CreateCampaignInput,
   MarketingCampaignRecord,
-  ProviderCampaignMetricsSummary
+  ProviderCampaignMetricsSummary,
+  RecordCampaignMetricInput,
+  RecordCampaignMetricResult
 } from "@/lib/domain/campaigns";
 import { featureForCampaignType, requireProviderFeature } from "@/lib/billing/entitlements";
 import { runPolicyCheck } from "@/lib/policy";
@@ -12,6 +16,16 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 const seedCampaigns: MarketingCampaignRecord[] = [];
 const seedCampaignAssets: CampaignAssetRecord[] = [];
 const seedCampaignMetrics: CampaignMetricRecord[] = [];
+
+export class CampaignMetricIngestionError extends Error {
+  status: number;
+
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = "CampaignMetricIngestionError";
+    this.status = status;
+  }
+}
 
 function mapCampaign(row: Record<string, unknown>): MarketingCampaignRecord {
   return {
@@ -159,17 +173,20 @@ export async function generateCampaignAssets(campaignId: string): Promise<Campai
 
   const supabase = getSupabaseAdminClient();
   if (supabase) {
-    const { data, error } = await supabase.from("campaign_assets").insert(
-      assets.map((asset) => ({
-        marketing_campaign_id: campaignId,
-        asset_type: asset.assetType,
-        channel: asset.channel,
-        title: asset.title,
-        body: asset.body,
-        asset_payload: asset.assetPayload,
-        approval_status: asset.approvalStatus
-      }))
-    ).select("*");
+    const { data, error } = await supabase
+      .from("campaign_assets")
+      .insert(
+        assets.map((asset) => ({
+          marketing_campaign_id: campaignId,
+          asset_type: asset.assetType,
+          channel: asset.channel,
+          title: asset.title,
+          body: asset.body,
+          asset_payload: asset.assetPayload,
+          approval_status: asset.approvalStatus
+        }))
+      )
+      .select("*");
 
     if (error) {
       throw new Error(`Campaign asset generation failed: ${error.message}`);
@@ -181,6 +198,90 @@ export async function generateCampaignAssets(campaignId: string): Promise<Campai
   }
 
   return assets;
+}
+
+function assertMetricKey(metricKey: string): asserts metricKey is CampaignMetricKey {
+  if (!campaignMetricKeys.includes(metricKey as CampaignMetricKey)) {
+    throw new CampaignMetricIngestionError("metricKey must be impressions, clicks, leads, or conversions.");
+  }
+}
+
+function normalizeMetricInput(input: RecordCampaignMetricInput): Required<RecordCampaignMetricInput> {
+  if (!input.campaignId) {
+    throw new CampaignMetricIngestionError("campaignId is required.");
+  }
+
+  assertMetricKey(input.metricKey);
+
+  const metricValue = input.metricValue ?? 1;
+  if (!Number.isFinite(metricValue) || metricValue <= 0 || metricValue > 100000) {
+    throw new CampaignMetricIngestionError("metricValue must be greater than 0 and no more than 100000.");
+  }
+
+  const recordedAt = input.recordedAt ?? new Date().toISOString();
+  if (Number.isNaN(new Date(recordedAt).getTime())) {
+    throw new CampaignMetricIngestionError("recordedAt must be a valid ISO date when provided.");
+  }
+
+  return {
+    campaignId: input.campaignId,
+    metricKey: input.metricKey,
+    metricValue,
+    metricPayload: input.metricPayload ?? {},
+    recordedAt
+  };
+}
+
+export async function recordCampaignMetric(input: RecordCampaignMetricInput): Promise<RecordCampaignMetricResult> {
+  const normalized = normalizeMetricInput(input);
+  const campaign = (await listCampaigns()).find((item) => item.id === normalized.campaignId);
+
+  if (!campaign) {
+    throw new CampaignMetricIngestionError("Campaign not found.", 404);
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "campaign_metric",
+    subjectId: normalized.campaignId,
+    actionKey: `record_${normalized.metricKey}`,
+    input: normalized
+  });
+
+  if (policy.decision.startsWith("blocked")) {
+    throw new CampaignMetricIngestionError(policy.reasons[0] ?? "Campaign metric blocked by policy.", 403);
+  }
+
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) {
+    const metric: CampaignMetricRecord = {
+      id: `campaign-metric-${Date.now()}`,
+      marketingCampaignId: normalized.campaignId,
+      metricKey: normalized.metricKey,
+      metricValue: normalized.metricValue,
+      metricPayload: normalized.metricPayload,
+      recordedAt: normalized.recordedAt
+    };
+    seedCampaignMetrics.unshift(metric);
+    return { campaign, metric, policyDecision: policy.decision };
+  }
+
+  const { data, error } = await supabase
+    .from("campaign_metrics")
+    .insert({
+      marketing_campaign_id: normalized.campaignId,
+      metric_key: normalized.metricKey,
+      metric_value: normalized.metricValue,
+      metric_payload: normalized.metricPayload,
+      recorded_at: normalized.recordedAt
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new CampaignMetricIngestionError(`Campaign metric ingest failed: ${error.message}`, 500);
+  }
+
+  return { campaign, metric: mapCampaignMetric(data), policyDecision: policy.decision };
 }
 
 export async function publishCampaign(campaignId: string) {
