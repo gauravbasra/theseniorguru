@@ -579,7 +579,7 @@ export function getOpenApiCatalog() {
         get: { tags: ["System"], summary: "List Open API audit events" }
       },
       "/api/v1/admin/api-usage-analytics": {
-        get: { tags: ["System"], summary: "Summarize or CSV-export partner API usage, blocked calls, rate limits, keys, and webhook delivery volume" }
+        get: { tags: ["System"], summary: "Summarize or CSV-export partner API usage, blocked calls, rate limits, keys, webhooks, and retention policy" }
       },
       "/api/v1/admin/scheduled-worker-runs": {
         get: { tags: ["System"], summary: "List scheduled backend worker run history with status, duration, and summaries" }
@@ -607,7 +607,7 @@ export function getOpenApiCatalog() {
         get: { tags: ["Events"], summary: "Partner events API requiring events:read scope" }
       },
       "/api/v1/partner/usage": {
-        get: { tags: ["System"], summary: "Partner-scoped API usage summary or CSV export requiring usage:read scope" }
+        get: { tags: ["System"], summary: "Partner-scoped API usage summary, retention policy, or CSV export requiring usage:read scope" }
       },
       "/api/v1/system/readiness": {
         get: { tags: ["System"], summary: "Return secret-safe production readiness checks and parked owner items" }

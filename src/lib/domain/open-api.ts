@@ -135,6 +135,14 @@ export type ApiUsageAnalyticsSummary = {
   source: "supabase" | "local_fallback";
   windowDays: number;
   since: string;
+  retentionPolicy: {
+    auditRetentionDays: number;
+    retentionCutoff: string;
+    retentionCandidates: number;
+    purgeStatus: "blocked_pending_owner_approval";
+    archiveRequired: boolean;
+    legalHoldReviewRequired: boolean;
+  };
   totals: {
     clients: number;
     requests: number;

@@ -61,6 +61,7 @@ const seedWebhookDeliveries: WebhookDeliveryRecord[] = [];
 const seedWebhookDeliveryAttempts: WebhookDeliveryAttemptRecord[] = [];
 const seedApiAuditEvents: ApiAuditEventRecord[] = [];
 const seedRateCounters = new Map<string, { windowStart: number; count: number }>();
+const defaultApiUsageRetentionDays = 730;
 
 type InternalWebhookSubscription = WebhookSubscriptionRecord & {
   signingSecret?: string;
@@ -1302,6 +1303,22 @@ function topCounts(counts: Map<string, number>, limit = 5) {
     .map(([eventType, count]) => ({ eventType, count }));
 }
 
+function getApiUsageRetentionPolicy(auditEvents: ApiAuditEventRecord[]) {
+  const auditRetentionDays = Math.max(90, Math.min(Number(process.env.API_USAGE_RETENTION_DAYS ?? defaultApiUsageRetentionDays), 3650));
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - auditRetentionDays);
+  const retentionCutoff = cutoff.toISOString();
+
+  return {
+    auditRetentionDays,
+    retentionCutoff,
+    retentionCandidates: auditEvents.filter((event) => Date.parse(event.createdAt) < Date.parse(retentionCutoff)).length,
+    purgeStatus: "blocked_pending_owner_approval" as const,
+    archiveRequired: true,
+    legalHoldReviewRequired: true
+  };
+}
+
 export async function getApiUsageAnalytics(input: { apiClientId?: string; windowDays?: number } = {}): Promise<ApiUsageAnalyticsSummary> {
   const windowDays = Math.max(1, Math.min(Number(input.windowDays ?? 30), 365));
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
@@ -1316,6 +1333,9 @@ export async function getApiUsageAnalytics(input: { apiClientId?: string; window
   const auditEvents = allAuditEvents
     .filter((event) => !input.apiClientId || event.apiClientId === input.apiClientId)
     .filter((event) => Date.parse(event.createdAt) >= Date.parse(since));
+  const retentionPolicy = getApiUsageRetentionPolicy(
+    allAuditEvents.filter((event) => !input.apiClientId || event.apiClientId === input.apiClientId)
+  );
   const subscriptions = (await Promise.all(clients.map((client) => listWebhookSubscriptions(client.id)))).flat();
   const keyPairs = await Promise.all(clients.map(async (client) => ({ client, keys: await listApiKeys(client.id) })));
   const eventCounts = countBy(auditEvents, (event) => event.eventType);
@@ -1365,6 +1385,7 @@ export async function getApiUsageAnalytics(input: { apiClientId?: string; window
     source,
     windowDays,
     since,
+    retentionPolicy,
     totals,
     clients: clientAnalytics.sort((left, right) => right.requests - left.requests || left.name.localeCompare(right.name)),
     topEvents: topCounts(eventCounts, 8),
@@ -1375,7 +1396,10 @@ export async function getApiUsageAnalytics(input: { apiClientId?: string; window
         ? ["Issue active API keys only for approved partner clients that are ready to test."]
         : []),
       ...(!totals.requests ? ["No partner API usage exists in the selected window; run a partner smoke call after issuing a scoped key."] : []),
-      ...(totals.requests && !totals.blocked && !totals.rateLimited ? ["Partner API usage is flowing without blocked or rate-limited calls in the selected window."] : [])
+      ...(totals.requests && !totals.blocked && !totals.rateLimited ? ["Partner API usage is flowing without blocked or rate-limited calls in the selected window."] : []),
+      ...(retentionPolicy.retentionCandidates
+        ? ["Export API usage evidence and complete owner/legal retention approval before enabling any purge workflow."]
+        : [])
     ]
   };
 }
@@ -1401,7 +1425,10 @@ export async function exportApiUsageAnalytics(input: { apiClientId?: string; win
     "webhook_subscriptions",
     "webhook_deliveries",
     "last_request_at",
-    "top_events"
+    "top_events",
+    "retention_cutoff",
+    "retention_candidates",
+    "purge_status"
   ];
   const rows = summary.clients.map((client) => [
     client.apiClientId,
@@ -1417,7 +1444,10 @@ export async function exportApiUsageAnalytics(input: { apiClientId?: string; win
     client.webhookSubscriptions,
     client.webhookDeliveries,
     client.lastRequestAt,
-    client.topEvents.map((event) => `${event.eventType}:${event.count}`).join("|")
+    client.topEvents.map((event) => `${event.eventType}:${event.count}`).join("|"),
+    summary.retentionPolicy.retentionCutoff,
+    summary.retentionPolicy.retentionCandidates,
+    summary.retentionPolicy.purgeStatus
   ]);
 
   return {

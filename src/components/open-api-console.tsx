@@ -424,6 +424,8 @@ export function OpenApiConsole({
           <div><strong>{usageAnalytics.totals.blocked}</strong><span>Blocked</span></div>
           <div><strong>{usageAnalytics.totals.rateLimited}</strong><span>Rate limited</span></div>
           <div><strong>{usageAnalytics.totals.webhookDeliveries}</strong><span>Webhook volume</span></div>
+          <div><strong>{usageAnalytics.retentionPolicy.auditRetentionDays}</strong><span>Retention days</span></div>
+          <div><strong>{usageAnalytics.retentionPolicy.retentionCandidates}</strong><span>Purge candidates</span></div>
         </div>
 
         <div className="open-api-list">

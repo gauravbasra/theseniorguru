@@ -81,6 +81,7 @@ Deliverables:
 - Partner API usage analytics API for request volume, blocked/rate-limited calls, key status, webhook delivery volume, top events, OpenAPI/link-health coverage, and admin console visibility. Completed.
 - Partner-scoped usage analytics endpoint with usage:read scope enforcement, rate-limit audit, and OpenAPI/link-health coverage. Completed.
 - Admin and partner CSV usage analytics exports for reviewable partner API evidence with scoped partner enforcement and admin console access. Completed.
+- API usage retention policy metadata with retention cutoff, purge-candidate counts, archive/legal-hold requirements, blocked purge status, CSV evidence fields, and admin console visibility. Completed.
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.
 - Admin Open API operations console for clients, scoped keys, webhooks, dry-run delivery, retries, and audit visibility. Completed.
