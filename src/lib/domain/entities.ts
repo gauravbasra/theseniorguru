@@ -326,3 +326,34 @@ export type ExtractedEntityEscalationNotificationResult = {
   blockers: string[];
   nextActions: string[];
 };
+
+export type ExtractedEntityEscalationRetrySchedulerCandidate = {
+  messageKey: string;
+  deliveryProvider: ExtractedEntityEscalationDeliveryProvider;
+  deliveryStatus: ExtractedEntityEscalationDeliveryCallbackInput["deliveryStatus"];
+  providerMessageId?: string;
+  callbackId?: string;
+  failureReason?: string;
+  lastCallbackAt: string;
+  callbackEventId: string;
+};
+
+export type RunExtractedEntityEscalationRetrySchedulerInput = {
+  dryRun?: boolean;
+  limit?: number;
+  deliveryProvider?: ExtractedEntityEscalationDeliveryProvider;
+  actorId?: string;
+  reason?: string;
+};
+
+export type ExtractedEntityEscalationRetrySchedulerResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  limit: number;
+  deliveryProvider?: ExtractedEntityEscalationDeliveryProvider;
+  candidates: ExtractedEntityEscalationRetrySchedulerCandidate[];
+  scheduled: number;
+  auditEventId?: string;
+  blockers: string[];
+  nextActions: string[];
+};

@@ -7,6 +7,8 @@ import type {
   ExtractedEntityEscalationDeliveryCallbackResult,
   ExtractedEntityEscalationDeliveryChannel,
   ExtractedEntityEscalationDeliveryReadiness,
+  ExtractedEntityEscalationRetrySchedulerCandidate,
+  ExtractedEntityEscalationRetrySchedulerResult,
   ExtractedEntityReviewEscalationSummary,
   ExtractedEntityReviewAssignmentRecord,
   ExtractedEntityQualityAuditRecord,
@@ -14,10 +16,11 @@ import type {
   ExtractedEntityRecord,
   ExtractedEntityReviewQueueItem,
   ExtractedEntityReviewQueueSummary,
-  NotifyExtractedEntityReviewEscalationsInput
+  NotifyExtractedEntityReviewEscalationsInput,
+  RunExtractedEntityEscalationRetrySchedulerInput
 } from "@/lib/domain/entities";
 import type { DataQualityFlagRecord } from "@/lib/domain/imports";
-import { recordAuditEvent } from "@/lib/audit-events";
+import { listAuditEvents, recordAuditEvent } from "@/lib/audit-events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -1038,6 +1041,137 @@ export async function recordExtractedEntityEscalationDeliveryCallback(
       ...(input.deliveryStatus === "delivered" || input.deliveryStatus === "accepted"
         ? ["Use audit events to reconcile escalation delivery receipts against sent escalation notifications."]
         : [])
+    ]
+  };
+}
+
+function callbackMessageKey(payload: Record<string, unknown>) {
+  const providerMessageId = typeof payload.providerMessageId === "string" ? payload.providerMessageId : undefined;
+  const callbackId = typeof payload.callbackId === "string" ? payload.callbackId : undefined;
+
+  return providerMessageId ?? callbackId;
+}
+
+function isRetryableEscalationDeliveryStatus(status: unknown) {
+  return status === "failed" || status === "retry_scheduled";
+}
+
+export async function runExtractedEntityEscalationRetryScheduler(
+  input: RunExtractedEntityEscalationRetrySchedulerInput = {}
+): Promise<ExtractedEntityEscalationRetrySchedulerResult> {
+  const dryRun = input.dryRun ?? true;
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 25), 100));
+  const [callbackSummary, retrySummary] = await Promise.all([
+    listAuditEvents({
+      eventType: "extracted_entity.escalation_delivery_callback_recorded",
+      subjectType: "extracted_entity_review_escalation",
+      limit: 250
+    }),
+    listAuditEvents({
+      eventType: "extracted_entity.escalation_retry_scheduled",
+      subjectType: "extracted_entity_review_escalation",
+      limit: 250
+    })
+  ]);
+  const latestCallbacks = new Map<string, ExtractedEntityEscalationRetrySchedulerCandidate>();
+
+  for (const event of callbackSummary.events) {
+    const key = callbackMessageKey(event.payload);
+
+    if (!key || latestCallbacks.has(key)) {
+      continue;
+    }
+
+    const deliveryProvider = event.payload.deliveryProvider as ExtractedEntityEscalationRetrySchedulerCandidate["deliveryProvider"];
+    const deliveryStatus = event.payload.deliveryStatus as ExtractedEntityEscalationRetrySchedulerCandidate["deliveryStatus"];
+
+    if (input.deliveryProvider && deliveryProvider !== input.deliveryProvider) {
+      continue;
+    }
+
+    if (!isRetryableEscalationDeliveryStatus(deliveryStatus)) {
+      continue;
+    }
+
+    latestCallbacks.set(key, {
+      messageKey: key,
+      deliveryProvider,
+      deliveryStatus,
+      providerMessageId: typeof event.payload.providerMessageId === "string" ? event.payload.providerMessageId : undefined,
+      callbackId: typeof event.payload.callbackId === "string" ? event.payload.callbackId : undefined,
+      failureReason: typeof event.payload.failureReason === "string" ? event.payload.failureReason : undefined,
+      lastCallbackAt: event.createdAt,
+      callbackEventId: event.id
+    });
+  }
+
+  const scheduledAtByKey = new Map<string, string>();
+
+  for (const event of retrySummary.events) {
+    const retryKeys = Array.isArray(event.payload.retryKeys) ? event.payload.retryKeys.map(String) : [];
+    const singleKey = typeof event.payload.messageKey === "string" ? [event.payload.messageKey] : [];
+
+    for (const key of [...retryKeys, ...singleKey]) {
+      if (!scheduledAtByKey.has(key)) {
+        scheduledAtByKey.set(key, event.createdAt);
+      }
+    }
+  }
+
+  const candidates = Array.from(latestCallbacks.values())
+    .filter((candidate) => {
+      const scheduledAt = scheduledAtByKey.get(candidate.messageKey);
+
+      return !scheduledAt || Date.parse(scheduledAt) < Date.parse(candidate.lastCallbackAt);
+    })
+    .slice(0, limit);
+  const blockers = candidates.length >= limit ? [`Retry candidate list was capped at ${limit}; run another scheduler pass after reviewing this batch.`] : [];
+  const policy = await runPolicyCheck({
+    subjectType: "extracted_entity_review_escalation",
+    actionKey: "schedule_extracted_entity_escalation_retry",
+    input: {
+      dryRun,
+      deliveryProvider: input.deliveryProvider,
+      candidateCount: candidates.length,
+      limit
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Extracted entity escalation retry scheduling blocked by policy");
+  }
+
+  const audit =
+    !dryRun && candidates.length
+      ? await recordAuditEvent({
+          actorId: input.actorId,
+          actorType: input.actorId ? "admin" : "system",
+          eventType: "extracted_entity.escalation_retry_scheduled",
+          subjectType: "extracted_entity_review_escalation",
+          payload: {
+            retryKeys: candidates.map((candidate) => candidate.messageKey),
+            candidates,
+            deliveryProvider: input.deliveryProvider,
+            reason: input.reason ?? "scheduled import escalation delivery retry",
+            policyDecision: policy.decision
+          }
+        })
+      : undefined;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    limit,
+    deliveryProvider: input.deliveryProvider,
+    candidates,
+    scheduled: dryRun ? 0 : candidates.length,
+    auditEventId: audit?.id,
+    blockers,
+    nextActions: [
+      ...(dryRun && candidates.length ? ["Review retry candidates, then run live mode to record retry scheduling evidence."] : []),
+      ...(!dryRun && candidates.length ? ["Retry scheduling audit evidence was recorded; watch for delivery callbacks before another retry pass."] : []),
+      ...(!candidates.length ? ["No failed or retry-scheduled escalation delivery callbacks currently need retry scheduling."] : []),
+      ...blockers
     ]
   };
 }

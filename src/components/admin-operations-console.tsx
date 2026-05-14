@@ -417,6 +417,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Send aria-hidden="true" />}
+          label="Retry escalations"
+          loading={loadingKey === "escalation-retry-scheduler"}
+          onClick={() =>
+            runOperation("Import escalation retry scheduler", "escalation-retry-scheduler", () =>
+              fetch("/api/v1/admin/extracted-entities/escalations/retry-scheduler", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, limit: 25 })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<ListChecks aria-hidden="true" />}
           label="Worker health"
           loading={loadingKey === "worker-health"}
@@ -622,6 +636,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "provider-website-parser-rule-audit") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.auditEvents ?? 0)} parser rule override audit event${totals?.auditEvents === 1 ? "" : "s"}, ${String(totals?.activeOverrides ?? 0)} active override${totals?.activeOverrides === 1 ? "" : "s"}, and ${String(totals?.unauditedOverrides ?? 0)} override${totals?.unauditedOverrides === 1 ? "" : "s"} missing audit evidence.`;
+  }
+
+  if (key === "escalation-retry-scheduler") {
+    const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
+    return `${String(candidates)} import escalation delivery retry candidate${candidates === 1 ? "" : "s"} found, ${String(record.scheduled ?? 0)} scheduled, dry-run ${String(record.dryRun)}.`;
   }
 
   if (key === "vendor-feeds") {

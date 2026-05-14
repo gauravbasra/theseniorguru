@@ -417,6 +417,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/escalations/delivery-callback": {
         post: { tags: ["Aggregation"], summary: "Record provider delivery callbacks for import review escalation notifications with audit evidence" }
       },
+      "/api/v1/admin/extracted-entities/escalations/retry-scheduler": {
+        post: { tags: ["Aggregation"], summary: "Preview or record retry scheduling for failed import escalation delivery callbacks" }
+      },
       "/api/v1/admin/data-sources": {
         get: { tags: ["Aggregation"], summary: "List source registry entries with approval, robots, and terms status" },
         post: { tags: ["Aggregation"], summary: "Register a source before import or crawling" }

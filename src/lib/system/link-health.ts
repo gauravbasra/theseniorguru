@@ -254,6 +254,12 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Extracted entity escalation retry scheduler",
+    href: "/api/v1/admin/extracted-entities/escalations/retry-scheduler",
+    method: "POST",
+    owner: "admin"
+  },
+  {
     label: "Public-source acquisition sample run",
     href: "/api/v1/admin/public-source-acquisition/sample-run",
     method: "POST",
