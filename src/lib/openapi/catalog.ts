@@ -447,6 +447,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Aggregation"], summary: "Report vendor feed contract, credential reference, and field mapping readiness" },
         post: { tags: ["Aggregation"], summary: "Record safe vendor feed credential metadata without storing vendor secrets" }
       },
+      "/api/v1/admin/vendor-feed-imports": {
+        post: { tags: ["Aggregation"], summary: "Run ready vendor feed records through the governed import worker" }
+      },
       "/api/v1/admin/import-launch-execution": {
         get: { tags: ["Aggregation"], summary: "Return runnable, blocked, and skipped launch import batch execution status" },
         post: { tags: ["Aggregation"], summary: "Execute runnable launch import batches through source-specific adapters" }

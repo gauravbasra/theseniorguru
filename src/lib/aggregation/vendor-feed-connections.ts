@@ -1,12 +1,17 @@
 import crypto from "node:crypto";
 import { listDataSources } from "@/lib/data-sources";
 import type {
+  ImportRecordInput,
   VendorFeedConnectionInput,
   VendorFeedConnectionRecord,
+  VendorFeedImportInput,
+  VendorFeedImportResult,
   VendorFeedReadinessItem,
   VendorFeedReadinessSummary
 } from "@/lib/domain/imports";
 import type { DataSourceRecord } from "@/lib/domain/providers";
+import { createImportBatch } from "@/lib/import-batches";
+import { runImportBatch } from "@/lib/aggregation/import-worker";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedVendorFeedConnections: VendorFeedConnectionRecord[] = [];
@@ -198,6 +203,114 @@ export async function getVendorFeedReadiness(): Promise<VendorFeedReadinessSumma
       ...(items.some((item) => item.status === "ready") ? ["Create a vendor feed import adapter run for ready sources."] : []),
       ...(blockers.length ? ["Keep vendor feed imports blocked until owner contract, credential, and mapping approvals are complete."] : []),
       ...(!vendorSources.length ? ["Register vendor data sources before vendor feed readiness can be evaluated."] : [])
+    ]
+  };
+}
+
+function normalizeVendorRecord(
+  record: ImportRecordInput,
+  source: DataSourceRecord,
+  connection: VendorFeedConnectionRecord,
+  index: number
+): ImportRecordInput {
+  const fetchedAt = record.fetchedAt ?? new Date().toISOString();
+  const sourceRecordId =
+    record.sourceRecordId ?? `${source.id}:${connection.vendorName}:${record.name ?? "record"}:${index}`;
+
+  return {
+    ...record,
+    sourceUrl: record.sourceUrl ?? source.baseUrl,
+    sourceRecordId,
+    fetchedAt,
+    licenseTermsStatus: record.licenseTermsStatus ?? source.termsNotes ?? "vendor_contract_approved",
+    robotsDecision: record.robotsDecision ?? source.robotsStatus ?? "vendor_feed_contract",
+    extractionConfidence: record.extractionConfidence ?? record.confidenceScore ?? 0.74,
+    confidenceScore: record.confidenceScore ?? record.extractionConfidence ?? 0.74,
+    rawPayload: {
+      ...(record.rawPayload ?? {}),
+      vendorName: connection.vendorName,
+      credentialReference: connection.credentialReference,
+      dataSourceId: source.id
+    },
+    extractedFields: {
+      ...(record.extractedFields ?? {}),
+      adapter: "vendor_feed_import_v1",
+      vendorName: connection.vendorName,
+      credentialReference: connection.credentialReference,
+      contractStatus: connection.contractStatus,
+      fieldMappingStatus: connection.fieldMappingStatus
+    },
+    auditTrail: [
+      ...(record.auditTrail ?? []),
+      {
+        at: fetchedAt,
+        actor: "vendor-feed-import-runner",
+        action: "vendor_feed_record_mapped",
+        notes: `Mapped from ${connection.vendorName} vendor feed metadata.`
+      }
+    ]
+  };
+}
+
+export async function runVendorFeedImport(input: VendorFeedImportInput): Promise<VendorFeedImportResult> {
+  if (!Array.isArray(input.records) || !input.records.length) {
+    throw new Error("records are required for a vendor feed import run");
+  }
+
+  const [sources, readiness] = await Promise.all([listDataSources(), getVendorFeedReadiness()]);
+  const source = sources.find((item) => item.id === input.dataSourceId);
+
+  if (!source) {
+    throw new Error("Vendor data source not found");
+  }
+
+  if (source.sourceType !== "vendor") {
+    throw new Error("Vendor feed import requires a vendor data source");
+  }
+
+  const readinessItem = readiness.sources.find((item) => item.dataSourceId === input.dataSourceId);
+
+  if (!readinessItem) {
+    throw new Error("Vendor feed readiness record not found");
+  }
+
+  if (readinessItem.status !== "ready") {
+    throw new Error(readinessItem.blockers[0] ?? "Vendor feed is not ready for import");
+  }
+
+  const connection = readiness.connections.find((item) => item.dataSourceId === input.dataSourceId);
+
+  if (!connection) {
+    throw new Error("Vendor feed connection metadata not found");
+  }
+
+  const dryRun = input.dryRun ?? true;
+  const normalizedRecords = input.records.map((record, index) => normalizeVendorRecord(record, source, connection, index));
+  const batch = await createImportBatch({
+    dataSourceId: source.id,
+    name: input.batchName ?? `${connection.vendorName} vendor feed import`,
+    sourceKind: "vendor",
+    estimatedRecords: normalizedRecords.length
+  });
+  const run = await runImportBatch(batch.id, {
+    records: normalizedRecords,
+    dryRun,
+    actorId: input.actorId
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dataSourceId: source.id,
+    dataSourceName: source.name,
+    vendorName: connection.vendorName,
+    dryRun,
+    batch,
+    run,
+    readiness: readinessItem,
+    nextActions: [
+      ...(dryRun ? ["Review the dry-run source coverage and rejected records before running with dryRun=false."] : []),
+      ...(!dryRun ? ["Review staged extracted entities and duplicate candidates before publication."] : []),
+      ...(run.errors.length ? ["Resolve vendor feed validation errors before scaling scheduled imports."] : [])
     ]
   };
 }

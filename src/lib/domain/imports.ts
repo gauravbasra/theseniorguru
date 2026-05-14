@@ -286,6 +286,26 @@ export type VendorFeedReadinessSummary = {
   nextActions: string[];
 };
 
+export type VendorFeedImportInput = {
+  dataSourceId: string;
+  records: ImportRecordInput[];
+  dryRun?: boolean;
+  actorId?: string;
+  batchName?: string;
+};
+
+export type VendorFeedImportResult = {
+  generatedAt: string;
+  dataSourceId: string;
+  dataSourceName: string;
+  vendorName: string;
+  dryRun: boolean;
+  batch: ImportBatchRecord;
+  run: ImportBatchRunResult;
+  readiness: VendorFeedReadinessItem;
+  nextActions: string[];
+};
+
 export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "blocked_by_policy";
 
 export type CrawlJobRecord = {
