@@ -9,6 +9,8 @@ export type AppEnv = {
   cronSecret?: string;
   sourceAcquisitionCronMode?: string;
   sourceAcquisitionCronMaxRecords?: string;
+  newsroomRssCronMode?: string;
+  newsroomRssCronLimit?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
   googleAdsClientId?: string;
@@ -31,6 +33,8 @@ export function getAppEnv(): AppEnv {
     cronSecret: process.env.CRON_SECRET,
     sourceAcquisitionCronMode: process.env.SOURCE_ACQUISITION_CRON_MODE,
     sourceAcquisitionCronMaxRecords: process.env.SOURCE_ACQUISITION_CRON_MAX_RECORDS,
+    newsroomRssCronMode: process.env.NEWSROOM_RSS_CRON_MODE,
+    newsroomRssCronLimit: process.env.NEWSROOM_RSS_CRON_LIMIT,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     googleAdsClientId: process.env.GOOGLE_ADS_CLIENT_ID,

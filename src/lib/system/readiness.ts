@@ -151,6 +151,15 @@ export function getSystemReadiness() {
         env.sourceAcquisitionCronMode === "live"
           ? undefined
           : "Set SOURCE_ACQUISITION_CRON_MODE=live only after approving live current-site inventory staging; preview mode is safe for monitoring."
+    },
+    {
+      key: "NEWSROOM_RSS_CRON_MODE",
+      label: "Newsroom RSS cron mode",
+      status: env.newsroomRssCronMode === "live" ? "ready" : "partial",
+      action:
+        env.newsroomRssCronMode === "live"
+          ? undefined
+          : "Set NEWSROOM_RSS_CRON_MODE=live only after approving editorial RSS source intake; preview mode records safe dry-run worker evidence."
     }
   ];
   const parkedChecks: ReadinessCheck[] = [

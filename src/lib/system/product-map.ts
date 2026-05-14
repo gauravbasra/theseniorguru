@@ -321,7 +321,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/newsroom/readiness",
       "GET /api/v1/articles",
       "GET /api/v1/articles/{slug}",
-      "GET /api/v1/newsletters/{id}"
+      "GET /api/v1/newsletters/{id}",
+      "GET /api/cron/newsroom"
     ],
     requiredTables: [
       "content_sources",
@@ -335,7 +336,7 @@ const productPillars: ProductPillar[] = [
       "newsletter_editions",
       "content_performance_metrics"
     ],
-    nextBackendWork: ["Newsletter delivery provider adapter", "RSS cron wiring", "Editorial performance trend exports"]
+    nextBackendWork: ["Newsletter delivery provider adapter", "Editorial performance trend exports", "Newsroom cron live-mode approval"]
   },
   {
     key: "policy",
@@ -355,7 +356,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/visual-assets",
       "GET /api/v1/admin/scheduled-worker-runs",
       "GET /api/cron/operations",
-      "GET /api/cron/acquisition"
+      "GET /api/cron/acquisition",
+      "GET /api/cron/newsroom"
     ],
     requiredTables: [
       "policy_rules",

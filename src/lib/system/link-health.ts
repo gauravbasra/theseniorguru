@@ -104,6 +104,7 @@ const routeContracts: LinkContract[] = [
   { label: "Newsroom inbox API", href: "/api/v1/admin/newsroom/inbox", method: "GET", owner: "admin" },
   { label: "Newsroom sources API", href: "/api/v1/admin/newsroom/sources", method: "GET", owner: "admin" },
   { label: "Newsroom RSS import API", href: "/api/v1/admin/newsroom/rss/import", method: "POST", owner: "admin" },
+  { label: "Newsroom RSS cron API", href: "/api/cron/newsroom", method: "GET", owner: "admin" },
   { label: "Newsroom readiness API", href: "/api/v1/admin/newsroom/readiness", method: "GET", owner: "admin" },
   { label: "Partner providers API", href: "/api/v1/partner/providers", method: "GET", owner: "provider" },
   { label: "Partner events API", href: "/api/v1/partner/events", method: "GET", owner: "provider" },

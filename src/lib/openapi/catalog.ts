@@ -309,6 +309,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/newsroom/rss/run": {
         post: { tags: ["Newsroom"], summary: "Run scheduled RSS intake across approved editorial sources" }
       },
+      "/api/cron/newsroom": {
+        get: { tags: ["Newsroom"], summary: "Run protected scheduled newsroom RSS intake and record worker observability" }
+      },
       "/api/v1/admin/newsroom/articles": {
         post: { tags: ["Newsroom"], summary: "Create a policy-gated AI-assisted article draft" }
       },
