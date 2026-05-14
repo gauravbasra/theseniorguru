@@ -1,6 +1,7 @@
 import { listDataSources } from "@/lib/data-sources";
 import { createExtractedEntity } from "@/lib/aggregation/extracted-entities";
 import { getCrawlJobById, listCrawlJobs, listCrawlPages } from "@/lib/aggregation/crawl-jobs";
+import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { DataSourceRecord } from "@/lib/domain/providers";
 import type {
   CrawlJobRecord,
@@ -8,6 +9,8 @@ import type {
   ProviderWebsiteParserCandidate,
   ProviderWebsiteParserReadinessSource,
   ProviderWebsiteParserReadinessSummary,
+  ProviderWebsiteParserRuleOverrideInput,
+  ProviderWebsiteParserRuleOverrideRecord,
   ProviderWebsiteParserRuleReadinessSource,
   ProviderWebsiteParserRuleReadinessSummary,
   ProviderWebsiteParserRuleSignal,
@@ -46,6 +49,65 @@ const serviceKeywords = [
 
 const tourKeywords = ["tour", "schedule a visit", "visit us", "book a visit", "contact us"];
 const pricingKeywords = ["pricing", "rates", "cost", "fees", "medicaid", "medicare", "insurance"];
+const localRuleOverrides: ProviderWebsiteParserRuleOverrideRecord[] = [];
+
+type ParserRuleProfile = {
+  minConfidence: number;
+  minContentCharacters: number;
+  serviceKeywords: string[];
+  conversionKeywords: string[];
+  pricingKeywords: string[];
+  override?: ProviderWebsiteParserRuleOverrideRecord;
+};
+
+function defaultRuleProfile(): ParserRuleProfile {
+  return {
+    minConfidence: 0.55,
+    minContentCharacters: 220,
+    serviceKeywords,
+    conversionKeywords: tourKeywords,
+    pricingKeywords
+  };
+}
+
+function isMissingOverrideTableError(error: { code?: string; message?: string }) {
+  return error.code === "42P01" || error.message?.includes("provider_website_parser_rule_overrides");
+}
+
+function cleanKeywordArray(value: string[] | undefined, fallback: string[]) {
+  const keywords = (value ?? [])
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item.length >= 3);
+
+  return keywords.length ? Array.from(new Set(keywords)).slice(0, 40) : fallback;
+}
+
+function mapRuleOverride(row: Record<string, unknown>, sources: DataSourceRecord[]): ProviderWebsiteParserRuleOverrideRecord {
+  const source = sources.find((item) => item.id === String(row.data_source_id));
+
+  return {
+    id: String(row.id),
+    dataSourceId: String(row.data_source_id),
+    dataSourceName: source?.name,
+    minConfidence: Number(row.min_confidence ?? 0.55),
+    minContentCharacters: Number(row.min_content_characters ?? 220),
+    serviceKeywords: Array.isArray(row.service_keywords) ? row.service_keywords.map(String) : serviceKeywords,
+    conversionKeywords: Array.isArray(row.conversion_keywords) ? row.conversion_keywords.map(String) : tourKeywords,
+    pricingKeywords: Array.isArray(row.pricing_keywords) ? row.pricing_keywords.map(String) : pricingKeywords,
+    status: row.status === "inactive" ? "inactive" : "active",
+    approvedBy: row.approved_by ? String(row.approved_by) : undefined,
+    notes: row.notes ? String(row.notes) : undefined,
+    createdAt: String(row.created_at),
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined
+  };
+}
+
+function withOverrideSource(override: ProviderWebsiteParserRuleOverrideRecord, sources: DataSourceRecord[]) {
+  return {
+    ...override,
+    dataSourceName: override.dataSourceName ?? sources.find((source) => source.id === override.dataSourceId)?.name
+  };
+}
 
 function sourceBlockers(source: DataSourceRecord) {
   return [
@@ -124,19 +186,20 @@ function buildRuleSignals(input: {
     categories: string[];
   };
   page: CrawlPageRecord;
+  ruleProfile: ParserRuleProfile;
 }): ProviderWebsiteParserRuleSignal[] {
   const textLength = input.text.trim().length;
-  const seniorCareEvidence = evidenceSnippet(input.text, serviceKeywords);
-  const conversionEvidence = evidenceSnippet(input.text, tourKeywords);
-  const pricingEvidence = evidenceSnippet(input.text, pricingKeywords);
+  const seniorCareEvidence = evidenceSnippet(input.text, input.ruleProfile.serviceKeywords);
+  const conversionEvidence = evidenceSnippet(input.text, input.ruleProfile.conversionKeywords);
+  const pricingEvidence = evidenceSnippet(input.text, input.ruleProfile.pricingKeywords);
 
   return [
     {
       key: "content_depth",
       label: "Page has enough extractable text for parsing",
-      status: textLength >= 220 ? "passed" : textLength >= 90 ? "warning" : "failed",
+      status: textLength >= input.ruleProfile.minContentCharacters ? "passed" : textLength >= 90 ? "warning" : "failed",
       weight: 0.12,
-      evidence: `${textLength} extracted characters`
+      evidence: `${textLength} extracted characters; threshold ${input.ruleProfile.minContentCharacters}`
     },
     {
       key: "senior_care_relevance",
@@ -190,7 +253,11 @@ function buildRuleSignals(input: {
   ];
 }
 
-function buildCandidate(page: CrawlPageRecord, source: DataSourceRecord): ProviderWebsiteParserCandidate {
+function buildCandidate(
+  page: CrawlPageRecord,
+  source: DataSourceRecord,
+  ruleProfile: ParserRuleProfile = defaultRuleProfile()
+): ProviderWebsiteParserCandidate {
   const text = pageText(page);
   const phone = text.match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}/)?.[0];
   const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
@@ -220,7 +287,7 @@ function buildCandidate(page: CrawlPageRecord, source: DataSourceRecord): Provid
       textLength: text.length
     }
   };
-  const ruleSignals = buildRuleSignals({ text, candidate: candidateBase, page });
+  const ruleSignals = buildRuleSignals({ text, candidate: candidateBase, page, ruleProfile });
   const extractionConfidence = confidenceFor({ ...candidateBase, ruleSignals });
   const blockers = [
     ...(!candidateBase.name ? ["Parser could not infer provider name."] : []),
@@ -228,7 +295,7 @@ function buildCandidate(page: CrawlPageRecord, source: DataSourceRecord): Provid
     ...(ruleSignals.find((signal) => signal.key === "content_depth")?.status === "failed" ? ["Page content is too thin for provider extraction."] : []),
     ...(ruleSignals.find((signal) => signal.key === "senior_care_relevance")?.status === "failed" ? ["Page does not contain enough senior care relevance language."] : []),
     ...(page.statusCode && page.statusCode >= 400 ? [`Crawl page returned HTTP ${page.statusCode}.`] : []),
-    ...(extractionConfidence < 0.55 ? ["Parser confidence is below staging threshold."] : [])
+    ...(extractionConfidence < ruleProfile.minConfidence ? ["Parser confidence is below staging threshold."] : [])
   ];
 
   return {
@@ -238,10 +305,136 @@ function buildCandidate(page: CrawlPageRecord, source: DataSourceRecord): Provid
     extractedFields: {
       ...candidateBase.extractedFields,
       parser: "provider_website_v2",
-      ruleSignals
+      ruleSignals,
+      ruleOverrideId: ruleProfile.override?.id,
+      minConfidence: ruleProfile.minConfidence,
+      minContentCharacters: ruleProfile.minContentCharacters
     },
     blockers
   };
+}
+
+function ruleProfileForSource(source: DataSourceRecord, overrides: ProviderWebsiteParserRuleOverrideRecord[]): ParserRuleProfile {
+  const override = overrides.find((item) => item.dataSourceId === source.id && item.status === "active");
+
+  if (!override) {
+    return defaultRuleProfile();
+  }
+
+  return {
+    minConfidence: override.minConfidence,
+    minContentCharacters: override.minContentCharacters,
+    serviceKeywords: cleanKeywordArray(override.serviceKeywords, serviceKeywords),
+    conversionKeywords: cleanKeywordArray(override.conversionKeywords, tourKeywords),
+    pricingKeywords: cleanKeywordArray(override.pricingKeywords, pricingKeywords),
+    override
+  };
+}
+
+export async function listProviderWebsiteParserRuleOverrides(): Promise<ProviderWebsiteParserRuleOverrideRecord[]> {
+  const supabase = getSupabaseAdminClient();
+  const sources = await listDataSources();
+
+  if (!supabase) {
+    return localRuleOverrides.map((override) => withOverrideSource(override, sources));
+  }
+
+  const { data, error } = await supabase
+    .from("provider_website_parser_rule_overrides")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (isMissingOverrideTableError(error)) {
+      return localRuleOverrides.map((override) => withOverrideSource(override, sources));
+    }
+
+    throw new Error(`Provider website parser rule override query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => mapRuleOverride(row, sources));
+}
+
+export async function upsertProviderWebsiteParserRuleOverride(
+  input: ProviderWebsiteParserRuleOverrideInput
+): Promise<ProviderWebsiteParserRuleOverrideRecord> {
+  const sources = await listDataSources();
+  const source = sources.find((item) => item.id === input.dataSourceId);
+
+  if (!source) {
+    throw new Error("Data source not found");
+  }
+
+  if (source.sourceType !== "provider_website") {
+    throw new Error("Parser rule overrides require a provider website data source");
+  }
+
+  if (source.reviewStatus !== "approved") {
+    throw new Error("Parser rule overrides require an approved provider website source");
+  }
+
+  const minConfidence = Math.max(0.35, Math.min(0.95, input.minConfidence ?? 0.55));
+  const minContentCharacters = Math.max(90, Math.min(2000, Math.floor(input.minContentCharacters ?? 220)));
+  const now = new Date().toISOString();
+  const record: ProviderWebsiteParserRuleOverrideRecord = {
+    id: `provider-website-rule-override-${Date.now()}`,
+    dataSourceId: source.id,
+    dataSourceName: source.name,
+    minConfidence,
+    minContentCharacters,
+    serviceKeywords: cleanKeywordArray(input.serviceKeywords, serviceKeywords),
+    conversionKeywords: cleanKeywordArray(input.conversionKeywords, tourKeywords),
+    pricingKeywords: cleanKeywordArray(input.pricingKeywords, pricingKeywords),
+    status: input.status ?? "active",
+    approvedBy: input.approvedBy,
+    notes: input.notes,
+    createdAt: now,
+    updatedAt: now
+  };
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const existingIndex = localRuleOverrides.findIndex((item) => item.dataSourceId === record.dataSourceId);
+
+    if (existingIndex >= 0) {
+      localRuleOverrides[existingIndex] = { ...record, id: localRuleOverrides[existingIndex].id, createdAt: localRuleOverrides[existingIndex].createdAt };
+      return localRuleOverrides[existingIndex];
+    }
+
+    localRuleOverrides.unshift(record);
+    return record;
+  }
+
+  const { data, error } = await supabase
+    .from("provider_website_parser_rule_overrides")
+    .upsert(
+      {
+        data_source_id: record.dataSourceId,
+        min_confidence: record.minConfidence,
+        min_content_characters: record.minContentCharacters,
+        service_keywords: record.serviceKeywords,
+        conversion_keywords: record.conversionKeywords,
+        pricing_keywords: record.pricingKeywords,
+        status: record.status,
+        approved_by: record.approvedBy,
+        notes: record.notes,
+        updated_at: now
+      },
+      { onConflict: "data_source_id" }
+    )
+    .select("*")
+    .single();
+
+  if (error) {
+    if (!isMissingOverrideTableError(error)) {
+      throw new Error(`Provider website parser rule override upsert failed: ${error.message}`);
+    }
+
+    localRuleOverrides.unshift(record);
+    return record;
+  }
+
+  return mapRuleOverride(data, sources);
 }
 
 function averageConfidence(candidates: ProviderWebsiteParserCandidate[]) {
@@ -329,14 +522,20 @@ export async function getProviderWebsiteParserReadiness(): Promise<ProviderWebsi
 }
 
 export async function getProviderWebsiteParserRuleReadiness(): Promise<ProviderWebsiteParserRuleReadinessSummary> {
-  const [sources, jobs, pages] = await Promise.all([listDataSources(), listCrawlJobs(), listCrawlPages()]);
+  const [sources, jobs, pages, overrides] = await Promise.all([
+    listDataSources(),
+    listCrawlJobs(),
+    listCrawlPages(),
+    listProviderWebsiteParserRuleOverrides()
+  ]);
   const providerSources = sources.filter((source) => source.sourceType === "provider_website");
   const ruleProfiles = providerSources.flatMap((source) => {
+    const ruleProfile = ruleProfileForSource(source, overrides);
     const completedJobs = jobs.filter((job) => job.dataSourceId === source.id && job.status === "completed");
     const sourcePages = pages.filter((page) => completedJobs.some((job) => job.id === page.crawlJobId));
 
     return sourcePages.map((page) => {
-      const candidate = buildCandidate(page, source);
+      const candidate = buildCandidate(page, source, ruleProfile);
 
       return {
         crawlPageId: page.id,
@@ -344,16 +543,18 @@ export async function getProviderWebsiteParserRuleReadiness(): Promise<ProviderW
         candidateName: candidate.name,
         extractionConfidence: candidate.extractionConfidence,
         stageable: !candidate.blockers.length,
+        overrideApplied: ruleProfile.override,
         signals: candidate.ruleSignals ?? [],
         blockers: candidate.blockers
       };
     });
   });
   const sourceSummaries: ProviderWebsiteParserRuleReadinessSource[] = providerSources.map((source) => {
+    const ruleProfile = ruleProfileForSource(source, overrides);
     const sourceBlockerList = sourceBlockers(source);
     const completedJobs = jobs.filter((job) => job.dataSourceId === source.id && job.status === "completed");
     const stagedPages = pages.filter((page) => completedJobs.some((job) => job.id === page.crawlJobId));
-    const candidates = stagedPages.map((page) => buildCandidate(page, source));
+    const candidates = stagedPages.map((page) => buildCandidate(page, source, ruleProfile));
     const sourceRuleBlockers = [
       ...sourceBlockerList,
       ...(!completedJobs.length ? ["No completed crawl job is available for rule tuning."] : []),
@@ -372,6 +573,7 @@ export async function getProviderWebsiteParserRuleReadiness(): Promise<ProviderW
       candidatePages: candidates.length,
       stageableCandidates: candidates.filter((candidate) => !candidate.blockers.length).length,
       averageConfidence: averageConfidence(candidates),
+      overrideApplied: ruleProfile.override,
       signalCoverage: coverageFor(candidates),
       blockers: sourceRuleBlockers,
       nextActions: sourceRuleBlockers.length
@@ -395,6 +597,7 @@ export async function getProviderWebsiteParserRuleReadiness(): Promise<ProviderW
     },
     sources: sourceSummaries,
     ruleProfiles,
+    overrides,
     blockers,
     nextActions: [
       ...(sourceSummaries.some((source) => source.status === "ready")
@@ -410,7 +613,6 @@ export async function runProviderWebsiteParser(
   input: RunProviderWebsiteParserInput
 ): Promise<ProviderWebsiteParserRunResult> {
   const dryRun = input.dryRun ?? true;
-  const minConfidence = input.minConfidence ?? 0.55;
   const job = await getCrawlJobById(input.crawlJobId);
 
   if (!job) {
@@ -434,9 +636,11 @@ export async function runProviderWebsiteParser(
   }
 
   const pages = await listCrawlPages(job.id);
-  const candidates = pages.map((page) => buildCandidate(page, source));
+  const ruleProfile = ruleProfileForSource(source, await listProviderWebsiteParserRuleOverrides());
+  const confidenceThreshold = input.minConfidence ?? ruleProfile.minConfidence;
+  const candidates = pages.map((page) => buildCandidate(page, source, ruleProfile));
   const stageable = candidates.filter(
-    (candidate) => !candidate.blockers.length && candidate.extractionConfidence >= minConfidence
+    (candidate) => !candidate.blockers.length && candidate.extractionConfidence >= confidenceThreshold
   );
   const stagedEntityIds: string[] = [];
 

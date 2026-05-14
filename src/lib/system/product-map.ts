@@ -282,6 +282,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/provider-website-parser",
       "POST /api/v1/admin/provider-website-parser",
       "GET /api/v1/admin/provider-website-parser/rules",
+      "POST /api/v1/admin/provider-website-parser/rules",
       "GET /api/v1/admin/data-quality-flags"
     ],
     requiredTables: [
@@ -292,12 +293,13 @@ const productPillars: ProductPillar[] = [
       "extracted_entity_review_assignments",
       "vendor_feed_connections",
       "source_adapter_manifests",
+      "provider_website_parser_rule_overrides",
       "entity_matches",
       "source_field_values",
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Source manifest signed object fetch executor", "Provider website parser source-specific rule overrides", "Import escalation delivery callback reconciliation"]
+    nextBackendWork: ["Source manifest signed object fetch executor", "Import escalation delivery callback reconciliation", "Provider website parser override audit dashboard"]
   },
   {
     key: "reviews",

@@ -502,7 +502,8 @@ export function getOpenApiCatalog() {
         post: { tags: ["Aggregation"], summary: "Parse completed provider website crawl pages into extracted entity candidates" }
       },
       "/api/v1/admin/provider-website-parser/rules": {
-        get: { tags: ["Aggregation"], summary: "Report provider website parser rule coverage, stageability, and tuning blockers" }
+        get: { tags: ["Aggregation"], summary: "Report provider website parser rule coverage, source overrides, stageability, and tuning blockers" },
+        post: { tags: ["Aggregation"], summary: "Create or update governed source-specific provider website parser rule overrides" }
       },
       "/api/v1/admin/data-quality-flags": {
         get: { tags: ["Aggregation"], summary: "List unresolved data quality flags for import/crawl review" }

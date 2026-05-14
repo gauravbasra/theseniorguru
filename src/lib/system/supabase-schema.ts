@@ -83,7 +83,8 @@ export const migrationManifest = [
   "20260514085800_policy_override_workflow.sql",
   "20260514110500_extracted_entity_review_assignments.sql",
   "20260514132000_vendor_feed_connections.sql",
-  "20260514143000_source_adapter_manifests.sql"
+  "20260514143000_source_adapter_manifests.sql",
+  "20260514153500_provider_website_parser_rule_overrides.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -238,6 +239,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260514143000_source_adapter_manifests.sql": {
     capability: "aggregation",
     summary: "CMS, state, and owner-controlled source adapter file manifest checksum and mapping readiness."
+  },
+  "20260514153500_provider_website_parser_rule_overrides.sql": {
+    capability: "aggregation",
+    summary: "Governed source-specific provider website parser thresholds and keyword overrides."
   }
 };
 
@@ -255,6 +260,7 @@ const requiredTables: RequiredTable[] = [
   { table: "extracted_entity_review_assignments", requiredFor: "Extracted entity review owner and SLA tracking", capability: "aggregation" },
   { table: "vendor_feed_connections", requiredFor: "Vendor feed credential and mapping readiness", capability: "aggregation" },
   { table: "source_adapter_manifests", requiredFor: "CMS and state source adapter file manifest readiness", capability: "aggregation" },
+  { table: "provider_website_parser_rule_overrides", requiredFor: "Source-specific provider website parser rule tuning", capability: "aggregation" },
   { table: "extracted_entity_images", requiredFor: "Public-source image staging review", capability: "aggregation" },
   { table: "entity_match_candidates", requiredFor: "Duplicate detection", capability: "aggregation" },
   { table: "provider_claims", requiredFor: "Free listing claim workflow", capability: "claims" },

@@ -605,7 +605,8 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "provider-website-parser-rules") {
     const totals = record.totals as Record<string, unknown> | undefined;
-    return `${String(totals?.stageableCandidates ?? 0)} provider website candidates stageable, ${String(totals?.candidatePages ?? 0)} candidate pages reviewed, and ${String(totals?.blocked ?? 0)} sources need rule tuning.`;
+    const overrides = Array.isArray(record.overrides) ? record.overrides.length : 0;
+    return `${String(totals?.stageableCandidates ?? 0)} provider website candidates stageable, ${String(totals?.candidatePages ?? 0)} candidate pages reviewed, ${String(overrides)} source override${overrides === 1 ? "" : "s"} active or recorded, and ${String(totals?.blocked ?? 0)} sources need rule tuning.`;
   }
 
   if (key === "vendor-feeds") {

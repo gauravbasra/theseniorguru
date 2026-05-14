@@ -636,12 +636,41 @@ export type ProviderWebsiteParserRuleSignal = {
   evidence?: string;
 };
 
+export type ProviderWebsiteParserRuleOverrideRecord = {
+  id: string;
+  dataSourceId: string;
+  dataSourceName?: string;
+  minConfidence: number;
+  minContentCharacters: number;
+  serviceKeywords: string[];
+  conversionKeywords: string[];
+  pricingKeywords: string[];
+  status: "active" | "inactive";
+  approvedBy?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type ProviderWebsiteParserRuleOverrideInput = {
+  dataSourceId: string;
+  minConfidence?: number;
+  minContentCharacters?: number;
+  serviceKeywords?: string[];
+  conversionKeywords?: string[];
+  pricingKeywords?: string[];
+  status?: "active" | "inactive";
+  approvedBy?: string;
+  notes?: string;
+};
+
 export type ProviderWebsiteParserRuleProfile = {
   crawlPageId: string;
   sourceUrl: string;
   candidateName?: string;
   extractionConfidence: number;
   stageable: boolean;
+  overrideApplied?: ProviderWebsiteParserRuleOverrideRecord;
   signals: ProviderWebsiteParserRuleSignal[];
   blockers: string[];
 };
@@ -671,6 +700,7 @@ export type ProviderWebsiteParserRuleReadinessSource = {
   candidatePages: number;
   stageableCandidates: number;
   averageConfidence: number;
+  overrideApplied?: ProviderWebsiteParserRuleOverrideRecord;
   signalCoverage: Record<string, number>;
   blockers: string[];
   nextActions: string[];
@@ -688,6 +718,7 @@ export type ProviderWebsiteParserRuleReadinessSummary = {
   };
   sources: ProviderWebsiteParserRuleReadinessSource[];
   ruleProfiles: ProviderWebsiteParserRuleProfile[];
+  overrides: ProviderWebsiteParserRuleOverrideRecord[];
   blockers: string[];
   nextActions: string[];
 };
