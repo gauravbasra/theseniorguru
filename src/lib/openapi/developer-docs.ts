@@ -1,5 +1,6 @@
 import { getOpenApiCatalog } from "@/lib/openapi/catalog";
 import { getWebhookSigningGuide } from "@/lib/openapi/platform";
+import { getLinkHealthSummary } from "@/lib/system/link-health";
 
 type OpenApiOperation = {
   tags?: string[];
@@ -49,6 +50,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/onboarding-checklist",
   "/api/v1/partner/changelog",
   "/api/v1/partner/sdk-package-plan",
+  "/api/v1/partner/sandbox-evidence",
   "/api/v1/partner/webhooks/signing-guide",
   "/api/v1/partner/webhooks/verify"
 ];
@@ -352,6 +354,99 @@ export function getWebhookSdkPackagePlan() {
   };
 }
 
+function csvValue(value: unknown) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+export function getPartnerSandboxEvidenceExport() {
+  const catalog = getOpenApiCatalog();
+  const checklist = getPartnerSandboxOnboardingChecklist();
+  const changelog = getPartnerApiChangelog();
+  const sdkPackagePlan = getWebhookSdkPackagePlan();
+  const linkHealth = getLinkHealthSummary();
+  const partnerPaths = Object.keys(catalog.paths).filter((path) => path.startsWith("/api/v1/partner/")).sort();
+
+  const rows = [
+    ...checklist.steps.map((step) => ({
+      evidenceType: "onboarding_step",
+      subject: step.key,
+      status: "required",
+      owner: step.owner,
+      endpoint: step.endpoint,
+      summary: step.completionSignal,
+      blocker: step.blocker
+    })),
+    ...partnerPaths.map((path) => ({
+      evidenceType: "partner_endpoint",
+      subject: path,
+      status: "documented",
+      owner: "partner_engineer",
+      endpoint: path,
+      summary: "Partner endpoint is present in the live OpenAPI catalog.",
+      blocker: ""
+    })),
+    ...changelog.entries.map((entry) => ({
+      evidenceType: "api_version",
+      subject: entry.version,
+      status: entry.status,
+      owner: "partner_ops",
+      endpoint: "GET /api/v1/partner/changelog",
+      summary: entry.summary,
+      blocker: entry.breakingChanges.length ? entry.breakingChanges.join(" ") : ""
+    })),
+    ...sdkPackagePlan.ownerBlockers.map((blocker, index) => ({
+      evidenceType: "sdk_owner_blocker",
+      subject: `sdk-blocker-${index + 1}`,
+      status: "blocked_pending_owner_approval",
+      owner: "platform_admin",
+      endpoint: "GET /api/v1/partner/sdk-package-plan",
+      summary: blocker,
+      blocker
+    }))
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Partner Sandbox Evidence Export",
+    status: linkHealth.status === "passed" ? "ready_for_partner_review" : "blocked_link_health",
+    currentVersion: changelog.currentVersion,
+    linkHealth: {
+      status: linkHealth.status,
+      total: linkHealth.total,
+      invalid: linkHealth.invalidCount
+    },
+    totals: {
+      rows: rows.length,
+      onboardingSteps: checklist.steps.length,
+      partnerEndpoints: partnerPaths.length,
+      apiVersions: changelog.entries.length,
+      ownerBlockers: sdkPackagePlan.ownerBlockers.length
+    },
+    reviewGates: [
+      "Confirm sandbox API client, key custody, and required scopes before partner testing.",
+      "Export usage analytics separately from /api/v1/partner/usage?format=csv with the partner key.",
+      "Attach webhook replay evidence when webhooks are part of the partner promotion request.",
+      "Resolve owner blockers before SDK package links or production-mode partner clients are published."
+    ],
+    rows
+  };
+}
+
+export function exportPartnerSandboxEvidenceCsv() {
+  const evidence = getPartnerSandboxEvidenceExport();
+  const columns = ["evidenceType", "subject", "status", "owner", "endpoint", "summary", "blocker"] as const;
+  const csv = [
+    columns.join(","),
+    ...evidence.rows.map((row) => columns.map((column) => csvValue(row[column])).join(","))
+  ].join("\n");
+
+  return {
+    filename: `partner-sandbox-evidence-${evidence.currentVersion}.csv`,
+    csv
+  };
+}
+
 export function getPartnerDeveloperDocs() {
   const catalog = getOpenApiCatalog();
   const signingGuide = getWebhookSigningGuide();
@@ -408,6 +503,7 @@ export function getPartnerDeveloperDocs() {
     sandboxOnboarding: getPartnerSandboxOnboardingChecklist(),
     changelog: getPartnerApiChangelog(),
     sdkPackagePlan: getWebhookSdkPackagePlan(),
+    sandboxEvidence: getPartnerSandboxEvidenceExport(),
     operationalControls: [
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",

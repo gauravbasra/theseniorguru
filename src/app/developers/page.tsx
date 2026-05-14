@@ -157,6 +157,22 @@ export default function DevelopersPage() {
         ))}
       </section>
 
+      <section className="operator-band">
+        <div>
+          <p className="eyebrow">Sandbox evidence export</p>
+          <h2>{docs.sandboxEvidence.title}</h2>
+          <p>
+            {docs.sandboxEvidence.totals.rows} evidence rows across onboarding, endpoints, versioning, and owner
+            blockers are ready for partner review.
+          </p>
+        </div>
+        <article className="profile-card">
+          <p className="eyebrow">Export status</p>
+          <h2>{docs.sandboxEvidence.status.replaceAll("_", " ")}</h2>
+          <p>Link health: {docs.sandboxEvidence.linkHealth.status}</p>
+        </article>
+      </section>
+
       <section className="category-strip">
         <div>
           <p className="eyebrow">Operations controls</p>

@@ -471,6 +471,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/partner/onboarding-checklist",
       "GET /api/v1/partner/changelog",
       "GET /api/v1/partner/sdk-package-plan",
+      "GET /api/v1/partner/sandbox-evidence",
+      "GET /api/v1/partner/sandbox-evidence?format=csv",
       "GET /api/v1/partner/developer-docs",
       "POST /api/v1/partner/webhooks/verify",
       "GET /api/v1/partner/webhooks/signing-guide",
@@ -484,7 +486,7 @@ const productPillars: ProductPillar[] = [
       "webhook_delivery_attempts",
       "api_audit_events"
     ],
-    nextBackendWork: ["Partner sandbox evidence export", "Partner response envelope versioning", "Owner-approved SDK registry publishing"]
+    nextBackendWork: ["Partner response envelope versioning", "Owner-approved SDK registry publishing", "Partner production promotion approval workflow"]
   }
 ];
 
