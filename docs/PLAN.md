@@ -138,6 +138,7 @@ Deliverables:
 - Import escalation HTTPS internal queue adapter with readiness validation, live dispatch, and audit evidence. Completed.
 - Import escalation delivery callback reconciliation API with policy gate and operational audit evidence. Completed.
 - Import escalation retry scheduler API with dry-run candidate detection, live retry scheduling audit evidence, and admin console access. Completed.
+- Import escalation retry delivery executor API with dry-run batch preview, manual export execution evidence, internal queue readiness gates, and admin console access. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
@@ -173,7 +174,7 @@ Deliverables:
 - Extracted entity approval, rejection, duplicate, audit workflow. Completed.
 - Extracted entity review owner assignment and SLA tracking. Completed.
 - Import operator escalation reporting. Completed.
-- Import escalation delivery notifications, HTTPS internal queue adapter, delivery callback reconciliation, and retry scheduling evidence. Completed.
+- Import escalation delivery notifications, HTTPS internal queue adapter, delivery callback reconciliation, retry scheduling evidence, and retry delivery execution. Completed.
 - Vendor feed credential workflow. Completed.
 - Vendor feed import runner. Completed.
 - Scheduled vendor feed worker. Completed.

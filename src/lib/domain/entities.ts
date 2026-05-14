@@ -357,3 +357,39 @@ export type ExtractedEntityEscalationRetrySchedulerResult = {
   blockers: string[];
   nextActions: string[];
 };
+
+export type ExtractedEntityEscalationRetryDeliveryBatch = {
+  retryScheduleAuditEventId: string;
+  scheduledAt: string;
+  retryKeys: string[];
+  candidates: ExtractedEntityEscalationRetrySchedulerCandidate[];
+  reason?: string;
+};
+
+export type RunExtractedEntityEscalationRetryDeliveryInput = {
+  dryRun?: boolean;
+  limit?: number;
+  deliveryProvider?: ExtractedEntityEscalationDeliveryProvider;
+  actorId?: string;
+  reason?: string;
+};
+
+export type ExtractedEntityEscalationRetryDeliveryResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  limit: number;
+  deliveryProvider: ExtractedEntityEscalationDeliveryProvider;
+  deliveryReadiness: ExtractedEntityEscalationDeliveryChannel;
+  batches: ExtractedEntityEscalationRetryDeliveryBatch[];
+  executed: number;
+  deliveryAttempt?: {
+    provider: ExtractedEntityEscalationDeliveryProvider;
+    target?: string;
+    statusCode?: number;
+    providerMessageId?: string;
+    deliveredAt?: string;
+  };
+  auditEventId?: string;
+  blockers: string[];
+  nextActions: string[];
+};

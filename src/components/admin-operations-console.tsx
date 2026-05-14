@@ -445,6 +445,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Send aria-hidden="true" />}
+          label="Deliver retries"
+          loading={loadingKey === "escalation-retry-delivery"}
+          onClick={() =>
+            runOperation("Import escalation retry delivery", "escalation-retry-delivery", () =>
+              fetch("/api/v1/admin/extracted-entities/escalations/retry-delivery", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, limit: 25 })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<ListChecks aria-hidden="true" />}
           label="Worker health"
           loading={loadingKey === "worker-health"}
@@ -660,6 +674,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "escalation-retry-scheduler") {
     const candidates = Array.isArray(record.candidates) ? record.candidates.length : 0;
     return `${String(candidates)} import escalation delivery retry candidate${candidates === 1 ? "" : "s"} found, ${String(record.scheduled ?? 0)} scheduled, dry-run ${String(record.dryRun)}.`;
+  }
+
+  if (key === "escalation-retry-delivery") {
+    const batches = Array.isArray(record.batches) ? record.batches.length : 0;
+    return `${String(batches)} import escalation retry delivery batch${batches === 1 ? "" : "es"} pending, ${String(record.executed ?? 0)} executed, dry-run ${String(record.dryRun)}.`;
   }
 
   if (key === "vendor-feeds") {

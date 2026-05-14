@@ -8,6 +8,8 @@ import type {
   ExtractedEntityEscalationDeliveryChannel,
   ExtractedEntityEscalationDeliveryReadiness,
   ExtractedEntityEscalationRetrySchedulerCandidate,
+  ExtractedEntityEscalationRetryDeliveryBatch,
+  ExtractedEntityEscalationRetryDeliveryResult,
   ExtractedEntityEscalationRetrySchedulerResult,
   ExtractedEntityReviewEscalationSummary,
   ExtractedEntityReviewAssignmentRecord,
@@ -17,6 +19,7 @@ import type {
   ExtractedEntityReviewQueueItem,
   ExtractedEntityReviewQueueSummary,
   NotifyExtractedEntityReviewEscalationsInput,
+  RunExtractedEntityEscalationRetryDeliveryInput,
   RunExtractedEntityEscalationRetrySchedulerInput
 } from "@/lib/domain/entities";
 import type { DataQualityFlagRecord } from "@/lib/domain/imports";
@@ -879,6 +882,57 @@ async function dispatchInternalEscalationQueue(input: {
   };
 }
 
+async function dispatchInternalEscalationRetryQueue(input: {
+  batches: ExtractedEntityEscalationRetryDeliveryBatch[];
+  actorId?: string;
+}) {
+  const queueUrl = process.env.INTERNAL_NOTIFICATION_QUEUE_URL?.trim();
+
+  if (!queueUrl || !isValidHttpsTarget(queueUrl)) {
+    throw new Error("INTERNAL_NOTIFICATION_QUEUE_URL must be a valid HTTPS endpoint for live retry dispatch");
+  }
+
+  const response = await fetch(queueUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(process.env.INTERNAL_NOTIFICATION_QUEUE_TOKEN
+        ? { authorization: `Bearer ${process.env.INTERNAL_NOTIFICATION_QUEUE_TOKEN}` }
+        : {}),
+      ...(process.env.INTERNAL_NOTIFICATION_QUEUE_TOPIC
+        ? { "x-notification-topic": process.env.INTERNAL_NOTIFICATION_QUEUE_TOPIC }
+        : {})
+    },
+    body: JSON.stringify({
+      eventType: "extracted_entity.escalation_retry_delivery",
+      generatedAt: new Date().toISOString(),
+      actorId: input.actorId,
+      retryBatchCount: input.batches.length,
+      retryKeys: input.batches.flatMap((batch) => batch.retryKeys),
+      batches: input.batches
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Internal notification queue returned HTTP ${response.status}${body ? `: ${body.slice(0, 180)}` : ""}`);
+  }
+
+  const providerMessageId =
+    response.headers.get("x-message-id") ??
+    response.headers.get("x-request-id") ??
+    response.headers.get("x-vercel-id") ??
+    undefined;
+
+  return {
+    provider: "internal_notification_queue" as const,
+    target: queueUrl,
+    statusCode: response.status,
+    providerMessageId,
+    deliveredAt: new Date().toISOString()
+  };
+}
+
 export async function notifyExtractedEntityReviewEscalations(
   input: NotifyExtractedEntityReviewEscalationsInput = {}
 ): Promise<ExtractedEntityEscalationNotificationResult> {
@@ -1171,6 +1225,128 @@ export async function runExtractedEntityEscalationRetryScheduler(
       ...(dryRun && candidates.length ? ["Review retry candidates, then run live mode to record retry scheduling evidence."] : []),
       ...(!dryRun && candidates.length ? ["Retry scheduling audit evidence was recorded; watch for delivery callbacks before another retry pass."] : []),
       ...(!candidates.length ? ["No failed or retry-scheduled escalation delivery callbacks currently need retry scheduling."] : []),
+      ...blockers
+    ]
+  };
+}
+
+function retryDeliveryBatchFromEvent(
+  event: Awaited<ReturnType<typeof listAuditEvents>>["events"][number]
+): ExtractedEntityEscalationRetryDeliveryBatch | undefined {
+  const candidates = Array.isArray(event.payload.candidates)
+    ? (event.payload.candidates as ExtractedEntityEscalationRetrySchedulerCandidate[])
+    : [];
+  const retryKeys = Array.isArray(event.payload.retryKeys) ? event.payload.retryKeys.map(String) : [];
+
+  if (!candidates.length && !retryKeys.length) {
+    return undefined;
+  }
+
+  const reason = typeof event.payload.reason === "string" ? event.payload.reason : undefined;
+
+  return {
+    retryScheduleAuditEventId: event.id,
+    scheduledAt: event.createdAt,
+    retryKeys: retryKeys.length ? retryKeys : candidates.map((candidate) => candidate.messageKey),
+    candidates,
+    ...(reason ? { reason } : {})
+  } satisfies ExtractedEntityEscalationRetryDeliveryBatch;
+}
+
+export async function runExtractedEntityEscalationRetryDelivery(
+  input: RunExtractedEntityEscalationRetryDeliveryInput = {}
+): Promise<ExtractedEntityEscalationRetryDeliveryResult> {
+  const dryRun = input.dryRun ?? true;
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 25), 100));
+  const deliveryProvider = input.deliveryProvider ?? "manual_export";
+  const deliveryReadiness = escalationDeliveryReadinessForProvider(deliveryProvider);
+  const [scheduledSummary, executedSummary] = await Promise.all([
+    listAuditEvents({
+      eventType: "extracted_entity.escalation_retry_scheduled",
+      subjectType: "extracted_entity_review_escalation",
+      limit: 250
+    }),
+    listAuditEvents({
+      eventType: "extracted_entity.escalation_retry_delivery_executed",
+      subjectType: "extracted_entity_review_escalation",
+      limit: 250
+    })
+  ]);
+  const executedScheduleIds = new Set(
+    executedSummary.events
+      .map((event) => event.payload.retryScheduleAuditEventId)
+      .filter((value): value is string => typeof value === "string")
+  );
+  const batches = scheduledSummary.events
+    .map(retryDeliveryBatchFromEvent)
+    .filter((batch): batch is ExtractedEntityEscalationRetryDeliveryBatch => Boolean(batch))
+    .filter((batch) => !executedScheduleIds.has(batch.retryScheduleAuditEventId))
+    .slice(0, limit);
+  const blockers = [
+    ...(deliveryProvider !== "manual_export" && deliveryReadiness.status !== "ready"
+      ? [`${deliveryReadiness.label} is not ready for live retry delivery.`]
+      : []),
+    ...(batches.length >= limit ? [`Retry delivery batch list was capped at ${limit}; run another executor pass after this batch.`] : [])
+  ];
+  const policy = await runPolicyCheck({
+    subjectType: "extracted_entity_review_escalation",
+    actionKey: "execute_extracted_entity_escalation_retry_delivery",
+    input: {
+      dryRun,
+      deliveryProvider,
+      batchCount: batches.length,
+      limit
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Extracted entity escalation retry delivery blocked by policy");
+  }
+
+  const deliveryAttempt =
+    !dryRun && !blockers.length && batches.length && deliveryProvider === "internal_notification_queue"
+      ? await dispatchInternalEscalationRetryQueue({ batches, actorId: input.actorId })
+      : !dryRun && !blockers.length && batches.length
+        ? {
+            provider: "manual_export" as const,
+            deliveredAt: new Date().toISOString()
+          }
+        : undefined;
+  const audit =
+    !dryRun && !blockers.length && batches.length
+      ? await recordAuditEvent({
+          actorId: input.actorId,
+          actorType: input.actorId ? "admin" : "system",
+          eventType: "extracted_entity.escalation_retry_delivery_executed",
+          subjectType: "extracted_entity_review_escalation",
+          payload: {
+            retryScheduleAuditEventId: batches[0]?.retryScheduleAuditEventId,
+            retryScheduleAuditEventIds: batches.map((batch) => batch.retryScheduleAuditEventId),
+            retryKeys: batches.flatMap((batch) => batch.retryKeys),
+            deliveryProvider,
+            deliveryAttempt,
+            reason: input.reason ?? "import escalation retry delivery executor",
+            policyDecision: policy.decision
+          }
+        })
+      : undefined;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    limit,
+    deliveryProvider,
+    deliveryReadiness,
+    batches,
+    executed: dryRun || blockers.length ? 0 : batches.length,
+    deliveryAttempt,
+    auditEventId: audit?.id,
+    blockers,
+    nextActions: [
+      ...(dryRun && batches.length ? ["Review retry delivery batches, then run live mode after confirming delivery provider readiness."] : []),
+      ...(!dryRun && batches.length && deliveryProvider === "manual_export" ? ["Manual retry export evidence was recorded; launch operations should complete follow-up outside the platform."] : []),
+      ...(!dryRun && deliveryAttempt?.provider === "internal_notification_queue" ? ["Internal notification queue accepted retry delivery; wait for delivery callbacks before another retry pass."] : []),
+      ...(!batches.length ? ["No scheduled import escalation retry batches are pending delivery."] : []),
       ...blockers
     ]
   };
