@@ -79,7 +79,8 @@ export const migrationManifest = [
   "20260512034500_event_attendance_capture.sql",
   "20260513191500_provider_claim_document_reviews.sql",
   "20260514070334_newsroom_content_performance_metrics.sql",
-  "20260514073400_newsletter_delivery_attempts.sql"
+  "20260514073400_newsletter_delivery_attempts.sql",
+  "20260514085800_policy_override_workflow.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -218,6 +219,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260514073400_newsletter_delivery_attempts.sql": {
     capability: "newsroom",
     summary: "Newsletter delivery attempts, provider payload previews, send blockers, and sent evidence."
+  },
+  "20260514085800_policy_override_workflow.sql": {
+    capability: "policy",
+    summary: "Policy approval requests and override evidence for governed launch actions."
   }
 };
 
@@ -270,6 +275,8 @@ const requiredTables: RequiredTable[] = [
   { table: "webhook_deliveries", requiredFor: "Webhook delivery queue", capability: "openApi" },
   { table: "webhook_delivery_attempts", requiredFor: "Webhook retry evidence", capability: "openApi" },
   { table: "policy_checks", requiredFor: "Policy guardrail audit", capability: "policy" },
+  { table: "policy_approval_requests", requiredFor: "Policy approval workflow", capability: "policy" },
+  { table: "policy_overrides", requiredFor: "Policy override audit evidence", capability: "policy" },
   { table: "audit_events", requiredFor: "Operational audit trail", capability: "policy" },
   { table: "scheduled_worker_runs", requiredFor: "Scheduled worker observability", capability: "policy" }
 ];

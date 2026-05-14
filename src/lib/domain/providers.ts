@@ -119,6 +119,7 @@ export type PolicyCheckRequest = {
 };
 
 export type PolicyCheckResult = {
+  id?: string;
   decision: PolicyDecision;
   reasons: string[];
   requiredDisclosures: string[];
@@ -158,5 +159,35 @@ export type PolicyQueueSummary = {
     disclosureRequired: PolicyQueueItem[];
     approved: PolicyQueueItem[];
   };
+  nextActions: string[];
+};
+
+export type PolicyOverrideStatus = "requested" | "approved" | "rejected" | "expired";
+
+export type PolicyOverrideRequest = {
+  id: string;
+  policyCheckId: string;
+  status: PolicyOverrideStatus;
+  reason: string;
+  requestedBy: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
+  expiresAt?: string;
+  createdAt: string;
+  reviewedAt?: string;
+  policyCheck?: PolicyQueueItem;
+};
+
+export type PolicyOverrideSummary = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  totals: {
+    requests: number;
+    requested: number;
+    approved: number;
+    rejected: number;
+    expired: number;
+  };
+  requests: PolicyOverrideRequest[];
   nextActions: string[];
 };

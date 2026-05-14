@@ -3,6 +3,9 @@ import type {
   PolicyCheckRequest,
   PolicyCheckResult,
   PolicyDecision,
+  PolicyOverrideRequest,
+  PolicyOverrideStatus,
+  PolicyOverrideSummary,
   PolicyQueueItem,
   PolicyQueueSummary
 } from "@/lib/domain/providers";
@@ -30,6 +33,7 @@ type PolicyCheckRecord = {
 };
 
 const localPolicyChecks: PolicyCheckRecord[] = [];
+const localPolicyOverrides: PolicyOverrideRequest[] = [];
 
 function mapPolicyCheck(row: Record<string, unknown>): PolicyCheckRecord {
   return {
@@ -100,6 +104,26 @@ function toPolicyQueueItem(record: PolicyCheckRecord): PolicyQueueItem {
   };
 }
 
+function findLocalPolicyCheck(id: string) {
+  return localPolicyChecks.find((check) => check.id === id);
+}
+
+function mapPolicyOverride(row: Record<string, unknown>, policyCheck?: PolicyQueueItem): PolicyOverrideRequest {
+  return {
+    id: String(row.id),
+    policyCheckId: String(row.policy_check_id),
+    status: row.status as PolicyOverrideStatus,
+    reason: String(row.reason ?? ""),
+    requestedBy: String(row.requested_by ?? "admin"),
+    reviewedBy: row.reviewed_by ? String(row.reviewed_by) : undefined,
+    reviewNotes: row.review_notes ? String(row.review_notes) : undefined,
+    expiresAt: row.expires_at ? String(row.expires_at) : undefined,
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    reviewedAt: row.reviewed_at ? String(row.reviewed_at) : undefined,
+    policyCheck
+  };
+}
+
 export async function runPolicyCheck(request: PolicyCheckRequest): Promise<PolicyCheckResult> {
   const haystack = JSON.stringify(request.input).toLowerCase();
   const hardBlock = hardBlockPatterns.find((pattern) => haystack.includes(pattern));
@@ -134,16 +158,26 @@ export async function runPolicyCheck(request: PolicyCheckRequest): Promise<Polic
 
   const supabase = getSupabaseAdminClient();
   if (supabase) {
-    await supabase.from("policy_checks").insert({
-      subject_type: request.subjectType,
-      subject_id: request.subjectId,
-      action_key: request.actionKey,
-      input_payload: request.input,
-      decision: result.decision,
-      reasons: result.reasons
-    });
+    const { data, error } = await supabase
+      .from("policy_checks")
+      .insert({
+        subject_type: request.subjectType,
+        subject_id: request.subjectId,
+        action_key: request.actionKey,
+        input_payload: request.input,
+        decision: result.decision,
+        reasons: result.reasons
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      throw new Error(`Policy check persistence failed: ${error.message}`);
+    }
+
+    result.id = String(data.id);
   } else {
-    localPolicyChecks.unshift({
+    const record: PolicyCheckRecord = {
       id: `policy-check-${crypto.randomUUID()}`,
       subjectType: request.subjectType,
       subjectId: request.subjectId,
@@ -152,7 +186,10 @@ export async function runPolicyCheck(request: PolicyCheckRequest): Promise<Polic
       decision: result.decision,
       reasons: result.reasons,
       checkedAt: new Date().toISOString()
-    });
+    };
+
+    localPolicyChecks.unshift(record);
+    result.id = record.id;
   }
 
   return result;
@@ -221,4 +258,238 @@ export async function getPolicyQueue(input: { decision?: PolicyDecision; limit?:
     },
     nextActions
   };
+}
+
+export async function createPolicyOverrideRequest(input: {
+  policyCheckId: string;
+  reason: string;
+  requestedBy?: string;
+  expiresAt?: string;
+}): Promise<PolicyOverrideRequest> {
+  const reason = input.reason.trim();
+
+  if (!reason) {
+    throw new Error("Override reason is required");
+  }
+
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const policyCheck = findLocalPolicyCheck(input.policyCheckId);
+
+    if (!policyCheck) {
+      throw new Error("Policy check not found");
+    }
+
+    if (policyCheck.decision === "approved") {
+      throw new Error("Approved checks do not require an override request");
+    }
+
+    if (policyCheck.decision === "blocked_non_overridable") {
+      throw new Error("Non-overridable policy checks cannot be overridden");
+    }
+
+    const request: PolicyOverrideRequest = {
+      id: `policy-override-${crypto.randomUUID()}`,
+      policyCheckId: input.policyCheckId,
+      status: "requested",
+      reason,
+      requestedBy: input.requestedBy ?? "admin",
+      expiresAt: input.expiresAt,
+      createdAt: new Date().toISOString(),
+      policyCheck: toPolicyQueueItem(policyCheck)
+    };
+
+    localPolicyOverrides.unshift(request);
+    return request;
+  }
+
+  const { data: check, error: checkError } = await supabase
+    .from("policy_checks")
+    .select("*")
+    .eq("id", input.policyCheckId)
+    .single();
+
+  if (checkError || !check) {
+    throw new Error(`Policy check lookup failed: ${checkError?.message ?? "not found"}`);
+  }
+
+  const mappedCheck = mapPolicyCheck(check);
+
+  if (mappedCheck.decision === "approved") {
+    throw new Error("Approved checks do not require an override request");
+  }
+
+  if (mappedCheck.decision === "blocked_non_overridable") {
+    throw new Error("Non-overridable policy checks cannot be overridden");
+  }
+
+  const { data, error } = await supabase
+    .from("policy_approval_requests")
+    .insert({
+      policy_check_id: input.policyCheckId,
+      status: "requested",
+      reason,
+      requested_by: input.requestedBy ?? "admin",
+      expires_at: input.expiresAt
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Policy override request creation failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_type: "admin",
+    event_type: "policy.override_requested",
+    subject_type: "policy_check",
+    subject_id: input.policyCheckId,
+    payload: { reason, requestedBy: input.requestedBy ?? "admin" }
+  });
+
+  return mapPolicyOverride(data, toPolicyQueueItem(mappedCheck));
+}
+
+export async function listPolicyOverrideRequests(
+  input: { status?: PolicyOverrideStatus; limit?: number } = {}
+): Promise<PolicyOverrideSummary> {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 100), 250));
+  const supabase = getSupabaseAdminClient();
+  let source: PolicyOverrideSummary["source"] = "local_fallback";
+  let requests: PolicyOverrideRequest[];
+
+  if (supabase) {
+    source = "supabase";
+    let query = supabase
+      .from("policy_approval_requests")
+      .select("*, policy_checks(*)")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (input.status) {
+      query = query.eq("status", input.status);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`Policy override request query failed: ${error.message}`);
+    }
+
+    requests = (data ?? []).map((row) => {
+      const check = row.policy_checks && typeof row.policy_checks === "object" ? toPolicyQueueItem(mapPolicyCheck(row.policy_checks)) : undefined;
+      return mapPolicyOverride(row, check);
+    });
+  } else {
+    requests = localPolicyOverrides
+      .filter((request) => !input.status || request.status === input.status)
+      .slice(0, limit);
+  }
+
+  const nextActions = [
+    ...(requests.some((request) => request.status === "requested")
+      ? ["Review requested policy overrides and approve or reject them before execution continues."]
+      : []),
+    ...(requests.some((request) => request.status === "approved")
+      ? ["Ensure approved overrides are time-bound and visible in downstream audit history."]
+      : []),
+    ...(!requests.length ? ["No policy override requests exist in the current result window."] : [])
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source,
+    totals: {
+      requests: requests.length,
+      requested: requests.filter((request) => request.status === "requested").length,
+      approved: requests.filter((request) => request.status === "approved").length,
+      rejected: requests.filter((request) => request.status === "rejected").length,
+      expired: requests.filter((request) => request.status === "expired").length
+    },
+    requests,
+    nextActions
+  };
+}
+
+export async function decidePolicyOverrideRequest(input: {
+  id: string;
+  decision: "approved" | "rejected";
+  reviewedBy?: string;
+  reviewNotes?: string;
+}): Promise<PolicyOverrideRequest> {
+  const supabase = getSupabaseAdminClient();
+  const reviewedAt = new Date().toISOString();
+
+  if (!supabase) {
+    const request = localPolicyOverrides.find((item) => item.id === input.id);
+
+    if (!request) {
+      throw new Error("Policy override request not found");
+    }
+
+    if (request.status !== "requested") {
+      throw new Error("Only requested policy overrides can be decided");
+    }
+
+    request.status = input.decision;
+    request.reviewedBy = input.reviewedBy ?? "admin";
+    request.reviewNotes = input.reviewNotes;
+    request.reviewedAt = reviewedAt;
+    return request;
+  }
+
+  const { data: existing, error: lookupError } = await supabase
+    .from("policy_approval_requests")
+    .select("*")
+    .eq("id", input.id)
+    .single();
+
+  if (lookupError || !existing) {
+    throw new Error(`Policy override lookup failed: ${lookupError?.message ?? "not found"}`);
+  }
+
+  if (existing.status !== "requested") {
+    throw new Error("Only requested policy overrides can be decided");
+  }
+
+  const { data, error } = await supabase
+    .from("policy_approval_requests")
+    .update({
+      status: input.decision,
+      reviewed_by: input.reviewedBy ?? "admin",
+      review_notes: input.reviewNotes,
+      reviewed_at: reviewedAt
+    })
+    .eq("id", input.id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Policy override decision failed: ${error.message}`);
+  }
+
+  if (input.decision === "approved") {
+    const { error: overrideError } = await supabase.from("policy_overrides").insert({
+      approval_request_id: input.id,
+      policy_check_id: existing.policy_check_id,
+      reason: existing.reason,
+      approved_by: input.reviewedBy ?? "admin",
+      expires_at: existing.expires_at
+    });
+
+    if (overrideError) {
+      throw new Error(`Policy override audit creation failed: ${overrideError.message}`);
+    }
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_type: "admin",
+    event_type: `policy.override_${input.decision}`,
+    subject_type: "policy_approval_request",
+    subject_id: input.id,
+    payload: { reviewedBy: input.reviewedBy ?? "admin", reviewNotes: input.reviewNotes }
+  });
+
+  return mapPolicyOverride(data);
 }

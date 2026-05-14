@@ -502,6 +502,13 @@ export function getOpenApiCatalog() {
       },
       "/api/v1/admin/policy-queue": {
         get: { tags: ["Policy"], summary: "List policy checks requiring review, disclosure verification, or blocked-action resolution" }
+      },
+      "/api/v1/admin/policy-overrides": {
+        get: { tags: ["Policy"], summary: "List policy override approval requests" },
+        post: { tags: ["Policy"], summary: "Request a governed override for an overridable policy check" }
+      },
+      "/api/v1/admin/policy-overrides/{id}/decide": {
+        post: { tags: ["Policy"], summary: "Approve or reject a requested policy override with audit evidence" }
       }
     },
     security: [

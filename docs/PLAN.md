@@ -104,6 +104,7 @@ Deliverables:
 - Context-specific visual assets for local events, newsroom guidance, and trust/safety with surface-mapped readiness metadata. Completed.
 - Context-specific visual asset wiring for public article, city, and care-type SEO routes. Completed.
 - Policy queue API for review-required, disclosure-required, blocked, and approved policy checks with link-health/OpenAPI coverage. Completed.
+- Policy override request and decision APIs with audit-ready Supabase schema, local fallback, and route catalog coverage. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 

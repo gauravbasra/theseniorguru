@@ -105,6 +105,8 @@ const routeContracts: LinkContract[] = [
   { label: "API audit events API", href: "/api/v1/admin/api-audit-events", method: "GET", owner: "admin" },
   { label: "Scheduled worker runs API", href: "/api/v1/admin/scheduled-worker-runs", method: "GET", owner: "admin" },
   { label: "Policy queue API", href: "/api/v1/admin/policy-queue", method: "GET", owner: "admin" },
+  { label: "Policy overrides API", href: "/api/v1/admin/policy-overrides", method: "GET", owner: "admin" },
+  { label: "Policy override decision API", href: "/api/v1/admin/policy-overrides/demo/decide", method: "POST", owner: "admin" },
   { label: "Newsroom inbox API", href: "/api/v1/admin/newsroom/inbox", method: "GET", owner: "admin" },
   { label: "Newsroom sources API", href: "/api/v1/admin/newsroom/sources", method: "GET", owner: "admin" },
   { label: "Newsroom RSS import API", href: "/api/v1/admin/newsroom/rss/import", method: "POST", owner: "admin" },
