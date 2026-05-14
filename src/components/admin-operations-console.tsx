@@ -146,6 +146,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="Escalations"
+          loading={loadingKey === "entity-escalations"}
+          onClick={() =>
+            runOperation("Extracted entity escalations", "entity-escalations", () =>
+              fetch("/api/v1/admin/extracted-entities/escalations?limit=25")
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Approve entity"
           loading={loadingKey === "approve"}
@@ -385,6 +395,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "entity-review-assignment") {
     return `Extracted entity review was assigned to ${String(record.assignedTo ?? "the review owner")} with an SLA due date.`;
+  }
+
+  if (key === "entity-escalations") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.overdue ?? 0)} overdue, ${String(totals?.dueSoon ?? 0)} due soon, ${String(totals?.unassigned ?? 0)} unassigned, and ${String(totals?.blockedRoutes ?? 0)} blocked routes.`;
   }
 
   if (key === "worker-health") {

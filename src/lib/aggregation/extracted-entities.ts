@@ -2,6 +2,7 @@ import type {
   AssignExtractedEntityReviewInput,
   CreateExtractedEntityInput,
   ExtractedEntityDecisionInput,
+  ExtractedEntityReviewEscalationSummary,
   ExtractedEntityReviewAssignmentRecord,
   ExtractedEntityQualityAuditRecord,
   ExtractedEntityQualityAuditResult,
@@ -690,6 +691,50 @@ export async function assignExtractedEntityReview(
   });
 
   return mapReviewAssignment(data);
+}
+
+export async function getExtractedEntityReviewEscalations(input: {
+  limit?: number;
+  minImages?: number;
+} = {}): Promise<ExtractedEntityReviewEscalationSummary> {
+  const queue = await getExtractedEntityReviewQueue({
+    status: "all",
+    limit: input.limit ?? 100,
+    minImages: input.minImages
+  });
+  const actionableItems = queue.items.filter((item) => item.route !== "approve_ready" || item.slaStatus === "overdue");
+  const overdue = actionableItems.filter((item) => item.slaStatus === "overdue");
+  const dueSoon = actionableItems.filter((item) => item.slaStatus === "due_soon");
+  const unassigned = actionableItems.filter((item) => item.slaStatus === "unassigned");
+  const blockedRoutes = actionableItems.filter(
+    (item) => item.route === "legal_review" || item.route === "image_rights_review" || item.priority === "critical"
+  );
+  const status = overdue.length || blockedRoutes.length ? "blocked" : dueSoon.length || unassigned.length ? "attention_needed" : "ready";
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status,
+    totals: {
+      entities: queue.totals.entities,
+      overdue: overdue.length,
+      dueSoon: dueSoon.length,
+      unassigned: unassigned.length,
+      blockedRoutes: blockedRoutes.length
+    },
+    overdue,
+    dueSoon,
+    unassigned,
+    blockedRoutes,
+    nextActions: [
+      ...(overdue.length ? ["Escalate overdue review assignments to the launch owner today."] : []),
+      ...(blockedRoutes.length ? ["Clear legal and image-rights blocked routes before approving imported listings."] : []),
+      ...(dueSoon.length ? ["Remind assigned reviewers before their SLA window closes."] : []),
+      ...(unassigned.length ? ["Assign every non-approval-ready review item to a named owner with a due date."] : []),
+      ...(!overdue.length && !blockedRoutes.length && !dueSoon.length && !unassigned.length
+        ? ["No import review escalations are active. Continue processing approval-ready records."]
+        : [])
+    ]
+  };
 }
 
 export async function createExtractedEntity(input: CreateExtractedEntityInput): Promise<ExtractedEntityRecord> {

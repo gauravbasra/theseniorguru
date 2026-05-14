@@ -387,6 +387,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/review-queue": {
         get: { tags: ["Aggregation"], summary: "Review confidence, duplicate, legal, and image-rights routing for staged entities" }
       },
+      "/api/v1/admin/extracted-entities/escalations": {
+        get: { tags: ["Aggregation"], summary: "Summarize overdue, due-soon, unassigned, and blocked extracted-entity reviews" }
+      },
       "/api/v1/admin/data-sources": {
         get: { tags: ["Aggregation"], summary: "List source registry entries with approval, robots, and terms status" },
         post: { tags: ["Aggregation"], summary: "Register a source before import or crawling" }

@@ -224,3 +224,20 @@ export type AssignExtractedEntityReviewInput = {
   dueAt?: string;
   notes?: string;
 };
+
+export type ExtractedEntityReviewEscalationSummary = {
+  generatedAt: string;
+  status: "ready" | "attention_needed" | "blocked";
+  totals: {
+    entities: number;
+    overdue: number;
+    dueSoon: number;
+    unassigned: number;
+    blockedRoutes: number;
+  };
+  overdue: ExtractedEntityReviewQueueItem[];
+  dueSoon: ExtractedEntityReviewQueueItem[];
+  unassigned: ExtractedEntityReviewQueueItem[];
+  blockedRoutes: ExtractedEntityReviewQueueItem[];
+  nextActions: string[];
+};

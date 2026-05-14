@@ -113,6 +113,7 @@ Deliverables:
 - Launch import execution API for current-site starter batches with explicit CMS/state adapter blockers. Completed.
 - Extracted entity confidence review queue API for approval-ready, human-review, legal-review, image-rights, and duplicate routing. Completed.
 - Extracted entity review assignment and SLA API with Supabase migration, local fallback, and admin console action. Completed.
+- Import operator escalation report API for overdue, due-soon, unassigned, and blocked extracted-entity reviews. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
@@ -147,6 +148,7 @@ Deliverables:
 - Human review queue. Completed.
 - Extracted entity approval, rejection, duplicate, audit workflow. Completed.
 - Extracted entity review owner assignment and SLA tracking. Completed.
+- Import operator escalation reporting. Completed.
 - Provider claim outreach queue. Completed.
 
 Launch target:
