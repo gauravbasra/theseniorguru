@@ -398,6 +398,16 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<ListChecks aria-hidden="true" />}
+          label="Parser rules"
+          loading={loadingKey === "provider-website-parser-rules"}
+          onClick={() =>
+            runOperation("Provider website parser rules", "provider-website-parser-rules", () =>
+              fetch("/api/v1/admin/provider-website-parser/rules")
+            )
+          }
+        />
+        <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
           label="Worker health"
           loading={loadingKey === "worker-health"}
           onClick={() =>
@@ -591,6 +601,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "provider-website-parser") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.ready ?? 0)} ready provider website parser sources, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.stagedPages ?? 0)} staged crawl pages.`;
+  }
+
+  if (key === "provider-website-parser-rules") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.stageableCandidates ?? 0)} provider website candidates stageable, ${String(totals?.candidatePages ?? 0)} candidate pages reviewed, and ${String(totals?.blocked ?? 0)} sources need rule tuning.`;
   }
 
   if (key === "vendor-feeds") {

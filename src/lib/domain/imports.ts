@@ -623,8 +623,27 @@ export type ProviderWebsiteParserCandidate = {
   categories: string[];
   description?: string;
   extractionConfidence: number;
+  ruleSignals?: ProviderWebsiteParserRuleSignal[];
   blockers: string[];
   extractedFields: Record<string, unknown>;
+};
+
+export type ProviderWebsiteParserRuleSignal = {
+  key: string;
+  label: string;
+  status: "passed" | "warning" | "failed";
+  weight: number;
+  evidence?: string;
+};
+
+export type ProviderWebsiteParserRuleProfile = {
+  crawlPageId: string;
+  sourceUrl: string;
+  candidateName?: string;
+  extractionConfidence: number;
+  stageable: boolean;
+  signals: ProviderWebsiteParserRuleSignal[];
+  blockers: string[];
 };
 
 export type ProviderWebsiteParserRunResult = {
@@ -639,6 +658,36 @@ export type ProviderWebsiteParserRunResult = {
   rejectedCandidates: number;
   candidates: ProviderWebsiteParserCandidate[];
   stagedEntityIds: string[];
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ProviderWebsiteParserRuleReadinessSource = {
+  dataSourceId: string;
+  dataSourceName: string;
+  status: "ready" | "blocked";
+  completedCrawlJobs: number;
+  stagedPages: number;
+  candidatePages: number;
+  stageableCandidates: number;
+  averageConfidence: number;
+  signalCoverage: Record<string, number>;
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ProviderWebsiteParserRuleReadinessSummary = {
+  generatedAt: string;
+  totals: {
+    sources: number;
+    ready: number;
+    blocked: number;
+    stagedPages: number;
+    candidatePages: number;
+    stageableCandidates: number;
+  };
+  sources: ProviderWebsiteParserRuleReadinessSource[];
+  ruleProfiles: ProviderWebsiteParserRuleProfile[];
   blockers: string[];
   nextActions: string[];
 };

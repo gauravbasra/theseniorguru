@@ -102,6 +102,7 @@ const routeContracts: LinkContract[] = [
   { label: "Vendor feed scheduled worker API", href: "/api/v1/admin/vendor-feed-imports/worker", method: "POST", owner: "admin" },
   { label: "Launch import execution API", href: "/api/v1/admin/import-launch-execution", method: "POST", owner: "admin" },
   { label: "Import batch requeue API", href: "/api/v1/admin/import-batches/demo/requeue", method: "POST", owner: "admin" },
+  { label: "Provider website parser rules API", href: "/api/v1/admin/provider-website-parser/rules", method: "GET", owner: "admin" },
   { label: "Ad readiness API", href: "/api/v1/admin/ad-readiness", method: "GET", owner: "admin" },
   { label: "Ad placements admin API", href: "/api/v1/admin/ads/placements", method: "GET", owner: "admin" },
   { label: "Ad creative admin API", href: "/api/v1/admin/ads/creatives", method: "POST", owner: "admin" },

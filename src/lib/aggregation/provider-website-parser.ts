@@ -8,6 +8,9 @@ import type {
   ProviderWebsiteParserCandidate,
   ProviderWebsiteParserReadinessSource,
   ProviderWebsiteParserReadinessSummary,
+  ProviderWebsiteParserRuleReadinessSource,
+  ProviderWebsiteParserRuleReadinessSummary,
+  ProviderWebsiteParserRuleSignal,
   ProviderWebsiteParserRunResult
 } from "@/lib/domain/imports";
 
@@ -27,6 +30,22 @@ const categoryKeywords = [
   { keyword: "independent living", category: "Independent Living" },
   { keyword: "skilled nursing", category: "Skilled Nursing" }
 ];
+
+const serviceKeywords = [
+  "assisted living",
+  "memory care",
+  "home care",
+  "adult day",
+  "senior apartment",
+  "independent living",
+  "skilled nursing",
+  "respite care",
+  "personal care",
+  "medication management"
+];
+
+const tourKeywords = ["tour", "schedule a visit", "visit us", "book a visit", "contact us"];
+const pricingKeywords = ["pricing", "rates", "cost", "fees", "medicaid", "medicare", "insurance"];
 
 function sourceBlockers(source: DataSourceRecord) {
   return [
@@ -72,8 +91,103 @@ function confidenceFor(candidate: Omit<ProviderWebsiteParserCandidate, "extracti
   if (candidate.phone || candidate.email) score += 0.12;
   if (candidate.addressLine1 || (candidate.city && candidate.state)) score += 0.14;
   if (candidate.description) score += 0.09;
+  if (candidate.ruleSignals?.some((signal) => signal.key === "senior_care_relevance" && signal.status === "passed")) score += 0.08;
+  if (candidate.ruleSignals?.some((signal) => signal.key === "conversion_path" && signal.status === "passed")) score += 0.03;
+  if (candidate.ruleSignals?.some((signal) => signal.key === "senior_care_relevance" && signal.status === "failed")) score -= 0.22;
+  if (candidate.ruleSignals?.some((signal) => signal.key === "content_depth" && signal.status === "failed")) score -= 0.12;
 
-  return Math.min(0.95, Number(score.toFixed(2)));
+  return Math.max(0, Math.min(0.95, Number(score.toFixed(2))));
+}
+
+function evidenceSnippet(text: string, keywords: string[]) {
+  const normalized = text.replace(/\s+/g, " ");
+  const lower = normalized.toLowerCase();
+  const keyword = keywords.find((item) => lower.includes(item));
+
+  if (!keyword) {
+    return undefined;
+  }
+
+  const index = lower.indexOf(keyword);
+  return normalized.slice(Math.max(0, index - 70), Math.min(normalized.length, index + 130)).trim();
+}
+
+function buildRuleSignals(input: {
+  text: string;
+  candidate: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    addressLine1?: string;
+    city?: string;
+    state?: string;
+    categories: string[];
+  };
+  page: CrawlPageRecord;
+}): ProviderWebsiteParserRuleSignal[] {
+  const textLength = input.text.trim().length;
+  const seniorCareEvidence = evidenceSnippet(input.text, serviceKeywords);
+  const conversionEvidence = evidenceSnippet(input.text, tourKeywords);
+  const pricingEvidence = evidenceSnippet(input.text, pricingKeywords);
+
+  return [
+    {
+      key: "content_depth",
+      label: "Page has enough extractable text for parsing",
+      status: textLength >= 220 ? "passed" : textLength >= 90 ? "warning" : "failed",
+      weight: 0.12,
+      evidence: `${textLength} extracted characters`
+    },
+    {
+      key: "senior_care_relevance",
+      label: "Page contains senior care service language",
+      status: seniorCareEvidence ? "passed" : "failed",
+      weight: 0.24,
+      evidence: seniorCareEvidence
+    },
+    {
+      key: "contact_path",
+      label: "Page exposes a phone or email contact path",
+      status: input.candidate.phone || input.candidate.email ? "passed" : "warning",
+      weight: 0.18,
+      evidence: input.candidate.phone ?? input.candidate.email
+    },
+    {
+      key: "location_evidence",
+      label: "Page exposes address, city, or state evidence",
+      status: input.candidate.addressLine1 || (input.candidate.city && input.candidate.state) ? "passed" : "warning",
+      weight: 0.16,
+      evidence: input.candidate.addressLine1 ?? [input.candidate.city, input.candidate.state].filter(Boolean).join(", ")
+    },
+    {
+      key: "category_mapping",
+      label: "Page maps to a senior care category",
+      status: input.candidate.categories.some((category) => category !== "Senior Living") ? "passed" : "warning",
+      weight: 0.16,
+      evidence: input.candidate.categories.join(", ")
+    },
+    {
+      key: "conversion_path",
+      label: "Page contains tour, visit, or contact intent",
+      status: conversionEvidence ? "passed" : "warning",
+      weight: 0.07,
+      evidence: conversionEvidence
+    },
+    {
+      key: "pricing_or_payer_signal",
+      label: "Page contains pricing, payer, or coverage language",
+      status: pricingEvidence ? "passed" : "warning",
+      weight: 0.04,
+      evidence: pricingEvidence
+    },
+    {
+      key: "crawl_http_status",
+      label: "Crawl page returned a parseable HTTP status",
+      status: !input.page.statusCode || input.page.statusCode < 400 ? "passed" : "failed",
+      weight: 0.03,
+      evidence: input.page.statusCode ? `HTTP ${input.page.statusCode}` : undefined
+    }
+  ];
 }
 
 function buildCandidate(page: CrawlPageRecord, source: DataSourceRecord): ProviderWebsiteParserCandidate {
@@ -106,10 +220,13 @@ function buildCandidate(page: CrawlPageRecord, source: DataSourceRecord): Provid
       textLength: text.length
     }
   };
-  const extractionConfidence = confidenceFor(candidateBase);
+  const ruleSignals = buildRuleSignals({ text, candidate: candidateBase, page });
+  const extractionConfidence = confidenceFor({ ...candidateBase, ruleSignals });
   const blockers = [
     ...(!candidateBase.name ? ["Parser could not infer provider name."] : []),
     ...(!candidateBase.websiteUrl ? ["Parser could not infer provider website URL."] : []),
+    ...(ruleSignals.find((signal) => signal.key === "content_depth")?.status === "failed" ? ["Page content is too thin for provider extraction."] : []),
+    ...(ruleSignals.find((signal) => signal.key === "senior_care_relevance")?.status === "failed" ? ["Page does not contain enough senior care relevance language."] : []),
     ...(page.statusCode && page.statusCode >= 400 ? [`Crawl page returned HTTP ${page.statusCode}.`] : []),
     ...(extractionConfidence < 0.55 ? ["Parser confidence is below staging threshold."] : [])
   ];
@@ -117,8 +234,36 @@ function buildCandidate(page: CrawlPageRecord, source: DataSourceRecord): Provid
   return {
     ...candidateBase,
     extractionConfidence,
+    ruleSignals,
+    extractedFields: {
+      ...candidateBase.extractedFields,
+      parser: "provider_website_v2",
+      ruleSignals
+    },
     blockers
   };
+}
+
+function averageConfidence(candidates: ProviderWebsiteParserCandidate[]) {
+  if (!candidates.length) {
+    return 0;
+  }
+
+  return Number((candidates.reduce((total, candidate) => total + candidate.extractionConfidence, 0) / candidates.length).toFixed(2));
+}
+
+function coverageFor(candidates: ProviderWebsiteParserCandidate[]) {
+  const coverage: Record<string, number> = {};
+
+  for (const candidate of candidates) {
+    for (const signal of candidate.ruleSignals ?? []) {
+      if (signal.status === "passed") {
+        coverage[signal.key] = (coverage[signal.key] ?? 0) + 1;
+      }
+    }
+  }
+
+  return coverage;
 }
 
 function buildSourceReadiness(
@@ -179,6 +324,84 @@ export async function getProviderWebsiteParserReadiness(): Promise<ProviderWebsi
         ? ["Resolve source approval, robots, crawl completion, and staged page blockers before unattended parsing."]
         : []),
       ...(!providerSources.length ? ["Register approved provider website data sources before parser readiness can be evaluated."] : [])
+    ]
+  };
+}
+
+export async function getProviderWebsiteParserRuleReadiness(): Promise<ProviderWebsiteParserRuleReadinessSummary> {
+  const [sources, jobs, pages] = await Promise.all([listDataSources(), listCrawlJobs(), listCrawlPages()]);
+  const providerSources = sources.filter((source) => source.sourceType === "provider_website");
+  const ruleProfiles = providerSources.flatMap((source) => {
+    const completedJobs = jobs.filter((job) => job.dataSourceId === source.id && job.status === "completed");
+    const sourcePages = pages.filter((page) => completedJobs.some((job) => job.id === page.crawlJobId));
+
+    return sourcePages.map((page) => {
+      const candidate = buildCandidate(page, source);
+
+      return {
+        crawlPageId: page.id,
+        sourceUrl: page.url,
+        candidateName: candidate.name,
+        extractionConfidence: candidate.extractionConfidence,
+        stageable: !candidate.blockers.length,
+        signals: candidate.ruleSignals ?? [],
+        blockers: candidate.blockers
+      };
+    });
+  });
+  const sourceSummaries: ProviderWebsiteParserRuleReadinessSource[] = providerSources.map((source) => {
+    const sourceBlockerList = sourceBlockers(source);
+    const completedJobs = jobs.filter((job) => job.dataSourceId === source.id && job.status === "completed");
+    const stagedPages = pages.filter((page) => completedJobs.some((job) => job.id === page.crawlJobId));
+    const candidates = stagedPages.map((page) => buildCandidate(page, source));
+    const sourceRuleBlockers = [
+      ...sourceBlockerList,
+      ...(!completedJobs.length ? ["No completed crawl job is available for rule tuning."] : []),
+      ...(!stagedPages.length ? ["No staged crawl pages are available for rule tuning."] : []),
+      ...(candidates.length && !candidates.some((candidate) => !candidate.blockers.length)
+        ? ["No parser candidates are stageable under the current rule profile."]
+        : [])
+    ];
+
+    return {
+      dataSourceId: source.id,
+      dataSourceName: source.name,
+      status: sourceRuleBlockers.length ? "blocked" : "ready",
+      completedCrawlJobs: completedJobs.length,
+      stagedPages: stagedPages.length,
+      candidatePages: candidates.length,
+      stageableCandidates: candidates.filter((candidate) => !candidate.blockers.length).length,
+      averageConfidence: averageConfidence(candidates),
+      signalCoverage: coverageFor(candidates),
+      blockers: sourceRuleBlockers,
+      nextActions: sourceRuleBlockers.length
+        ? ["Review crawl content depth, senior-care relevance, contact, location, and category evidence before write-mode staging."]
+        : ["Run the provider website parser in dry-run mode and compare staged candidates against the rule profile."]
+    };
+  });
+  const blockers = sourceSummaries.flatMap((source) =>
+    source.blockers.map((blocker) => `${source.dataSourceName}: ${blocker}`)
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totals: {
+      sources: sourceSummaries.length,
+      ready: sourceSummaries.filter((source) => source.status === "ready").length,
+      blocked: sourceSummaries.filter((source) => source.status === "blocked").length,
+      stagedPages: sourceSummaries.reduce((total, source) => total + source.stagedPages, 0),
+      candidatePages: sourceSummaries.reduce((total, source) => total + source.candidatePages, 0),
+      stageableCandidates: sourceSummaries.reduce((total, source) => total + source.stageableCandidates, 0)
+    },
+    sources: sourceSummaries,
+    ruleProfiles,
+    blockers,
+    nextActions: [
+      ...(sourceSummaries.some((source) => source.status === "ready")
+        ? ["Use rule-ready sources for dry-run parser execution before staging provider entities."]
+        : []),
+      ...(blockers.length ? ["Tune source pages or extraction rules before running parser write-mode at scale."] : []),
+      ...(!sourceSummaries.length ? ["Register approved provider website sources and completed crawl jobs before rule tuning."] : [])
     ]
   };
 }
