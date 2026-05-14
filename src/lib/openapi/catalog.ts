@@ -340,6 +340,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/newsroom/newsletters/{id}/send": {
         post: { tags: ["Newsroom"], summary: "Mark an approved or scheduled newsletter edition as sent with delivery metadata" }
       },
+      "/api/v1/admin/newsroom/newsletters/{id}/delivery-preview": {
+        post: { tags: ["Newsroom"], summary: "Preview provider-specific newsletter delivery payload, consent requirements, and credential blockers" }
+      },
       "/api/v1/admin/newsroom/performance": {
         get: { tags: ["Newsroom"], summary: "Return article, newsletter, and derivative performance metric rollups" },
         post: { tags: ["Newsroom"], summary: "Record a policy-gated content view, click, share, save, open, or lead metric" }

@@ -13,6 +13,9 @@ import type {
   ImportRssFeedInput,
   ImportRssFeedResult,
   NewsItemRecord,
+  NewsletterDeliveryPreviewInput,
+  NewsletterDeliveryPreviewResult,
+  NewsletterDeliveryProvider,
   NewsletterEditionActionInput,
   NewsletterEditionActionResult,
   NewsletterEditionRecord,
@@ -21,6 +24,7 @@ import type {
   RunScheduledRssImportsInput,
   RunScheduledRssImportsResult
 } from "@/lib/domain/newsroom";
+import { getAppEnv } from "@/lib/env";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -1159,6 +1163,107 @@ export async function sendNewsletterEdition(
   });
 
   return { id: editionId, status: "sent", policyDecision: policy.decision, sentAt };
+}
+
+function normalizeNewsletterDeliveryProvider(provider?: string): NewsletterDeliveryProvider {
+  return provider === "mailjet" ? "mailjet" : "manual_export";
+}
+
+function estimatedNewsletterRecipients(audience: string[]) {
+  const estimates: Record<string, { label: string; estimatedRecipients: number }> = {
+    families: { label: "Families and caregivers", estimatedRecipients: 250 },
+    caregivers: { label: "Families and caregivers", estimatedRecipients: 250 },
+    seniors: { label: "Seniors", estimatedRecipients: 120 },
+    providers: { label: "Providers and operators", estimatedRecipients: 85 },
+    operators: { label: "Providers and operators", estimatedRecipients: 85 }
+  };
+  const unique = Array.from(new Set(audience.length ? audience : ["families"]));
+
+  return unique.map((key) => ({
+    key,
+    label: estimates[key]?.label ?? key.replace(/[-_]/g, " "),
+    estimatedRecipients: estimates[key]?.estimatedRecipients ?? 0,
+    consentRequired: true
+  }));
+}
+
+function newsletterPreheader(edition: NewsletterEditionRecord, articles: ArticleRecord[]) {
+  const firstArticle = edition.articleIds
+    .map((articleId) => articles.find((article) => article.id === articleId))
+    .find(Boolean);
+
+  return edition.intro?.slice(0, 140) ??
+    firstArticle?.dek?.slice(0, 140) ??
+    "Senior Guru guidance for comparing care options with transparent sources and next steps.";
+}
+
+export async function previewNewsletterDelivery(
+  input: NewsletterDeliveryPreviewInput
+): Promise<NewsletterDeliveryPreviewResult> {
+  const edition = await getNewsletterEdition(input.editionId);
+
+  if (!edition) {
+    throw new Error("Newsletter edition not found");
+  }
+
+  const articles = await listArticles();
+  const deliveryProvider = normalizeNewsletterDeliveryProvider(input.deliveryProvider);
+  const env = getAppEnv();
+  const providerConfigured = deliveryProvider === "manual_export"
+    ? true
+    : Boolean(env.mailjetApiKey && env.mailjetApiSecret);
+  const policy = await policyCheckNewsletterAction(edition, "preview_newsletter_delivery", {
+    actorId: input.actorId,
+    notes: input.notes,
+    deliveryProvider
+  });
+  const blockers: string[] = [];
+
+  if (edition.status !== "approved" && edition.status !== "scheduled" && edition.status !== "sent") {
+    blockers.push("Newsletter edition must be approved or scheduled before delivery.");
+  }
+
+  if (!edition.articleIds.length) {
+    blockers.push("Newsletter edition has no article IDs to deliver.");
+  }
+
+  const missingArticleIds = edition.articleIds.filter((articleId) => !articles.some((article) => article.id === articleId));
+  if (missingArticleIds.length) {
+    blockers.push(`Newsletter references missing articles: ${missingArticleIds.join(", ")}.`);
+  }
+
+  if (!providerConfigured) {
+    blockers.push("Mailjet credentials are not configured for live newsletter delivery.");
+  }
+
+  return {
+    editionId: edition.id,
+    status: blockers.length ? "blocked" : "ready",
+    deliveryProvider,
+    providerConfigured,
+    canSendLive: !blockers.length,
+    subject: edition.subject,
+    audience: edition.audience,
+    articleCount: edition.articleIds.length,
+    recipientSegments: estimatedNewsletterRecipients(edition.audience),
+    payloadPreview: {
+      subject: edition.subject,
+      preheader: newsletterPreheader(edition, articles),
+      intro: edition.intro,
+      articleIds: edition.articleIds,
+      unsubscribeRequired: true,
+      tracking: {
+        opens: true,
+        clicks: true,
+        campaignKey: `newsletter:${edition.id}`
+      }
+    },
+    blockers,
+    nextActions: blockers.length
+      ? blockers
+      : ["Newsletter delivery payload is ready for the configured provider adapter."],
+    policyDecision: policy.decision
+  };
 }
 
 function isContentPerformanceMetricKey(value: unknown): value is ContentPerformanceMetricKey {

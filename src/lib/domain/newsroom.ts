@@ -166,6 +166,47 @@ export type NewsletterEditionActionResult = {
   sentAt?: string;
 };
 
+export type NewsletterDeliveryProvider = "mailjet" | "manual_export";
+
+export type NewsletterDeliveryPreviewInput = {
+  editionId: string;
+  deliveryProvider?: NewsletterDeliveryProvider;
+  actorId?: string;
+  notes?: string;
+};
+
+export type NewsletterDeliveryPreviewResult = {
+  editionId: string;
+  status: "ready" | "blocked";
+  deliveryProvider: NewsletterDeliveryProvider;
+  providerConfigured: boolean;
+  canSendLive: boolean;
+  subject: string;
+  audience: string[];
+  articleCount: number;
+  recipientSegments: Array<{
+    key: string;
+    label: string;
+    estimatedRecipients: number;
+    consentRequired: boolean;
+  }>;
+  payloadPreview: {
+    subject: string;
+    preheader: string;
+    intro?: string;
+    articleIds: string[];
+    unsubscribeRequired: boolean;
+    tracking: {
+      opens: boolean;
+      clicks: boolean;
+      campaignKey: string;
+    };
+  };
+  blockers: string[];
+  nextActions: string[];
+  policyDecision: string;
+};
+
 export type ContentPerformanceSubjectType = "article" | "newsletter" | "derivative";
 
 export type ContentPerformanceMetricKey =

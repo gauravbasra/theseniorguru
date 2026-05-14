@@ -239,3 +239,4 @@ Deliverables:
 - Scheduled RSS intake worker API across approved editorial sources. Completed.
 - Content performance metric ingestion and rollup APIs for articles, newsletters, and derivatives. Completed.
 - Protected newsroom RSS cron route with preview/live mode safety and scheduled worker run observability. Completed.
+- Newsletter delivery provider preview adapter with consent/tracking payload, credential checks, and safe live-send blockers. Completed.
