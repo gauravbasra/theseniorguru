@@ -128,6 +128,7 @@ Deliverables:
 - Provider website parser readiness and crawl-page extraction API with source, robots, and review gates. Completed.
 - Provider website parser rule-readiness API with content-depth, senior-care relevance, contact, location, category, conversion, payer, and crawl-status signals. Completed.
 - Provider website parser source-specific rule override API with Supabase schema, local fallback, and governed thresholds/keyword tuning. Completed.
+- Provider website parser override audit dashboard API with operational audit events, unaudited override blockers, and admin console access. Completed.
 - Extracted entity confidence review queue API for approval-ready, human-review, legal-review, image-rights, and duplicate routing. Completed.
 - Extracted entity review assignment and SLA API with Supabase migration, local fallback, and admin console action. Completed.
 - Import operator escalation report API for overdue, due-soon, unassigned, and blocked extracted-entity reviews. Completed.
@@ -153,7 +154,7 @@ Deliverables:
 - Current live TheSeniorGuru listing crawler and staging adapter. Completed.
 - Current-site public JSON acquisition worker for real production listing records. Completed.
 - Current-site parsed record preview/export API. Completed.
-- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, provider website parser rule readiness, and source-specific parser overrides completed; signed object fetch executor remains.
+- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, provider website parser rule readiness, source-specific parser overrides, and parser override audit dashboard completed; signed object fetch executor remains.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.

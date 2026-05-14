@@ -4,6 +4,10 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const localAuditEvents: OperationalAuditEvent[] = [];
 
+function isUuid(value?: string) {
+  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+}
+
 function mapAuditEvent(row: Record<string, unknown>): OperationalAuditEvent {
   return {
     id: String(row.id),
@@ -39,11 +43,11 @@ export async function recordAuditEvent(input: RecordAuditEventInput): Promise<Op
   const { data, error } = await supabase
     .from("audit_events")
     .insert({
-      actor_id: input.actorId,
+      actor_id: isUuid(input.actorId) ? input.actorId : undefined,
       actor_type: input.actorType ?? "system",
       event_type: input.eventType,
       subject_type: input.subjectType,
-      subject_id: input.subjectId,
+      subject_id: isUuid(input.subjectId) ? input.subjectId : undefined,
       payload: input.payload ?? {}
     })
     .select("*")

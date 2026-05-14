@@ -1,6 +1,7 @@
 import { listDataSources } from "@/lib/data-sources";
 import { createExtractedEntity } from "@/lib/aggregation/extracted-entities";
 import { getCrawlJobById, listCrawlJobs, listCrawlPages } from "@/lib/aggregation/crawl-jobs";
+import { listAuditEvents, recordAuditEvent } from "@/lib/audit-events";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { DataSourceRecord } from "@/lib/domain/providers";
 import type {
@@ -10,6 +11,7 @@ import type {
   ProviderWebsiteParserReadinessSource,
   ProviderWebsiteParserReadinessSummary,
   ProviderWebsiteParserRuleOverrideInput,
+  ProviderWebsiteParserRuleOverrideAuditSummary,
   ProviderWebsiteParserRuleOverrideRecord,
   ProviderWebsiteParserRuleReadinessSource,
   ProviderWebsiteParserRuleReadinessSummary,
@@ -398,10 +400,12 @@ export async function upsertProviderWebsiteParserRuleOverride(
 
     if (existingIndex >= 0) {
       localRuleOverrides[existingIndex] = { ...record, id: localRuleOverrides[existingIndex].id, createdAt: localRuleOverrides[existingIndex].createdAt };
+      await recordProviderWebsiteParserRuleOverrideAudit(localRuleOverrides[existingIndex], input, "updated");
       return localRuleOverrides[existingIndex];
     }
 
     localRuleOverrides.unshift(record);
+    await recordProviderWebsiteParserRuleOverrideAudit(record, input, "created");
     return record;
   }
 
@@ -431,10 +435,92 @@ export async function upsertProviderWebsiteParserRuleOverride(
     }
 
     localRuleOverrides.unshift(record);
+    await recordProviderWebsiteParserRuleOverrideAudit(record, input, "created");
     return record;
   }
 
-  return mapRuleOverride(data, sources);
+  const saved = mapRuleOverride(data, sources);
+  await recordProviderWebsiteParserRuleOverrideAudit(saved, input, "upserted");
+
+  return saved;
+}
+
+async function recordProviderWebsiteParserRuleOverrideAudit(
+  override: ProviderWebsiteParserRuleOverrideRecord,
+  input: ProviderWebsiteParserRuleOverrideInput,
+  changeType: "created" | "updated" | "upserted"
+) {
+  await recordAuditEvent({
+    actorId: input.approvedBy,
+    actorType: input.approvedBy ? "admin" : "system",
+    eventType: "provider_website_parser.rule_override_upserted",
+    subjectType: "provider_website_parser_rule_override",
+    subjectId: override.id,
+    payload: {
+      changeType,
+      overrideId: override.id,
+      dataSourceId: override.dataSourceId,
+      dataSourceName: override.dataSourceName,
+      approvedBy: input.approvedBy,
+      minConfidence: override.minConfidence,
+      minContentCharacters: override.minContentCharacters,
+      serviceKeywordCount: override.serviceKeywords.length,
+      conversionKeywordCount: override.conversionKeywords.length,
+      pricingKeywordCount: override.pricingKeywords.length,
+      status: override.status,
+      notes: override.notes
+    }
+  });
+}
+
+export async function getProviderWebsiteParserRuleOverrideAuditSummary(): Promise<ProviderWebsiteParserRuleOverrideAuditSummary> {
+  const [overrides, auditSummary] = await Promise.all([
+    listProviderWebsiteParserRuleOverrides(),
+    listAuditEvents({
+      eventType: "provider_website_parser.rule_override_upserted",
+      subjectType: "provider_website_parser_rule_override",
+      limit: 250
+    })
+  ]);
+  const auditEvents = auditSummary.events;
+  const overrideRows = overrides.map((override) => {
+    const overrideAuditEvents = auditEvents.filter(
+      (event) =>
+        event.subjectId === override.id ||
+        (typeof event.payload.overrideId === "string" && event.payload.overrideId === override.id) ||
+        (typeof event.payload.dataSourceId === "string" && event.payload.dataSourceId === override.dataSourceId)
+    );
+
+    return {
+      ...override,
+      auditEvents: overrideAuditEvents,
+      auditStatus: overrideAuditEvents.length ? ("audited" as const) : ("missing_audit_event" as const)
+    };
+  });
+  const blockers = overrideRows
+    .filter((override) => override.auditStatus === "missing_audit_event")
+    .map((override) => `${override.dataSourceName ?? override.dataSourceId}: override exists without an operational audit event.`);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totals: {
+      overrides: overrideRows.length,
+      activeOverrides: overrideRows.filter((override) => override.status === "active").length,
+      inactiveOverrides: overrideRows.filter((override) => override.status === "inactive").length,
+      auditEvents: auditEvents.length,
+      unauditedOverrides: overrideRows.filter((override) => override.auditStatus === "missing_audit_event").length
+    },
+    overrides: overrideRows,
+    auditEvents,
+    blockers,
+    nextActions: [
+      ...(blockers.length ? ["Review legacy parser rule overrides missing audit evidence before launch sign-off."] : []),
+      ...(overrideRows.some((override) => override.status === "active")
+        ? ["Use audited active overrides during parser dry-runs and staging decisions."]
+        : []),
+      ...(!overrideRows.length ? ["Create governed source-specific parser rule overrides only after source approval and crawl evidence review."] : [])
+    ]
+  };
 }
 
 function averageConfidence(candidates: ProviderWebsiteParserCandidate[]) {

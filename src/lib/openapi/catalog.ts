@@ -508,6 +508,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Aggregation"], summary: "Report provider website parser rule coverage, source overrides, stageability, and tuning blockers" },
         post: { tags: ["Aggregation"], summary: "Create or update governed source-specific provider website parser rule overrides" }
       },
+      "/api/v1/admin/provider-website-parser/rules/audit": {
+        get: { tags: ["Aggregation"], summary: "Summarize provider website parser override audit events and unaudited override gaps" }
+      },
       "/api/v1/admin/data-quality-flags": {
         get: { tags: ["Aggregation"], summary: "List unresolved data quality flags for import/crawl review" }
       },

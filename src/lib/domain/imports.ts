@@ -664,6 +664,26 @@ export type ProviderWebsiteParserRuleOverrideInput = {
   notes?: string;
 };
 
+export type ProviderWebsiteParserRuleOverrideAuditSummary = {
+  generatedAt: string;
+  totals: {
+    overrides: number;
+    activeOverrides: number;
+    inactiveOverrides: number;
+    auditEvents: number;
+    unauditedOverrides: number;
+  };
+  overrides: Array<
+    ProviderWebsiteParserRuleOverrideRecord & {
+      auditEvents: import("@/lib/domain/audit").OperationalAuditEvent[];
+      auditStatus: "audited" | "missing_audit_event";
+    }
+  >;
+  auditEvents: import("@/lib/domain/audit").OperationalAuditEvent[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ProviderWebsiteParserRuleProfile = {
   crawlPageId: string;
   sourceUrl: string;

@@ -407,6 +407,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="Rule audit"
+          loading={loadingKey === "provider-website-parser-rule-audit"}
+          onClick={() =>
+            runOperation("Provider website parser rule audit", "provider-website-parser-rule-audit", () =>
+              fetch("/api/v1/admin/provider-website-parser/rules/audit")
+            )
+          }
+        />
+        <OpsButton
           icon={<ListChecks aria-hidden="true" />}
           label="Worker health"
           loading={loadingKey === "worker-health"}
@@ -607,6 +617,11 @@ function summarizeOperation(key: string, data: unknown) {
     const totals = record.totals as Record<string, unknown> | undefined;
     const overrides = Array.isArray(record.overrides) ? record.overrides.length : 0;
     return `${String(totals?.stageableCandidates ?? 0)} provider website candidates stageable, ${String(totals?.candidatePages ?? 0)} candidate pages reviewed, ${String(overrides)} source override${overrides === 1 ? "" : "s"} active or recorded, and ${String(totals?.blocked ?? 0)} sources need rule tuning.`;
+  }
+
+  if (key === "provider-website-parser-rule-audit") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.auditEvents ?? 0)} parser rule override audit event${totals?.auditEvents === 1 ? "" : "s"}, ${String(totals?.activeOverrides ?? 0)} active override${totals?.activeOverrides === 1 ? "" : "s"}, and ${String(totals?.unauditedOverrides ?? 0)} override${totals?.unauditedOverrides === 1 ? "" : "s"} missing audit evidence.`;
   }
 
   if (key === "vendor-feeds") {
