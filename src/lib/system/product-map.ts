@@ -362,6 +362,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/policy-queue",
       "GET /api/v1/admin/policy-overrides",
       "POST /api/v1/admin/policy-overrides",
+      "POST /api/v1/admin/policy-overrides/expire",
       "POST /api/v1/admin/policy-overrides/{id}/decide",
       "GET /api/cron/operations",
       "GET /api/cron/acquisition",
@@ -377,7 +378,7 @@ const productPillars: ProductPillar[] = [
       "audit_events",
       "scheduled_worker_runs"
     ],
-    nextBackendWork: ["Immutable audit event browser", "Legal reviewer assignment workflow", "Policy override expiry worker"]
+    nextBackendWork: ["Immutable audit event browser", "Legal reviewer assignment workflow", "Policy reviewer assignment workflow"]
   },
   {
     key: "open-api",

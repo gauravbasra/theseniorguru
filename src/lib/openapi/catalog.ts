@@ -507,6 +507,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Policy"], summary: "List policy override approval requests" },
         post: { tags: ["Policy"], summary: "Request a governed override for an overridable policy check" }
       },
+      "/api/v1/admin/policy-overrides/expire": {
+        post: { tags: ["Policy"], summary: "Expire requested or approved policy overrides whose expiry time has passed" }
+      },
       "/api/v1/admin/policy-overrides/{id}/decide": {
         post: { tags: ["Policy"], summary: "Approve or reject a requested policy override with audit evidence" }
       }

@@ -3,6 +3,7 @@ import type {
   PolicyCheckRequest,
   PolicyCheckResult,
   PolicyDecision,
+  ExpirePolicyOverrideResult,
   PolicyOverrideRequest,
   PolicyOverrideStatus,
   PolicyOverrideSummary,
@@ -492,4 +493,85 @@ export async function decidePolicyOverrideRequest(input: {
   });
 
   return mapPolicyOverride(data);
+}
+
+export async function expirePolicyOverrideRequests(input: { now?: string; limit?: number } = {}): Promise<ExpirePolicyOverrideResult> {
+  const now = input.now ?? new Date().toISOString();
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 100), 250));
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const candidates = localPolicyOverrides
+      .filter((request) => (request.status === "requested" || request.status === "approved") && request.expiresAt)
+      .filter((request) => Date.parse(request.expiresAt as string) <= Date.parse(now))
+      .slice(0, limit);
+
+    for (const request of candidates) {
+      request.status = "expired";
+      request.reviewedAt = request.reviewedAt ?? now;
+      request.reviewNotes = request.reviewNotes ?? "Expired automatically by policy override expiry worker.";
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      source: "local_fallback",
+      expired: candidates.length,
+      expiredRequestIds: candidates.map((request) => request.id),
+      nextActions: candidates.length
+        ? ["Review expired policy overrides before re-running any previously approved launch action."]
+        : ["No policy override requests were eligible for expiry."]
+    };
+  }
+
+  const { data: candidates, error: candidateError } = await supabase
+    .from("policy_approval_requests")
+    .select("id")
+    .in("status", ["requested", "approved"])
+    .not("expires_at", "is", null)
+    .lte("expires_at", now)
+    .limit(limit);
+
+  if (candidateError) {
+    throw new Error(`Policy override expiry lookup failed: ${candidateError.message}`);
+  }
+
+  const ids = (candidates ?? []).map((row) => String(row.id));
+
+  if (!ids.length) {
+    return {
+      generatedAt: new Date().toISOString(),
+      source: "supabase",
+      expired: 0,
+      expiredRequestIds: [],
+      nextActions: ["No policy override requests were eligible for expiry."]
+    };
+  }
+
+  const { error } = await supabase
+    .from("policy_approval_requests")
+    .update({
+      status: "expired",
+      review_notes: "Expired automatically by policy override expiry worker.",
+      reviewed_at: now
+    })
+    .in("id", ids);
+
+  if (error) {
+    throw new Error(`Policy override expiry update failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_type: "system",
+    event_type: "policy.overrides_expired",
+    subject_type: "policy_approval_request",
+    payload: { expiredRequestIds: ids, expired: ids.length, now }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: "supabase",
+    expired: ids.length,
+    expiredRequestIds: ids,
+    nextActions: ["Review expired policy overrides before re-running any previously approved launch action."]
+  };
 }

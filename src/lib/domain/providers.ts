@@ -191,3 +191,11 @@ export type PolicyOverrideSummary = {
   requests: PolicyOverrideRequest[];
   nextActions: string[];
 };
+
+export type ExpirePolicyOverrideResult = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  expired: number;
+  expiredRequestIds: string[];
+  nextActions: string[];
+};
