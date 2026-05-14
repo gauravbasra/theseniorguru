@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticatePartnerApiRequest } from "@/lib/openapi/platform";
-import { partnerAuthErrorResponse, partnerSuccessHeaders } from "@/lib/openapi/responses";
+import { partnerAuthErrorResponse, partnerResponseEnvelopeMeta, partnerSuccessHeaders } from "@/lib/openapi/responses";
 import { listProviders } from "@/lib/providers";
 
 export async function GET(request: Request) {
@@ -22,7 +22,8 @@ export async function GET(request: Request) {
         meta: {
           apiClientId: auth.client.id,
           sandboxMode: auth.client.sandboxMode,
-          count: providers.length
+          count: providers.length,
+          responseEnvelope: partnerResponseEnvelopeMeta()
         }
       },
       { headers: partnerSuccessHeaders(auth) }

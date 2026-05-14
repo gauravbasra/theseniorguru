@@ -173,6 +173,19 @@ export default function DevelopersPage() {
         </article>
       </section>
 
+      <section className="operator-band">
+        <div>
+          <p className="eyebrow">Response envelope</p>
+          <h2>{docs.responseEnvelope.currentVersion}</h2>
+          <p>{docs.responseEnvelope.versioningRules.join(" ")}</p>
+        </div>
+        <article className="profile-card">
+          <p className="eyebrow">Stable paths</p>
+          <h2>{docs.responseEnvelope.envelope.dataPath} / {docs.responseEnvelope.envelope.metaPath}</h2>
+          <p>{docs.responseEnvelope.requiredHeaders.join(", ")}</p>
+        </article>
+      </section>
+
       <section className="category-strip">
         <div>
           <p className="eyebrow">Operations controls</p>

@@ -1,5 +1,6 @@
 import { getOpenApiCatalog } from "@/lib/openapi/catalog";
 import { getWebhookSigningGuide } from "@/lib/openapi/platform";
+import { partnerResponseEnvelopeMeta, partnerResponseEnvelopeVersion } from "@/lib/openapi/responses";
 import { getLinkHealthSummary } from "@/lib/system/link-health";
 
 type OpenApiOperation = {
@@ -51,6 +52,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/changelog",
   "/api/v1/partner/sdk-package-plan",
   "/api/v1/partner/sandbox-evidence",
+  "/api/v1/partner/response-envelope",
   "/api/v1/partner/webhooks/signing-guide",
   "/api/v1/partner/webhooks/verify"
 ];
@@ -447,6 +449,45 @@ export function exportPartnerSandboxEvidenceCsv() {
   };
 }
 
+export function getPartnerResponseEnvelopeContract() {
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Partner Response Envelope Contract",
+    currentVersion: partnerResponseEnvelopeVersion,
+    envelope: partnerResponseEnvelopeMeta(),
+    requiredHeaders: [
+      "x-senior-guru-envelope-version",
+      "x-senior-guru-api-client",
+      "x-senior-guru-sandbox",
+      "x-ratelimit-limit",
+      "x-ratelimit-window"
+    ],
+    successShape: {
+      data: "The endpoint-specific payload. Arrays remain arrays; objects remain typed resource objects.",
+      meta: {
+        apiClientId: "Authenticated partner API client id.",
+        sandboxMode: "Boolean flag showing whether the client is sandbox-only.",
+        responseEnvelope: partnerResponseEnvelopeMeta()
+      }
+    },
+    errorShape: {
+      error: "Safe partner-facing error message.",
+      headers: ["x-senior-guru-api-status", "x-senior-guru-envelope-version"]
+    },
+    versioningRules: [
+      "Partner clients should read x-senior-guru-envelope-version on every authenticated response.",
+      "Additive fields may appear inside meta without a breaking version change.",
+      "Moving data, meta, or error paths requires a changelog entry, OpenAPI update, migration note, and owner-approved partner notification.",
+      "CSV exports keep stable column headers and use content-disposition filenames for evidence capture."
+    ],
+    nextActions: [
+      "Update partner smoke tests to assert the envelope header and meta.responseEnvelope.version.",
+      "Use the changelog before adopting any future envelope version.",
+      "Attach envelope-version evidence to sandbox promotion exports."
+    ]
+  };
+}
+
 export function getPartnerDeveloperDocs() {
   const catalog = getOpenApiCatalog();
   const signingGuide = getWebhookSigningGuide();
@@ -504,6 +545,7 @@ export function getPartnerDeveloperDocs() {
     changelog: getPartnerApiChangelog(),
     sdkPackagePlan: getWebhookSdkPackagePlan(),
     sandboxEvidence: getPartnerSandboxEvidenceExport(),
+    responseEnvelope: getPartnerResponseEnvelopeContract(),
     operationalControls: [
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",

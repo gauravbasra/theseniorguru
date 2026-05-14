@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticatePartnerApiRequest, verifyWebhookSignature } from "@/lib/openapi/platform";
-import { partnerAuthErrorResponse, partnerSuccessHeaders } from "@/lib/openapi/responses";
+import { partnerAuthErrorResponse, partnerResponseEnvelopeMeta, partnerSuccessHeaders } from "@/lib/openapi/responses";
 
 export async function POST(request: Request) {
   try {
@@ -30,7 +30,12 @@ export async function POST(request: Request) {
           payload,
           timestamp: Number.isFinite(Number(body.timestamp)) ? Number(body.timestamp) : undefined,
           toleranceSeconds: Number.isFinite(Number(body.toleranceSeconds)) ? Number(body.toleranceSeconds) : undefined
-        })
+        }),
+        meta: {
+          apiClientId: auth.client.id,
+          sandboxMode: auth.client.sandboxMode,
+          responseEnvelope: partnerResponseEnvelopeMeta()
+        }
       },
       { headers: partnerSuccessHeaders(auth) }
     );

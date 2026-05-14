@@ -627,6 +627,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/sandbox-evidence": {
         get: { tags: ["System"], summary: "Return JSON or CSV partner sandbox evidence bundle for promotion review" }
       },
+      "/api/v1/partner/response-envelope": {
+        get: { tags: ["System"], summary: "Return partner response envelope version, headers, paths, and migration rules" }
+      },
       "/api/v1/partner/developer-docs": {
         get: { tags: ["System"], summary: "Return partner developer documentation, SDK examples, OpenAPI endpoints, and webhook signing contracts" }
       },

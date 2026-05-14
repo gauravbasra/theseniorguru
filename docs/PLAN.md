@@ -93,6 +93,7 @@ Deliverables:
 - Partner API version changelog API and `/developers` section with current/planned release entries, deprecation policy, migration notes, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
 - Webhook SDK package publishing plan API and `/developers` section with package names, release gates, security controls, owner blockers, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
 - Partner sandbox evidence export API with JSON/CSV outputs, onboarding/versioning/endpoint/SDK blocker evidence rows, link-health summary, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
+- Partner response envelope versioning with runtime envelope headers/meta for authenticated partner routes, response-envelope contract API, `/developers` section, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.
 - Admin Open API operations console for clients, scoped keys, webhooks, dry-run delivery, retries, and audit visibility. Completed.

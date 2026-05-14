@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticatePartnerApiRequest, exportApiUsageAnalytics, getApiUsageAnalytics } from "@/lib/openapi/platform";
-import { partnerAuthErrorResponse, partnerSuccessHeaders } from "@/lib/openapi/responses";
+import { partnerAuthErrorResponse, partnerResponseEnvelopeMeta, partnerSuccessHeaders } from "@/lib/openapi/responses";
 
 export async function GET(request: Request) {
   try {
@@ -38,7 +38,8 @@ export async function GET(request: Request) {
         data: await getApiUsageAnalytics(input),
         meta: {
           apiClientId: auth.client.id,
-          sandboxMode: auth.client.sandboxMode
+          sandboxMode: auth.client.sandboxMode,
+          responseEnvelope: partnerResponseEnvelopeMeta()
         }
       },
       { headers }
