@@ -122,6 +122,7 @@ Deliverables:
 - Source adapter file manifest ingestion API with checksum, storage verification, mapping readiness, Supabase schema, and local fallback. Completed.
 - Source adapter manifest payload loader API that binds supplied records to verified manifests before governed import execution. Completed.
 - Source adapter object-storage readiness API with storage scheme detection, owner credential blockers, and manual payload fallback. Completed.
+- Source adapter signed object fetch executor API with HTTPS-only fetch, SHA-256 verification, JSON record parsing, governed dry-run import, and audit evidence. Completed.
 - Vendor feed credential metadata and readiness workflow with contract, vault reference, and field mapping gates. Completed.
 - Vendor feed import runner API for ready vendor metadata and source records through the governed import worker. Completed.
 - Scheduled vendor feed worker preview/run API for ready vendor metadata and supplied vendor payloads without fabricated records. Completed.
@@ -157,7 +158,7 @@ Deliverables:
 - Current live TheSeniorGuru listing crawler and staging adapter. Completed.
 - Current-site public JSON acquisition worker for real production listing records. Completed.
 - Current-site parsed record preview/export API. Completed.
-- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, and override rollback workflow completed; signed object fetch executor remains.
+- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, signed object fetch executor, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, and override rollback workflow completed; scheduled signed-object fetch worker remains.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.

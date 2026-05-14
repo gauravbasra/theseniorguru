@@ -429,6 +429,28 @@ export type SourceAdapterManifestPayloadLoadResult = {
   nextActions: string[];
 };
 
+export type SourceAdapterManifestFetchInput = {
+  manifestId: string;
+  dryRun?: boolean;
+  actorId?: string;
+  batchName?: string;
+  maxBytes?: number;
+};
+
+export type SourceAdapterManifestFetchResult = {
+  generatedAt: string;
+  manifest: SourceAdapterManifestReadinessItem;
+  dryRun: boolean;
+  fileUrl: string;
+  bytesFetched: number;
+  checksumSha256: string;
+  recordsFetched: number;
+  recordCountMatchesManifest: boolean;
+  importResult: SourceAdapterImportResult;
+  auditEventId: string;
+  nextActions: string[];
+};
+
 export type VendorFeedAuthType = "api_key" | "sftp" | "oauth" | "manual_upload";
 export type VendorFeedReviewStatus = "missing" | "pending" | "approved" | "blocked";
 export type VendorFeedCredentialStorageStatus = "missing" | "reference_recorded" | "verified";

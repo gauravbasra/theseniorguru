@@ -272,6 +272,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/source-adapter-manifests",
       "POST /api/v1/admin/source-adapter-manifests",
       "POST /api/v1/admin/source-adapter-manifests/load",
+      "POST /api/v1/admin/source-adapter-manifests/fetch",
       "GET /api/v1/admin/source-adapter-manifests/storage-readiness",
       "GET /api/v1/admin/vendor-feed-connections",
       "POST /api/v1/admin/vendor-feed-connections",
@@ -304,7 +305,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Source manifest signed object fetch executor", "Provider website parser override replacement workflow", "Import escalation retry cron wiring"]
+    nextBackendWork: ["Provider website parser override replacement workflow", "Import escalation retry cron wiring", "Scheduled source manifest signed object fetch worker"]
   },
   {
     key: "reviews",

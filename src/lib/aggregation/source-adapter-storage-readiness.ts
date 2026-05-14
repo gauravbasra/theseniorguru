@@ -13,7 +13,7 @@ function detectStorageScheme(fileUrl?: string): SourceAdapterStorageScheme {
 
   const normalized = fileUrl.trim().toLowerCase();
 
-  if (normalized.startsWith("https://") || normalized.startsWith("http://")) {
+  if (normalized.startsWith("https://")) {
     return "https";
   }
 
@@ -115,7 +115,7 @@ function buildStorageReadinessItem(manifest: SourceAdapterManifestReadinessItem)
   const blockers = storageBlockers(manifest, scheme);
   const ownerCredentialRequired = ["s3", "gcs", "azure_blob", "supabase_storage"].includes(scheme);
   const status: SourceAdapterStorageReadinessItem["status"] =
-    blockers.length > 0 ? "blocked" : "manual_ready";
+    blockers.length > 0 ? "blocked" : scheme === "https" ? "fetch_ready" : "manual_ready";
 
   return {
     manifestId: manifest.id,

@@ -466,6 +466,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/source-adapter-manifests/load": {
         post: { tags: ["Aggregation"], summary: "Load supplied source payload records through a verified file manifest and governed import worker" }
       },
+      "/api/v1/admin/source-adapter-manifests/fetch": {
+        post: { tags: ["Aggregation"], summary: "Fetch a verified HTTPS source manifest object, checksum it, parse JSON records, and run the governed import worker" }
+      },
       "/api/v1/admin/source-adapter-manifests/storage-readiness": {
         get: { tags: ["Aggregation"], summary: "Report source manifest object-storage scheme readiness and owner credential blockers" }
       },

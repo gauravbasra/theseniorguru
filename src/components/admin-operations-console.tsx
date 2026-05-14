@@ -364,6 +364,33 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<GitMerge aria-hidden="true" />}
+          label="Fetch manifest"
+          loading={loadingKey === "source-adapter-manifest-fetch"}
+          onClick={() =>
+            runOperation("Source manifest signed object fetch", "source-adapter-manifest-fetch", async () => {
+              const readinessResponse = await fetch("/api/v1/admin/source-adapter-manifests/storage-readiness");
+              const readinessPayload = await readinessResponse.json().catch(() => ({}));
+              const fetchReadyManifest = readinessPayload?.data?.manifests?.find(
+                (manifest: { status?: string; manifestId?: string }) => manifest.status === "fetch_ready" && manifest.manifestId
+              );
+
+              if (!fetchReadyManifest) {
+                return new Response(
+                  JSON.stringify({ error: "No fetch-ready HTTPS source manifest is available. Register and approve one first." }),
+                  { status: 409, headers: { "content-type": "application/json" } }
+                );
+              }
+
+              return fetch("/api/v1/admin/source-adapter-manifests/fetch", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, manifestId: fetchReadyManifest.manifestId })
+              });
+            })
+          }
+        />
+        <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
           label="Vendor feeds"
           loading={loadingKey === "vendor-feeds"}
           onClick={() =>
@@ -647,7 +674,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "source-adapter-storage-readiness") {
     const totals = record.totals as Record<string, unknown> | undefined;
-    return `${String(totals?.manualReady ?? 0)} source manifests ready for manual payload loading, ${String(totals?.blocked ?? 0)} object-storage fetches blocked, and ${String(totals?.ownerCredentialRequired ?? 0)} require owner credentials.`;
+    return `${String(totals?.fetchReady ?? 0)} source manifests fetch-ready, ${String(totals?.manualReady ?? 0)} manual-ready, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.ownerCredentialRequired ?? 0)} require owner credentials.`;
+  }
+
+  if (key === "source-adapter-manifest-fetch") {
+    return `${String(record.recordsFetched ?? 0)} records fetched from the signed manifest object, checksum ${String(record.checksumSha256 ?? "pending").slice(0, 12)}, dry-run ${String(record.dryRun ?? true)}.`;
   }
 
   if (key === "provider-website-parser") {
