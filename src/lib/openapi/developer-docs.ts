@@ -53,6 +53,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/sdk-package-plan",
   "/api/v1/partner/sandbox-evidence",
   "/api/v1/partner/response-envelope",
+  "/api/v1/partner/response-pagination",
   "/api/v1/partner/webhooks/signing-guide",
   "/api/v1/partner/webhooks/verify"
 ];
@@ -488,6 +489,56 @@ export function getPartnerResponseEnvelopeContract() {
   };
 }
 
+export function getPartnerResponsePaginationContract() {
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Partner Response Pagination Contract",
+    status: "active",
+    queryParameters: {
+      page: {
+        type: "integer",
+        default: 1,
+        min: 1,
+        max: 10000
+      },
+      pageSize: {
+        type: "integer",
+        default: 50,
+        min: 1,
+        max: 100
+      }
+    },
+    paginatedEndpoints: [
+      "GET /api/v1/partner/providers",
+      "GET /api/v1/partner/events"
+    ],
+    metaShape: {
+      pagination: {
+        page: "Current normalized page.",
+        pageSize: "Current normalized page size.",
+        total: "Total matching records before pagination.",
+        pageCount: "Total page count for the current page size.",
+        hasNextPage: "Whether a next page exists.",
+        hasPreviousPage: "Whether a previous page exists.",
+        nextPage: "Next page number or null.",
+        previousPage: "Previous page number or null.",
+        offset: "Zero-based row offset used to slice the result set."
+      }
+    },
+    versioningRules: [
+      "Pagination metadata is additive inside meta and follows the current response-envelope version.",
+      "Clients should keep using data as the page payload and meta.pagination for traversal.",
+      "Server-side maximum pageSize is 100 to protect production response sizes.",
+      "Out-of-range page requests are normalized to the last available page."
+    ],
+    nextActions: [
+      "Update partner smoke tests to request pageSize=2 and assert meta.pagination.",
+      "Use page and pageSize for provider/event inventory sync jobs instead of assuming full dumps.",
+      "Add cursor pagination only after production inventory volume and partner sync frequency justify it."
+    ]
+  };
+}
+
 export function getPartnerDeveloperDocs() {
   const catalog = getOpenApiCatalog();
   const signingGuide = getWebhookSigningGuide();
@@ -546,6 +597,7 @@ export function getPartnerDeveloperDocs() {
     sdkPackagePlan: getWebhookSdkPackagePlan(),
     sandboxEvidence: getPartnerSandboxEvidenceExport(),
     responseEnvelope: getPartnerResponseEnvelopeContract(),
+    responsePagination: getPartnerResponsePaginationContract(),
     operationalControls: [
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",

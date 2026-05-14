@@ -186,6 +186,19 @@ export default function DevelopersPage() {
         </article>
       </section>
 
+      <section className="operator-band">
+        <div>
+          <p className="eyebrow">Response pagination</p>
+          <h2>{docs.responsePagination.title}</h2>
+          <p>{docs.responsePagination.versioningRules.join(" ")}</p>
+        </div>
+        <article className="profile-card">
+          <p className="eyebrow">Page size</p>
+          <h2>{docs.responsePagination.queryParameters.pageSize.default}</h2>
+          <p>{docs.responsePagination.paginatedEndpoints.join(", ")}</p>
+        </article>
+      </section>
+
       <section className="category-strip">
         <div>
           <p className="eyebrow">Operations controls</p>

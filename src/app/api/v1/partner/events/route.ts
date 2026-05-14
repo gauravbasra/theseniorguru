@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { listEvents } from "@/lib/events/events";
 import { authenticatePartnerApiRequest } from "@/lib/openapi/platform";
-import { partnerAuthErrorResponse, partnerResponseEnvelopeMeta, partnerSuccessHeaders } from "@/lib/openapi/responses";
+import {
+  applyPartnerPagination,
+  partnerAuthErrorResponse,
+  partnerPaginationFromRequest,
+  partnerResponseEnvelopeMeta,
+  partnerSuccessHeaders
+} from "@/lib/openapi/responses";
 
 export async function GET(request: Request) {
   try {
@@ -15,14 +21,16 @@ export async function GET(request: Request) {
     }
 
     const events = await listEvents();
+    const pagination = partnerPaginationFromRequest(request, events.length);
 
     return NextResponse.json(
       {
-        data: events,
+        data: applyPartnerPagination(events, pagination),
         meta: {
           apiClientId: auth.client.id,
           sandboxMode: auth.client.sandboxMode,
           count: events.length,
+          pagination,
           responseEnvelope: partnerResponseEnvelopeMeta()
         }
       },

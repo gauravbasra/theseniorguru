@@ -219,6 +219,7 @@ const routeContracts: LinkContract[] = [
   { label: "Partner sandbox evidence export", href: "/api/v1/partner/sandbox-evidence", method: "GET", owner: "provider" },
   { label: "Partner sandbox evidence CSV export", href: "/api/v1/partner/sandbox-evidence?format=csv", method: "GET", owner: "provider" },
   { label: "Partner response envelope contract", href: "/api/v1/partner/response-envelope", method: "GET", owner: "provider" },
+  { label: "Partner response pagination contract", href: "/api/v1/partner/response-pagination", method: "GET", owner: "provider" },
   { label: "Partner developer docs API", href: "/api/v1/partner/developer-docs", method: "GET", owner: "provider" },
   { label: "Partner developer docs page", href: "/developers", method: "GET", owner: "provider" },
   { label: "Partner webhook signature verification API", href: "/api/v1/partner/webhooks/verify", method: "POST", owner: "provider" },
