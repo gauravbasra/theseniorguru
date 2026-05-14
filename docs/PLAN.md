@@ -86,6 +86,7 @@ Deliverables:
 - Admin webhook delivery replay endpoint that duplicates failed, blocked, or delivered historical deliveries into fresh queued records with immutable source delivery audit evidence and console access. Completed.
 - Webhook replay evidence export API that pairs replayed deliveries to their source deliveries, attempts, replay audit metadata, and CSV/JSON admin evidence downloads. Completed.
 - Partner webhook signing guide API with event list, HMAC header contract, deterministic sample payload, failure handling, OpenAPI/link-health coverage, and admin console access. Completed.
+- Partner developer docs API and `/developers` page assembled from the live OpenAPI catalog and webhook signing guide with authentication, endpoint, webhook, and operations-control coverage. Completed.
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.
 - Admin Open API operations console for clients, scoped keys, webhooks, dry-run delivery, retries, and audit visibility. Completed.

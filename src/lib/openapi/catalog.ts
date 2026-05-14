@@ -615,6 +615,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/usage": {
         get: { tags: ["System"], summary: "Partner-scoped API usage summary, retention policy, or CSV export requiring usage:read scope" }
       },
+      "/api/v1/partner/developer-docs": {
+        get: { tags: ["System"], summary: "Return partner developer documentation assembled from OpenAPI and webhook signing contracts" }
+      },
       "/api/v1/partner/webhooks/verify": {
         post: { tags: ["System"], summary: "Verify a webhook payload signature for an owned subscription requiring webhooks:write scope" }
       },
