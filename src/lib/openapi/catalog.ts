@@ -532,6 +532,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-website-parser/rules/impact": {
         post: { tags: ["Aggregation"], summary: "Compare default, active, and proposed provider website parser rule impact before override changes" }
       },
+      "/api/v1/admin/provider-website-parser/rules/impact/export": {
+        get: { tags: ["Aggregation"], summary: "Export retained provider website parser impact comparison evidence as JSON or CSV" }
+      },
       "/api/v1/admin/provider-website-parser/rules/rollback": {
         post: { tags: ["Aggregation"], summary: "Preview or deactivate a governed provider website parser rule override with rollback audit evidence" }
       },

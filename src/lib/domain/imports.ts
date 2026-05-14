@@ -846,6 +846,43 @@ export type ProviderWebsiteParserRuleImpactCompareResult = {
   nextActions: string[];
 };
 
+export type ProviderWebsiteParserRuleImpactEvidenceExportRow = {
+  auditEventId: string;
+  createdAt: string;
+  actorId?: string;
+  dataSourceId?: string;
+  dataSourceName?: string;
+  crawlJobId?: string;
+  activeOverrideId?: string;
+  replacementOverrideId?: string;
+  pagesCompared: number;
+  defaultStageable: number;
+  activeStageable?: number;
+  replacementStageable?: number;
+  activeStageableDelta?: number;
+  replacementStageableDelta?: number;
+  reason?: string;
+};
+
+export type ProviderWebsiteParserRuleImpactEvidenceExport = {
+  generatedAt: string;
+  filters: {
+    dataSourceId?: string;
+    limit: number;
+  };
+  totals: {
+    events: number;
+    pagesCompared: number;
+    defaultStageable: number;
+    activeStageable: number;
+    replacementStageable: number;
+  };
+  rows: ProviderWebsiteParserRuleImpactEvidenceExportRow[];
+  csv: string;
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ProviderWebsiteParserRuleOverrideAuditSummary = {
   generatedAt: string;
   totals: {

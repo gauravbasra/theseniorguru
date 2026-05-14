@@ -12,6 +12,8 @@ import type {
   ProviderWebsiteParserReadinessSummary,
   ProviderWebsiteParserRuleImpactCompareInput,
   ProviderWebsiteParserRuleImpactCompareResult,
+  ProviderWebsiteParserRuleImpactEvidenceExport,
+  ProviderWebsiteParserRuleImpactEvidenceExportRow,
   ProviderWebsiteParserRuleImpactMetrics,
   ProviderWebsiteParserRuleOverrideInput,
   ProviderWebsiteParserRuleOverrideAuditSummary,
@@ -894,6 +896,49 @@ function impactMetrics(
   };
 }
 
+function numberFromPayload(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stringFromPayload(value: unknown) {
+  return typeof value === "string" && value.trim().length ? value : undefined;
+}
+
+function csvEscape(value: string | number | undefined) {
+  const stringValue = value === undefined ? "" : String(value);
+
+  if (/[",\n]/.test(stringValue)) {
+    return `"${stringValue.replaceAll("\"", "\"\"")}"`;
+  }
+
+  return stringValue;
+}
+
+function impactEvidenceRowsToCsv(rows: ProviderWebsiteParserRuleImpactEvidenceExportRow[]) {
+  const headers: Array<keyof ProviderWebsiteParserRuleImpactEvidenceExportRow> = [
+    "auditEventId",
+    "createdAt",
+    "actorId",
+    "dataSourceId",
+    "dataSourceName",
+    "crawlJobId",
+    "activeOverrideId",
+    "replacementOverrideId",
+    "pagesCompared",
+    "defaultStageable",
+    "activeStageable",
+    "replacementStageable",
+    "activeStageableDelta",
+    "replacementStageableDelta",
+    "reason"
+  ];
+
+  return [
+    headers.join(","),
+    ...rows.map((row) => headers.map((header) => csvEscape(row[header] as string | number | undefined)).join(","))
+  ].join("\n");
+}
+
 function buildSourceReadiness(
   source: DataSourceRecord,
   jobs: CrawlJobRecord[],
@@ -1254,6 +1299,64 @@ export async function compareProviderWebsiteParserRuleImpact(
         ? ["If replacement impact is acceptable, run the replacement workflow with approval notes and keep this comparison evidence in launch review."]
         : ["Provide proposed replacement thresholds or keywords to compare replacement impact before changing an active override."]),
       ...(!dryRun ? ["Review the operational audit event created for this impact comparison."] : [])
+    ]
+  };
+}
+
+export async function exportProviderWebsiteParserRuleImpactEvidence(input: {
+  dataSourceId?: string;
+  limit?: number;
+} = {}): Promise<ProviderWebsiteParserRuleImpactEvidenceExport> {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 100), 250));
+  const summary = await listAuditEvents({
+    eventType: "provider_website_parser.rule_impact_compared",
+    subjectType: "provider_website_parser_rule_override",
+    limit
+  });
+  const rows = summary.events
+    .filter((event) => !input.dataSourceId || event.payload.dataSourceId === input.dataSourceId)
+    .map((event) => ({
+      auditEventId: event.id,
+      createdAt: event.createdAt,
+      actorId: event.actorId,
+      dataSourceId: stringFromPayload(event.payload.dataSourceId),
+      dataSourceName: stringFromPayload(event.payload.dataSourceName),
+      crawlJobId: stringFromPayload(event.payload.crawlJobId),
+      activeOverrideId: stringFromPayload(event.payload.activeOverrideId),
+      replacementOverrideId: stringFromPayload(event.payload.replacementOverrideId),
+      pagesCompared: numberFromPayload(event.payload.pagesCompared),
+      defaultStageable: numberFromPayload(event.payload.defaultStageable),
+      activeStageable: typeof event.payload.activeStageable === "number" ? event.payload.activeStageable : undefined,
+      replacementStageable: typeof event.payload.replacementStageable === "number" ? event.payload.replacementStageable : undefined,
+      activeStageableDelta: typeof event.payload.activeStageableDelta === "number" ? event.payload.activeStageableDelta : undefined,
+      replacementStageableDelta: typeof event.payload.replacementStageableDelta === "number" ? event.payload.replacementStageableDelta : undefined,
+      reason: stringFromPayload(event.payload.reason)
+    }));
+  const blockers = [
+    ...(!rows.length ? ["No retained parser impact comparison audit events match the export filters."] : [])
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    filters: {
+      dataSourceId: input.dataSourceId,
+      limit
+    },
+    totals: {
+      events: rows.length,
+      pagesCompared: rows.reduce((total, row) => total + row.pagesCompared, 0),
+      defaultStageable: rows.reduce((total, row) => total + row.defaultStageable, 0),
+      activeStageable: rows.reduce((total, row) => total + (row.activeStageable ?? 0), 0),
+      replacementStageable: rows.reduce((total, row) => total + (row.replacementStageable ?? 0), 0)
+    },
+    rows,
+    csv: impactEvidenceRowsToCsv(rows),
+    blockers,
+    nextActions: [
+      ...(rows.length
+        ? ["Attach this parser impact evidence export to override replacement, rollback, and launch-readiness review notes."]
+        : ["Run audited parser rule impact comparisons before exporting launch review evidence."]),
+      ...(input.dataSourceId ? ["Confirm the exported source-specific impact evidence matches the target parser override decision."] : [])
     ]
   };
 }

@@ -472,6 +472,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<FileCheck2 aria-hidden="true" />}
+          label="Impact export"
+          loading={loadingKey === "provider-website-parser-rule-impact-export"}
+          onClick={() =>
+            runOperation("Provider website parser rule impact export", "provider-website-parser-rule-impact-export", () =>
+              fetch("/api/v1/admin/provider-website-parser/rules/impact/export")
+            )
+          }
+        />
+        <OpsButton
           icon={<ShieldAlert aria-hidden="true" />}
           label="Rollback rules"
           loading={loadingKey === "provider-website-parser-rule-rollback"}
@@ -749,6 +759,11 @@ function summarizeOperation(key: string, data: unknown) {
     return totals
       ? `${String(totals.pagesCompared ?? 0)} parser page${totals.pagesCompared === 1 ? "" : "s"} compared, default stageable ${String(totals.defaultStageable ?? 0)}, active stageable ${String(totals.activeStageable ?? "n/a")}, replacement stageable ${String(totals.replacementStageable ?? "n/a")}.`
       : `${String(candidates)} provider website parser rule impact candidate${candidates === 1 ? "" : "s"} found for comparison.`;
+  }
+
+  if (key === "provider-website-parser-rule-impact-export") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.events ?? 0)} parser impact evidence event${totals?.events === 1 ? "" : "s"} exported, ${String(totals?.pagesCompared ?? 0)} page${totals?.pagesCompared === 1 ? "" : "s"} compared, and ${String(totals?.replacementStageable ?? 0)} replacement-stageable candidate${totals?.replacementStageable === 1 ? "" : "s"} retained.`;
   }
 
   if (key === "provider-website-parser-rule-rollback") {
