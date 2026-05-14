@@ -1,9 +1,17 @@
-import type { CampaignAssetRecord, CreateCampaignInput, MarketingCampaignRecord } from "@/lib/domain/campaigns";
+import type {
+  CampaignAssetRecord,
+  CampaignMetricRecord,
+  CreateCampaignInput,
+  MarketingCampaignRecord,
+  ProviderCampaignMetricsSummary
+} from "@/lib/domain/campaigns";
 import { featureForCampaignType, requireProviderFeature } from "@/lib/billing/entitlements";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedCampaigns: MarketingCampaignRecord[] = [];
+const seedCampaignAssets: CampaignAssetRecord[] = [];
+const seedCampaignMetrics: CampaignMetricRecord[] = [];
 
 function mapCampaign(row: Record<string, unknown>): MarketingCampaignRecord {
   return {
@@ -18,6 +26,36 @@ function mapCampaign(row: Record<string, unknown>): MarketingCampaignRecord {
     startsAt: row.starts_at ? String(row.starts_at) : undefined,
     endsAt: row.ends_at ? String(row.ends_at) : undefined,
     createdAt: String(row.created_at)
+  };
+}
+
+function mapCampaignAsset(row: Record<string, unknown>): CampaignAssetRecord {
+  return {
+    id: String(row.id),
+    marketingCampaignId: String(row.marketing_campaign_id),
+    assetType: String(row.asset_type),
+    channel: String(row.channel),
+    title: row.title ? String(row.title) : undefined,
+    body: row.body ? String(row.body) : undefined,
+    assetPayload:
+      row.asset_payload && typeof row.asset_payload === "object" && !Array.isArray(row.asset_payload)
+        ? (row.asset_payload as Record<string, unknown>)
+        : {},
+    approvalStatus: row.approval_status as CampaignAssetRecord["approvalStatus"]
+  };
+}
+
+function mapCampaignMetric(row: Record<string, unknown>): CampaignMetricRecord {
+  return {
+    id: String(row.id),
+    marketingCampaignId: String(row.marketing_campaign_id),
+    metricKey: String(row.metric_key),
+    metricValue: Number(row.metric_value ?? 0),
+    metricPayload:
+      row.metric_payload && typeof row.metric_payload === "object" && !Array.isArray(row.metric_payload)
+        ? (row.metric_payload as Record<string, unknown>)
+        : {},
+    recordedAt: String(row.recorded_at)
   };
 }
 
@@ -51,11 +89,11 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Market
     input
   });
 
-  const status = policy.decision.startsWith("blocked") ? "blocked_by_policy" : "draft";
+  const status: MarketingCampaignRecord["status"] = policy.decision.startsWith("blocked") ? "blocked_by_policy" : "draft";
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const campaign = {
       id: `pending-campaign-${Date.now()}`,
       providerId: input.providerId,
       campaignType: input.campaignType,
@@ -68,6 +106,8 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Market
       endsAt: input.endsAt,
       createdAt: new Date().toISOString()
     };
+    seedCampaigns.unshift(campaign);
+    return campaign;
   }
 
   const { data, error } = await supabase
@@ -119,7 +159,7 @@ export async function generateCampaignAssets(campaignId: string): Promise<Campai
 
   const supabase = getSupabaseAdminClient();
   if (supabase) {
-    await supabase.from("campaign_assets").insert(
+    const { data, error } = await supabase.from("campaign_assets").insert(
       assets.map((asset) => ({
         marketing_campaign_id: campaignId,
         asset_type: asset.assetType,
@@ -129,7 +169,15 @@ export async function generateCampaignAssets(campaignId: string): Promise<Campai
         asset_payload: asset.assetPayload,
         approval_status: asset.approvalStatus
       }))
-    );
+    ).select("*");
+
+    if (error) {
+      throw new Error(`Campaign asset generation failed: ${error.message}`);
+    }
+
+    return (data ?? []).map(mapCampaignAsset);
+  } else {
+    seedCampaignAssets.unshift(...assets);
   }
 
   return assets;
@@ -153,4 +201,118 @@ export async function publishCampaign(campaignId: string) {
   }
 
   return { id: campaignId, status: "published" };
+}
+
+function metricValue(metrics: CampaignMetricRecord[], key: string) {
+  return metrics
+    .filter((metric) => metric.metricKey === key)
+    .reduce((total, metric) => total + metric.metricValue, 0);
+}
+
+function buildCampaignMetricActions(input: {
+  campaigns: MarketingCampaignRecord[];
+  assets: CampaignAssetRecord[];
+  metrics: CampaignMetricRecord[];
+}) {
+  const actions: string[] = [];
+  const published = input.campaigns.filter((campaign) => campaign.status === "published").length;
+  const draftAssets = input.assets.filter((asset) => asset.approvalStatus === "draft").length;
+  const leads = metricValue(input.metrics, "leads");
+
+  if (input.campaigns.length === 0) {
+    actions.push("Create a growth campaign before metrics can accumulate.");
+  }
+
+  if (input.campaigns.length > 0 && published === 0) {
+    actions.push("Publish an approved campaign to start measurable growth activity.");
+  }
+
+  if (draftAssets > 0) {
+    actions.push("Review generated campaign assets so approved creative can be published.");
+  }
+
+  if (published > 0 && leads === 0) {
+    actions.push("Connect lead and conversion events so campaign ROI can be measured.");
+  }
+
+  if (!actions.length) {
+    actions.push("Campaign metrics are ready for provider reporting and optimization review.");
+  }
+
+  return actions;
+}
+
+export async function getProviderCampaignMetrics(providerId?: string): Promise<ProviderCampaignMetricsSummary> {
+  const campaigns = (await listCampaigns()).filter((campaign) => !providerId || campaign.providerId === providerId);
+  const campaignIds = campaigns.map((campaign) => campaign.id);
+  const supabase = getSupabaseAdminClient();
+  let assets: CampaignAssetRecord[] = [];
+  let metrics: CampaignMetricRecord[] = [];
+
+  if (!campaignIds.length) {
+    return {
+      providerId,
+      generatedAt: new Date().toISOString(),
+      campaigns: { total: 0, draft: 0, published: 0, blocked: 0, completed: 0 },
+      assets: { total: 0, approved: 0, draft: 0, blocked: 0 },
+      metrics: { impressions: 0, clicks: 0, leads: 0, conversions: 0, clickThroughRate: 0 },
+      campaignBreakdown: [],
+      nextActions: buildCampaignMetricActions({ campaigns, assets, metrics })
+    };
+  }
+
+  if (!supabase) {
+    assets = seedCampaignAssets.filter((asset) => campaignIds.includes(asset.marketingCampaignId));
+    metrics = seedCampaignMetrics.filter((metric) => campaignIds.includes(metric.marketingCampaignId));
+  } else {
+    const [assetResult, metricResult] = await Promise.all([
+      supabase.from("campaign_assets").select("*").in("marketing_campaign_id", campaignIds),
+      supabase.from("campaign_metrics").select("*").in("marketing_campaign_id", campaignIds)
+    ]);
+
+    if (assetResult.error) {
+      throw new Error(`Campaign asset metrics query failed: ${assetResult.error.message}`);
+    }
+
+    if (metricResult.error) {
+      throw new Error(`Campaign metrics query failed: ${metricResult.error.message}`);
+    }
+
+    assets = (assetResult.data ?? []).map(mapCampaignAsset);
+    metrics = (metricResult.data ?? []).map(mapCampaignMetric);
+  }
+
+  const impressions = metricValue(metrics, "impressions");
+  const clicks = metricValue(metrics, "clicks");
+
+  return {
+    providerId,
+    generatedAt: new Date().toISOString(),
+    campaigns: {
+      total: campaigns.length,
+      draft: campaigns.filter((campaign) => campaign.status === "draft").length,
+      published: campaigns.filter((campaign) => campaign.status === "published").length,
+      blocked: campaigns.filter((campaign) => campaign.status === "blocked_by_policy").length,
+      completed: campaigns.filter((campaign) => campaign.status === "completed").length
+    },
+    assets: {
+      total: assets.length,
+      approved: assets.filter((asset) => asset.approvalStatus === "approved").length,
+      draft: assets.filter((asset) => asset.approvalStatus === "draft").length,
+      blocked: assets.filter((asset) => asset.approvalStatus === "blocked").length
+    },
+    metrics: {
+      impressions,
+      clicks,
+      leads: metricValue(metrics, "leads"),
+      conversions: metricValue(metrics, "conversions"),
+      clickThroughRate: impressions > 0 ? Number((clicks / impressions).toFixed(4)) : 0
+    },
+    campaignBreakdown: campaigns.map((campaign) => ({
+      campaign,
+      assets: assets.filter((asset) => asset.marketingCampaignId === campaign.id).length,
+      metrics: metrics.filter((metric) => metric.marketingCampaignId === campaign.id)
+    })),
+    nextActions: buildCampaignMetricActions({ campaigns, assets, metrics })
+  };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarPlus, FileCheck2, ListChecks, Megaphone, Send, ShieldCheck, Sparkles, Star, Wand2 } from "lucide-react";
+import { BarChart3, CalendarPlus, FileCheck2, ListChecks, Megaphone, Send, ShieldCheck, Sparkles, Star, Wand2 } from "lucide-react";
 
 type ActionResult = {
   label: string;
@@ -202,6 +202,17 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
             )
           }
         />
+        <ConsoleButton
+          icon={<BarChart3 aria-hidden="true" />}
+          disabled={disabled}
+          loading={loadingKey === "campaign-metrics"}
+          label="Campaign metrics"
+          onClick={() =>
+            runAction("Campaign metrics", "campaign-metrics", () =>
+              fetch(`/api/v1/provider/campaigns/metrics?providerId=${providerId}`)
+            )
+          }
+        />
       </div>
 
       <div className="console-results" aria-live="polite">
@@ -264,6 +275,12 @@ function summarizeProviderAction(key: string, data: unknown) {
 
   if (key === "campaign") {
     return `Campaign ${String(record.status ?? "created")} and ready for the next growth step.`;
+  }
+
+  if (key === "campaign-metrics") {
+    const campaigns = isRecord(record.campaigns) ? Number(record.campaigns.total ?? 0) : 0;
+    const leads = isRecord(record.metrics) ? Number(record.metrics.leads ?? 0) : 0;
+    return `${campaigns} campaigns measured with ${leads} lead events in the growth report.`;
   }
 
   return "Action completed and the provider workspace was updated.";
