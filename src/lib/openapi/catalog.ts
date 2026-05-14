@@ -382,6 +382,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Aggregation"], summary: "List source registry entries with approval, robots, and terms status" },
         post: { tags: ["Aggregation"], summary: "Register a source before import or crawling" }
       },
+      "/api/v1/admin/data-sources/approval-queue": {
+        get: { tags: ["Aggregation"], summary: "Summarize source approval queues, missing review fields, risk levels, and import readiness" }
+      },
       "/api/v1/admin/data-sources/{id}/approve": {
         post: { tags: ["Aggregation"], summary: "Approve a registered data source with robots and terms evidence" }
       },

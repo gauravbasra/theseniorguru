@@ -234,6 +234,7 @@ const productPillars: ProductPillar[] = [
     backendRoutes: [
       "GET /api/v1/admin/data-sources",
       "POST /api/v1/admin/data-sources",
+      "GET /api/v1/admin/data-sources/approval-queue",
       "POST /api/v1/admin/data-sources/{id}/approve",
       "POST /api/v1/admin/data-sources/{id}/block",
       "POST /api/v1/admin/import-batches/{id}/run",
@@ -263,7 +264,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["CMS/state import adapters", "Provider website extraction parser", "Source approval dashboard actions"]
+    nextBackendWork: ["CMS/state import adapters", "Provider website extraction parser", "Launch import source seeding"]
   },
   {
     key: "reviews",

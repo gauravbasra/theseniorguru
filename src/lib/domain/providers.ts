@@ -75,6 +75,33 @@ export type DataSourceRecord = {
   approvedAt?: string;
 };
 
+export type DataSourceApprovalQueueItem = DataSourceRecord & {
+  riskLevel: "low" | "medium" | "high";
+  canApproveForImport: boolean;
+  missingReviewFields: string[];
+  nextActions: string[];
+};
+
+export type DataSourceApprovalQueueSummary = {
+  generatedAt: string;
+  totals: {
+    sources: number;
+    pending: number;
+    approved: number;
+    blocked: number;
+    needsLegalReview: number;
+    readyForImport: number;
+  };
+  queues: {
+    pending: DataSourceApprovalQueueItem[];
+    needsLegalReview: DataSourceApprovalQueueItem[];
+    blocked: DataSourceApprovalQueueItem[];
+    approved: DataSourceApprovalQueueItem[];
+  };
+  nextActions: string[];
+  policyDecision: PolicyDecision;
+};
+
 export type PolicyDecision =
   | "approved"
   | "approved_with_disclosure"

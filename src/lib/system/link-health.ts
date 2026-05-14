@@ -78,6 +78,7 @@ const routeContracts: LinkContract[] = [
   { label: "Deployment API", href: "/api/v1/system/deployment", method: "GET", owner: "admin" },
   { label: "Aggregation readiness API", href: "/api/v1/admin/aggregation-readiness", method: "GET", owner: "admin" },
   { label: "Data sources API", href: "/api/v1/admin/data-sources", method: "GET", owner: "admin" },
+  { label: "Data source approval queue API", href: "/api/v1/admin/data-sources/approval-queue", method: "GET", owner: "admin" },
   { label: "Data source approval API", href: "/api/v1/admin/data-sources/demo/approve", method: "POST", owner: "admin" },
   { label: "Data source block API", href: "/api/v1/admin/data-sources/demo/block", method: "POST", owner: "admin" },
   { label: "Import launch plan API", href: "/api/v1/admin/import-launch-plan", method: "GET", owner: "admin" },

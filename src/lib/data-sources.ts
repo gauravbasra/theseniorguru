@@ -1,5 +1,10 @@
 import { seedDataSources } from "@/lib/data/seed";
-import type { DataSourceRecord, DataSourceReviewStatus } from "@/lib/domain/providers";
+import type {
+  DataSourceApprovalQueueItem,
+  DataSourceApprovalQueueSummary,
+  DataSourceRecord,
+  DataSourceReviewStatus
+} from "@/lib/domain/providers";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -176,4 +181,130 @@ export async function decideDataSourceReview(dataSourceId: string, input: DataSo
   });
 
   return mapDataSource(data);
+}
+
+function dataSourceRiskLevel(source: DataSourceRecord): DataSourceApprovalQueueItem["riskLevel"] {
+  if (source.reviewStatus === "blocked" || source.robotsStatus === "blocked" || source.robotsStatus === "disallowed") {
+    return "high";
+  }
+
+  if (
+    source.reviewStatus === "needs_legal_review" ||
+    source.sourceType === "provider_website" ||
+    source.sourceType === "vendor" ||
+    !source.termsNotes
+  ) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function sourceMissingReviewFields(source: DataSourceRecord) {
+  const missing: string[] = [];
+
+  if (!source.baseUrl) missing.push("baseUrl");
+  if (!source.robotsStatus) missing.push("robotsStatus");
+  if (!source.termsNotes) missing.push("termsNotes");
+  if (!source.jurisdiction) missing.push("jurisdiction");
+
+  return missing;
+}
+
+function sourceNextActions(source: DataSourceRecord, missingReviewFields: string[]) {
+  const actions: string[] = [];
+
+  if (missingReviewFields.length) {
+    actions.push(`Complete review fields: ${missingReviewFields.join(", ")}.`);
+  }
+
+  if (source.robotsStatus === "blocked" || source.robotsStatus === "disallowed") {
+    actions.push("Do not run live acquisition until robots policy changes or owner/legal approves an alternate source.");
+  }
+
+  if (source.reviewStatus === "pending") {
+    actions.push("Approve, block, or send to legal review before live imports use this source.");
+  }
+
+  if (source.reviewStatus === "needs_legal_review") {
+    actions.push("Capture legal decision notes and source terms before approval.");
+  }
+
+  if (source.reviewStatus === "approved" && !missingReviewFields.length) {
+    actions.push("Source is ready for import planning and crawl/import workers.");
+  }
+
+  return actions;
+}
+
+function buildApprovalQueueItem(source: DataSourceRecord): DataSourceApprovalQueueItem {
+  const missingReviewFields = sourceMissingReviewFields(source);
+  const canApproveForImport =
+    source.reviewStatus === "approved" &&
+    !missingReviewFields.length &&
+    source.robotsStatus !== "blocked" &&
+    source.robotsStatus !== "disallowed";
+
+  return {
+    ...source,
+    riskLevel: dataSourceRiskLevel(source),
+    canApproveForImport,
+    missingReviewFields,
+    nextActions: sourceNextActions(source, missingReviewFields)
+  };
+}
+
+export async function getDataSourceApprovalQueue(): Promise<DataSourceApprovalQueueSummary> {
+  const sources = await listDataSources();
+  const policy = await runPolicyCheck({
+    subjectType: "data_source",
+    actionKey: "list_data_source_approval_queue",
+    input: {
+      sourceCount: sources.length,
+      pending: sources.filter((source) => source.reviewStatus === "pending").length,
+      needsLegalReview: sources.filter((source) => source.reviewStatus === "needs_legal_review").length
+    }
+  });
+  const items = sources.map(buildApprovalQueueItem);
+  const pending = items.filter((source) => source.reviewStatus === "pending");
+  const needsLegalReview = items.filter((source) => source.reviewStatus === "needs_legal_review");
+  const blocked = items.filter((source) => source.reviewStatus === "blocked");
+  const approved = items.filter((source) => source.reviewStatus === "approved");
+  const nextActions: string[] = [];
+
+  if (pending.length) {
+    nextActions.push("Review pending source terms, robots posture, and jurisdiction before scheduling import batches.");
+  }
+
+  if (needsLegalReview.length) {
+    nextActions.push("Resolve legal-review sources before live crawl or public-source acquisition.");
+  }
+
+  if (approved.some((source) => !source.canApproveForImport)) {
+    nextActions.push("Approved sources with missing review fields need cleanup before production import planning.");
+  }
+
+  if (!pending.length && !needsLegalReview.length && approved.every((source) => source.canApproveForImport)) {
+    nextActions.push("Source approval queue is ready for launch import planning.");
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totals: {
+      sources: items.length,
+      pending: pending.length,
+      approved: approved.length,
+      blocked: blocked.length,
+      needsLegalReview: needsLegalReview.length,
+      readyForImport: items.filter((source) => source.canApproveForImport).length
+    },
+    queues: {
+      pending,
+      needsLegalReview,
+      blocked,
+      approved
+    },
+    nextActions,
+    policyDecision: policy.decision
+  };
 }
