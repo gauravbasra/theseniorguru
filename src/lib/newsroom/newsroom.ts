@@ -9,6 +9,8 @@ import type {
   ImportRssFeedInput,
   ImportRssFeedResult,
   NewsItemRecord,
+  NewsletterEditionActionInput,
+  NewsletterEditionActionResult,
   NewsletterEditionRecord,
   NewsroomReadinessSummary
 } from "@/lib/domain/newsroom";
@@ -841,6 +843,201 @@ export async function createNewsletterEdition(input: CreateNewsletterEditionInpu
   }
 
   return mapNewsletterEdition(data);
+}
+
+function getSeedNewsletterEdition(id: string) {
+  const edition = seedNewsletterEditions.find((candidate) => candidate.id === id);
+  if (!edition) {
+    throw new Error("Newsletter edition not found");
+  }
+  return edition;
+}
+
+function assertNewsletterCanBeApproved(edition: NewsletterEditionRecord) {
+  if (edition.status === "blocked_by_policy") {
+    throw new Error("Blocked newsletter editions cannot be approved");
+  }
+  if (edition.status === "sent") {
+    throw new Error("Sent newsletter editions cannot be re-approved");
+  }
+}
+
+function assertNewsletterCanBeScheduled(edition: NewsletterEditionRecord) {
+  if (edition.status !== "approved" && edition.status !== "scheduled") {
+    throw new Error("Newsletter edition must be approved before scheduling");
+  }
+}
+
+function assertNewsletterCanBeSent(edition: NewsletterEditionRecord) {
+  if (edition.status !== "approved" && edition.status !== "scheduled") {
+    throw new Error("Newsletter edition must be approved or scheduled before sending");
+  }
+}
+
+async function policyCheckNewsletterAction(
+  edition: NewsletterEditionRecord,
+  actionKey: string,
+  input: NewsletterEditionActionInput
+) {
+  const policy = await runPolicyCheck({
+    subjectType: "newsletter_edition",
+    subjectId: edition.id,
+    actionKey,
+    input: {
+      editionId: edition.id,
+      subject: edition.subject,
+      audience: edition.audience,
+      articleIds: edition.articleIds,
+      intro: edition.intro,
+      ...input
+    }
+  });
+
+  assertPolicyAllowsNewsroomAction(policy, "Newsletter action requires policy clearance");
+  return policy;
+}
+
+export async function approveNewsletterEdition(
+  editionId: string,
+  input: NewsletterEditionActionInput = {}
+): Promise<NewsletterEditionActionResult> {
+  const approvedAt = new Date().toISOString();
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const edition = getSeedNewsletterEdition(editionId);
+    assertNewsletterCanBeApproved(edition);
+    const policy = await policyCheckNewsletterAction(edition, "approve_newsletter_edition", input);
+    edition.status = "approved";
+    return { id: edition.id, status: edition.status, policyDecision: policy.decision };
+  }
+
+  const edition = await getNewsletterEdition(editionId);
+  if (!edition) {
+    throw new Error("Newsletter edition not found");
+  }
+  assertNewsletterCanBeApproved(edition);
+  const policy = await policyCheckNewsletterAction(edition, "approve_newsletter_edition", input);
+
+  const { error } = await supabase
+    .from("newsletter_editions")
+    .update({
+      status: "approved",
+      metadata: { approvedAt, approvedBy: input.actorId ?? "system", notes: input.notes, policyDecision: policy.decision },
+      updated_at: approvedAt
+    })
+    .eq("id", editionId);
+
+  if (error) {
+    throw new Error(`Newsletter approval failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: "newsletter.approved",
+    subject_type: "newsletter_edition",
+    subject_id: editionId,
+    payload: { notes: input.notes, policyDecision: policy.decision }
+  });
+
+  return { id: editionId, status: "approved", policyDecision: policy.decision };
+}
+
+export async function scheduleNewsletterEdition(
+  editionId: string,
+  input: NewsletterEditionActionInput
+): Promise<NewsletterEditionActionResult> {
+  if (!input.scheduledFor || Number.isNaN(new Date(input.scheduledFor).getTime())) {
+    throw new Error("scheduledFor must be a valid ISO date");
+  }
+
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) {
+    const edition = getSeedNewsletterEdition(editionId);
+    assertNewsletterCanBeScheduled(edition);
+    const policy = await policyCheckNewsletterAction(edition, "schedule_newsletter_edition", input);
+    edition.status = "scheduled";
+    edition.scheduledFor = input.scheduledFor;
+    return { id: edition.id, status: edition.status, policyDecision: policy.decision, scheduledFor: edition.scheduledFor };
+  }
+
+  const edition = await getNewsletterEdition(editionId);
+  if (!edition) {
+    throw new Error("Newsletter edition not found");
+  }
+  assertNewsletterCanBeScheduled(edition);
+  const policy = await policyCheckNewsletterAction(edition, "schedule_newsletter_edition", input);
+
+  const { error } = await supabase
+    .from("newsletter_editions")
+    .update({
+      status: "scheduled",
+      scheduled_for: input.scheduledFor,
+      metadata: { scheduledBy: input.actorId ?? "system", notes: input.notes, policyDecision: policy.decision },
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", editionId);
+
+  if (error) {
+    throw new Error(`Newsletter scheduling failed: ${error.message}`);
+  }
+
+  return { id: editionId, status: "scheduled", policyDecision: policy.decision, scheduledFor: input.scheduledFor };
+}
+
+export async function sendNewsletterEdition(
+  editionId: string,
+  input: NewsletterEditionActionInput = {}
+): Promise<NewsletterEditionActionResult> {
+  const sentAt = new Date().toISOString();
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const edition = getSeedNewsletterEdition(editionId);
+    assertNewsletterCanBeSent(edition);
+    const policy = await policyCheckNewsletterAction(edition, "send_newsletter_edition", input);
+    edition.status = "sent";
+    edition.sentAt = sentAt;
+    return { id: edition.id, status: edition.status, policyDecision: policy.decision, sentAt };
+  }
+
+  const edition = await getNewsletterEdition(editionId);
+  if (!edition) {
+    throw new Error("Newsletter edition not found");
+  }
+  assertNewsletterCanBeSent(edition);
+  const policy = await policyCheckNewsletterAction(edition, "send_newsletter_edition", input);
+
+  const { error } = await supabase
+    .from("newsletter_editions")
+    .update({
+      status: "sent",
+      sent_at: sentAt,
+      metadata: {
+        sentBy: input.actorId ?? "system",
+        deliveryProvider: input.deliveryProvider ?? "manual_newsletter_export",
+        notes: input.notes,
+        policyDecision: policy.decision
+      },
+      updated_at: sentAt
+    })
+    .eq("id", editionId);
+
+  if (error) {
+    throw new Error(`Newsletter send failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: "newsletter.sent",
+    subject_type: "newsletter_edition",
+    subject_id: editionId,
+    payload: { deliveryProvider: input.deliveryProvider ?? "manual_newsletter_export", policyDecision: policy.decision }
+  });
+
+  return { id: editionId, status: "sent", policyDecision: policy.decision, sentAt };
 }
 
 export async function getNewsroomReadiness(): Promise<NewsroomReadinessSummary> {

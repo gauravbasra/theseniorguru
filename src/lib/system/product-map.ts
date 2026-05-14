@@ -312,6 +312,9 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/newsroom/articles/{id}/generate-podcast-brief",
       "GET /api/v1/admin/newsroom/newsletters",
       "POST /api/v1/admin/newsroom/newsletters",
+      "POST /api/v1/admin/newsroom/newsletters/{id}/approve",
+      "POST /api/v1/admin/newsroom/newsletters/{id}/schedule",
+      "POST /api/v1/admin/newsroom/newsletters/{id}/send",
       "GET /api/v1/admin/newsroom/readiness",
       "GET /api/v1/articles",
       "GET /api/v1/articles/{slug}",
@@ -328,7 +331,7 @@ const productPillars: ProductPillar[] = [
       "podcast_episodes",
       "newsletter_editions"
     ],
-    nextBackendWork: ["Newsletter approval/send workflow", "RSS scheduling job", "Content performance metrics"]
+    nextBackendWork: ["RSS scheduling job", "Content performance metrics", "Newsletter delivery provider adapter"]
   },
   {
     key: "policy",

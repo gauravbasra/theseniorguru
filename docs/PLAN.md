@@ -234,3 +234,4 @@ Deliverables:
 - Social/newsletter/podcast derivatives.
 - Byline approval.
 - Newsletter edition schema and admin/public APIs. Completed.
+- Newsletter approval, scheduling, and send lifecycle APIs. Completed.

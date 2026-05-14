@@ -131,6 +131,21 @@ export type CreateNewsletterEditionInput = {
   scheduledFor?: string;
 };
 
+export type NewsletterEditionActionInput = {
+  actorId?: string;
+  notes?: string;
+  scheduledFor?: string;
+  deliveryProvider?: string;
+};
+
+export type NewsletterEditionActionResult = {
+  id: string;
+  status: NewsletterEditionStatus;
+  policyDecision: string;
+  scheduledFor?: string;
+  sentAt?: string;
+};
+
 export type NewsroomReadinessSummary = {
   generatedAt: string;
   status: "ready" | "action_required" | "blocked";

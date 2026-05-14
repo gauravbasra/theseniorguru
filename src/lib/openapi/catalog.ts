@@ -325,6 +325,15 @@ export function getOpenApiCatalog() {
         get: { tags: ["Newsroom"], summary: "List newsletter editions assembled by the newsroom workflow" },
         post: { tags: ["Newsroom"], summary: "Create a policy-gated newsletter edition from approved articles" }
       },
+      "/api/v1/admin/newsroom/newsletters/{id}/approve": {
+        post: { tags: ["Newsroom"], summary: "Approve a newsletter edition after editorial and policy review" }
+      },
+      "/api/v1/admin/newsroom/newsletters/{id}/schedule": {
+        post: { tags: ["Newsroom"], summary: "Schedule an approved newsletter edition for distribution" }
+      },
+      "/api/v1/admin/newsroom/newsletters/{id}/send": {
+        post: { tags: ["Newsroom"], summary: "Mark an approved or scheduled newsletter edition as sent with delivery metadata" }
+      },
       "/api/v1/newsletters/{id}": {
         get: { tags: ["Newsroom"], summary: "Get an approved, scheduled, or sent newsletter edition" }
       },
