@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ProductVisual } from "@/components/product-visual";
 import { getPublishedArticleBySlug } from "@/lib/newsroom/newsroom";
+import { visualAssets } from "@/lib/visual-assets";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -31,6 +33,9 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
           {article.publishedAt ? <span>{new Date(article.publishedAt).toLocaleDateString()}</span> : null}
           {article.aiAssisted ? <span>AI-assisted, editorially reviewed</span> : null}
         </div>
+        <ProductVisual
+          asset={visualAssets.newsroomCareGuide}
+        />
         <div className="article-body">
           {article.body.split("\n\n").map((paragraph) => (
             <p key={paragraph}>{paragraph}</p>

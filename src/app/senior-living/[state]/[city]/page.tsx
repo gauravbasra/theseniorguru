@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { FamilyInquiryForm } from "@/components/family-inquiry-form";
+import { ProductVisual } from "@/components/product-visual";
 import { listProviders } from "@/lib/providers";
+import { visualAssets } from "@/lib/visual-assets";
 
 function titleCase(value: string) {
   return value
@@ -74,6 +76,9 @@ export default async function CitySeniorLivingPage({
             <p className="eyebrow">Family checklist</p>
             <p>Compare care levels, pricing, amenities, reviews, availability, nearby hospitals, and tour timing.</p>
           </article>
+          <ProductVisual
+            asset={visualAssets.trustSafetyVerification}
+          />
         </aside>
       </section>
     </main>

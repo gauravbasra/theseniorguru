@@ -102,6 +102,7 @@ Deliverables:
 - Protected Supabase migration bundle API with ordered checksums and admin console action. Completed.
 - Context-specific owned visual asset registry, provenance metadata, and readiness API. Completed.
 - Context-specific visual assets for local events, newsroom guidance, and trust/safety with surface-mapped readiness metadata. Completed.
+- Context-specific visual asset wiring for public article, city, and care-type SEO routes. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 

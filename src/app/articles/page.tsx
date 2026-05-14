@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { ProductVisual } from "@/components/product-visual";
 import { listPublishedArticles } from "@/lib/newsroom/newsroom";
+import { visualAssets } from "@/lib/visual-assets";
 
 export const metadata = {
   title: "Senior Care Guides | The Senior Guru",
@@ -30,6 +32,13 @@ export default async function ArticlesPage() {
           <p>Guides connect family questions to local senior living pages, transparent listings, and direct inquiries.</p>
           <Link className="button primary" href="/operators/free-listing">List your community free</Link>
         </aside>
+      </section>
+
+      <section className="discover-visual-band">
+        <ProductVisual
+          asset={visualAssets.newsroomCareGuide}
+          priority
+        />
       </section>
 
       <section className="provider-list">

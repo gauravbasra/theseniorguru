@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { FamilyInquiryForm } from "@/components/family-inquiry-form";
+import { ProductVisual } from "@/components/product-visual";
 import { getLocalSeoPage } from "@/lib/seo/local-pages";
+import { visualAssets } from "@/lib/visual-assets";
 
 export default async function LocalSeoPage({
   params
@@ -54,6 +56,9 @@ export default async function LocalSeoPage({
             <h2>{page.events.length ? `${page.events.length} nearby events` : "Events coming soon"}</h2>
             <p>Provider events help families learn before they choose.</p>
           </article>
+          <ProductVisual
+            asset={visualAssets.localEventTrust}
+          />
           <article className="profile-card">
             <p className="eyebrow">Questions families ask</p>
             {page.faq.map((item) => (
