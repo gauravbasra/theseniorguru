@@ -481,7 +481,7 @@ const productPillars: ProductPillar[] = [
       "webhook_delivery_attempts",
       "api_audit_events"
     ],
-    nextBackendWork: ["Webhook event signing SDK examples", "Partner sandbox onboarding checklist", "Partner API version changelog"]
+    nextBackendWork: ["Partner sandbox onboarding checklist", "Partner API version changelog", "Webhook SDK package publishing plan"]
   }
 ];
 

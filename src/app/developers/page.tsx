@@ -72,6 +72,16 @@ export default function DevelopersPage() {
         </article>
       </section>
 
+      <section className="operator-funnel">
+        {docs.sdkExamples.map((example) => (
+          <article key={example.language}>
+            <span>{example.language}</span>
+            <h2>{example.title}</h2>
+            <pre className="code-sample"><code>{example.code}</code></pre>
+          </article>
+        ))}
+      </section>
+
       <section className="category-strip">
         <div>
           <p className="eyebrow">Operations controls</p>

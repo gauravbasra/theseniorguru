@@ -3732,6 +3732,19 @@ button.open-api-row {
   line-height: 1.5;
 }
 
+.code-sample {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111827;
+  color: #f8fafc;
+  padding: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
 .audience-shell {
   min-height: 100vh;
 }

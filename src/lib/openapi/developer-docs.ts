@@ -6,6 +6,12 @@ type OpenApiOperation = {
   summary?: string;
 };
 
+type SdkExample = {
+  language: "node" | "python" | "curl";
+  title: string;
+  code: string;
+};
+
 const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/events",
@@ -21,6 +27,57 @@ function getOperation(entries: unknown, method: string): OpenApiOperation | unde
 
   const operation = (entries as Record<string, unknown>)[method];
   return operation && typeof operation === "object" ? (operation as OpenApiOperation) : undefined;
+}
+
+function buildSdkExamples(signingGuide: ReturnType<typeof getWebhookSigningGuide>): SdkExample[] {
+  const { secret, timestamp, rawBody, signature } = signingGuide.sample;
+
+  return [
+    {
+      language: "node",
+      title: "Verify a webhook signature in Node.js",
+      code: [
+        "import crypto from \"node:crypto\";",
+        "",
+        `const secret = \"${secret}\";`,
+        `const timestamp = \"${timestamp}\";`,
+        `const rawBody = ${JSON.stringify(rawBody)};`,
+        `const signature = \"${signature}\";`,
+        "const expectedDigest = crypto",
+        "  .createHmac(\"sha256\", secret)",
+        "  .update(`${timestamp}.${rawBody}`)",
+        "  .digest(\"hex\");",
+        "const suppliedDigest = signature.split(\"v1=\")[1];",
+        "const valid = crypto.timingSafeEqual(Buffer.from(expectedDigest), Buffer.from(suppliedDigest));"
+      ].join("\n")
+    },
+    {
+      language: "python",
+      title: "Verify a webhook signature in Python",
+      code: [
+        "import hmac",
+        "import hashlib",
+        "",
+        `secret = \"${secret}\"`,
+        `timestamp = \"${timestamp}\"`,
+        `raw_body = ${JSON.stringify(rawBody)}`,
+        `signature = \"${signature}\"`,
+        "expected_digest = hmac.new(secret.encode(), f\"{timestamp}.{raw_body}\".encode(), hashlib.sha256).hexdigest()",
+        "supplied_digest = signature.split(\"v1=\")[1]",
+        "valid = hmac.compare_digest(expected_digest, supplied_digest)"
+      ].join("\n")
+    },
+    {
+      language: "curl",
+      title: "Call the partner providers endpoint",
+      code: [
+        "curl -sS \\",
+        "  -H \"x-senior-guru-api-key: $SENIOR_GURU_API_KEY\" \\",
+        "  -H \"accept: application/json\" \\",
+        "  https://theseniorguru.vercel.app/api/v1/partner/providers"
+      ].join("\n")
+    }
+  ];
 }
 
 export function getPartnerDeveloperDocs() {
@@ -75,6 +132,7 @@ export function getPartnerDeveloperDocs() {
       sampleRawBody: signingGuide.sample.rawBody,
       verificationSteps: signingGuide.verificationSteps
     },
+    sdkExamples: buildSdkExamples(signingGuide),
     operationalControls: [
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",
