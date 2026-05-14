@@ -330,6 +330,20 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<GitMerge aria-hidden="true" />}
+          label="Vendor worker"
+          loading={loadingKey === "vendor-worker"}
+          onClick={() =>
+            runOperation("Vendor feed scheduled worker", "vendor-worker", () =>
+              fetch("/api/v1/admin/vendor-feed-imports/worker", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, feeds: [] })
+              })
+            )
+          }
+        />
+        <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
           label="Website parser"
           loading={loadingKey === "provider-website-parser"}
           onClick={() =>
@@ -519,6 +533,10 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "vendor-feeds") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.ready ?? 0)} ready vendor feeds, ${String(totals?.blocked ?? 0)} blocked, and ${String(totals?.credentialsVerified ?? 0)} verified credential references.`;
+  }
+
+  if (key === "vendor-worker") {
+    return `${String(record.executedFeeds ?? 0)} vendor feeds executed, ${String(record.skippedFeeds ?? 0)} skipped for missing payloads, and ${String(record.blockedFeeds ?? 0)} blocked by readiness gates.`;
   }
 
   if (key === "entity-review-queue") {

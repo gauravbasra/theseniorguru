@@ -266,6 +266,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/vendor-feed-connections",
       "POST /api/v1/admin/vendor-feed-connections",
       "POST /api/v1/admin/vendor-feed-imports",
+      "POST /api/v1/admin/vendor-feed-imports/worker",
       "GET /api/v1/admin/import-launch-execution",
       "POST /api/v1/admin/import-launch-execution",
       "GET /api/v1/admin/crawl-jobs",
@@ -287,7 +288,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Provider website parser rule tuning", "Live import escalation queue adapter", "Scheduled vendor feed worker"]
+    nextBackendWork: ["Provider website parser rule tuning", "Live import escalation queue adapter", "CMS/state direct adapter runner"]
   },
   {
     key: "reviews",

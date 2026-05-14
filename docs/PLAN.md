@@ -119,6 +119,7 @@ Deliverables:
 - Import adapter readiness API for CMS, state license, owner-controlled manual, provider website, RSS, and vendor sources. Completed.
 - Vendor feed credential metadata and readiness workflow with contract, vault reference, and field mapping gates. Completed.
 - Vendor feed import runner API for ready vendor metadata and source records through the governed import worker. Completed.
+- Scheduled vendor feed worker preview/run API for ready vendor metadata and supplied vendor payloads without fabricated records. Completed.
 - Provider website parser readiness and crawl-page extraction API with source, robots, and review gates. Completed.
 - Extracted entity confidence review queue API for approval-ready, human-review, legal-review, image-rights, and duplicate routing. Completed.
 - Extracted entity review assignment and SLA API with Supabase migration, local fallback, and admin console action. Completed.
@@ -163,6 +164,7 @@ Deliverables:
 - Import escalation delivery notifications. Completed.
 - Vendor feed credential workflow. Completed.
 - Vendor feed import runner. Completed.
+- Scheduled vendor feed worker. Completed.
 - Provider claim outreach queue. Completed.
 
 Launch target:

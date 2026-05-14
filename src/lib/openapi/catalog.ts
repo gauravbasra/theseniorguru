@@ -450,6 +450,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/vendor-feed-imports": {
         post: { tags: ["Aggregation"], summary: "Run ready vendor feed records through the governed import worker" }
       },
+      "/api/v1/admin/vendor-feed-imports/worker": {
+        post: { tags: ["Aggregation"], summary: "Preview or execute scheduled vendor feed imports for ready feeds with supplied payload records" }
+      },
       "/api/v1/admin/import-launch-execution": {
         get: { tags: ["Aggregation"], summary: "Return runnable, blocked, and skipped launch import batch execution status" },
         post: { tags: ["Aggregation"], summary: "Execute runnable launch import batches through source-specific adapters" }

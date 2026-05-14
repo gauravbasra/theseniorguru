@@ -306,6 +306,50 @@ export type VendorFeedImportResult = {
   nextActions: string[];
 };
 
+export type VendorFeedWorkerFeedInput = {
+  dataSourceId: string;
+  records: ImportRecordInput[];
+  batchName?: string;
+};
+
+export type VendorFeedWorkerRunInput = {
+  dryRun?: boolean;
+  actorId?: string;
+  maxFeeds?: number;
+  feeds?: VendorFeedWorkerFeedInput[];
+};
+
+export type VendorFeedWorkerSourceSummary = {
+  dataSourceId: string;
+  dataSourceName: string;
+  vendorName?: string;
+  readinessStatus: "ready" | "blocked";
+  action: "ready" | "blocked" | "skipped" | "executed";
+  reason?: string;
+  recordsProvided: number;
+  run?: VendorFeedImportResult;
+};
+
+export type VendorFeedWorkerRunResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  feedsReviewed: number;
+  readyFeeds: number;
+  blockedFeeds: number;
+  skippedFeeds: number;
+  executedFeeds: number;
+  totals: {
+    totalRecords: number;
+    stagedRecords: number;
+    skippedRecords: number;
+    rejectedRecords: number;
+    errorRecords: number;
+  };
+  feeds: VendorFeedWorkerSourceSummary[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "blocked_by_policy";
 
 export type CrawlJobRecord = {
