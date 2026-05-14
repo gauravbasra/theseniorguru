@@ -38,6 +38,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/provider-portal/claims/{id}/status",
       "POST /api/v1/provider-portal/claims/{id}/verification-evidence",
       "POST /api/v1/admin/provider-verification-attempts/{id}/send",
+      "POST /api/v1/admin/provider-verification-attempts/{id}/code",
+      "POST /api/v1/provider-portal/verification-attempts/{id}/confirm-code",
       "POST /api/v1/admin/provider-claims/{id}/document-review"
     ],
     requiredTables: [

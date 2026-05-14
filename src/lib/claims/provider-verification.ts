@@ -1,7 +1,10 @@
 import type {
   CompleteProviderVerificationAttemptInput,
+  ConfirmProviderVerificationCodeInput,
   CreateProviderVerificationAttemptInput,
+  IssueProviderVerificationCodeInput,
   ProviderClaimStatus,
+  ProviderVerificationCodeDeliveryRecord,
   ProviderVerificationDeliveryRecord,
   ProviderVerificationAttemptRecord,
   ProviderVerificationExpiryResult,
@@ -11,9 +14,11 @@ import type {
 import { getAppEnv } from "@/lib/env";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
+import { createHash, randomInt } from "node:crypto";
 
 const seedVerificationAttempts: ProviderVerificationAttemptRecord[] = [];
 const verificationTtlMs = 7 * 24 * 60 * 60 * 1000;
+const verificationCodeTtlMs = 30 * 60 * 1000;
 
 function methodToClaimStatus(method: ProviderVerificationMethod): ProviderClaimStatus {
   if (method === "business_email" || method === "domain_dns") {
@@ -33,6 +38,10 @@ function methodToClaimStatus(method: ProviderVerificationMethod): ProviderClaimS
 
 function mapJson(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" ? value : undefined;
 }
 
 function mapVerificationAttempt(row: Record<string, unknown>): ProviderVerificationAttemptRecord {
@@ -112,6 +121,60 @@ function buildDeliveryRecord(
       providerClaimId: attempt.providerClaimId,
       method: attempt.method,
       deliveryProvider: channel === "manual" ? "owner_console" : "configured_messaging_adapter_pending"
+    }
+  };
+}
+
+function assertCodeMethod(attempt: ProviderVerificationAttemptRecord) {
+  if (!["business_email", "business_phone", "domain_dns"].includes(attempt.method)) {
+    throw new Error("Verification code can only be issued for business email, business phone, or domain DNS attempts");
+  }
+}
+
+function generateVerificationCode() {
+  return String(randomInt(0, 1000000)).padStart(6, "0");
+}
+
+function hashVerificationCode(attemptId: string, code: string) {
+  return createHash("sha256").update(`${attemptId}:${code.trim()}`).digest("hex");
+}
+
+function maskVerificationCode(code: string) {
+  return `${code.slice(0, 2)}****`;
+}
+
+function buildCodeDeliveryRecord(
+  attempt: ProviderVerificationAttemptRecord,
+  input: IssueProviderVerificationCodeInput,
+  code: string,
+  codeExpiresAt: string,
+  policyDecision: string
+): ProviderVerificationCodeDeliveryRecord {
+  const baseDelivery = buildDeliveryRecord(
+    attempt,
+    {
+      attemptId: input.attemptId,
+      channel: input.channel ?? deliveryChannelForMethod(attempt.method),
+      target: input.target,
+      actorId: input.actorId,
+      messageTemplate: "provider_claim_verification_code"
+    },
+    policyDecision
+  );
+
+  return {
+    ...baseDelivery,
+    status: "manual_required",
+    sentAt: undefined,
+    codeExpiresAt,
+    manualCode: code,
+    maskedCode: maskVerificationCode(code),
+    deliveryPayload: {
+      ...baseDelivery.deliveryPayload,
+      codeExpiresAt,
+      maskedCode: maskVerificationCode(code),
+      deliveryProvider: "owner_console_manual_delivery",
+      instruction: "Deliver this verification code to the verified business email, phone, or DNS contact before marking the claim approved."
     }
   };
 }
@@ -507,6 +570,155 @@ export async function sendProviderVerificationAttempt(
   });
 
   return delivery;
+}
+
+export async function issueProviderVerificationCode(
+  input: IssueProviderVerificationCodeInput
+): Promise<ProviderVerificationCodeDeliveryRecord> {
+  const supabase = getSupabaseAdminClient();
+  const attempt = supabase
+    ? await getSupabaseVerificationAttempt(input.attemptId)
+    : seedVerificationAttempts.find((item) => item.id === input.attemptId);
+
+  if (!attempt) {
+    throw new Error("Provider verification attempt not found");
+  }
+
+  assertAttemptCanBeCompleted(attempt);
+  assertCodeMethod(attempt);
+
+  const policy = await runPolicyCheck({
+    subjectType: "provider_verification_attempt",
+    subjectId: input.attemptId,
+    actionKey: "issue_provider_verification_code",
+    input: {
+      ...input,
+      method: attempt.method,
+      providerClaimId: attempt.providerClaimId
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Provider verification code issue blocked by policy");
+  }
+
+  const code = generateVerificationCode();
+  const codeExpiresAt = new Date(Date.now() + verificationCodeTtlMs).toISOString();
+  const delivery = buildCodeDeliveryRecord(attempt, input, code, codeExpiresAt, policy.decision);
+  const updatedPayload = {
+    ...attempt.attemptPayload,
+    codeVerification: {
+      codeHash: hashVerificationCode(attempt.id, code),
+      codeExpiresAt,
+      issuedAt: new Date().toISOString(),
+      issuedBy: input.actorId,
+      attempts: 0,
+      channel: delivery.channel,
+      target: input.target ?? attempt.target
+    },
+    delivery: {
+      ...delivery,
+      manualCode: undefined
+    }
+  };
+
+  if (!supabase) {
+    Object.assign(attempt, { attemptPayload: updatedPayload });
+    return delivery;
+  }
+
+  const { error } = await supabase
+    .from("provider_verification_attempts")
+    .update({ attempt_payload: updatedPayload })
+    .eq("id", input.attemptId);
+
+  if (error) {
+    throw new Error(`Provider verification code update failed: ${error.message}`);
+  }
+
+  await supabase.from("audit_events").insert({
+    actor_id: input.actorId,
+    actor_type: input.actorId ? "admin" : "system",
+    event_type: "provider_verification_attempt.code_issued",
+    subject_type: "provider_verification_attempt",
+    subject_id: input.attemptId,
+    payload: {
+      claimId: attempt.providerClaimId,
+      method: attempt.method,
+      channel: delivery.channel,
+      target: delivery.target,
+      codeExpiresAt,
+      policyDecision: policy.decision
+    }
+  });
+
+  return delivery;
+}
+
+export async function confirmProviderVerificationCode(
+  input: ConfirmProviderVerificationCodeInput
+): Promise<ProviderVerificationAttemptRecord> {
+  const supabase = getSupabaseAdminClient();
+  const attempt = supabase
+    ? await getSupabaseVerificationAttempt(input.attemptId)
+    : seedVerificationAttempts.find((item) => item.id === input.attemptId);
+
+  if (!attempt) {
+    throw new Error("Provider verification attempt not found");
+  }
+
+  assertAttemptCanBeCompleted(attempt);
+  assertCodeMethod(attempt);
+
+  const codeVerification = mapJson(attempt.attemptPayload.codeVerification);
+  const codeHash = getString(codeVerification.codeHash);
+  const codeExpiresAt = getString(codeVerification.codeExpiresAt);
+  const attempts = typeof codeVerification.attempts === "number" ? codeVerification.attempts : 0;
+
+  if (!codeHash || !codeExpiresAt) {
+    throw new Error("No active verification code has been issued for this attempt");
+  }
+
+  if (Date.parse(codeExpiresAt) <= Date.now()) {
+    throw new Error("Provider verification code has expired; issue a new code");
+  }
+
+  if (attempts >= 5) {
+    throw new Error("Provider verification code attempt limit exceeded; issue a new code");
+  }
+
+  const submittedHash = hashVerificationCode(attempt.id, input.code);
+
+  if (submittedHash !== codeHash) {
+    const updatedPayload = {
+      ...attempt.attemptPayload,
+      codeVerification: {
+        ...codeVerification,
+        attempts: attempts + 1,
+        lastFailedAt: new Date().toISOString()
+      }
+    };
+
+    if (!supabase) {
+      Object.assign(attempt, { attemptPayload: updatedPayload });
+    } else {
+      await supabase.from("provider_verification_attempts").update({ attempt_payload: updatedPayload }).eq("id", attempt.id);
+    }
+
+    throw new Error("Verification code is invalid");
+  }
+
+  return completeProviderVerificationAttempt({
+    attemptId: attempt.id,
+    status: "passed",
+    evidence: {
+      evidenceType: attempt.method,
+      codeVerifiedAt: new Date().toISOString(),
+      codeChannel: codeVerification.channel,
+      codeTarget: codeVerification.target
+    },
+    actorId: input.actorId
+  });
 }
 
 async function getSupabaseVerificationAttempt(attemptId: string): Promise<ProviderVerificationAttemptRecord | null> {

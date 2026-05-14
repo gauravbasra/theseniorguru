@@ -88,6 +88,25 @@ export type ProviderVerificationDeliveryRecord = {
   sentAt?: string;
 };
 
+export type ProviderVerificationCodeDeliveryRecord = ProviderVerificationDeliveryRecord & {
+  codeExpiresAt: string;
+  manualCode?: string;
+  maskedCode: string;
+};
+
+export type IssueProviderVerificationCodeInput = {
+  attemptId: string;
+  channel?: "email" | "sms" | "phone";
+  target?: string;
+  actorId?: string;
+};
+
+export type ConfirmProviderVerificationCodeInput = {
+  attemptId: string;
+  code: string;
+  actorId?: string;
+};
+
 export type ProviderVerificationExpiryResult = {
   generatedAt: string;
   expired: number;

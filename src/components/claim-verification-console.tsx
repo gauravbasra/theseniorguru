@@ -122,8 +122,12 @@ export function ClaimVerificationConsole({ initialClaims }: ClaimVerificationCon
 
   async function sendAttempt(attempt: ProviderVerificationAttemptRecord) {
     const key = `send-${attempt.id}`;
+    const isCodeAttempt = ["business_email", "business_phone", "domain_dns"].includes(attempt.method);
+    const path = isCodeAttempt
+      ? `/api/v1/admin/provider-verification-attempts/${attempt.id}/code`
+      : `/api/v1/admin/provider-verification-attempts/${attempt.id}/send`;
     setLoadingKey(key);
-    const response = await fetch(`/api/v1/admin/provider-verification-attempts/${attempt.id}/send`, {
+    const response = await fetch(path, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ actorId: ownerActorId })
@@ -138,7 +142,9 @@ export function ClaimVerificationConsole({ initialClaims }: ClaimVerificationCon
     setActionState({
       ok: response.ok,
       message: response.ok
-        ? `${payload.data?.status ?? "Delivery"} via ${payload.data?.channel ?? "verification"} recorded.`
+        ? isCodeAttempt
+          ? `Verification code ${payload.data?.maskedCode ?? "issued"} requires manual delivery.`
+          : `${payload.data?.status ?? "Delivery"} via ${payload.data?.channel ?? "verification"} recorded.`
         : payload.error ?? "Verification send failed."
     });
   }
