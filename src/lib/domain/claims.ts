@@ -256,6 +256,33 @@ export type ProviderVerificationSlaSummary = {
   nextActions: string[];
 };
 
+export type NotifyProviderVerificationSlaAlertsInput = {
+  dryRun?: boolean;
+  deliveryProvider?: "manual_export" | "internal_notification_queue";
+  actorId?: string;
+};
+
+export type ProviderVerificationSlaAlertResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  deliveryProvider: "manual_export" | "internal_notification_queue";
+  status: "ready" | "blocked" | "sent" | "no_action";
+  recipients: string[];
+  slaSummary: ProviderVerificationSlaSummary;
+  payloadPreview: {
+    subject: string;
+    alertCount: number;
+    overdue: number;
+    dueSoon: number;
+    pendingDelivery: number;
+    failedOrExpired: number;
+    readyForAdminReview: number;
+    items: ProviderVerificationSlaItem[];
+  };
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ProviderOnboardingReadinessSummary = {
   generatedAt: string;
   providerId: string;

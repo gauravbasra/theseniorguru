@@ -222,6 +222,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="SLA alert"
+          loading={loadingKey === "verification-sla-alert"}
+          onClick={() =>
+            runOperation("Provider verification SLA alert", "verification-sla-alert", () =>
+              fetch("/api/v1/admin/provider-verification-sla/notify", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, deliveryProvider: "manual_export" })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<Send aria-hidden="true" />}
           label="Queue outreach"
           loading={loadingKey === "outreach"}
@@ -398,6 +412,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "verification-sla") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `${String(totals?.overdue ?? 0)} overdue, ${String(totals?.dueSoon ?? 0)} due soon, ${String(totals?.pendingDelivery ?? 0)} awaiting delivery, and ${String(totals?.readyForAdminReview ?? 0)} ready for review.`;
+  }
+
+  if (key === "verification-sla-alert") {
+    const preview = record.payloadPreview as Record<string, unknown> | undefined;
+    return `${String(preview?.alertCount ?? 0)} SLA alert items prepared for ${String(record.deliveryProvider ?? "manual_export")} with status ${String(record.status ?? "ready")}.`;
   }
 
   if (key === "outreach") {

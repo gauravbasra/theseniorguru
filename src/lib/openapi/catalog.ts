@@ -91,6 +91,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/provider-verification-sla": {
         get: { tags: ["Claims"], summary: "Return claim verification SLA buckets for overdue, due-soon, delivery, failure, and review work" }
       },
+      "/api/v1/admin/provider-verification-sla/notify": {
+        post: { tags: ["Claims"], summary: "Preview or record policy-gated claim verification SLA alert delivery" }
+      },
       "/api/v1/admin/provider-outreach": {
         get: { tags: ["Claims"], summary: "List provider claim outreach queue items" },
         post: { tags: ["Claims"], summary: "Create a policy-gated free-claim outreach sequence item" }

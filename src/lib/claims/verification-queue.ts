@@ -1,14 +1,18 @@
 import { getProviderClaimStatusSummary } from "@/lib/claims/claim-status";
 import { listProviderClaims } from "@/lib/claims/provider-claims";
 import { listProviderVerificationAttempts } from "@/lib/claims/provider-verification";
+import { recordAuditEvent } from "@/lib/audit-events";
 import type {
+  NotifyProviderVerificationSlaAlertsInput,
   ProviderClaimRecord,
   ProviderVerificationAttemptRecord,
   ProviderVerificationQueueItem,
+  ProviderVerificationSlaAlertResult,
   ProviderVerificationQueueSummary,
   ProviderVerificationSlaItem,
   ProviderVerificationSlaSummary
 } from "@/lib/domain/claims";
+import { runPolicyCheck } from "@/lib/policy";
 
 const VERIFICATION_SLA_HOURS = {
   startVerification: 24,
@@ -292,6 +296,102 @@ export async function getProviderVerificationSlaSummary(): Promise<ProviderVerif
       ...(failedOrExpired.length ? ["Create fresh verification attempts for failed or expired claims."] : []),
       ...(!queue.items.length ? ["Provider claim submissions will appear here once operators request ownership."] : []),
       ...(!blockers.length && queue.items.length ? ["Claim verification operations are inside the configured SLA windows."] : [])
+    ]
+  };
+}
+
+function uniqueSlaAlertItems(summary: ProviderVerificationSlaSummary) {
+  const items = [
+    ...summary.overdue,
+    ...summary.failedOrExpired,
+    ...summary.pendingDelivery,
+    ...summary.readyForAdminReview,
+    ...summary.dueSoon
+  ];
+  const uniqueItems = new Map<string, ProviderVerificationSlaItem>();
+
+  for (const item of items) {
+    const key = item.attemptId ?? item.claimId;
+    if (!uniqueItems.has(key)) {
+      uniqueItems.set(key, item);
+    }
+  }
+
+  return [...uniqueItems.values()].slice(0, 25);
+}
+
+export async function notifyProviderVerificationSlaAlerts(
+  input: NotifyProviderVerificationSlaAlertsInput = {}
+): Promise<ProviderVerificationSlaAlertResult> {
+  const dryRun = input.dryRun ?? true;
+  const deliveryProvider = input.deliveryProvider ?? "manual_export";
+  const summary = await getProviderVerificationSlaSummary();
+  const items = uniqueSlaAlertItems(summary);
+  const policy = await runPolicyCheck({
+    subjectType: "provider_verification_sla",
+    actionKey: "notify_provider_verification_sla_alerts",
+    input: {
+      dryRun,
+      deliveryProvider,
+      status: summary.status,
+      totals: summary.totals
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Provider verification SLA alert delivery blocked by policy");
+  }
+
+  const blockers = [
+    ...(deliveryProvider === "internal_notification_queue" && !dryRun
+      ? ["Internal notification queue provider is not configured for live claim verification SLA alerts yet."]
+      : [])
+  ];
+  const payloadPreview = {
+    subject:
+      summary.status === "ready"
+        ? "The Senior Guru claim verification SLA is clear"
+        : "The Senior Guru claim verification SLA needs attention",
+    alertCount: items.length,
+    overdue: summary.totals.overdue,
+    dueSoon: summary.totals.dueSoon,
+    pendingDelivery: summary.totals.pendingDelivery,
+    failedOrExpired: summary.totals.failedOrExpired,
+    readyForAdminReview: summary.totals.readyForAdminReview,
+    items
+  };
+  const resultStatus =
+    summary.status === "ready" ? "no_action" : blockers.length ? "blocked" : dryRun ? "ready" : "sent";
+
+  if (!dryRun && !blockers.length && summary.status !== "ready") {
+    await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: "provider_verification.sla_alert_sent",
+      subjectType: "provider_verification_sla",
+      payload: {
+        deliveryProvider,
+        totals: summary.totals,
+        alertCount: items.length,
+        policyDecision: policy.decision
+      }
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    deliveryProvider,
+    status: resultStatus,
+    recipients: ["claim-ops"],
+    slaSummary: summary,
+    payloadPreview,
+    blockers,
+    nextActions: [
+      ...(summary.status === "ready" ? ["No claim verification SLA alert is needed right now."] : []),
+      ...(dryRun && summary.status !== "ready" ? ["Review the payload preview, then run with dryRun=false after choosing the delivery provider."] : []),
+      ...(!dryRun && blockers.length ? ["Keep delivery in manual export mode until the internal notification queue is configured."] : []),
+      ...(!dryRun && !blockers.length && summary.status !== "ready" ? ["Claim verification SLA alert was recorded for launch operations follow-up."] : [])
     ]
   };
 }
