@@ -156,6 +156,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="Escalation delivery"
+          loading={loadingKey === "entity-escalation-delivery"}
+          onClick={() =>
+            runOperation("Import escalation delivery readiness", "entity-escalation-delivery", () =>
+              fetch("/api/v1/admin/extracted-entities/escalations/delivery-readiness")
+            )
+          }
+        />
+        <OpsButton
           icon={<Send aria-hidden="true" />}
           label="Notify escalations"
           loading={loadingKey === "entity-escalation-notify"}
@@ -512,7 +522,12 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "entity-escalation-notify") {
     const preview = record.payloadPreview as Record<string, unknown> | undefined;
-    return `${String(preview?.escalationCount ?? 0)} escalation item${preview?.escalationCount === 1 ? "" : "s"} prepared for ${String(record.deliveryProvider ?? "manual export")}.`;
+    return `${String(preview?.escalationCount ?? 0)} escalation item${preview?.escalationCount === 1 ? "" : "s"} prepared for ${String(record.deliveryProvider ?? "manual export")} with status ${String(record.status ?? "ready")}.`;
+  }
+
+  if (key === "entity-escalation-delivery") {
+    const channels = Array.isArray(record.channels) ? record.channels : [];
+    return `${channels.length} import escalation delivery channels checked with status ${String(record.status ?? "manual_only")}.`;
   }
 
   if (key === "worker-health") {

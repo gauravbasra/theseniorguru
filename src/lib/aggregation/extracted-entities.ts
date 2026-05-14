@@ -3,6 +3,8 @@ import type {
   CreateExtractedEntityInput,
   ExtractedEntityDecisionInput,
   ExtractedEntityEscalationNotificationResult,
+  ExtractedEntityEscalationDeliveryChannel,
+  ExtractedEntityEscalationDeliveryReadiness,
   ExtractedEntityReviewEscalationSummary,
   ExtractedEntityReviewAssignmentRecord,
   ExtractedEntityQualityAuditRecord,
@@ -750,11 +752,58 @@ function escalationNotificationItems(summary: ExtractedEntityReviewEscalationSum
   return [...uniqueItems.values()].slice(0, 25);
 }
 
+function escalationDeliveryChannels(): ExtractedEntityEscalationDeliveryChannel[] {
+  const internalQueueConfigured = Boolean(process.env.INTERNAL_NOTIFICATION_QUEUE_URL || process.env.INTERNAL_NOTIFICATION_QUEUE_TOPIC);
+
+  return [
+    {
+      provider: "manual_export",
+      status: "ready",
+      label: "Owner-console manual export",
+      blockers: [],
+      nextActions: ["Use the manual export payload for launch-ops escalation follow-up until a live provider is approved."]
+    },
+    {
+      provider: "internal_notification_queue",
+      status: internalQueueConfigured ? "manual_only" : "blocked",
+      label: "Internal notification queue",
+      blockers: internalQueueConfigured
+        ? ["Internal queue configuration is present, but the import escalation queue adapter is not enabled for live dispatch yet."]
+        : ["INTERNAL_NOTIFICATION_QUEUE_URL or INTERNAL_NOTIFICATION_QUEUE_TOPIC is required before queue-backed escalation delivery can run."],
+      nextActions: internalQueueConfigured
+        ? ["Wire the queue adapter and delivery audit callback before live import escalation dispatch."]
+        : ["Keep import escalation delivery in manual export mode and park live queue/provider choice for owner approval."]
+    }
+  ];
+}
+
+function escalationDeliveryReadinessForProvider(provider: NotifyExtractedEntityReviewEscalationsInput["deliveryProvider"]) {
+  return escalationDeliveryChannels().find((channel) => channel.provider === provider) ?? escalationDeliveryChannels()[0];
+}
+
+export async function getExtractedEntityEscalationDeliveryReadiness(): Promise<ExtractedEntityEscalationDeliveryReadiness> {
+  const channels = escalationDeliveryChannels();
+  const blockers = channels.flatMap((channel) => channel.blockers);
+  const liveReadyChannels = channels.filter((channel) => channel.provider !== "manual_export" && channel.status === "ready");
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: liveReadyChannels.length ? "ready" : blockers.length ? "manual_only" : "ready",
+    channels,
+    blockers,
+    nextActions: [
+      "Keep import escalation delivery in manual export mode until a non-manual provider reports ready.",
+      ...channels.flatMap((channel) => channel.nextActions)
+    ]
+  };
+}
+
 export async function notifyExtractedEntityReviewEscalations(
   input: NotifyExtractedEntityReviewEscalationsInput = {}
 ): Promise<ExtractedEntityEscalationNotificationResult> {
   const dryRun = input.dryRun ?? true;
   const deliveryProvider = input.deliveryProvider ?? "manual_export";
+  const deliveryReadiness = escalationDeliveryReadinessForProvider(deliveryProvider);
   const summary = await getExtractedEntityReviewEscalations({
     limit: input.limit,
     minImages: input.minImages
@@ -776,8 +825,9 @@ export async function notifyExtractedEntityReviewEscalations(
   }
 
   const blockers = [
-    ...(deliveryProvider === "internal_notification_queue" && !dryRun
-      ? ["Internal notification queue provider is not configured for live escalation delivery yet."]
+    ...deliveryReadiness.blockers,
+    ...(deliveryProvider !== "manual_export" && deliveryReadiness.status !== "ready"
+      ? [`${deliveryReadiness.label} is not ready for live import escalation delivery.`]
       : [])
   ];
   const payloadPreview = {
@@ -800,7 +850,7 @@ export async function notifyExtractedEntityReviewEscalations(
     }))
   };
   const resultStatus =
-    summary.status === "ready" ? "no_action" : blockers.length ? "blocked" : dryRun ? "ready" : "sent";
+    blockers.length ? "blocked" : summary.status === "ready" ? "no_action" : dryRun ? "ready" : "sent";
 
   if (!dryRun && !blockers.length && summary.status !== "ready") {
     await recordAuditEvent({
@@ -821,6 +871,7 @@ export async function notifyExtractedEntityReviewEscalations(
     generatedAt: new Date().toISOString(),
     dryRun,
     deliveryProvider,
+    deliveryReadiness,
     status: resultStatus,
     recipients: ["launch-ops"],
     escalationSummary: summary,
@@ -828,8 +879,9 @@ export async function notifyExtractedEntityReviewEscalations(
     blockers,
     nextActions: [
       ...(summary.status === "ready" ? ["No escalation delivery is needed right now."] : []),
-      ...(dryRun && summary.status !== "ready" ? ["Review the payload preview, then run with dryRun=false after choosing the delivery provider."] : []),
+      ...(dryRun && summary.status !== "ready" && !blockers.length ? ["Review the payload preview, then run with dryRun=false after choosing the delivery provider."] : []),
       ...(!dryRun && blockers.length ? ["Keep delivery in manual export mode until the internal notification queue is configured."] : []),
+      ...(dryRun && blockers.length ? ["Resolve delivery readiness blockers or switch to manual_export before live escalation dispatch."] : []),
       ...(!dryRun && !blockers.length && summary.status !== "ready" ? ["Escalation notification was recorded for launch operations follow-up."] : [])
     ]
   };

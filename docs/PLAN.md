@@ -122,6 +122,7 @@ Deliverables:
 - Extracted entity review assignment and SLA API with Supabase migration, local fallback, and admin console action. Completed.
 - Import operator escalation report API for overdue, due-soon, unassigned, and blocked extracted-entity reviews. Completed.
 - Import escalation notification preview/dispatch API with dry-run safety, manual export payload, and audit evidence. Completed.
+- Import escalation delivery readiness API with internal queue blocker reporting and manual export fallback. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 

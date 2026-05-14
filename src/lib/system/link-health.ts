@@ -219,6 +219,12 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Extracted entity escalation delivery readiness",
+    href: "/api/v1/admin/extracted-entities/escalations/delivery-readiness",
+    method: "GET",
+    owner: "admin"
+  },
+  {
     label: "Extracted entity escalation notification",
     href: "/api/v1/admin/extracted-entities/escalations/notify",
     method: "POST",

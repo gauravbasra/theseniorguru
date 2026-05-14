@@ -252,6 +252,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/extracted-entities/quality-audit",
       "GET /api/v1/admin/extracted-entities/review-queue",
       "GET /api/v1/admin/extracted-entities/escalations",
+      "GET /api/v1/admin/extracted-entities/escalations/delivery-readiness",
       "POST /api/v1/admin/extracted-entities/escalations/notify",
       "POST /api/v1/admin/extracted-entities/{id}/approve",
       "POST /api/v1/admin/current-site-inventory/import",
@@ -282,7 +283,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Import escalation provider integration", "Vendor feed credential workflow", "Provider website parser rule tuning"]
+    nextBackendWork: ["Vendor feed credential workflow", "Provider website parser rule tuning", "Live import escalation queue adapter"]
   },
   {
     key: "reviews",

@@ -242,18 +242,37 @@ export type ExtractedEntityReviewEscalationSummary = {
   nextActions: string[];
 };
 
+export type ExtractedEntityEscalationDeliveryProvider = "manual_export" | "internal_notification_queue";
+
+export type ExtractedEntityEscalationDeliveryChannel = {
+  provider: ExtractedEntityEscalationDeliveryProvider;
+  status: "ready" | "manual_only" | "blocked";
+  label: string;
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ExtractedEntityEscalationDeliveryReadiness = {
+  generatedAt: string;
+  status: "ready" | "manual_only" | "blocked";
+  channels: ExtractedEntityEscalationDeliveryChannel[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type NotifyExtractedEntityReviewEscalationsInput = {
   dryRun?: boolean;
   limit?: number;
   minImages?: number;
-  deliveryProvider?: "manual_export" | "internal_notification_queue";
+  deliveryProvider?: ExtractedEntityEscalationDeliveryProvider;
   actorId?: string;
 };
 
 export type ExtractedEntityEscalationNotificationResult = {
   generatedAt: string;
   dryRun: boolean;
-  deliveryProvider: "manual_export" | "internal_notification_queue";
+  deliveryProvider: ExtractedEntityEscalationDeliveryProvider;
+  deliveryReadiness: ExtractedEntityEscalationDeliveryChannel;
   status: "ready" | "blocked" | "sent" | "no_action";
   recipients: string[];
   escalationSummary: ExtractedEntityReviewEscalationSummary;
