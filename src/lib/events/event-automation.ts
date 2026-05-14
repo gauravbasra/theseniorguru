@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type {
+  EventAutomationReport,
   EventAutomationRunInput,
   EventAutomationRunSummary,
   EventFollowupRecord,
@@ -56,6 +57,47 @@ function mapFollowup(row: Record<string, unknown>): EventFollowupRecord {
     sentAt: row.sent_at ? String(row.sent_at) : undefined,
     createdAt: String(row.created_at)
   };
+}
+
+function summarizeStatuses(records: Array<{ status: string }>) {
+  return records.reduce(
+    (summary, record) => {
+      summary.total += 1;
+      if (record.status === "queued") summary.queued += 1;
+      if (record.status === "sent") summary.sent += 1;
+      if (record.status === "blocked") summary.blocked += 1;
+      return summary;
+    },
+    { total: 0, queued: 0, sent: 0, blocked: 0 }
+  );
+}
+
+function buildAutomationNextActions(input: {
+  confirmed: number;
+  attended: number;
+  remindersQueued: number;
+  followupsQueued: number;
+  followupEligible: number;
+}) {
+  const actions: string[] = [];
+
+  if (input.confirmed > 0 && input.remindersQueued === 0) {
+    actions.push("Run reminder automation before the event so confirmed families receive a manual-delivery reminder.");
+  }
+
+  if (input.attended > 0 && input.followupsQueued === 0) {
+    actions.push("Run follow-up automation for attended families to request reviews or next-step questions.");
+  }
+
+  if (input.followupEligible > input.followupsQueued) {
+    actions.push("Review attendance and no-show segmentation before sending post-event follow-ups.");
+  }
+
+  if (!actions.length) {
+    actions.push("Automation coverage is current for the event records available to the platform.");
+  }
+
+  return actions;
 }
 
 function reminderPayload(event: EventRecord, rsvp: EventRsvpRecord) {
@@ -432,4 +474,71 @@ export async function runEventReminderAutomation(input: EventAutomationRunInput 
   });
 
   return summary;
+}
+
+export async function getEventAutomationReport(eventId: string): Promise<EventAutomationReport> {
+  const event = (await listEvents()).find((item) => item.id === eventId || item.slug === eventId);
+
+  if (!event) {
+    throw new Error("Event not found");
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const rsvps = await listEventRsvps(event.id);
+  const reminders = supabase
+    ? await supabase
+        .from("event_reminders")
+        .select("*")
+        .eq("event_id", event.id)
+        .order("created_at", { ascending: false })
+        .then(({ data, error }) => {
+          if (error) throw new Error(`Event reminder report query failed: ${error.message}`);
+          return (data ?? []).map(mapReminder);
+        })
+    : fallbackReminders.filter((reminder) => reminder.eventId === event.id);
+  const followups = supabase
+    ? await supabase
+        .from("event_followups")
+        .select("*")
+        .eq("event_id", event.id)
+        .order("created_at", { ascending: false })
+        .then(({ data, error }) => {
+          if (error) throw new Error(`Event follow-up report query failed: ${error.message}`);
+          return (data ?? []).map(mapFollowup);
+        })
+    : fallbackFollowups.filter((followup) => followup.eventId === event.id);
+  const reminderStatus = summarizeStatuses(reminders);
+  const followupStatus = summarizeStatuses(followups);
+  const attendanceSegments = rsvps.reduce(
+    (summary, rsvp) => {
+      const partySize = rsvp.partySize ?? 1;
+      if (rsvp.status === "confirmed") summary.confirmed += partySize;
+      if (rsvp.status === "attended") summary.attended += partySize;
+      if (rsvp.status === "no_show") summary.noShow += partySize;
+      if (["confirmed", "attended"].includes(rsvp.status)) summary.followupEligible += partySize;
+      return summary;
+    },
+    { confirmed: 0, attended: 0, noShow: 0, followupEligible: 0 }
+  );
+
+  return {
+    eventId: event.id,
+    generatedAt: new Date().toISOString(),
+    reminders: {
+      ...reminderStatus,
+      records: reminders
+    },
+    followups: {
+      ...followupStatus,
+      records: followups
+    },
+    attendanceSegments,
+    nextActions: buildAutomationNextActions({
+      confirmed: attendanceSegments.confirmed,
+      attended: attendanceSegments.attended,
+      remindersQueued: reminderStatus.queued + reminderStatus.sent,
+      followupsQueued: followupStatus.queued + followupStatus.sent,
+      followupEligible: attendanceSegments.followupEligible
+    })
+  };
 }

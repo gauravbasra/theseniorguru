@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { BellRing, CalendarPlus, CheckCircle2, ClipboardCheck, Loader2, Megaphone, Send, UsersRound } from "lucide-react";
 import type { CommunityGroupRecord, CommunityInvitationRecord, CommunityPostRecord, ExpertProfileRecord } from "@/lib/domain/community";
-import type { EventAnalyticsSummary, EventAutomationRunSummary, EventRsvpRecord, EventPromotionRecord, EventRecord } from "@/lib/domain/events";
+import type { EventAnalyticsSummary, EventAutomationReport, EventAutomationRunSummary, EventRsvpRecord, EventPromotionRecord, EventRecord } from "@/lib/domain/events";
 
 type EventsCommunityConsoleProps = {
   initialEvents: EventRecord[];
@@ -30,6 +30,7 @@ export function EventsCommunityConsole({
   const [promotions, setPromotions] = useState<EventPromotionRecord[]>([]);
   const [analytics, setAnalytics] = useState<EventAnalyticsSummary | null>(null);
   const [automation, setAutomation] = useState<EventAutomationRunSummary | null>(null);
+  const [automationReport, setAutomationReport] = useState<EventAutomationReport | null>(null);
   const [latestRsvp, setLatestRsvp] = useState<EventRsvpRecord | null>(null);
   const [groups, setGroups] = useState(initialGroups);
   const [selectedGroupId, setSelectedGroupId] = useState(initialGroups[0]?.id ?? "");
@@ -212,6 +213,18 @@ export function EventsCommunityConsole({
     );
 
     if (data) setAutomation(data);
+  }
+
+  async function loadAutomationReport() {
+    if (!selectedEventId) return;
+
+    const data = await runAction<EventAutomationReport>(
+      "event-automation-report",
+      () => fetch(`/api/v1/provider/events/${selectedEventId}/automation-report`),
+      (report) => `${report.reminders.total} reminders and ${report.followups.total} follow-ups reported.`
+    );
+
+    if (data) setAutomationReport(data);
   }
 
   async function recordAttendance(status: "attended" | "no_show") {
@@ -471,6 +484,9 @@ export function EventsCommunityConsole({
             {loadingKey === "event-automation" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <BellRing aria-hidden="true" />}
             Reminders
           </button>
+          <button className="small-action" type="button" disabled={!selectedEventId || Boolean(loadingKey)} onClick={loadAutomationReport}>
+            Report
+          </button>
         </div>
 
         {automation ? (
@@ -478,6 +494,14 @@ export function EventsCommunityConsole({
             <span>{automation.scannedEvents} events scanned</span>
             <span>{automation.scannedRsvps} RSVPs checked</span>
             <span>{automation.skippedExisting} already queued</span>
+          </div>
+        ) : null}
+
+        {automationReport ? (
+          <div className="event-automation-summary">
+            <span>{automationReport.reminders.total} reminders</span>
+            <span>{automationReport.followups.total} follow-ups</span>
+            <span>{automationReport.attendanceSegments.followupEligible} follow-up eligible</span>
           </div>
         ) : null}
 

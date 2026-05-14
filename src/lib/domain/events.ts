@@ -183,3 +183,29 @@ export type EventAutomationRunSummary = {
   reminders: EventReminderRecord[];
   followups: EventFollowupRecord[];
 };
+
+export type EventAutomationReport = {
+  eventId: string;
+  generatedAt: string;
+  reminders: {
+    total: number;
+    queued: number;
+    sent: number;
+    blocked: number;
+    records: EventReminderRecord[];
+  };
+  followups: {
+    total: number;
+    queued: number;
+    sent: number;
+    blocked: number;
+    records: EventFollowupRecord[];
+  };
+  attendanceSegments: {
+    confirmed: number;
+    attended: number;
+    noShow: number;
+    followupEligible: number;
+  };
+  nextActions: string[];
+};
