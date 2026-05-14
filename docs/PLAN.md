@@ -101,6 +101,7 @@ Deliverables:
 - Protected Supabase production readiness API and admin console for persistence mode, migration coverage, and blocked capability tracking. Completed.
 - Protected Supabase migration bundle API with ordered checksums and admin console action. Completed.
 - Context-specific owned visual asset registry, provenance metadata, and readiness API. Completed.
+- Context-specific visual assets for local events, newsroom guidance, and trust/safety with surface-mapped readiness metadata. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
@@ -236,3 +237,4 @@ Deliverables:
 - Newsletter edition schema and admin/public APIs. Completed.
 - Newsletter approval, scheduling, and send lifecycle APIs. Completed.
 - Scheduled RSS intake worker API across approved editorial sources. Completed.
+- Content performance metric ingestion and rollup APIs for articles, newsletters, and derivatives. Completed.

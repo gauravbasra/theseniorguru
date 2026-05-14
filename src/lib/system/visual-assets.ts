@@ -1,17 +1,19 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { listVisualAssets, type VisualAsset } from "@/lib/visual-assets";
+import { listVisualAssetsBySurface, type VisualAsset, type VisualAssetSurface } from "@/lib/visual-assets";
 
 export type VisualAssetReadinessItem = {
   key: string;
   src: string;
   audience: VisualAsset["audience"];
+  surfaces: VisualAssetSurface[];
   approvedFor: string[];
   status: "ready" | "needs_attention";
   checks: {
     fileExists: boolean;
     hasSpecificAltText: boolean;
     hasContextMessaging: boolean;
+    hasMappedSurface: boolean;
     hasProvenance: boolean;
     phiSafe: boolean;
   };
@@ -27,6 +29,7 @@ function readinessForAsset(asset: VisualAsset): VisualAssetReadinessItem {
     fileExists: publicAssetExists(asset.src),
     hasSpecificAltText: asset.alt.length >= 80 && /senior|care|living|provider|family/i.test(asset.alt),
     hasContextMessaging: asset.title.length >= 24 && asset.copy.length >= 80 && asset.intent.length >= 40,
+    hasMappedSurface: asset.surfaces.length > 0,
     hasProvenance: asset.source.type === "owned_illustration" && asset.source.provenance.length >= 40,
     phiSafe: asset.source.phiRisk === "none"
   };
@@ -36,14 +39,15 @@ function readinessForAsset(asset: VisualAsset): VisualAssetReadinessItem {
     key: asset.key,
     src: asset.src,
     audience: asset.audience,
+    surfaces: asset.surfaces,
     approvedFor: asset.source.approvedFor,
     status,
     checks
   };
 }
 
-export function getVisualAssetReadiness(audience?: VisualAsset["audience"]) {
-  const assets = listVisualAssets(audience);
+export function getVisualAssetReadiness(audience?: VisualAsset["audience"], surface?: VisualAssetSurface) {
+  const assets = listVisualAssetsBySurface(surface, audience);
   const items = assets.map(readinessForAsset);
   const ready = items.filter((item) => item.status === "ready").length;
 

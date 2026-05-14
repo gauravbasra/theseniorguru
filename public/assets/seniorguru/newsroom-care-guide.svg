@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="690" viewBox="0 0 920 690" role="img" aria-labelledby="title desc">
+  <title id="title">Reviewed senior care guide newsroom visual</title>
+  <desc id="desc">An editorial senior care guide visual with reviewed memory care questions, source notes, family takeaways, and approval status.</desc>
+  <rect width="920" height="690" fill="#FBF8F1"/>
+  <rect x="72" y="64" width="776" height="562" rx="30" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="3"/>
+  <rect x="118" y="112" width="474" height="438" rx="22" fill="#F7F1E7"/>
+  <text x="154" y="162" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="900">Memory care questions families should ask</text>
+  <rect x="154" y="196" width="214" height="32" rx="16" fill="#DDECE8"/>
+  <text x="176" y="218" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800">Reviewed guide</text>
+  <rect x="154" y="266" width="378" height="58" rx="14" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="2"/>
+  <text x="180" y="291" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="800">1. What is the staffing pattern overnight?</text>
+  <text x="180" y="311" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="13">Family takeaway: match support to actual routine.</text>
+  <rect x="154" y="350" width="378" height="58" rx="14" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="2"/>
+  <text x="180" y="375" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="800">2. How are falls and wandering prevented?</text>
+  <text x="180" y="395" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="13">Family takeaway: ask for protocols, not promises.</text>
+  <rect x="154" y="434" width="378" height="58" rx="14" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="2"/>
+  <text x="180" y="459" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="800">3. Which fees change after move-in?</text>
+  <text x="180" y="479" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="13">Family takeaway: compare monthly and care-level costs.</text>
+  <rect x="634" y="118" width="154" height="124" rx="20" fill="#174F49"/>
+  <text x="664" y="158" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="900">Sources</text>
+  <text x="664" y="188" fill="#CFE8E2" font-family="Arial, Helvetica, sans-serif" font-size="14">State pages</text>
+  <text x="664" y="211" fill="#CFE8E2" font-family="Arial, Helvetica, sans-serif" font-size="14">Provider data</text>
+  <rect x="634" y="278" width="154" height="124" rx="20" fill="#F4E4C4"/>
+  <text x="664" y="318" fill="#70480E" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="900">Approval</text>
+  <text x="664" y="348" fill="#70480E" font-family="Arial, Helvetica, sans-serif" font-size="14">Editorial check</text>
+  <text x="664" y="371" fill="#70480E" font-family="Arial, Helvetica, sans-serif" font-size="14">Policy pass</text>
+  <rect x="634" y="438" width="154" height="82" rx="20" fill="#DDECE8"/>
+  <text x="664" y="474" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="900">No PHI</text>
+  <text x="664" y="498" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="14">Public guidance</text>
+  <rect x="118" y="574" width="670" height="38" rx="14" fill="#174F49"/>
+  <text x="148" y="599" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800">Care content should help families act, with sources and approval visible.</text>
+</svg>

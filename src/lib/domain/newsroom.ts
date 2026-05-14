@@ -166,6 +166,76 @@ export type NewsletterEditionActionResult = {
   sentAt?: string;
 };
 
+export type ContentPerformanceSubjectType = "article" | "newsletter" | "derivative";
+
+export type ContentPerformanceMetricKey =
+  | "view"
+  | "click"
+  | "share"
+  | "save"
+  | "newsletter_open"
+  | "newsletter_click"
+  | "lead";
+
+export type ContentPerformanceMetricRecord = {
+  id: string;
+  subjectType: ContentPerformanceSubjectType;
+  subjectId: string;
+  channel: string;
+  metricKey: ContentPerformanceMetricKey;
+  metricValue: number;
+  metricPayload: Record<string, unknown>;
+  recordedAt: string;
+};
+
+export type RecordContentPerformanceMetricInput = {
+  subjectType: ContentPerformanceSubjectType;
+  subjectId: string;
+  channel?: string;
+  metricKey: ContentPerformanceMetricKey;
+  metricValue?: number;
+  metricPayload?: Record<string, unknown>;
+  recordedAt?: string;
+};
+
+export type ContentPerformanceSummary = {
+  generatedAt: string;
+  filters: {
+    subjectType?: ContentPerformanceSubjectType;
+    subjectId?: string;
+    channel?: string;
+  };
+  totals: {
+    metrics: number;
+    views: number;
+    clicks: number;
+    shares: number;
+    saves: number;
+    newsletterOpens: number;
+    newsletterClicks: number;
+    leads: number;
+    clickThroughRate: number;
+  };
+  byChannel: Array<{
+    channel: string;
+    views: number;
+    clicks: number;
+    leads: number;
+    clickThroughRate: number;
+  }>;
+  topContent: Array<{
+    subjectType: ContentPerformanceSubjectType;
+    subjectId: string;
+    title: string;
+    channel: string;
+    views: number;
+    clicks: number;
+    leads: number;
+    clickThroughRate: number;
+  }>;
+  nextActions: string[];
+};
+
 export type NewsroomReadinessSummary = {
   generatedAt: string;
   status: "ready" | "action_required" | "blocked";

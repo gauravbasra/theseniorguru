@@ -1,6 +1,10 @@
 import type {
   ArticleDerivativeRecord,
   ArticleRecord,
+  ContentPerformanceMetricRecord,
+  ContentPerformanceMetricKey,
+  ContentPerformanceSubjectType,
+  ContentPerformanceSummary,
   ContentSourceRecord,
   CreateArticleInput,
   CreateContentSourceInput,
@@ -13,6 +17,7 @@ import type {
   NewsletterEditionActionResult,
   NewsletterEditionRecord,
   NewsroomReadinessSummary,
+  RecordContentPerformanceMetricInput,
   RunScheduledRssImportsInput,
   RunScheduledRssImportsResult
 } from "@/lib/domain/newsroom";
@@ -68,6 +73,38 @@ const seedNewsletterEditions: NewsletterEditionRecord[] = [
     intro: "A practical weekly edition for families comparing senior living options without referral pressure.",
     sentAt: "2026-05-10T00:00:00.000Z",
     createdAt: "2026-05-10T00:00:00.000Z"
+  }
+];
+const seedContentPerformanceMetrics: ContentPerformanceMetricRecord[] = [
+  {
+    id: "seed-content-metric-article-view",
+    subjectType: "article",
+    subjectId: "seed-article-memory-care-tour-questions",
+    channel: "organic_search",
+    metricKey: "view",
+    metricValue: 128,
+    metricPayload: { source: "seed_editorial_performance" },
+    recordedAt: "2026-05-10T00:00:00.000Z"
+  },
+  {
+    id: "seed-content-metric-article-click",
+    subjectType: "article",
+    subjectId: "seed-article-memory-care-tour-questions",
+    channel: "organic_search",
+    metricKey: "click",
+    metricValue: 14,
+    metricPayload: { source: "seed_editorial_performance", target: "provider_profile" },
+    recordedAt: "2026-05-10T00:00:00.000Z"
+  },
+  {
+    id: "seed-content-metric-newsletter-open",
+    subjectType: "newsletter",
+    subjectId: "seed-newsletter-family-tour-planning",
+    channel: "email",
+    metricKey: "newsletter_open",
+    metricValue: 42,
+    metricPayload: { source: "seed_editorial_performance" },
+    recordedAt: "2026-05-10T00:00:00.000Z"
   }
 ];
 const seedContentSources: ContentSourceRecord[] = [
@@ -145,6 +182,21 @@ function mapNewsletterEdition(row: Record<string, unknown>): NewsletterEditionRe
     scheduledFor: row.scheduled_for ? String(row.scheduled_for) : undefined,
     sentAt: row.sent_at ? String(row.sent_at) : undefined,
     createdAt: String(row.created_at)
+  };
+}
+
+function mapContentPerformanceMetric(row: Record<string, unknown>): ContentPerformanceMetricRecord {
+  return {
+    id: String(row.id),
+    subjectType: row.subject_type as ContentPerformanceSubjectType,
+    subjectId: String(row.subject_id),
+    channel: String(row.channel),
+    metricKey: row.metric_key as ContentPerformanceMetricKey,
+    metricValue: Number(row.metric_value ?? 0),
+    metricPayload: row.metric_payload && typeof row.metric_payload === "object" && !Array.isArray(row.metric_payload)
+      ? row.metric_payload as Record<string, unknown>
+      : {},
+    recordedAt: String(row.recorded_at)
   };
 }
 
@@ -1107,6 +1159,308 @@ export async function sendNewsletterEdition(
   });
 
   return { id: editionId, status: "sent", policyDecision: policy.decision, sentAt };
+}
+
+function isContentPerformanceMetricKey(value: unknown): value is ContentPerformanceMetricKey {
+  return [
+    "view",
+    "click",
+    "share",
+    "save",
+    "newsletter_open",
+    "newsletter_click",
+    "lead"
+  ].includes(String(value));
+}
+
+function isContentPerformanceSubjectType(value: unknown): value is ContentPerformanceSubjectType {
+  return ["article", "newsletter", "derivative"].includes(String(value));
+}
+
+async function assertContentPerformanceSubject(input: {
+  subjectType: ContentPerformanceSubjectType;
+  subjectId: string;
+}) {
+  if (input.subjectType === "article") {
+    const article = (await listArticles()).find((candidate) => candidate.id === input.subjectId);
+
+    if (!article) {
+      throw new Error("Article not found for performance metric");
+    }
+
+    return article.title;
+  }
+
+  if (input.subjectType === "newsletter") {
+    const edition = await getNewsletterEdition(input.subjectId);
+
+    if (!edition) {
+      throw new Error("Newsletter edition not found for performance metric");
+    }
+
+    return edition.subject;
+  }
+
+  const derivative = (await listArticleDerivatives()).find((candidate) => candidate.id === input.subjectId);
+
+  if (!derivative) {
+    throw new Error("Article derivative not found for performance metric");
+  }
+
+  return derivative.title ?? derivative.body?.slice(0, 80) ?? derivative.channel;
+}
+
+export async function recordContentPerformanceMetric(
+  input: RecordContentPerformanceMetricInput
+): Promise<ContentPerformanceMetricRecord> {
+  if (!isContentPerformanceSubjectType(input.subjectType)) {
+    throw new Error("subjectType must be article, newsletter, or derivative");
+  }
+
+  if (!input.subjectId?.trim()) {
+    throw new Error("subjectId is required");
+  }
+
+  if (!isContentPerformanceMetricKey(input.metricKey)) {
+    throw new Error("metricKey is not supported");
+  }
+
+  const metricValue = Number(input.metricValue ?? 1);
+  if (!Number.isFinite(metricValue) || metricValue <= 0) {
+    throw new Error("metricValue must be a positive number");
+  }
+
+  const recordedAt = input.recordedAt ?? new Date().toISOString();
+  if (Number.isNaN(new Date(recordedAt).getTime())) {
+    throw new Error("recordedAt must be a valid ISO date when provided");
+  }
+
+  const title = await assertContentPerformanceSubject({
+    subjectType: input.subjectType,
+    subjectId: input.subjectId
+  });
+  const channel = input.channel?.trim() || "owned_site";
+  const policy = await runPolicyCheck({
+    subjectType: "content_performance_metric",
+    subjectId: input.subjectId,
+    actionKey: "record_content_performance_metric",
+    input: {
+      ...input,
+      channel,
+      metricValue,
+      title
+    }
+  });
+
+  assertPolicyAllowsNewsroomAction(policy, "Content performance metric recording requires policy clearance");
+
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) {
+    const metric: ContentPerformanceMetricRecord = {
+      id: `content-metric-${Date.now()}`,
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      channel,
+      metricKey: input.metricKey,
+      metricValue,
+      metricPayload: input.metricPayload ?? {},
+      recordedAt
+    };
+    seedContentPerformanceMetrics.unshift(metric);
+    return metric;
+  }
+
+  const { data, error } = await supabase
+    .from("content_performance_metrics")
+    .insert({
+      subject_type: input.subjectType,
+      subject_id: input.subjectId,
+      channel,
+      metric_key: input.metricKey,
+      metric_value: metricValue,
+      metric_payload: input.metricPayload ?? {},
+      recorded_at: recordedAt
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Content performance metric creation failed: ${error.message}`);
+  }
+
+  return mapContentPerformanceMetric(data);
+}
+
+async function listContentPerformanceMetrics(input: {
+  subjectType?: ContentPerformanceSubjectType;
+  subjectId?: string;
+  channel?: string;
+} = {}): Promise<ContentPerformanceMetricRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedContentPerformanceMetrics.filter((metric) =>
+      (!input.subjectType || metric.subjectType === input.subjectType) &&
+      (!input.subjectId || metric.subjectId === input.subjectId) &&
+      (!input.channel || metric.channel === input.channel)
+    );
+  }
+
+  let query = supabase
+    .from("content_performance_metrics")
+    .select("*")
+    .order("recorded_at", { ascending: false });
+
+  if (input.subjectType) {
+    query = query.eq("subject_type", input.subjectType);
+  }
+
+  if (input.subjectId) {
+    query = query.eq("subject_id", input.subjectId);
+  }
+
+  if (input.channel) {
+    query = query.eq("channel", input.channel);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Content performance metric query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapContentPerformanceMetric);
+}
+
+function sumMetrics(metrics: ContentPerformanceMetricRecord[], key: ContentPerformanceMetricKey) {
+  return metrics
+    .filter((metric) => metric.metricKey === key)
+    .reduce((total, metric) => total + metric.metricValue, 0);
+}
+
+function contentCtr(views: number, clicks: number) {
+  return views > 0 ? Number((clicks / views).toFixed(4)) : 0;
+}
+
+function buildContentTitleLookup(input: {
+  articles: ArticleRecord[];
+  newsletters: NewsletterEditionRecord[];
+  derivatives: ArticleDerivativeRecord[];
+}) {
+  const lookup = new Map<string, string>();
+
+  for (const article of input.articles) {
+    lookup.set(`article:${article.id}`, article.title);
+  }
+
+  for (const newsletter of input.newsletters) {
+    lookup.set(`newsletter:${newsletter.id}`, newsletter.subject);
+  }
+
+  for (const derivative of input.derivatives) {
+    lookup.set(`derivative:${derivative.id}`, derivative.title ?? derivative.body?.slice(0, 80) ?? derivative.channel);
+  }
+
+  return lookup;
+}
+
+export async function getContentPerformanceSummary(input: {
+  subjectType?: ContentPerformanceSubjectType;
+  subjectId?: string;
+  channel?: string;
+} = {}): Promise<ContentPerformanceSummary> {
+  if (input.subjectType && !isContentPerformanceSubjectType(input.subjectType)) {
+    throw new Error("subjectType must be article, newsletter, or derivative");
+  }
+
+  const [metrics, articles, newsletters, derivatives] = await Promise.all([
+    listContentPerformanceMetrics(input),
+    listArticles(),
+    listNewsletterEditions(),
+    listArticleDerivatives()
+  ]);
+  const titleLookup = buildContentTitleLookup({ articles, newsletters, derivatives });
+  const views = sumMetrics(metrics, "view");
+  const clicks = sumMetrics(metrics, "click");
+  const shares = sumMetrics(metrics, "share");
+  const saves = sumMetrics(metrics, "save");
+  const newsletterOpens = sumMetrics(metrics, "newsletter_open");
+  const newsletterClicks = sumMetrics(metrics, "newsletter_click");
+  const leads = sumMetrics(metrics, "lead");
+  const channelKeys = Array.from(new Set(metrics.map((metric) => metric.channel))).sort();
+  const subjectKeys = Array.from(new Set(metrics.map((metric) => `${metric.subjectType}:${metric.subjectId}:${metric.channel}`)));
+  const nextActions: string[] = [];
+
+  if (!metrics.length) {
+    nextActions.push("Record article, newsletter, or derivative metrics before optimizing newsroom distribution.");
+  }
+
+  if (views > 0 && contentCtr(views, clicks) < 0.02) {
+    nextActions.push("Review headlines, internal links, and provider CTAs because content click-through is below 2%.");
+  }
+
+  if (newsletterOpens > 0 && newsletterClicks === 0) {
+    nextActions.push("Newsletter opens are present without click activity; review edition links and tracking coverage.");
+  }
+
+  if (metrics.length && leads === 0) {
+    nextActions.push("Content is attracting activity but has not yet produced lead signals; connect guides to inquiry and tour actions.");
+  }
+
+  if (!nextActions.length) {
+    nextActions.push("Content performance metrics are ready for weekly editorial optimization.");
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    filters: input,
+    totals: {
+      metrics: metrics.length,
+      views,
+      clicks,
+      shares,
+      saves,
+      newsletterOpens,
+      newsletterClicks,
+      leads,
+      clickThroughRate: contentCtr(views, clicks)
+    },
+    byChannel: channelKeys.map((channel) => {
+      const channelMetrics = metrics.filter((metric) => metric.channel === channel);
+      const channelViews = sumMetrics(channelMetrics, "view");
+      const channelClicks = sumMetrics(channelMetrics, "click") + sumMetrics(channelMetrics, "newsletter_click");
+
+      return {
+        channel,
+        views: channelViews,
+        clicks: channelClicks,
+        leads: sumMetrics(channelMetrics, "lead"),
+        clickThroughRate: contentCtr(channelViews, channelClicks)
+      };
+    }),
+    topContent: subjectKeys.map((key) => {
+      const [subjectType, subjectId, channel] = key.split(":") as [ContentPerformanceSubjectType, string, string];
+      const subjectMetrics = metrics.filter((metric) =>
+        metric.subjectType === subjectType &&
+        metric.subjectId === subjectId &&
+        metric.channel === channel
+      );
+      const subjectViews = sumMetrics(subjectMetrics, "view");
+      const subjectClicks = sumMetrics(subjectMetrics, "click") + sumMetrics(subjectMetrics, "newsletter_click");
+
+      return {
+        subjectType,
+        subjectId,
+        title: titleLookup.get(`${subjectType}:${subjectId}`) ?? subjectId,
+        channel,
+        views: subjectViews,
+        clicks: subjectClicks,
+        leads: sumMetrics(subjectMetrics, "lead"),
+        clickThroughRate: contentCtr(subjectViews, subjectClicks)
+      };
+    }).sort((a, b) => (b.views + b.clicks + b.leads) - (a.views + a.clicks + a.leads)).slice(0, 10),
+    nextActions
+  };
 }
 
 export async function getNewsroomReadiness(): Promise<NewsroomReadinessSummary> {

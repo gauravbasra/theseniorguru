@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="690" viewBox="0 0 920 690" role="img" aria-labelledby="title desc">
+  <title id="title">The Senior Guru trust and safety verification visual</title>
+  <desc id="desc">A trust and safety board for provider verification, source freshness, sponsored label checks, audit trail, and approval gates.</desc>
+  <rect width="920" height="690" fill="#F7F1E7"/>
+  <rect x="62" y="56" width="796" height="578" rx="32" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="3"/>
+  <rect x="108" y="110" width="252" height="406" rx="24" fill="#152238"/>
+  <text x="138" y="154" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="900">Trust checks</text>
+  <text x="138" y="184" fill="#CFE8E2" font-family="Arial, Helvetica, sans-serif" font-size="15">Before families act</text>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <circle cx="146" cy="244" r="14" fill="#2F766D"/>
+    <path d="M139 244l6 6 12-16" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <text x="174" y="250" fill="#FFFFFF" font-size="17" font-weight="800">Claim verified</text>
+    <circle cx="146" cy="310" r="14" fill="#2F766D"/>
+    <path d="M139 310l6 6 12-16" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <text x="174" y="316" fill="#FFFFFF" font-size="17" font-weight="800">Source fresh</text>
+    <circle cx="146" cy="376" r="14" fill="#BF7D2A"/>
+    <path d="M139 376l6 6 12-16" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <text x="174" y="382" fill="#FFFFFF" font-size="17" font-weight="800">Sponsor labeled</text>
+    <circle cx="146" cy="442" r="14" fill="#9F5244"/>
+    <path d="M139 442l6 6 12-16" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+    <text x="174" y="448" fill="#FFFFFF" font-size="17" font-weight="800">Audit recorded</text>
+  </g>
+  <rect x="420" y="112" width="338" height="104" rx="22" fill="#FBF8F1" stroke="#E7DDCE" stroke-width="2"/>
+  <text x="452" y="152" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="900">Provider profile readiness</text>
+  <text x="452" y="183" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="16">License, contact ownership, categories, and source provenance.</text>
+  <rect x="420" y="256" width="338" height="104" rx="22" fill="#DDECE8"/>
+  <text x="452" y="296" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="900">Paid placement safety</text>
+  <text x="452" y="327" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="16">Sponsored events and ads keep labels visible before publishing.</text>
+  <rect x="420" y="400" width="338" height="104" rx="22" fill="#F4E4C4"/>
+  <text x="452" y="440" fill="#70480E" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="900">Family-facing confidence</text>
+  <text x="452" y="471" fill="#70480E" font-family="Arial, Helvetica, sans-serif" font-size="16">Direct contact stays open while confidence signals are explained.</text>
+  <path d="M360 314h54" stroke="#BF7D2A" stroke-width="10" stroke-linecap="round"/>
+  <path d="M398 296l24 18-24 18" fill="none" stroke="#BF7D2A" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="108" y="550" width="650" height="44" rx="16" fill="#174F49"/>
+  <text x="138" y="579" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="800">Families deserve direct access, clear labels, and source-aware confidence.</text>
+</svg>

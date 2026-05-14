@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="690" viewBox="0 0 920 690" role="img" aria-labelledby="title desc">
+  <title id="title">Senior local event readiness and trust visual</title>
+  <desc id="desc">A local senior center event card with RSVP readiness, accessibility, transportation, sponsor disclosure, and caregiver reminder details.</desc>
+  <rect width="920" height="690" fill="#F8F3E9"/>
+  <rect x="64" y="58" width="792" height="574" rx="30" fill="#FFFFFF" stroke="#E7DDCE" stroke-width="3"/>
+  <rect x="112" y="112" width="326" height="410" rx="24" fill="#174F49"/>
+  <text x="144" y="158" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="900">Tuesday lunch &amp; learn</text>
+  <text x="144" y="188" fill="#CFE8E2" font-family="Arial, Helvetica, sans-serif" font-size="16">Senior center · accessible entry</text>
+  <rect x="144" y="232" width="246" height="62" rx="16" fill="#FFFFFF"/>
+  <text x="166" y="258" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800">RSVP ready</text>
+  <text x="166" y="280" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="14">12 seats open · reminder sent</text>
+  <rect x="144" y="318" width="246" height="62" rx="16" fill="#DDECE8"/>
+  <text x="166" y="344" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800">Ride notes included</text>
+  <text x="166" y="366" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="14">Parking, transit, front door</text>
+  <rect x="144" y="404" width="246" height="62" rx="16" fill="#F4E4C4"/>
+  <text x="166" y="430" fill="#70480E" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800">Sponsored label visible</text>
+  <text x="166" y="452" fill="#70480E" font-family="Arial, Helvetica, sans-serif" font-size="14">Paid host clearly disclosed</text>
+  <rect x="496" y="118" width="282" height="154" rx="22" fill="#FBF8F1" stroke="#E7DDCE" stroke-width="2"/>
+  <circle cx="552" cy="194" r="34" fill="#F2D5B7"/>
+  <circle cx="552" cy="181" r="12" fill="#6F463E"/>
+  <path d="M530 223c9-23 35-23 44 0" fill="#2F766D"/>
+  <text x="606" y="176" fill="#152238" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="900">Caregiver reminder</text>
+  <text x="606" y="204" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="15">Add to care circle calendar</text>
+  <text x="606" y="228" fill="#66706F" font-family="Arial, Helvetica, sans-serif" font-size="15">Bring medication questions</text>
+  <rect x="496" y="304" width="282" height="154" rx="22" fill="#DDECE8"/>
+  <text x="528" y="348" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="900">Why it matters</text>
+  <text x="528" y="382" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="16">Seniors see what is free,</text>
+  <text x="528" y="406" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="16">what is sponsored, and</text>
+  <text x="528" y="430" fill="#174F49" font-family="Arial, Helvetica, sans-serif" font-size="16">how to attend safely.</text>
+  <path d="M438 324c38 0 38-62 74-62" fill="none" stroke="#BF7D2A" stroke-width="9" stroke-linecap="round"/>
+  <path d="M502 248l20 13-20 15" fill="none" stroke="#BF7D2A" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="112" y="550" width="666" height="44" rx="16" fill="#174F49"/>
+  <text x="142" y="579" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="800">Community events work when trust, logistics, and reminders travel together.</text>
+</svg>
