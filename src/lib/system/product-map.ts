@@ -453,6 +453,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/api-clients/{id}/keys",
       "POST /api/v1/admin/api-clients/{id}/keys",
       "POST /api/v1/admin/api-clients/{id}/keys/{keyId}/revoke",
+      "POST /api/v1/admin/api-clients/{id}/production-promotion",
       "GET /api/v1/admin/webhook-subscriptions",
       "POST /api/v1/admin/webhook-subscriptions",
       "GET /api/v1/admin/webhook-deliveries",
@@ -489,7 +490,7 @@ const productPillars: ProductPillar[] = [
       "webhook_delivery_attempts",
       "api_audit_events"
     ],
-    nextBackendWork: ["Owner-approved SDK registry publishing", "Partner production promotion approval workflow", "Partner cursor pagination evaluation"]
+    nextBackendWork: ["Owner-approved SDK registry publishing", "Production partner smoke suite", "Partner cursor pagination evaluation"]
   },
   {
     key: "production_operations",

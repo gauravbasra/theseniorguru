@@ -561,6 +561,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/api-clients/{id}/keys/{keyId}/revoke": {
         post: { tags: ["System"], summary: "Revoke an Open API key and write an audit event" }
       },
+      "/api/v1/admin/api-clients/{id}/production-promotion": {
+        post: { tags: ["System"], summary: "Review and owner-approve partner API client promotion from sandbox to production mode" }
+      },
       "/api/v1/admin/webhook-subscriptions": {
         get: { tags: ["System"], summary: "List Open API webhook subscriptions" },
         post: { tags: ["System"], summary: "Create a signed HTTPS webhook subscription" }

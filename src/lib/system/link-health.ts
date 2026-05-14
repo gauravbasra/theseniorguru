@@ -157,6 +157,12 @@ const routeContracts: LinkContract[] = [
     method: "POST",
     owner: "admin"
   },
+  {
+    label: "API client production promotion API",
+    href: "/api/v1/admin/api-clients/demo/production-promotion",
+    method: "POST",
+    owner: "admin"
+  },
   { label: "Webhook subscriptions API", href: "/api/v1/admin/webhook-subscriptions", method: "GET", owner: "admin" },
   { label: "Webhook deliveries API", href: "/api/v1/admin/webhook-deliveries", method: "GET", owner: "admin" },
   { label: "Webhook retry API", href: "/api/v1/admin/webhook-deliveries/retry", method: "POST", owner: "admin" },

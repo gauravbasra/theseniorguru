@@ -5,6 +5,7 @@ import { Download, KeyRound, Loader2, RefreshCw, RotateCcw, Send, ShieldCheck, W
 import type {
   ApiAuditEventRecord,
   ApiClientRecord,
+  ApiClientProductionPromotionResult,
   ApiKeyRecord,
   ApiUsageAnalyticsSummary,
   CreatedApiKeyRecord,
@@ -185,6 +186,30 @@ export function OpenApiConsole({
     }
   }
 
+  async function reviewProductionPromotion() {
+    if (!selectedClientId) return;
+
+    const data = await runAction<ApiClientProductionPromotionResult>(
+      "production-promotion",
+      () => fetch(`/api/v1/admin/api-clients/${selectedClientId}/production-promotion`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          actorId,
+          ownerApproved: false,
+          dryRun: true,
+          approvalNotes: "Admin console production promotion readiness review"
+        })
+      }),
+      (result) => `${result.clientName} production promotion is ${result.status} with ${result.blockers.length} blocker${result.blockers.length === 1 ? "" : "s"}.`
+    );
+
+    if (data) {
+      setClients((current) => current.map((client) => (client.id === data.client.id ? data.client : client)));
+      await refreshAuditEvents();
+    }
+  }
+
   async function createSubscription() {
     if (!selectedClientId) return;
 
@@ -349,6 +374,10 @@ export function OpenApiConsole({
           <button className="small-action" type="button" disabled={!selectedClientId || Boolean(loadingKey)} onClick={createSubscription}>
             {loadingKey === "create-subscription" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <Webhook aria-hidden="true" />}
             Webhook
+          </button>
+          <button className="small-action approve" type="button" disabled={!selectedClientId || Boolean(loadingKey)} onClick={reviewProductionPromotion}>
+            {loadingKey === "production-promotion" ? <Loader2 className="spin-icon" aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
+            Promotion review
           </button>
         </div>
 

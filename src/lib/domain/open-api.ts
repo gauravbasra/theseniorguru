@@ -206,6 +206,38 @@ export type ApiUsageAnalyticsSummary = {
   nextActions: string[];
 };
 
+export type ApiClientProductionPromotionInput = {
+  apiClientId: string;
+  actorId?: string;
+  ownerApproved?: boolean;
+  approvalNotes?: string;
+  dryRun?: boolean;
+  windowDays?: number;
+};
+
+export type ApiClientProductionPromotionResult = {
+  generatedAt: string;
+  apiClientId: string;
+  clientName: string;
+  status: "ready_for_owner_approval" | "promoted" | "blocked";
+  dryRun: boolean;
+  ownerApproved: boolean;
+  evidence: {
+    sandboxMode: boolean;
+    clientStatus: ApiClientRecord["status"];
+    scopes: ApiClientScope[];
+    activeKeys: number;
+    webhookSubscriptions: number;
+    usageWindowDays: number;
+    allowedRequests: number;
+    blockedRequests: number;
+    rateLimitedRequests: number;
+  };
+  blockers: string[];
+  nextActions: string[];
+  client: ApiClientRecord;
+};
+
 export type ApiAuthenticationResult =
   | {
       ok: true;

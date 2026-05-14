@@ -3,6 +3,8 @@ import type {
   ApiAuditEventRecord,
   ApiAuthenticationResult,
   ApiClientRecord,
+  ApiClientProductionPromotionInput,
+  ApiClientProductionPromotionResult,
   ApiClientScope,
   ApiKeyRecord,
   ApiUsageAnalyticsClient,
@@ -599,6 +601,127 @@ export async function createApiClient(input: CreateApiClientInput): Promise<ApiC
   }
 
   return mapClient(data);
+}
+
+export async function reviewApiClientProductionPromotion(
+  input: ApiClientProductionPromotionInput
+): Promise<ApiClientProductionPromotionResult> {
+  const dryRun = input.dryRun ?? !input.ownerApproved;
+  const windowDays = Math.max(1, Math.min(Number(input.windowDays ?? 30), 365));
+  const [clients, keys, subscriptions, usage] = await Promise.all([
+    listApiClients(),
+    listApiKeys(input.apiClientId),
+    listWebhookSubscriptions(input.apiClientId),
+    getApiUsageAnalytics({ apiClientId: input.apiClientId, windowDays })
+  ]);
+  const client = clients.find((record) => record.id === input.apiClientId);
+
+  if (!client) {
+    throw new Error("API client not found");
+  }
+
+  const clientUsage = usage.clients.find((record) => record.apiClientId === input.apiClientId);
+  const activeKeys = keys.filter((key) => key.status === "active").length;
+  const activeSubscriptions = subscriptions.filter((subscription) => subscription.status === "active").length;
+  const blockers = [
+    ...(client.status !== "active" ? ["API client must be active before production promotion."] : []),
+    ...(!client.sandboxMode ? ["API client is already in production mode."] : []),
+    ...(!client.scopes.length ? ["API client must have at least one approved scope."] : []),
+    ...(activeKeys === 0 ? ["API client needs at least one active key for production smoke verification."] : []),
+    ...((clientUsage?.allowed ?? 0) === 0 ? ["No allowed sandbox API calls were found in the selected usage window."] : []),
+    ...((clientUsage?.blocked ?? 0) > 0 ? ["Blocked API calls must be reviewed before production promotion."] : []),
+    ...((clientUsage?.rateLimited ?? 0) > 0 ? ["Rate-limited API calls must be reviewed before production promotion."] : []),
+    ...(client.scopes.includes("webhooks:write") && activeSubscriptions === 0
+      ? ["webhooks:write scope requires at least one active webhook subscription."]
+      : []),
+    ...(!input.ownerApproved ? ["Owner approval is required before sandboxMode can be disabled."] : [])
+  ];
+  const policy = await runPolicyCheck({
+    subjectType: "api_client",
+    subjectId: input.apiClientId,
+    actionKey: "promote_api_client_to_production",
+    input: {
+      ...input,
+      dryRun,
+      windowDays,
+      blockerCount: blockers.length
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    blockers.push(policy.reasons[0] ?? "API client production promotion blocked by policy.");
+  }
+
+  let updatedClient = client;
+  const canPromote = blockers.length === 0 && input.ownerApproved && !dryRun;
+
+  if (canPromote) {
+    const supabase = getSupabaseAdminClient();
+
+    if (!supabase) {
+      client.sandboxMode = false;
+      updatedClient = client;
+    } else {
+      const { data, error } = await supabase
+        .from("api_clients")
+        .update({ sandbox_mode: false })
+        .eq("id", input.apiClientId)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw new Error(`API client production promotion failed: ${error.message}`);
+      }
+
+      updatedClient = mapClient(data);
+    }
+  }
+
+  await recordApiAuditEvent({
+    apiClientId: input.apiClientId,
+    eventType: canPromote ? "api_client.production_promoted" : "api_client.production_promotion_reviewed",
+    subjectType: "api_client",
+    subjectId: input.apiClientId,
+    status: canPromote ? "allowed" : blockers.length ? "blocked" : "allowed",
+    requestMetadata: {
+      actorId: input.actorId,
+      ownerApproved: Boolean(input.ownerApproved),
+      dryRun,
+      approvalNotes: input.approvalNotes,
+      blockerCount: blockers.length,
+      policyDecision: policy.decision
+    }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    apiClientId: input.apiClientId,
+    clientName: updatedClient.name,
+    status: canPromote ? "promoted" : blockers.length ? "blocked" : "ready_for_owner_approval",
+    dryRun,
+    ownerApproved: Boolean(input.ownerApproved),
+    evidence: {
+      sandboxMode: updatedClient.sandboxMode,
+      clientStatus: updatedClient.status,
+      scopes: updatedClient.scopes,
+      activeKeys,
+      webhookSubscriptions: activeSubscriptions,
+      usageWindowDays: windowDays,
+      allowedRequests: clientUsage?.allowed ?? 0,
+      blockedRequests: clientUsage?.blocked ?? 0,
+      rateLimitedRequests: clientUsage?.rateLimited ?? 0
+    },
+    blockers,
+    nextActions:
+      canPromote
+        ? ["Run partner production smoke with the scoped key and archive the promotion audit event."]
+        : [
+            ...(blockers.length ? ["Resolve blockers before disabling sandbox mode for this API client."] : []),
+            ...(!input.ownerApproved ? ["Record explicit owner approval with partner purpose, scopes, rate limits, and webhook events."] : []),
+            "Export usage and webhook evidence before final production promotion."
+          ],
+    client: updatedClient
+  };
 }
 
 export async function createApiKey(input: CreateApiKeyInput): Promise<CreatedApiKeyRecord> {
