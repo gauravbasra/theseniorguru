@@ -248,6 +248,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/import-batches/{id}/requeue",
       "GET /api/v1/admin/extracted-entities",
       "POST /api/v1/admin/extracted-entities/{id}/match",
+      "POST /api/v1/admin/extracted-entities/{id}/merge-readiness",
       "POST /api/v1/admin/extracted-entities/{id}/assignment",
       "POST /api/v1/admin/extracted-entities/quality-audit",
       "GET /api/v1/admin/extracted-entities/review-queue",
@@ -312,7 +313,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Parser impact attachment reviewer UI", "Cron live-mode owner approvals", "Source manifest fetch source-object production credentials"]
+    nextBackendWork: ["Duplicate merge reviewer UI", "Cron live-mode owner approvals", "Source manifest fetch source-object production credentials"]
   },
   {
     key: "reviews",

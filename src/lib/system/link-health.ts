@@ -292,6 +292,12 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Extracted entity merge readiness",
+    href: "/api/v1/admin/extracted-entities/seed-extracted-denver-care/merge-readiness",
+    method: "POST",
+    owner: "admin"
+  },
+  {
     label: "Extracted entity escalation report",
     href: "/api/v1/admin/extracted-entities/escalations",
     method: "GET",

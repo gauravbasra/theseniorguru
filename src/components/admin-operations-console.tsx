@@ -128,6 +128,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<GitMerge aria-hidden="true" />}
+          label="Merge readiness"
+          loading={loadingKey === "merge-readiness"}
+          onClick={() =>
+            runOperation("Extracted entity merge readiness", "merge-readiness", () =>
+              fetch("/api/v1/admin/extracted-entities/seed-extracted-denver-care/merge-readiness", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ actorId: "admin-console", recordAudit: true })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<Send aria-hidden="true" />}
           label="Assign review"
           loading={loadingKey === "entity-review-assignment"}
@@ -880,6 +894,12 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "entity-review-assignment") {
     return `Extracted entity review was assigned to ${String(record.assignedTo ?? "the review owner")} with an SLA due date.`;
+  }
+
+  if (key === "merge-readiness") {
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    const updates = record.proposedUpdates && typeof record.proposedUpdates === "object" ? Object.keys(record.proposedUpdates).length : 0;
+    return `Merge readiness is ${String(record.status ?? "unknown")} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"} and ${String(updates)} proposed missing-field update${updates === 1 ? "" : "s"}.`;
   }
 
   if (key === "policy-review-assignments") {

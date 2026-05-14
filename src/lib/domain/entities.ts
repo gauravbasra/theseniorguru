@@ -135,6 +135,35 @@ export type EntityMatchResult = {
   candidates: EntityMatchCandidateRecord[];
 };
 
+export type ExtractedEntityMergeReadinessInput = {
+  entityId: string;
+  matchedProviderId?: string;
+  actorId?: string;
+  recordAudit?: boolean;
+};
+
+export type ExtractedEntityMergeFieldComparison = {
+  field: string;
+  extractedValue?: unknown;
+  providerValue?: unknown;
+  status: "same" | "fills_gap" | "conflict" | "not_applicable";
+};
+
+export type ExtractedEntityMergeReadinessResult = {
+  generatedAt: string;
+  entityId: string;
+  providerId?: string;
+  providerName?: string;
+  status: "ready_to_merge" | "needs_review" | "blocked";
+  matchScore: number;
+  matchReasons: string[];
+  comparisons: ExtractedEntityMergeFieldComparison[];
+  proposedUpdates: Record<string, unknown>;
+  blockers: string[];
+  nextActions: string[];
+  auditRecorded: boolean;
+};
+
 export type ExtractedEntityQualityFinding = {
   severity: "low" | "medium" | "high" | "critical";
   flagKey: string;

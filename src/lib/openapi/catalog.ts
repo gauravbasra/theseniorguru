@@ -402,6 +402,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/{id}/match": {
         post: { tags: ["Aggregation"], summary: "Score and store duplicate match candidates for an extracted entity" }
       },
+      "/api/v1/admin/extracted-entities/{id}/merge-readiness": {
+        post: { tags: ["Aggregation"], summary: "Compare an extracted entity with a matched provider and report safe merge blockers" }
+      },
       "/api/v1/admin/extracted-entities/{id}/assignment": {
         post: { tags: ["Aggregation"], summary: "Assign an extracted entity review owner and SLA due date" }
       },

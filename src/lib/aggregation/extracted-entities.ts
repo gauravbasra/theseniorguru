@@ -13,6 +13,9 @@ import type {
   ExtractedEntityEscalationRetrySchedulerResult,
   ExtractedEntityReviewEscalationSummary,
   ExtractedEntityReviewAssignmentRecord,
+  ExtractedEntityMergeFieldComparison,
+  ExtractedEntityMergeReadinessInput,
+  ExtractedEntityMergeReadinessResult,
   ExtractedEntityQualityAuditRecord,
   ExtractedEntityQualityAuditResult,
   ExtractedEntityRecord,
@@ -24,7 +27,9 @@ import type {
 } from "@/lib/domain/entities";
 import type { DataQualityFlagRecord } from "@/lib/domain/imports";
 import { listAuditEvents, recordAuditEvent } from "@/lib/audit-events";
+import { scoreEntityMatchCandidates } from "@/lib/aggregation/entity-matching";
 import { runPolicyCheck } from "@/lib/policy";
+import { listProviders } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedExtractedEntities: ExtractedEntityRecord[] = [
@@ -581,6 +586,129 @@ export async function getExtractedEntityReviewQueue(input: {
             ...(totals.duplicateReview > 0 ? ["Resolve duplicate-review records before approving new provider inventory."] : []),
             ...(totals.approveReady > 0 ? ["Approve ready records after a final admin spot-check."] : [])
           ]
+  };
+}
+
+function normalizedComparable(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).toLowerCase().trim()).filter(Boolean).sort().join("|");
+  }
+
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/https?:\/\//g, "")
+    .replace(/www\./g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function compareMergeField(field: string, extractedValue: unknown, providerValue: unknown): ExtractedEntityMergeFieldComparison {
+  const hasExtracted = Array.isArray(extractedValue) ? extractedValue.length > 0 : Boolean(extractedValue);
+  const hasProvider = Array.isArray(providerValue) ? providerValue.length > 0 : Boolean(providerValue);
+
+  if (!hasExtracted && !hasProvider) {
+    return { field, status: "not_applicable" };
+  }
+
+  if (hasExtracted && !hasProvider) {
+    return { field, extractedValue, providerValue, status: "fills_gap" };
+  }
+
+  if (!hasExtracted && hasProvider) {
+    return { field, extractedValue, providerValue, status: "same" };
+  }
+
+  return {
+    field,
+    extractedValue,
+    providerValue,
+    status: normalizedComparable(extractedValue) === normalizedComparable(providerValue) ? "same" : "conflict"
+  };
+}
+
+export async function getExtractedEntityMergeReadiness(
+  input: ExtractedEntityMergeReadinessInput
+): Promise<ExtractedEntityMergeReadinessResult> {
+  const entity = await getExtractedEntityById(input.entityId);
+
+  if (!entity) {
+    throw new Error("Extracted entity not found");
+  }
+
+  const matchResult = await scoreEntityMatchCandidates(input.entityId);
+  const selectedCandidate =
+    matchResult.candidates.find((candidate) => candidate.providerId === input.matchedProviderId) ?? matchResult.candidates[0];
+  const providerId = input.matchedProviderId ?? selectedCandidate?.providerId;
+  const provider = providerId ? (await listProviders()).find((candidate) => candidate.id === providerId) : undefined;
+  const comparisons = provider
+    ? [
+        compareMergeField("name", entity.name, provider.name),
+        compareMergeField("phone", entity.phone, provider.phone),
+        compareMergeField("websiteUrl", entity.websiteUrl, provider.websiteUrl),
+        compareMergeField("city", entity.city, provider.city),
+        compareMergeField("state", entity.state, provider.state),
+        compareMergeField("categories", entity.categories, provider.categories)
+      ]
+    : [];
+  const conflictFields = comparisons.filter((comparison) => comparison.status === "conflict").map((comparison) => comparison.field);
+  const proposedUpdates = Object.fromEntries(
+    comparisons
+      .filter((comparison) => comparison.status === "fills_gap")
+      .map((comparison) => [comparison.field, comparison.extractedValue])
+  );
+  const matchScore = selectedCandidate?.matchScore ?? matchResult.topScore;
+  const blockers = [
+    ...(!provider ? ["No matched provider candidate is available for merge review."] : []),
+    ...(matchScore < 0.65 ? [`Top match score ${matchScore.toFixed(3)} is below the merge review threshold.`] : []),
+    ...(entity.robotsDecision === "blocked" || entity.licenseTermsStatus === "restricted"
+      ? ["Source robots or license terms block merge without owner/legal review."]
+      : []),
+    ...conflictFields.map((field) => `Field conflict requires admin review before merge: ${field}.`)
+  ];
+  const status =
+    blockers.length > 0
+      ? "blocked"
+      : matchScore >= 0.82 && conflictFields.length === 0
+        ? "ready_to_merge"
+        : "needs_review";
+
+  if (input.recordAudit) {
+    await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: "extracted_entity.merge_readiness_reviewed",
+      subjectType: "extracted_entity",
+      subjectId: input.entityId,
+      payload: {
+        providerId,
+        status,
+        matchScore,
+        conflictFields,
+        proposedUpdateFields: Object.keys(proposedUpdates)
+      }
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    entityId: input.entityId,
+    providerId,
+    providerName: provider?.name ?? selectedCandidate?.providerName,
+    status,
+    matchScore,
+    matchReasons: selectedCandidate?.matchReasons ?? [],
+    comparisons,
+    proposedUpdates,
+    blockers,
+    nextActions:
+      status === "ready_to_merge"
+        ? ["Approve the extracted entity with the matched provider id to apply safe missing-field updates."]
+        : [
+            ...(blockers.length ? ["Resolve merge blockers before approving or marking the entity as duplicate."] : []),
+            "Use duplicate decision when the source record should not update the existing provider.",
+            "Use assignment workflow if a human owner must resolve conflicts before launch import approval."
+          ],
+    auditRecorded: Boolean(input.recordAudit)
   };
 }
 
