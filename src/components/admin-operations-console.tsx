@@ -118,6 +118,16 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
+          label="Review queue"
+          loading={loadingKey === "entity-review-queue"}
+          onClick={() =>
+            runOperation("Extracted entity review queue", "entity-review-queue", () =>
+              fetch("/api/v1/admin/extracted-entities/review-queue?status=all&limit=25")
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Approve entity"
           loading={loadingKey === "approve"}
@@ -348,6 +358,11 @@ function summarizeOperation(key: string, data: unknown) {
 
   if (key === "aggregation-readiness") {
     return `Inventory launch readiness was refreshed across sources, imports, crawling, and data quality.`;
+  }
+
+  if (key === "entity-review-queue") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.approveReady ?? 0)} ready to approve, ${String(totals?.humanReview ?? 0)} need human review, ${String(totals?.duplicateReview ?? 0)} duplicate reviews, and ${String(totals?.legalReview ?? 0)} legal reviews.`;
   }
 
   if (key === "worker-health") {

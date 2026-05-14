@@ -165,3 +165,34 @@ export type ExtractedEntityQualityAuditResult = {
   minImages: number;
   results: ExtractedEntityQualityAuditRecord[];
 };
+
+export type ExtractedEntityReviewQueuePriority = "critical" | "high" | "medium" | "low";
+
+export type ExtractedEntityReviewQueueItem = {
+  entity: ExtractedEntityRecord;
+  quality: ExtractedEntityQualityAuditRecord;
+  priority: ExtractedEntityReviewQueuePriority;
+  confidenceBand: "high" | "medium" | "low";
+  duplicateRisk: "high" | "medium" | "low";
+  route: "approve_ready" | "human_review" | "legal_review" | "image_rights_review" | "duplicate_review";
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ExtractedEntityReviewQueueSummary = {
+  generatedAt: string;
+  status: "ready" | "action_required" | "blocked";
+  minImages: number;
+  totals: {
+    entities: number;
+    approveReady: number;
+    humanReview: number;
+    legalReview: number;
+    imageRightsReview: number;
+    duplicateReview: number;
+    lowConfidence: number;
+  };
+  items: ExtractedEntityReviewQueueItem[];
+  blockers: string[];
+  nextActions: string[];
+};

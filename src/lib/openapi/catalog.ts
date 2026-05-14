@@ -381,6 +381,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/quality-audit": {
         post: { tags: ["Aggregation"], summary: "Run launch-quality checks and flag staged provider records" }
       },
+      "/api/v1/admin/extracted-entities/review-queue": {
+        get: { tags: ["Aggregation"], summary: "Review confidence, duplicate, legal, and image-rights routing for staged entities" }
+      },
       "/api/v1/admin/data-sources": {
         get: { tags: ["Aggregation"], summary: "List source registry entries with approval, robots, and terms status" },
         post: { tags: ["Aggregation"], summary: "Register a source before import or crawling" }

@@ -111,6 +111,7 @@ Deliverables:
 - Immutable operational audit event browser API with policy override request, decision, and expiry evidence coverage. Completed.
 - Launch import source seeding API for approved CMS/current-site/state-license sources and optional starter batches. Completed.
 - Launch import execution API for current-site starter batches with explicit CMS/state adapter blockers. Completed.
+- Extracted entity confidence review queue API for approval-ready, human-review, legal-review, image-rights, and duplicate routing. Completed.
 - Supabase project credentials. Parked for tomorrow.
 - Production hosting confirmation. Parked for tomorrow.
 
@@ -142,7 +143,7 @@ Deliverables:
 - Entity matching and duplicate detection.
 - Entity match scoring and candidate persistence. Completed.
 - Confidence scoring.
-- Human review queue.
+- Human review queue. Completed.
 - Extracted entity approval, rejection, duplicate, audit workflow. Completed.
 - Provider claim outreach queue. Completed.
 

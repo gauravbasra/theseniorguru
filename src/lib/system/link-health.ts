@@ -194,6 +194,12 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Extracted entity review queue",
+    href: "/api/v1/admin/extracted-entities/review-queue",
+    method: "GET",
+    owner: "admin"
+  },
+  {
     label: "Public-source acquisition sample run",
     href: "/api/v1/admin/public-source-acquisition/sample-run",
     method: "POST",

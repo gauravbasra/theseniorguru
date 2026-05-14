@@ -3,7 +3,9 @@ import type {
   ExtractedEntityDecisionInput,
   ExtractedEntityQualityAuditRecord,
   ExtractedEntityQualityAuditResult,
-  ExtractedEntityRecord
+  ExtractedEntityRecord,
+  ExtractedEntityReviewQueueItem,
+  ExtractedEntityReviewQueueSummary
 } from "@/lib/domain/entities";
 import type { DataQualityFlagRecord } from "@/lib/domain/imports";
 import { runPolicyCheck } from "@/lib/policy";
@@ -358,6 +360,150 @@ export async function runExtractedEntityQualityAudit(input: {
     highRisk: results.filter((result) => result.findings.some((finding) => finding.severity === "critical" || finding.severity === "high")).length,
     minImages,
     results
+  };
+}
+
+function confidenceBand(entity: ExtractedEntityRecord): ExtractedEntityReviewQueueItem["confidenceBand"] {
+  const score = entity.extractionConfidence ?? entity.confidenceScore;
+
+  if (score >= 0.82) return "high";
+  if (score >= 0.65) return "medium";
+  return "low";
+}
+
+function duplicateRisk(entity: ExtractedEntityRecord): ExtractedEntityReviewQueueItem["duplicateRisk"] {
+  const matchScore = Number(entity.duplicateMatchData?.matchScore ?? entity.duplicateMatchData?.topScore ?? 0);
+  const candidate = entity.duplicateMatchData?.candidateSourceRecordId ?? entity.duplicateMatchData?.providerId;
+
+  if (matchScore >= 0.82 || entity.reviewStatus === "duplicate") return "high";
+  if (matchScore >= 0.65 || candidate) return "medium";
+  return "low";
+}
+
+function routeForReview(
+  entity: ExtractedEntityRecord,
+  quality: ExtractedEntityQualityAuditRecord,
+  duplicate: ExtractedEntityReviewQueueItem["duplicateRisk"]
+): ExtractedEntityReviewQueueItem["route"] {
+  const findingKeys = new Set(quality.findings.map((finding) => finding.flagKey));
+
+  if (entity.reviewStatus === "needs_legal_review" || findingKeys.has("source_policy_risk")) return "legal_review";
+  if (findingKeys.has("image_rights_or_robots_risk")) return "image_rights_review";
+  if (duplicate !== "low") return "duplicate_review";
+  if (quality.recommendedStatus === "needs_human_review" || confidenceBand(entity) === "low") return "human_review";
+  return "approve_ready";
+}
+
+function priorityForReview(
+  route: ExtractedEntityReviewQueueItem["route"],
+  quality: ExtractedEntityQualityAuditRecord,
+  confidence: ExtractedEntityReviewQueueItem["confidenceBand"]
+): ExtractedEntityReviewQueueItem["priority"] {
+  if (route === "legal_review" || route === "image_rights_review") return "critical";
+  if (quality.findings.some((finding) => finding.severity === "high" || finding.severity === "critical")) return "high";
+  if (route === "duplicate_review" || route === "human_review" || confidence === "low") return "medium";
+  return "low";
+}
+
+function nextActionsForReviewItem(item: Omit<ExtractedEntityReviewQueueItem, "nextActions">): string[] {
+  if (item.route === "legal_review") {
+    return ["Route the source and extracted fields to owner/legal review before publication."];
+  }
+
+  if (item.route === "image_rights_review") {
+    return ["Review staged image rights and storage status before publishing any profile media."];
+  }
+
+  if (item.route === "duplicate_review") {
+    return ["Run duplicate match scoring and decide whether to merge, mark duplicate, or approve as a new provider."];
+  }
+
+  if (item.route === "human_review") {
+    return ["Have an admin verify location, contact paths, taxonomy, and confidence before approving the listing."];
+  }
+
+  return ["Approve the extracted entity or enrich optional profile content before launch publication."];
+}
+
+function toReviewQueueItem(entity: ExtractedEntityRecord, minImages: number): ExtractedEntityReviewQueueItem {
+  const quality = scoreEntityQuality(entity, minImages);
+  const confidence = confidenceBand(entity);
+  const duplicate = duplicateRisk(entity);
+  const route = routeForReview(entity, quality, duplicate);
+  const blockers = quality.findings
+    .filter((finding) => finding.severity === "critical" || finding.severity === "high")
+    .map((finding) => finding.message);
+  const item = {
+    entity,
+    quality,
+    priority: priorityForReview(route, quality, confidence),
+    confidenceBand: confidence,
+    duplicateRisk: duplicate,
+    route,
+    blockers
+  };
+
+  return {
+    ...item,
+    nextActions: nextActionsForReviewItem(item)
+  };
+}
+
+export async function getExtractedEntityReviewQueue(input: {
+  status?: ExtractedEntityRecord["reviewStatus"] | "all";
+  limit?: number;
+  minImages?: number;
+} = {}): Promise<ExtractedEntityReviewQueueSummary> {
+  const limit = Math.max(1, Math.min(250, input.limit ?? 100));
+  const minImages = Math.max(1, Math.min(12, input.minImages ?? 3));
+  const status = input.status ?? "all";
+  const reviewableStatuses = new Set(["pending", "needs_human_review", "needs_legal_review"]);
+  const entities = (await listExtractedEntities(status))
+    .filter((entity) => status !== "all" || reviewableStatuses.has(entity.reviewStatus))
+    .slice(0, limit);
+  const items = entities
+    .map((entity) => toReviewQueueItem(entity, minImages))
+    .sort((left, right) => {
+      const rank = { critical: 0, high: 1, medium: 2, low: 3 };
+      return rank[left.priority] - rank[right.priority] || left.quality.qualityScore - right.quality.qualityScore;
+    });
+  const totals = {
+    entities: items.length,
+    approveReady: items.filter((item) => item.route === "approve_ready").length,
+    humanReview: items.filter((item) => item.route === "human_review").length,
+    legalReview: items.filter((item) => item.route === "legal_review").length,
+    imageRightsReview: items.filter((item) => item.route === "image_rights_review").length,
+    duplicateReview: items.filter((item) => item.route === "duplicate_review").length,
+    lowConfidence: items.filter((item) => item.confidenceBand === "low").length
+  };
+  const blockers = items
+    .filter((item) => item.priority === "critical" || item.priority === "high")
+    .flatMap((item) => item.blockers.map((blocker) => `${item.entity.name}: ${blocker}`))
+    .slice(0, 10);
+  const statusValue =
+    totals.legalReview > 0 || totals.imageRightsReview > 0
+      ? "blocked"
+      : totals.humanReview > 0 || totals.duplicateReview > 0 || totals.lowConfidence > 0
+        ? "action_required"
+        : "ready";
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: statusValue,
+    minImages,
+    totals,
+    items,
+    blockers,
+    nextActions:
+      items.length === 0
+        ? ["Run approved import batches or launch source seeding to populate the extracted entity review queue."]
+        : [
+            ...(totals.legalReview + totals.imageRightsReview > 0
+              ? ["Clear legal and image-rights review items before approving imported listings."]
+              : []),
+            ...(totals.duplicateReview > 0 ? ["Resolve duplicate-review records before approving new provider inventory."] : []),
+            ...(totals.approveReady > 0 ? ["Approve ready records after a final admin spot-check."] : [])
+          ]
   };
 }
 
