@@ -600,6 +600,20 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="Worker alerts"
+          loading={loadingKey === "worker-alerts"}
+          onClick={() =>
+            runOperation("Scheduled worker alerts", "worker-alerts", () =>
+              fetch("/api/v1/admin/scheduled-worker-alerts", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ dryRun: true, deliveryProvider: "manual_export", actorId: "admin-console" })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<ListChecks aria-hidden="true" />}
           label="Import launch plan"
           loading={loadingKey === "import-plan"}
@@ -733,6 +747,12 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "verification-delivery-readiness") {
     const channels = Array.isArray(record.channels) ? record.channels : [];
     return `${channels.length} verification delivery channels checked with status ${String(record.status ?? "manual_only")}.`;
+  }
+
+  if (key === "worker-alerts") {
+    const preview = record.payloadPreview as Record<string, unknown> | undefined;
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    return `${String(preview?.alertCount ?? 0)} scheduled-worker alert item${preview?.alertCount === 1 ? "" : "s"} prepared for ${String(record.deliveryProvider ?? "manual_export")}, ${String(blockers)} blocker${blockers === 1 ? "" : "s"}, status ${String(record.status ?? "ready")}.`;
   }
 
   if (key === "outreach") {

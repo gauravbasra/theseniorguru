@@ -1,10 +1,14 @@
 import crypto from "node:crypto";
 import type {
+  NotifyScheduledWorkerAlertsInput,
   RecordScheduledWorkerRunInput,
+  ScheduledWorkerAlertDeliveryResult,
+  ScheduledWorkerAlertItem,
   ScheduledWorkerHealthItem,
   ScheduledWorkerHealthSummary,
   ScheduledWorkerRunRecord
 } from "@/lib/domain/scheduler";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedScheduledWorkerRuns: ScheduledWorkerRunRecord[] = [];
@@ -189,6 +193,92 @@ export async function getScheduledWorkerHealth(): Promise<ScheduledWorkerHealthS
       ...(totals.neverRun ? ["Run each expected cron route at least once after CRON_SECRET is configured."] : []),
       ...(totals.stale ? ["Verify Vercel Cron cadence for stale workers."] : []),
       ...(!totals.failing && !totals.neverRun && !totals.stale ? ["Scheduled worker health is ready for launch monitoring."] : [])
+    ]
+  };
+}
+
+function alertSeverity(status: ScheduledWorkerHealthItem["status"]): ScheduledWorkerAlertItem["severity"] {
+  if (status === "failing" || status === "never_run") return "critical";
+  if (status === "stale") return "warning";
+  return "info";
+}
+
+function toAlertItem(worker: ScheduledWorkerHealthItem): ScheduledWorkerAlertItem {
+  return {
+    workerKey: worker.workerKey,
+    label: worker.label,
+    status: worker.status,
+    severity: alertSeverity(worker.status),
+    latestRunId: worker.latestRun?.id,
+    lastSucceededAt: worker.lastSucceededAt,
+    lastFailedAt: worker.lastFailedAt,
+    minutesSinceLastRun: worker.minutesSinceLastRun,
+    recentFailures: worker.recentFailures,
+    nextAction: worker.nextAction
+  };
+}
+
+export async function notifyScheduledWorkerAlerts(
+  input: NotifyScheduledWorkerAlertsInput = {}
+): Promise<ScheduledWorkerAlertDeliveryResult> {
+  const dryRun = input.dryRun ?? true;
+  const deliveryProvider = input.deliveryProvider ?? "manual_export";
+  const workerHealth = await getScheduledWorkerHealth();
+  const items = workerHealth.workers
+    .filter((worker) => worker.status !== "healthy")
+    .map(toAlertItem);
+  const blockers = [
+    ...(deliveryProvider === "internal_notification_queue" && !dryRun
+      ? ["Internal notification queue provider is not configured for live scheduled-worker alerts yet."]
+      : [])
+  ];
+  const payloadPreview = {
+    subject:
+      workerHealth.status === "ready"
+        ? "The Senior Guru scheduled workers are healthy"
+        : "The Senior Guru scheduled workers need attention",
+    alertCount: items.length,
+    blockedWorkers: workerHealth.totals.failing + workerHealth.totals.neverRun,
+    staleWorkers: workerHealth.totals.stale,
+    items
+  };
+  const status =
+    workerHealth.status === "ready" ? "no_action" : blockers.length ? "blocked" : dryRun ? "ready" : "sent";
+
+  if (!dryRun && !blockers.length && workerHealth.status !== "ready") {
+    await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: "scheduled_worker.alert_sent",
+      subjectType: "scheduled_worker_health",
+      payload: {
+        deliveryProvider,
+        status: workerHealth.status,
+        totals: workerHealth.totals,
+        alertCount: items.length,
+        items
+      }
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    deliveryProvider,
+    status,
+    recipients: ["launch-ops", "platform-admin"],
+    workerHealth,
+    payloadPreview,
+    blockers,
+    nextActions: [
+      ...(workerHealth.status === "ready" ? ["No scheduled-worker alert is needed right now."] : []),
+      ...(dryRun && workerHealth.status !== "ready"
+        ? ["Review the scheduled-worker alert payload, then run with dryRun=false after choosing the delivery provider."]
+        : []),
+      ...(!dryRun && blockers.length ? ["Keep scheduled-worker alert delivery in manual export mode until the internal notification queue is configured."] : []),
+      ...(!dryRun && !blockers.length && workerHealth.status !== "ready"
+        ? ["Scheduled-worker alert evidence was recorded for launch operations follow-up."]
+        : [])
     ]
   };
 }

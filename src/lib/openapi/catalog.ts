@@ -584,6 +584,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/scheduled-worker-health": {
         get: { tags: ["System"], summary: "Summarize expected cron worker health, stale runs, failures, and launch blockers" }
       },
+      "/api/v1/admin/scheduled-worker-alerts": {
+        post: { tags: ["System"], summary: "Preview or record scheduled-worker alert delivery with manual export and live-provider blockers" }
+      },
       "/api/v1/admin/audit-events": {
         get: { tags: ["Policy"], summary: "List immutable operational audit events for policy, claims, imports, and publishing workflows" }
       },

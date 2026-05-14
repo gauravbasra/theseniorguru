@@ -408,6 +408,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/visual-assets",
       "GET /api/v1/admin/scheduled-worker-runs",
       "GET /api/v1/admin/scheduled-worker-health",
+      "POST /api/v1/admin/scheduled-worker-alerts",
       "GET /api/v1/admin/audit-events",
       "GET /api/v1/admin/audit-events/export",
       "GET /api/v1/admin/audit-events/retention",
@@ -436,7 +437,7 @@ const productPillars: ProductPillar[] = [
       "audit_events",
       "scheduled_worker_runs"
     ],
-    nextBackendWork: ["Cron alert delivery", "Policy assignment reviewer decision dashboard", "Owner-approved audit purge execution"]
+    nextBackendWork: ["Policy assignment reviewer decision dashboard", "Owner-approved audit purge execution", "Internal notification queue provider activation"]
   },
   {
     key: "open-api",
