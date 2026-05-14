@@ -254,6 +254,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/extracted-entities/escalations",
       "GET /api/v1/admin/extracted-entities/escalations/delivery-readiness",
       "POST /api/v1/admin/extracted-entities/escalations/notify",
+      "POST /api/v1/admin/extracted-entities/escalations/delivery-callback",
       "POST /api/v1/admin/extracted-entities/{id}/approve",
       "POST /api/v1/admin/current-site-inventory/import",
       "POST /api/v1/admin/public-source-acquisition/current-site-run",
@@ -299,7 +300,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Source manifest signed object fetch executor", "Import escalation delivery callback reconciliation", "Provider website parser override audit dashboard"]
+    nextBackendWork: ["Source manifest signed object fetch executor", "Provider website parser override audit dashboard", "Import escalation retry scheduler"]
   },
   {
     key: "reviews",

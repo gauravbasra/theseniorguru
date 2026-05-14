@@ -269,6 +269,28 @@ export type NotifyExtractedEntityReviewEscalationsInput = {
   actorId?: string;
 };
 
+export type ExtractedEntityEscalationDeliveryCallbackInput = {
+  deliveryProvider: ExtractedEntityEscalationDeliveryProvider;
+  deliveryStatus: "accepted" | "delivered" | "failed" | "retry_scheduled";
+  providerMessageId?: string;
+  callbackId?: string;
+  deliveredAt?: string;
+  failureReason?: string;
+  rawPayload?: Record<string, unknown>;
+  actorId?: string;
+};
+
+export type ExtractedEntityEscalationDeliveryCallbackResult = {
+  generatedAt: string;
+  status: "recorded";
+  deliveryProvider: ExtractedEntityEscalationDeliveryProvider;
+  deliveryStatus: ExtractedEntityEscalationDeliveryCallbackInput["deliveryStatus"];
+  providerMessageId?: string;
+  callbackId?: string;
+  auditEventId: string;
+  nextActions: string[];
+};
+
 export type ExtractedEntityEscalationNotificationResult = {
   generatedAt: string;
   dryRun: boolean;

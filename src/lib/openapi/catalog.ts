@@ -414,6 +414,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/escalations/notify": {
         post: { tags: ["Aggregation"], summary: "Preview, manually record, or dispatch import review escalations to the configured HTTPS internal queue" }
       },
+      "/api/v1/admin/extracted-entities/escalations/delivery-callback": {
+        post: { tags: ["Aggregation"], summary: "Record provider delivery callbacks for import review escalation notifications with audit evidence" }
+      },
       "/api/v1/admin/data-sources": {
         get: { tags: ["Aggregation"], summary: "List source registry entries with approval, robots, and terms status" },
         post: { tags: ["Aggregation"], summary: "Register a source before import or crawling" }

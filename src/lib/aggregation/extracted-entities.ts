@@ -3,6 +3,8 @@ import type {
   CreateExtractedEntityInput,
   ExtractedEntityDecisionInput,
   ExtractedEntityEscalationNotificationResult,
+  ExtractedEntityEscalationDeliveryCallbackInput,
+  ExtractedEntityEscalationDeliveryCallbackResult,
   ExtractedEntityEscalationDeliveryChannel,
   ExtractedEntityEscalationDeliveryReadiness,
   ExtractedEntityReviewEscalationSummary,
@@ -966,6 +968,76 @@ export async function notifyExtractedEntityReviewEscalations(
       ...(dryRun && blockers.length ? ["Resolve delivery readiness blockers or switch to manual_export before live escalation dispatch."] : []),
       ...(!dryRun && deliveryAttempt ? ["Internal notification queue accepted the escalation payload and audit evidence was recorded."] : []),
       ...(!dryRun && !blockers.length && summary.status !== "ready" ? ["Escalation notification was recorded for launch operations follow-up."] : [])
+    ]
+  };
+}
+
+export async function recordExtractedEntityEscalationDeliveryCallback(
+  input: ExtractedEntityEscalationDeliveryCallbackInput
+): Promise<ExtractedEntityEscalationDeliveryCallbackResult> {
+  if (!input.deliveryProvider) {
+    throw new Error("deliveryProvider is required");
+  }
+
+  if (!["accepted", "delivered", "failed", "retry_scheduled"].includes(input.deliveryStatus)) {
+    throw new Error("deliveryStatus must be accepted, delivered, failed, or retry_scheduled");
+  }
+
+  if (!input.providerMessageId && !input.callbackId) {
+    throw new Error("providerMessageId or callbackId is required");
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "extracted_entity_review_escalation",
+    actionKey: "record_extracted_entity_escalation_delivery_callback",
+    input: {
+      deliveryProvider: input.deliveryProvider,
+      deliveryStatus: input.deliveryStatus,
+      providerMessageId: input.providerMessageId,
+      callbackId: input.callbackId
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Extracted entity escalation delivery callback blocked by policy");
+  }
+
+  const audit = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: "extracted_entity.escalation_delivery_callback_recorded",
+    subjectType: "extracted_entity_review_escalation",
+    subjectId: input.providerMessageId ?? input.callbackId,
+    payload: {
+      deliveryProvider: input.deliveryProvider,
+      deliveryStatus: input.deliveryStatus,
+      providerMessageId: input.providerMessageId,
+      callbackId: input.callbackId,
+      deliveredAt: input.deliveredAt,
+      failureReason: input.failureReason,
+      rawPayload: input.rawPayload,
+      policyDecision: policy.decision
+    }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: "recorded",
+    deliveryProvider: input.deliveryProvider,
+    deliveryStatus: input.deliveryStatus,
+    providerMessageId: input.providerMessageId,
+    callbackId: input.callbackId,
+    auditEventId: audit.id,
+    nextActions: [
+      ...(input.deliveryStatus === "failed"
+        ? ["Review the failure reason and retry escalation delivery after correcting provider configuration."]
+        : []),
+      ...(input.deliveryStatus === "retry_scheduled"
+        ? ["Confirm the retry worker receives a follow-up provider callback or records a terminal failure."]
+        : []),
+      ...(input.deliveryStatus === "delivered" || input.deliveryStatus === "accepted"
+        ? ["Use audit events to reconcile escalation delivery receipts against sent escalation notifications."]
+        : [])
     ]
   };
 }
