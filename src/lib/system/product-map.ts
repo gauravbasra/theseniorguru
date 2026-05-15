@@ -418,7 +418,7 @@ const productPillars: ProductPillar[] = [
       "newsletter_delivery_attempts",
       "content_performance_metrics"
     ],
-    nextBackendWork: ["Newsroom cron live-mode approval"]
+    nextBackendWork: []
   },
   {
     key: "policy",

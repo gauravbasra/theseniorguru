@@ -11,6 +11,27 @@ function parseLimit(value?: string) {
   return Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 25)) : 10;
 }
 
+function getLiveApproval(env: ReturnType<typeof getAppEnv>) {
+  const approved = env.newsroomRssCronLiveApproved === "true";
+  const approvedAt = env.newsroomRssCronApprovedAt;
+  const approvedBy = env.newsroomRssCronApprovedBy;
+  const approvedAtValid = Boolean(approvedAt && !Number.isNaN(new Date(approvedAt).getTime()));
+  const blockers = [
+    ...(!approved ? ["Set NEWSROOM_RSS_CRON_LIVE_APPROVED=true after owner approval."] : []),
+    ...(!approvedBy ? ["Set NEWSROOM_RSS_CRON_APPROVED_BY to the owner/admin who approved live newsroom intake."] : []),
+    ...(!approvedAtValid ? ["Set NEWSROOM_RSS_CRON_APPROVED_AT to a valid ISO approval timestamp."] : [])
+  ];
+
+  return {
+    approved,
+    approvedBy,
+    approvedAt,
+    approvedAtValid,
+    blockers,
+    canRunLive: approved && Boolean(approvedBy) && approvedAtValid
+  };
+}
+
 const previewItems = [
   {
     title: "Preview RSS: memory care comparison signals",
@@ -34,6 +55,37 @@ export async function GET(request: Request) {
   try {
     const env = getAppEnv();
     const mode = env.newsroomRssCronMode === "live" ? "live" : "preview";
+    const liveApproval = getLiveApproval(env);
+
+    if (mode === "live" && !liveApproval.canRunLive) {
+      const workerRun = await recordScheduledWorkerRun({
+        workerKey: "cron:newsroom-rss",
+        status: "failed",
+        startedAt,
+        summary: {
+          mode,
+          dryRun: true,
+          blockedByLiveApproval: true,
+          blockers: liveApproval.blockers,
+          approvedBy: liveApproval.approvedBy,
+          approvedAt: liveApproval.approvedAt
+        },
+        error: "Newsroom RSS live cron is blocked until owner approval metadata is configured."
+      });
+
+      return NextResponse.json({
+        data: {
+          mode,
+          ranAt: workerRun.finishedAt,
+          workerRun,
+          rssRun: null,
+          liveApproval,
+          blockers: liveApproval.blockers,
+          nextActions: liveApproval.blockers
+        }
+      }, { status: 424 });
+    }
+
     const rssRun = await runScheduledRssImports({
       dryRun: mode !== "live",
       limit: parseLimit(env.newsroomRssCronLimit),
@@ -46,6 +98,7 @@ export async function GET(request: Request) {
       summary: {
         mode,
         dryRun: rssRun.dryRun,
+        liveApproval: mode === "live" ? liveApproval : undefined,
         sourceCount: rssRun.sourceCount,
         processed: rssRun.processed,
         staged: rssRun.staged,

@@ -381,7 +381,7 @@ export function getOpenApiCatalog() {
         post: { tags: ["Newsroom"], summary: "Run scheduled RSS intake across approved editorial sources" }
       },
       "/api/cron/newsroom": {
-        get: { tags: ["Newsroom"], summary: "Run protected scheduled newsroom RSS intake and record worker observability" }
+        get: { tags: ["Newsroom"], summary: "Run protected scheduled newsroom RSS intake with preview/live approval gates and worker observability" }
       },
       "/api/cron/source-manifests": {
         get: { tags: ["Aggregation"], summary: "Run protected scheduled source manifest signed-object fetch worker in preview or live mode" }

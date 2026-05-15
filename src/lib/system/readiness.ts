@@ -169,11 +169,20 @@ export function getSystemReadiness() {
     {
       key: "NEWSROOM_RSS_CRON_MODE",
       label: "Newsroom RSS cron mode",
-      status: env.newsroomRssCronMode === "live" ? "ready" : "partial",
+      status:
+        env.newsroomRssCronMode === "live" &&
+        env.newsroomRssCronLiveApproved === "true" &&
+        Boolean(env.newsroomRssCronApprovedBy) &&
+        Boolean(env.newsroomRssCronApprovedAt && !Number.isNaN(new Date(env.newsroomRssCronApprovedAt).getTime()))
+          ? "ready"
+          : "partial",
       action:
-        env.newsroomRssCronMode === "live"
+        env.newsroomRssCronMode === "live" &&
+        env.newsroomRssCronLiveApproved === "true" &&
+        env.newsroomRssCronApprovedBy &&
+        env.newsroomRssCronApprovedAt
           ? undefined
-          : "Set NEWSROOM_RSS_CRON_MODE=live only after approving editorial RSS source intake; preview mode records safe dry-run worker evidence."
+          : "Set NEWSROOM_RSS_CRON_MODE=live only with NEWSROOM_RSS_CRON_LIVE_APPROVED=true, NEWSROOM_RSS_CRON_APPROVED_BY, and NEWSROOM_RSS_CRON_APPROVED_AT after owner approval."
     },
     {
       key: "WEBHOOK_RETRY_CRON_MODE",
