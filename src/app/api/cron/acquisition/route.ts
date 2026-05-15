@@ -14,6 +14,27 @@ function parseMaxRecords(value?: string) {
   return Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 250)) : 100;
 }
 
+function getLiveApproval(env: ReturnType<typeof getAppEnv>) {
+  const approved = env.sourceAcquisitionCronLiveApproved === "true";
+  const approvedBy = env.sourceAcquisitionCronApprovedBy;
+  const approvedAt = env.sourceAcquisitionCronApprovedAt;
+  const approvedAtValid = Boolean(approvedAt && !Number.isNaN(new Date(approvedAt).getTime()));
+  const blockers = [
+    ...(!approved ? ["Set SOURCE_ACQUISITION_CRON_LIVE_APPROVED=true after owner approval."] : []),
+    ...(!approvedBy ? ["Set SOURCE_ACQUISITION_CRON_APPROVED_BY to the owner/admin who approved live current-site acquisition."] : []),
+    ...(!approvedAtValid ? ["Set SOURCE_ACQUISITION_CRON_APPROVED_AT to a valid ISO approval timestamp."] : [])
+  ];
+
+  return {
+    approved,
+    approvedBy,
+    approvedAt,
+    approvedAtValid,
+    blockers,
+    canRunLive: approved && Boolean(approvedBy) && approvedAtValid
+  };
+}
+
 export async function GET(request: Request) {
   if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json({ error: "Unauthorized cron request" }, { status: 401 });
@@ -25,8 +46,39 @@ export async function GET(request: Request) {
     const env = getAppEnv();
     const mode = env.sourceAcquisitionCronMode === "live" ? "live" : "preview";
     const maxRecords = parseMaxRecords(env.sourceAcquisitionCronMaxRecords);
+    const liveApproval = getLiveApproval(env);
 
     if (mode === "live") {
+      if (!liveApproval.canRunLive) {
+        const workerRun = await recordScheduledWorkerRun({
+          workerKey: "cron:acquisition",
+          status: "failed",
+          startedAt,
+          summary: {
+            mode,
+            dryRun: true,
+            maxRecords,
+            blockedByLiveApproval: true,
+            blockers: liveApproval.blockers,
+            approvedBy: liveApproval.approvedBy,
+            approvedAt: liveApproval.approvedAt
+          },
+          error: "Source acquisition live cron is blocked until owner approval metadata is configured."
+        });
+
+        return NextResponse.json({
+          data: {
+            mode,
+            ranAt: workerRun.finishedAt,
+            workerRun,
+            run: null,
+            liveApproval,
+            blockers: liveApproval.blockers,
+            nextActions: liveApproval.blockers
+          }
+        }, { status: 424 });
+      }
+
       const run = await runCurrentSiteRealListingAcquisition({
         actorId: "cron:source-acquisition",
         dryRun: false,
@@ -39,6 +91,7 @@ export async function GET(request: Request) {
         startedAt,
         summary: {
           mode,
+          liveApproval,
           discoveredListings: run.discoveredListings,
           totalRecords: run.totalRecords,
           stagedRecords: run.stagedRecords,

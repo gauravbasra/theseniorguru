@@ -9,6 +9,9 @@ export type AppEnv = {
   cronSecret?: string;
   sourceAcquisitionCronMode?: string;
   sourceAcquisitionCronMaxRecords?: string;
+  sourceAcquisitionCronLiveApproved?: string;
+  sourceAcquisitionCronApprovedBy?: string;
+  sourceAcquisitionCronApprovedAt?: string;
   newsroomRssCronMode?: string;
   newsroomRssCronLimit?: string;
   newsroomRssCronLiveApproved?: string;
@@ -51,6 +54,9 @@ export function getAppEnv(): AppEnv {
     cronSecret: process.env.CRON_SECRET,
     sourceAcquisitionCronMode: process.env.SOURCE_ACQUISITION_CRON_MODE,
     sourceAcquisitionCronMaxRecords: process.env.SOURCE_ACQUISITION_CRON_MAX_RECORDS,
+    sourceAcquisitionCronLiveApproved: process.env.SOURCE_ACQUISITION_CRON_LIVE_APPROVED,
+    sourceAcquisitionCronApprovedBy: process.env.SOURCE_ACQUISITION_CRON_APPROVED_BY,
+    sourceAcquisitionCronApprovedAt: process.env.SOURCE_ACQUISITION_CRON_APPROVED_AT,
     newsroomRssCronMode: process.env.NEWSROOM_RSS_CRON_MODE,
     newsroomRssCronLimit: process.env.NEWSROOM_RSS_CRON_LIMIT,
     newsroomRssCronLiveApproved: process.env.NEWSROOM_RSS_CRON_LIVE_APPROVED,

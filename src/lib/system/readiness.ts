@@ -160,11 +160,20 @@ export function getSystemReadiness() {
     {
       key: "SOURCE_ACQUISITION_CRON_MODE",
       label: "Source acquisition cron mode",
-      status: env.sourceAcquisitionCronMode === "live" ? "ready" : "partial",
+      status:
+        env.sourceAcquisitionCronMode === "live" &&
+        env.sourceAcquisitionCronLiveApproved === "true" &&
+        Boolean(env.sourceAcquisitionCronApprovedBy) &&
+        Boolean(env.sourceAcquisitionCronApprovedAt && !Number.isNaN(new Date(env.sourceAcquisitionCronApprovedAt).getTime()))
+          ? "ready"
+          : "partial",
       action:
-        env.sourceAcquisitionCronMode === "live"
+        env.sourceAcquisitionCronMode === "live" &&
+        env.sourceAcquisitionCronLiveApproved === "true" &&
+        env.sourceAcquisitionCronApprovedBy &&
+        env.sourceAcquisitionCronApprovedAt
           ? undefined
-          : "Set SOURCE_ACQUISITION_CRON_MODE=live only after approving live current-site inventory staging; preview mode is safe for monitoring."
+          : "Set SOURCE_ACQUISITION_CRON_MODE=live only with SOURCE_ACQUISITION_CRON_LIVE_APPROVED=true, SOURCE_ACQUISITION_CRON_APPROVED_BY, and SOURCE_ACQUISITION_CRON_APPROVED_AT after owner approval."
     },
     {
       key: "NEWSROOM_RSS_CRON_MODE",
