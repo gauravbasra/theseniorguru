@@ -1,5 +1,8 @@
 import crypto from "node:crypto";
 import type {
+  EventAutomationDeliveryInput,
+  EventAutomationDeliveryProvider,
+  EventAutomationDeliveryResult,
   EventAutomationReport,
   EventAutomationRunInput,
   EventAutomationRunSummary,
@@ -8,6 +11,7 @@ import type {
   EventReminderRecord,
   EventRsvpRecord
 } from "@/lib/domain/events";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { listEvents, listEventRsvps } from "@/lib/events/events";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -21,6 +25,10 @@ function normalizeHours(value: number | undefined, fallback: number) {
 
 function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function parseDeliveryProvider(value?: EventAutomationDeliveryProvider): EventAutomationDeliveryProvider {
+  return value === "internal_notification_queue" ? value : "manual_export";
 }
 
 function mapReminder(row: Record<string, unknown>): EventReminderRecord {
@@ -172,6 +180,20 @@ async function writeAutomationAudit(input: {
     event_type: input.eventType,
     subject_type: "event_automation",
     metadata: input.summary
+  });
+}
+
+async function writeEventAutomationAudit(input: {
+  eventType: string;
+  actorId?: string;
+  payload: Record<string, unknown>;
+}) {
+  await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: input.eventType,
+    subjectType: "event_automation",
+    payload: input.payload
   });
 }
 
@@ -474,6 +496,228 @@ export async function runEventReminderAutomation(input: EventAutomationRunInput 
   });
 
   return summary;
+}
+
+export async function deliverQueuedEventAutomation(
+  input: EventAutomationDeliveryInput = {}
+): Promise<EventAutomationDeliveryResult> {
+  const dryRun = input.dryRun ?? true;
+  const deliveryProvider = parseDeliveryProvider(input.deliveryProvider);
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 50), 250));
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const queuedReminders = fallbackReminders
+      .filter((record) => record.status === "queued")
+      .filter((record) => !input.eventId || record.eventId === input.eventId)
+      .slice(0, limit);
+    const queuedFollowups = fallbackFollowups
+      .filter((record) => record.status === "queued")
+      .filter((record) => !input.eventId || record.eventId === input.eventId)
+      .slice(0, Math.max(0, limit - queuedReminders.length));
+    const deliveries = [
+      ...queuedReminders.map((record) => ({
+        id: record.id,
+        eventId: record.eventId,
+        rsvpId: record.rsvpId,
+        type: record.reminderType,
+        recipientEmail: record.recipientEmail,
+        status: dryRun ? record.status : deliveryProvider === "internal_notification_queue" ? "sent" as const : "queued" as const,
+        deliveryPayload: {
+          ...record.deliveryPayload,
+          deliveryProvider,
+          deliveryMode: dryRun ? "preview" : deliveryProvider,
+          queueTarget: deliveryProvider === "internal_notification_queue" ? "audit_events:event_reminder_delivery_queue" : undefined
+        }
+      })),
+      ...queuedFollowups.map((record) => ({
+        id: record.id,
+        eventId: record.eventId,
+        rsvpId: record.rsvpId,
+        type: record.followupType,
+        recipientEmail: record.recipientEmail,
+        status: dryRun ? record.status : deliveryProvider === "internal_notification_queue" ? "sent" as const : "queued" as const,
+        deliveryPayload: {
+          ...record.deliveryPayload,
+          deliveryProvider,
+          deliveryMode: dryRun ? "preview" : deliveryProvider,
+          queueTarget: deliveryProvider === "internal_notification_queue" ? "audit_events:event_followup_delivery_queue" : undefined
+        }
+      }))
+    ];
+
+    if (!dryRun && deliveryProvider === "internal_notification_queue") {
+      const sentAt = new Date().toISOString();
+      for (const reminder of queuedReminders) {
+        reminder.status = "sent";
+        reminder.sentAt = sentAt;
+        reminder.deliveryProvider = deliveryProvider;
+        reminder.deliveryPayload = {
+          ...reminder.deliveryPayload,
+          deliveryProvider,
+          queueTarget: "audit_events:event_reminder_delivery_queue"
+        };
+      }
+      for (const followup of queuedFollowups) {
+        followup.status = "sent";
+        followup.sentAt = sentAt;
+        followup.deliveryProvider = deliveryProvider;
+        followup.deliveryPayload = {
+          ...followup.deliveryPayload,
+          deliveryProvider,
+          queueTarget: "audit_events:event_followup_delivery_queue"
+        };
+      }
+    }
+
+    if (!dryRun) {
+      await writeEventAutomationAudit({
+        actorId: input.actorId,
+        eventType: "event_automation.delivery_processed",
+        payload: {
+          eventId: input.eventId,
+          deliveryProvider,
+          scanned: deliveries.length,
+          sent: deliveries.filter((delivery) => delivery.status === "sent").length
+        }
+      });
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      source: "local_fallback",
+      dryRun,
+      deliveryProvider,
+      totals: {
+        scanned: deliveries.length,
+        sent: deliveries.filter((delivery) => delivery.status === "sent").length,
+        blocked: deliveries.filter((delivery) => delivery.status === "blocked").length,
+        reminders: queuedReminders.length,
+        followups: queuedFollowups.length
+      },
+      deliveries,
+      nextActions: [
+        ...(dryRun ? ["Review reminder and follow-up delivery previews before processing queued automation."] : []),
+        ...(!dryRun && deliveryProvider === "internal_notification_queue" ? ["Internal notification queue accepted event automation deliveries with audit evidence."] : []),
+        ...(!deliveries.length ? ["No queued event automation deliveries matched the request."] : [])
+      ]
+    };
+  }
+
+  let reminderQuery = supabase.from("event_reminders").select("*").eq("status", "queued").order("scheduled_for", { ascending: true }).limit(limit);
+  let followupQuery = supabase.from("event_followups").select("*").eq("status", "queued").order("scheduled_for", { ascending: true }).limit(limit);
+
+  if (input.eventId) {
+    reminderQuery = reminderQuery.eq("event_id", input.eventId);
+    followupQuery = followupQuery.eq("event_id", input.eventId);
+  }
+
+  const [reminderRows, followupRows] = await Promise.all([reminderQuery, followupQuery]);
+
+  if (reminderRows.error) {
+    throw new Error(`Event reminder delivery query failed: ${reminderRows.error.message}`);
+  }
+
+  if (followupRows.error) {
+    throw new Error(`Event follow-up delivery query failed: ${followupRows.error.message}`);
+  }
+
+  const reminders = (reminderRows.data ?? []).map(mapReminder);
+  const followups = (followupRows.data ?? []).map(mapFollowup);
+  const cappedFollowups = followups.slice(0, Math.max(0, limit - reminders.length));
+  const status: EventReminderRecord["status"] = deliveryProvider === "internal_notification_queue" ? "sent" : "queued";
+  const deliveries = [
+    ...reminders.map((record) => ({
+      id: record.id,
+      eventId: record.eventId,
+      rsvpId: record.rsvpId,
+      type: record.reminderType,
+      recipientEmail: record.recipientEmail,
+      status: dryRun ? record.status : status,
+      deliveryPayload: {
+        ...record.deliveryPayload,
+        deliveryProvider,
+        deliveryMode: dryRun ? "preview" : deliveryProvider,
+        queueTarget: deliveryProvider === "internal_notification_queue" ? "audit_events:event_reminder_delivery_queue" : undefined
+      }
+    })),
+    ...cappedFollowups.map((record) => ({
+      id: record.id,
+      eventId: record.eventId,
+      rsvpId: record.rsvpId,
+      type: record.followupType,
+      recipientEmail: record.recipientEmail,
+      status: dryRun ? record.status : status,
+      deliveryPayload: {
+        ...record.deliveryPayload,
+        deliveryProvider,
+        deliveryMode: dryRun ? "preview" : deliveryProvider,
+        queueTarget: deliveryProvider === "internal_notification_queue" ? "audit_events:event_followup_delivery_queue" : undefined
+      }
+    }))
+  ];
+
+  if (!dryRun && deliveryProvider === "internal_notification_queue" && deliveries.length) {
+    const sentAt = new Date().toISOString();
+    const reminderIds = reminders.map((record) => record.id);
+    const followupIds = cappedFollowups.map((record) => record.id);
+
+    const [reminderUpdate, followupUpdate] = await Promise.all([
+      reminderIds.length
+        ? supabase
+            .from("event_reminders")
+            .update({ status: "sent", delivery_provider: deliveryProvider, sent_at: sentAt })
+            .in("id", reminderIds)
+        : Promise.resolve({ error: null }),
+      followupIds.length
+        ? supabase
+            .from("event_followups")
+            .update({ status: "sent", delivery_provider: deliveryProvider, sent_at: sentAt })
+            .in("id", followupIds)
+        : Promise.resolve({ error: null })
+    ]);
+
+    if (reminderUpdate.error) {
+      throw new Error(`Event reminder delivery update failed: ${reminderUpdate.error.message}`);
+    }
+
+    if (followupUpdate.error) {
+      throw new Error(`Event follow-up delivery update failed: ${followupUpdate.error.message}`);
+    }
+  }
+
+  if (!dryRun) {
+    await writeEventAutomationAudit({
+      actorId: input.actorId,
+      eventType: "event_automation.delivery_processed",
+      payload: {
+        eventId: input.eventId,
+        deliveryProvider,
+        scanned: deliveries.length,
+        sent: deliveries.filter((delivery) => delivery.status === "sent").length
+      }
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: "supabase",
+    dryRun,
+    deliveryProvider,
+    totals: {
+      scanned: deliveries.length,
+      sent: deliveries.filter((delivery) => delivery.status === "sent").length,
+      blocked: deliveries.filter((delivery) => delivery.status === "blocked").length,
+      reminders: reminders.length,
+      followups: cappedFollowups.length
+    },
+    deliveries,
+    nextActions: [
+      ...(dryRun ? ["Review reminder and follow-up delivery previews before processing queued automation."] : []),
+      ...(!dryRun && deliveryProvider === "internal_notification_queue" ? ["Internal notification queue accepted event automation deliveries with audit evidence."] : []),
+      ...(!deliveries.length ? ["No queued event automation deliveries matched the request."] : [])
+    ]
+  };
 }
 
 export async function getEventAutomationReport(eventId: string): Promise<EventAutomationReport> {

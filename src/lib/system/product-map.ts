@@ -164,6 +164,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/provider/events/{id}/attendance",
       "GET /api/v1/provider/events/{id}/automation-report",
       "POST /api/v1/admin/event-automation/run",
+      "POST /api/v1/admin/event-automation/deliver",
       "GET /api/cron/operations"
     ],
     requiredTables: [
@@ -175,7 +176,7 @@ const productPillars: ProductPillar[] = [
       "event_followups",
       "event_attendance"
     ],
-    nextBackendWork: ["Reminder delivery provider adapter", "Provider-facing event follow-up composer"]
+    nextBackendWork: ["Provider-facing event follow-up composer"]
   },
   {
     key: "growth",

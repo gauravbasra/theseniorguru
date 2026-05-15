@@ -145,6 +145,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/event-automation/run": {
         post: { tags: ["Events"], summary: "Queue idempotent event reminders and post-event follow-ups for RSVPs" }
       },
+      "/api/v1/admin/event-automation/deliver": {
+        post: { tags: ["Events"], summary: "Preview, manual-export, or process queued event reminder and follow-up deliveries" }
+      },
       "/api/v1/app/feed": {
         get: { tags: ["Community"], summary: "Get unified app feed items" }
       },

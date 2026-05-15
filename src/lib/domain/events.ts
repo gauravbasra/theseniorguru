@@ -184,6 +184,40 @@ export type EventAutomationRunSummary = {
   followups: EventFollowupRecord[];
 };
 
+export type EventAutomationDeliveryProvider = "manual_export" | "internal_notification_queue";
+
+export type EventAutomationDeliveryInput = {
+  eventId?: string;
+  dryRun?: boolean;
+  deliveryProvider?: EventAutomationDeliveryProvider;
+  actorId?: string;
+  limit?: number;
+};
+
+export type EventAutomationDeliveryResult = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  dryRun: boolean;
+  deliveryProvider: EventAutomationDeliveryProvider;
+  totals: {
+    scanned: number;
+    sent: number;
+    blocked: number;
+    reminders: number;
+    followups: number;
+  };
+  deliveries: Array<{
+    id: string;
+    eventId: string;
+    rsvpId: string;
+    type: "event_reminder_48h" | "post_event_review";
+    recipientEmail: string;
+    status: EventReminderStatus;
+    deliveryPayload: Record<string, unknown>;
+  }>;
+  nextActions: string[];
+};
+
 export type EventAutomationReport = {
   eventId: string;
   generatedAt: string;

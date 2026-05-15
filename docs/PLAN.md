@@ -268,6 +268,7 @@ Deliverables:
 - Event promotion products.
 - Sponsored event promotion creation and activation. Completed.
 - Reminder/follow-up automation. Completed.
+- Reminder/follow-up delivery provider adapter with dry-run preview, manual export guard, internal queue processing, sent-state updates, and audit evidence. Completed.
 - Attendance and no-show capture with analytics update. Completed.
 - Provider-facing event automation reporting with attendance follow-up segmentation. Completed.
 - Event analytics. Completed.

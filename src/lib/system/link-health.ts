@@ -48,6 +48,8 @@ const routeContracts: LinkContract[] = [
   { label: "Categories API", href: "/api/v1/categories", method: "GET", owner: "public" },
   { label: "Location search API", href: "/api/v1/locations/search", method: "GET", owner: "public" },
   { label: "Events API", href: "/api/v1/events", method: "GET", owner: "public" },
+  { label: "Event automation queue API", href: "/api/v1/admin/event-automation/run", method: "POST", owner: "admin" },
+  { label: "Event automation delivery API", href: "/api/v1/admin/event-automation/deliver", method: "POST", owner: "admin" },
   { label: "Family inquiry API", href: "/api/v1/inquiries", method: "POST", owner: "family" },
   { label: "Free listing API", href: "/api/v1/operator/free-listing-requests", method: "POST", owner: "provider" },
   { label: "Operator demo API", href: "/api/v1/operator/demo-requests", method: "POST", owner: "provider" },
