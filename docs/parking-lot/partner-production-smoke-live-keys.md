@@ -14,4 +14,15 @@ Live partner smoke execution requires owner-approved production-mode API client 
 
 - Use `/api/v1/admin/partner-smoke-suite` for readiness evidence.
 - Use `/api/v1/admin/partner-smoke-suite?format=csv` for review exports.
+- Use `/api/v1/admin/partner-smoke-suite/live-readiness` and `/api/v1/admin/partner-smoke-suite/live-readiness?format=csv` for live-execution approval, key custody, write-path, and archive-owner evidence.
 - Keep live execution blocked until production credentials and owner approval are available.
+
+## Required Activation Values
+
+- `PARTNER_LIVE_SMOKE_APPROVED`: set to `true` only after owner approval.
+- `PARTNER_LIVE_SMOKE_APPROVED_BY`: named owner/operator approval.
+- `PARTNER_LIVE_SMOKE_APPROVED_AT`: ISO timestamp for the approval decision.
+- `PARTNER_LIVE_SMOKE_KEY_CUSTODY_REF`: reference to the owner-controlled production key custody location; never store the key in readiness output.
+- `PARTNER_LIVE_SMOKE_ARCHIVE_OWNER`: operator responsible for archiving response status, headers, payload-shape evidence, and post-run usage export.
+- `PARTNER_LIVE_SMOKE_ALLOW_WRITES`: optional `true` only if claim/webhook write-path smoke checks are approved for production; otherwise those checks remain sandbox-only.
+- `PARTNER_LIVE_SMOKE_ARCHIVE_URL`: optional archive location for post-run evidence.

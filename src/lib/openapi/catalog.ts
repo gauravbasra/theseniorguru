@@ -667,6 +667,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/partner-smoke-suite": {
         get: { tags: ["System"], summary: "Return JSON or CSV partner production smoke readiness checks, required scopes, blockers, and live-key guardrails" }
       },
+      "/api/v1/admin/partner-smoke-suite/live-readiness": {
+        get: { tags: ["System"], summary: "Return JSON or CSV partner live-smoke execution approval, key custody, and archive readiness" }
+      },
       "/api/v1/admin/scheduled-worker-runs": {
         get: { tags: ["System"], summary: "List scheduled backend worker run history with status, duration, and summaries" }
       },

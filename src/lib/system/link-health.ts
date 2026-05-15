@@ -245,6 +245,13 @@ const routeContracts: LinkContract[] = [
     method: "GET",
     owner: "admin"
   },
+  { label: "Partner live smoke readiness API", href: "/api/v1/admin/partner-smoke-suite/live-readiness", method: "GET", owner: "admin" },
+  {
+    label: "Partner live smoke readiness CSV export",
+    href: "/api/v1/admin/partner-smoke-suite/live-readiness?format=csv",
+    method: "GET",
+    owner: "admin"
+  },
   { label: "Scheduled worker runs API", href: "/api/v1/admin/scheduled-worker-runs", method: "GET", owner: "admin" },
   { label: "Scheduled worker health API", href: "/api/v1/admin/scheduled-worker-health", method: "GET", owner: "admin" },
   { label: "Cron live approval dashboard API", href: "/api/v1/admin/cron-live-approvals", method: "GET", owner: "admin" },

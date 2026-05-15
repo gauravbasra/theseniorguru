@@ -114,6 +114,37 @@ function normalizePath(endpoint: string) {
   return endpoint.split("?")[0] ?? endpoint;
 }
 
+function envReady(key: string) {
+  const value = process.env[key]?.trim();
+  return Boolean(value && value !== "false");
+}
+
+function liveSmokeApproval() {
+  const approved = process.env.PARTNER_LIVE_SMOKE_APPROVED === "true";
+  const approvedBy = process.env.PARTNER_LIVE_SMOKE_APPROVED_BY?.trim() || undefined;
+  const approvedAt = process.env.PARTNER_LIVE_SMOKE_APPROVED_AT?.trim() || undefined;
+  const approvedAtValid = Boolean(approvedAt && !Number.isNaN(Date.parse(approvedAt)));
+
+  return {
+    approved: approved && Boolean(approvedBy) && approvedAtValid,
+    approvedBy,
+    approvedAt,
+    approvedAtValid,
+    requiredEnv: [
+      "PARTNER_LIVE_SMOKE_APPROVED",
+      "PARTNER_LIVE_SMOKE_APPROVED_BY",
+      "PARTNER_LIVE_SMOKE_APPROVED_AT",
+      "PARTNER_LIVE_SMOKE_KEY_CUSTODY_REF",
+      "PARTNER_LIVE_SMOKE_ARCHIVE_OWNER"
+    ],
+    optionalEnv: ["PARTNER_LIVE_SMOKE_ALLOW_WRITES", "PARTNER_LIVE_SMOKE_ARCHIVE_URL"]
+  };
+}
+
+function csvList(value: unknown) {
+  return Array.isArray(value) ? value.join("; ") : value;
+}
+
 export async function getPartnerProductionSmokeSuite() {
   const [clients, usage] = await Promise.all([listApiClients(), getApiUsageAnalytics({ windowDays: 30 })]);
   const catalog = getOpenApiCatalog();
@@ -217,6 +248,72 @@ export async function getPartnerProductionSmokeSuite() {
   };
 }
 
+export async function getPartnerLiveSmokeExecutionReadiness() {
+  const suite = await getPartnerProductionSmokeSuite();
+  const approval = liveSmokeApproval();
+  const keyCustodyConfigured = envReady("PARTNER_LIVE_SMOKE_KEY_CUSTODY_REF");
+  const archiveOwnerConfigured = envReady("PARTNER_LIVE_SMOKE_ARCHIVE_OWNER");
+  const archiveUrlConfigured = envReady("PARTNER_LIVE_SMOKE_ARCHIVE_URL");
+  const allowWrites = process.env.PARTNER_LIVE_SMOKE_ALLOW_WRITES === "true";
+  const globalBlockers = [
+    ...(!approval.approved ? ["PARTNER_LIVE_SMOKE_APPROVED, approver, and valid approval timestamp are required before live execution."] : []),
+    ...(!keyCustodyConfigured ? ["PARTNER_LIVE_SMOKE_KEY_CUSTODY_REF is required and must reference an owner-controlled secret location."] : []),
+    ...(!archiveOwnerConfigured ? ["PARTNER_LIVE_SMOKE_ARCHIVE_OWNER is required before live response evidence can be archived."] : []),
+    ...(suite.status !== "ready_for_live_partner_smoke" ? suite.blockers : [])
+  ];
+  const rows = suite.rows.map((row) => {
+    const writePath = row.smokeMode === "write_preview" || row.smokeMode === "signature_verification";
+    const blockers = [
+      ...globalBlockers,
+      ...(writePath && !allowWrites
+        ? [`${row.key} is a ${row.smokeMode} check and remains sandbox-only until PARTNER_LIVE_SMOKE_ALLOW_WRITES=true.`]
+        : []),
+      ...(row.status !== "ready_for_live_smoke" ? [`${row.key} is not ready for live smoke: ${row.status}.`] : [])
+    ];
+
+    return {
+      key: row.key,
+      method: row.method,
+      endpoint: row.endpoint,
+      requiredScope: row.requiredScope,
+      smokeMode: row.smokeMode,
+      liveExecutionMode: writePath && !allowWrites ? "sandbox_only" : "production_readiness",
+      status: blockers.length ? "blocked" : "ready_for_live_execution",
+      blockers,
+      nextActions: blockers.length
+        ? ["Keep this check in readiness or sandbox mode until live-smoke approval and credential custody are complete."]
+        : ["Execute with the owner-approved production key, then archive status, headers, and payload-shape evidence."]
+    };
+  });
+  const blockers = [...new Set(rows.flatMap((row) => row.blockers))];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Partner Live Smoke Execution Readiness",
+    status: blockers.length ? "blocked_pending_live_smoke_approval" : "ready_for_live_execution",
+    suiteEndpoint: "GET /api/v1/admin/partner-smoke-suite",
+    approval,
+    keyCustodyConfigured,
+    archiveOwnerConfigured,
+    archiveUrlConfigured,
+    allowWrites,
+    totals: {
+      checks: rows.length,
+      ready: rows.filter((row) => row.status === "ready_for_live_execution").length,
+      blocked: rows.filter((row) => row.status === "blocked").length,
+      sandboxOnly: rows.filter((row) => row.liveExecutionMode === "sandbox_only").length
+    },
+    rows,
+    blockers,
+    nextActions: [
+      ...(blockers.length
+        ? ["Keep live partner smoke blocked until owner approval, production key custody, archive ownership, and scoped production clients are ready."]
+        : ["Run live smoke once, archive evidence, then export partner usage for the same window."]),
+      "Never expose production API keys through readiness endpoints or CSV exports."
+    ]
+  };
+}
+
 export async function exportPartnerProductionSmokeSuiteCsv() {
   const suite = await getPartnerProductionSmokeSuite();
   const columns = [
@@ -239,6 +336,30 @@ export async function exportPartnerProductionSmokeSuiteCsv() {
 
   return {
     filename: "partner-production-smoke-suite.csv",
+    csv
+  };
+}
+
+export async function exportPartnerLiveSmokeExecutionReadinessCsv() {
+  const readiness = await getPartnerLiveSmokeExecutionReadiness();
+  const columns = [
+    "key",
+    "method",
+    "endpoint",
+    "requiredScope",
+    "smokeMode",
+    "liveExecutionMode",
+    "status",
+    "blockers",
+    "nextActions"
+  ] as const;
+  const csv = [
+    columns.join(","),
+    ...readiness.rows.map((row) => columns.map((column) => csvValue(csvList(row[column]))).join(","))
+  ].join("\n");
+
+  return {
+    filename: `partner-live-smoke-execution-readiness-${new Date().toISOString().slice(0, 10)}.csv`,
     csv
   };
 }

@@ -513,6 +513,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/api-usage-analytics?format=csv",
       "GET /api/v1/admin/partner-smoke-suite",
       "GET /api/v1/admin/partner-smoke-suite?format=csv",
+      "GET /api/v1/admin/partner-smoke-suite/live-readiness",
+      "GET /api/v1/admin/partner-smoke-suite/live-readiness?format=csv",
       "GET /api/v1/partner/providers",
       "GET /api/v1/partner/events",
       "GET /api/v1/partner/usage",
@@ -543,7 +545,7 @@ const productPillars: ProductPillar[] = [
       "webhook_delivery_attempts",
       "api_audit_events"
     ],
-    nextBackendWork: ["Owner-approved SDK registry publishing", "Live partner smoke execution after production credentials", "Owner-approved cursor pagination production volume evidence"]
+    nextBackendWork: ["Owner-approved SDK registry publishing", "Owner-approved live partner smoke key custody and archive evidence", "Owner-approved cursor pagination production volume evidence"]
   },
   {
     key: "production_operations",
