@@ -695,6 +695,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/providers/{id}/ad-summary": {
         get: { tags: ["Ads"], summary: "Partner provider ad summary API requiring ads:read scope with aggregate delivery, placement, and health metrics" }
       },
+      "/api/v1/partner/providers/{id}/campaign-summary": {
+        get: { tags: ["Campaigns"], summary: "Partner provider campaign summary API requiring campaigns:read scope with aggregate campaign, asset, and metric rollups" }
+      },
       "/api/v1/partner/events": {
         get: { tags: ["Events"], summary: "Partner events API requiring events:read scope" }
       },

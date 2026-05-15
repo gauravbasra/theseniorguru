@@ -53,6 +53,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/providers/{id}/event-summary",
   "/api/v1/partner/providers/{id}/community-summary",
   "/api/v1/partner/providers/{id}/ad-summary",
+  "/api/v1/partner/providers/{id}/campaign-summary",
   "/api/v1/partner/events",
   "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
@@ -230,6 +231,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       endpoint: "GET /api/v1/partner/providers/{id}/ad-summary",
       completionSignal: "Response includes provider-scoped aggregate delivery totals, placement rollups, ad health, recommendations, partner envelope headers, and no raw creative payloads, destination URLs, visitor context, request IDs, or row-level impression/click records.",
       blocker: "Do not use ad summary output for creative rendering; use approved ad placement inventory and preserve disclosure labels before rendering sponsored placements."
+    },
+    {
+      key: "read-provider-campaign-summary",
+      title: "Call provider campaign summary without raw asset payloads",
+      owner: "partner_ops",
+      requiredScopes: ["campaigns:read"],
+      endpoint: "GET /api/v1/partner/providers/{id}/campaign-summary",
+      completionSignal: "Response includes provider-scoped campaign totals, asset approval totals, metric rollups, type/status/channel distributions, public campaign references, partner envelope headers, and no campaign audience payloads, asset bodies, asset payloads, metric payloads, or row-level metric records.",
+      blocker: "Do not mirror campaign assets or audience rules from summary output; use approved campaign inventory and owner-reviewed channel rules before external display."
     },
     {
       key: "read-community-events",
@@ -439,6 +449,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/providers/{id}/event-summary",
         "GET /api/v1/partner/providers/{id}/community-summary",
         "GET /api/v1/partner/providers/{id}/ad-summary",
+        "GET /api/v1/partner/providers/{id}/campaign-summary",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",
