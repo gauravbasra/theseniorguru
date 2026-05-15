@@ -56,6 +56,7 @@ const routeContracts: LinkContract[] = [
   { label: "App feed API", href: "/api/v1/app/feed", method: "GET", owner: "family" },
   { label: "App session API", href: "/api/v1/app/session", method: "GET", owner: "family" },
   { label: "App session create API", href: "/api/v1/app/session", method: "POST", owner: "family" },
+  { label: "App device registration API", href: "/api/v1/app/devices", method: "POST", owner: "family" },
   { label: "Articles API", href: "/api/v1/articles", method: "GET", owner: "public" },
   {
     label: "Article detail API",

@@ -289,6 +289,7 @@ Deliverables:
 - Saved provider and care circle APIs. Completed.
 - Comparison lists, care notes, tour plans, and notification preferences. Completed.
 - Signed senior/caregiver app session API with consumer profile binding and session-aware mobile action routes. Completed.
+- Session-bound app device registration API with push-token validation, audit evidence, fallback persistence, and Supabase migration readiness. Completed.
 
 ## Phase 6: Marketing Growth Engine
 

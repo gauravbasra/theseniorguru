@@ -149,3 +149,29 @@ export type UpdateNotificationPreferencesInput = {
   quietHours?: NotificationQuietHours;
   topics?: string[];
 };
+
+export type AppDevicePlatform = "ios" | "android" | "web";
+
+export type AppDeviceRegistrationRecord = {
+  id: string;
+  userKey: string;
+  platform: AppDevicePlatform;
+  deviceId?: string;
+  pushToken: string;
+  tokenProvider: "apns" | "fcm" | "web_push" | "expo";
+  appVersion?: string;
+  locale?: string;
+  status: "active" | "disabled";
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type RegisterAppDeviceInput = {
+  userKey: string;
+  platform: AppDevicePlatform;
+  deviceId?: string;
+  pushToken: string;
+  tokenProvider?: AppDeviceRegistrationRecord["tokenProvider"];
+  appVersion?: string;
+  locale?: string;
+};

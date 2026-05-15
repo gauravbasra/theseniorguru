@@ -152,6 +152,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["Auth"], summary: "Return signed senior or caregiver app session status" },
         post: { tags: ["Auth"], summary: "Create a signed senior or caregiver app session and bind a consumer profile" }
       },
+      "/api/v1/app/devices": {
+        get: { tags: ["Community"], summary: "List active push-capable app devices for a signed senior/caregiver session" },
+        post: { tags: ["Community"], summary: "Register or refresh a push token for a signed senior/caregiver app session" }
+      },
       "/api/v1/articles": {
         get: { tags: ["Newsroom"], summary: "List published senior care guides and newsroom articles" }
       },

@@ -86,7 +86,8 @@ export const migrationManifest = [
   "20260514143000_source_adapter_manifests.sql",
   "20260514153500_provider_website_parser_rule_overrides.sql",
   "20260514190000_policy_review_assignments.sql",
-  "20260515021000_consumer_profile_sessions.sql"
+  "20260515021000_consumer_profile_sessions.sql",
+  "20260515022000_app_device_registrations.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -133,6 +134,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260515021000_consumer_profile_sessions.sql": {
     capability: "community",
     summary: "Signed senior and caregiver app sessions bound to consumer profile records."
+  },
+  "20260515022000_app_device_registrations.sql": {
+    capability: "community",
+    summary: "Session-bound mobile and web app device registration for push-token delivery readiness."
   },
   "20260510160122_provider_growth_subscriptions.sql": {
     capability: "growth",
@@ -284,6 +289,7 @@ const requiredTables: RequiredTable[] = [
   { table: "event_attendance", requiredFor: "Event attendance and no-show capture", capability: "events" },
   { table: "communities", requiredFor: "Local community groups", capability: "community" },
   { table: "consumer_profiles", requiredFor: "Signed senior and caregiver app sessions", capability: "community" },
+  { table: "app_device_registrations", requiredFor: "Mobile push token registration", capability: "community" },
   { table: "community_memberships", requiredFor: "Local community membership graph", capability: "community" },
   { table: "community_invitations", requiredFor: "Community invitation delivery", capability: "community" },
   { table: "community_topic_subscriptions", requiredFor: "Local topic subscriptions", capability: "community" },
