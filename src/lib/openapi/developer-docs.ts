@@ -52,6 +52,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/providers/{id}/review-summary",
   "/api/v1/partner/providers/{id}/event-summary",
   "/api/v1/partner/providers/{id}/community-summary",
+  "/api/v1/partner/providers/{id}/ad-summary",
   "/api/v1/partner/events",
   "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
@@ -220,6 +221,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       endpoint: "GET /api/v1/partner/providers/{id}/community-summary",
       completionSignal: "Response includes provider-scoped published post counts, sponsorship disclosure totals, post type/location distribution, public post references, partner envelope headers, and no author names, body text, comments, member identity, or moderation status.",
       blocker: "Do not use community summary output as a raw community feed; use the published community posts endpoint when approved post display rules are required."
+    },
+    {
+      key: "read-provider-ad-summary",
+      title: "Call provider ad summary without raw creative payloads",
+      owner: "partner_ops",
+      requiredScopes: ["ads:read"],
+      endpoint: "GET /api/v1/partner/providers/{id}/ad-summary",
+      completionSignal: "Response includes provider-scoped aggregate delivery totals, placement rollups, ad health, recommendations, partner envelope headers, and no raw creative payloads, destination URLs, visitor context, request IDs, or row-level impression/click records.",
+      blocker: "Do not use ad summary output for creative rendering; use approved ad placement inventory and preserve disclosure labels before rendering sponsored placements."
     },
     {
       key: "read-community-events",
@@ -428,6 +438,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/providers/{id}/review-summary",
         "GET /api/v1/partner/providers/{id}/event-summary",
         "GET /api/v1/partner/providers/{id}/community-summary",
+        "GET /api/v1/partner/providers/{id}/ad-summary",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",
