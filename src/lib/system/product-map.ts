@@ -72,6 +72,8 @@ const productPillars: ProductPillar[] = [
     backendRoutes: [
       "GET /api/v1/app/feed",
       "GET /api/v1/app/saved-providers",
+      "GET /api/v1/app/session",
+      "POST /api/v1/app/session",
       "POST /api/v1/app/saved-providers",
       "GET /api/v1/app/care-circles",
       "POST /api/v1/app/care-circles",
@@ -95,7 +97,7 @@ const productPillars: ProductPillar[] = [
       "tour_plans",
       "app_notification_preferences"
     ],
-    nextBackendWork: ["Mobile auth/session binding", "Device registration and push tokens", "Family invite delivery jobs"]
+    nextBackendWork: ["Device registration and push tokens", "Family invite delivery jobs"]
   },
   {
     key: "community",

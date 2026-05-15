@@ -24,6 +24,7 @@ const seedSavedProviders: SavedProviderRecord[] = [];
 const seedCareCircles: CareCircleRecord[] = [];
 const seedCareCircleMembers: CareCircleMemberRecord[] = [];
 const seedComparisonLists: ComparisonListRecord[] = [];
+const seedComparisonListProviders: ComparisonListProviderRecord[] = [];
 const seedCareNotes: CareNoteRecord[] = [];
 const seedTourPlans: TourPlanRecord[] = [];
 const seedNotificationPreferences = new Map<string, NotificationPreferencesRecord>();
@@ -190,7 +191,8 @@ export async function saveProvider(input: SaveProviderInput): Promise<SavedProvi
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const existing = seedSavedProviders.find((item) => item.userKey === input.userKey && item.providerId === input.providerId);
+    const record = {
       id: `pending-saved-provider-${Date.now()}`,
       userKey: input.userKey,
       providerId: input.providerId,
@@ -198,6 +200,14 @@ export async function saveProvider(input: SaveProviderInput): Promise<SavedProvi
       tags: input.tags ?? [],
       createdAt: new Date().toISOString()
     };
+
+    if (existing) {
+      Object.assign(existing, record, { id: existing.id, createdAt: existing.createdAt });
+      return existing;
+    }
+
+    seedSavedProviders.unshift(record);
+    return record;
   }
 
   const { data, error } = await supabase
@@ -256,7 +266,7 @@ export async function createCareCircle(input: CreateCareCircleInput): Promise<Ca
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const record = {
       id: `pending-care-circle-${Date.now()}`,
       ownerUserKey: input.ownerUserKey,
       name: input.name,
@@ -266,6 +276,9 @@ export async function createCareCircle(input: CreateCareCircleInput): Promise<Ca
       createdAt: now,
       updatedAt: now
     };
+
+    seedCareCircles.unshift(record);
+    return record;
   }
 
   const { data, error } = await supabase
@@ -322,15 +335,18 @@ export async function addCareCircleMember(input: AddCareCircleMemberInput): Prom
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const record = {
       id: `pending-care-circle-member-${Date.now()}`,
       careCircleId: input.careCircleId,
       displayName: input.displayName,
       email: input.email,
       role: input.role ?? "family",
-      inviteStatus: "pending",
+      inviteStatus: "pending" as const,
       createdAt: new Date().toISOString()
     };
+
+    seedCareCircleMembers.unshift(record);
+    return record;
   }
 
   const { data, error } = await supabase
@@ -398,7 +414,7 @@ export async function createComparisonList(input: CreateComparisonListInput): Pr
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const record = {
       id: `pending-comparison-list-${Date.now()}`,
       userKey: input.userKey,
       name: input.name,
@@ -407,6 +423,9 @@ export async function createComparisonList(input: CreateComparisonListInput): Pr
       createdAt: now,
       updatedAt: now
     };
+
+    seedComparisonLists.unshift(record);
+    return record;
   }
 
   const { data, error } = await supabase
@@ -450,12 +469,23 @@ export async function addComparisonListProvider(
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return {
+    const existing = seedComparisonListProviders.find(
+      (item) => item.comparisonListId === input.comparisonListId && item.providerId === input.providerId
+    );
+
+    if (existing) {
+      return existing;
+    }
+
+    const record = {
       id: `pending-comparison-list-provider-${Date.now()}`,
       comparisonListId: input.comparisonListId,
       providerId: input.providerId,
       createdAt: new Date().toISOString()
     };
+
+    seedComparisonListProviders.unshift(record);
+    return record;
   }
 
   const { data, error } = await supabase
@@ -521,7 +551,7 @@ export async function createCareNote(input: CreateCareNoteInput): Promise<CareNo
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const record = {
       id: `pending-care-note-${Date.now()}`,
       userKey: input.userKey,
       careCircleId: input.careCircleId,
@@ -531,6 +561,9 @@ export async function createCareNote(input: CreateCareNoteInput): Promise<CareNo
       tags: input.tags ?? [],
       createdAt: now
     };
+
+    seedCareNotes.unshift(record);
+    return record;
   }
 
   const { data, error } = await supabase
@@ -595,17 +628,20 @@ export async function createTourPlan(input: CreateTourPlanInput): Promise<TourPl
   const now = new Date().toISOString();
 
   if (!supabase) {
-    return {
+    const record = {
       id: `pending-tour-plan-${Date.now()}`,
       userKey: input.userKey,
       providerId: input.providerId,
       careCircleId: input.careCircleId,
-      status: "requested",
+      status: "requested" as const,
       preferredDates: input.preferredDates ?? [],
       notes: input.notes,
       createdAt: now,
       updatedAt: now
     };
+
+    seedTourPlans.unshift(record);
+    return record;
   }
 
   const { data, error } = await supabase

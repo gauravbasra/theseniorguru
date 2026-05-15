@@ -54,6 +54,8 @@ const routeContracts: LinkContract[] = [
   { label: "Admin leads API", href: "/api/v1/admin/leads", method: "GET", owner: "admin" },
   { label: "Admin dashboard metrics API", href: "/api/v1/admin/dashboard-metrics", method: "GET", owner: "admin" },
   { label: "App feed API", href: "/api/v1/app/feed", method: "GET", owner: "family" },
+  { label: "App session API", href: "/api/v1/app/session", method: "GET", owner: "family" },
+  { label: "App session create API", href: "/api/v1/app/session", method: "POST", owner: "family" },
   { label: "Articles API", href: "/api/v1/articles", method: "GET", owner: "public" },
   {
     label: "Article detail API",

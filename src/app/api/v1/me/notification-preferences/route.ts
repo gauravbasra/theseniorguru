@@ -1,31 +1,27 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getNotificationPreferences, updateNotificationPreferences } from "@/lib/mobile/stickiness";
+import { resolveAppUserKey } from "@/lib/mobile/session";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userKey = searchParams.get("userKey");
-
-    if (!userKey) {
-      return NextResponse.json({ error: "userKey is required" }, { status: 422 });
-    }
+    const userKey = await resolveAppUserKey(request, searchParams.get("userKey"));
 
     return NextResponse.json({ data: await getNotificationPreferences(userKey) });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: message.includes("required") || message.includes("does not match") ? 422 : 500 });
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
+    const userKey = await resolveAppUserKey(request, body.userKey);
 
-    if (!body.userKey) {
-      return NextResponse.json({ error: "userKey is required" }, { status: 422 });
-    }
-
-    return NextResponse.json({ data: await updateNotificationPreferences(body) });
+    return NextResponse.json({ data: await updateNotificationPreferences({ ...body, userKey }) });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: message.includes("required") || message.includes("does not match") ? 422 : 500 });
   }
 }

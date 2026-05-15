@@ -148,6 +148,10 @@ export function getOpenApiCatalog() {
       "/api/v1/app/feed": {
         get: { tags: ["Community"], summary: "Get unified app feed items" }
       },
+      "/api/v1/app/session": {
+        get: { tags: ["Auth"], summary: "Return signed senior or caregiver app session status" },
+        post: { tags: ["Auth"], summary: "Create a signed senior or caregiver app session and bind a consumer profile" }
+      },
       "/api/v1/articles": {
         get: { tags: ["Newsroom"], summary: "List published senior care guides and newsroom articles" }
       },
@@ -155,12 +159,12 @@ export function getOpenApiCatalog() {
         get: { tags: ["Newsroom"], summary: "Get a published senior care guide by slug" }
       },
       "/api/v1/app/saved-providers": {
-        get: { tags: ["Community"], summary: "List saved providers for a senior or caregiver app user" },
-        post: { tags: ["Community"], summary: "Save a provider with optional notes and tags" }
+        get: { tags: ["Community"], summary: "List saved providers for a signed app session or explicit senior/caregiver userKey" },
+        post: { tags: ["Community"], summary: "Save a provider for a signed app session with optional notes and tags" }
       },
       "/api/v1/app/care-circles": {
-        get: { tags: ["Community"], summary: "List care circles for an app user" },
-        post: { tags: ["Community"], summary: "Create a care circle for collaborative senior-care planning" }
+        get: { tags: ["Community"], summary: "List care circles for a signed app session or explicit senior/caregiver userKey" },
+        post: { tags: ["Community"], summary: "Create a care circle bound to a signed senior/caregiver app session" }
       },
       "/api/v1/app/care-circles/{id}/members": {
         get: { tags: ["Community"], summary: "List members of a care circle" },
@@ -182,8 +186,8 @@ export function getOpenApiCatalog() {
         post: { tags: ["Community"], summary: "Request or plan a provider tour" }
       },
       "/api/v1/me/notification-preferences": {
-        get: { tags: ["Community"], summary: "Get app notification preferences for a user" },
-        patch: { tags: ["Community"], summary: "Update app notification preferences for a user" }
+        get: { tags: ["Community"], summary: "Get app notification preferences for a signed app session" },
+        patch: { tags: ["Community"], summary: "Update app notification preferences for a signed app session" }
       },
       "/api/v1/community/posts": {
         post: { tags: ["Community"], summary: "Create a policy-gated community post" }
