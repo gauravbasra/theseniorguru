@@ -67,6 +67,7 @@ Deliverables:
 - Provider reputation readiness API and provider console action. Completed.
 - Policy-gated review response publish API. Completed.
 - External review integration readiness API with provider-owned credential references, live-sync blockers, Supabase schema readiness, OpenAPI/link-health coverage, and owner credential parking-lot note. Completed.
+- Reputation trend analytics API with review/sentiment buckets, external source signals, auditable score snapshots, Supabase schema readiness, OpenAPI/link-health coverage, and provider route validation. Completed.
 - Docker deployment scaffolding. Completed.
 - Secret-safe production readiness endpoint. Completed.
 - Launch go/no-go checklist API across config, schema, links, aggregation, ads, newsroom, onboarding, and owner items. Completed.

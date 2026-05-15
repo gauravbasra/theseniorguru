@@ -234,3 +234,53 @@ export type ExternalReviewIntegrationSummary = {
   blockers: string[];
   nextActions: string[];
 };
+
+export type ReputationTrendBucket = "daily" | "weekly" | "monthly";
+
+export type ReputationTrendPoint = {
+  periodStart: string;
+  periodEnd: string;
+  submittedReviews: number;
+  publishedReviews: number;
+  averageRating?: number;
+  positiveSentiment: number;
+  neutralSentiment: number;
+  negativeSentiment: number;
+};
+
+export type ReputationTrendSummary = {
+  generatedAt: string;
+  providerId: string;
+  providerName?: string;
+  filters: {
+    windowDays: number;
+    bucket: ReputationTrendBucket;
+  };
+  score: {
+    value: number;
+    rating: "strong" | "developing" | "at_risk";
+    reasons: string[];
+  };
+  totals: {
+    submittedReviews: number;
+    publishedReviews: number;
+    pendingModeration: number;
+    blockedByPolicy: number;
+    averageRating?: number;
+    averageSentimentScore?: number;
+    externalConnectedSources: number;
+    externalActionRequired: number;
+  };
+  trend: ReputationTrendPoint[];
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type ReputationTrendSnapshot = {
+  id: string;
+  providerId: string;
+  score: number;
+  rating: ReputationTrendSummary["score"]["rating"];
+  snapshotPayload: ReputationTrendSummary;
+  createdAt: string;
+};

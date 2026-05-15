@@ -340,6 +340,10 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/reputation-readiness": {
         get: { tags: ["Reviews"], summary: "Return provider reputation workflow readiness, review health, campaigns, and blockers" }
       },
+      "/api/v1/provider/reputation-trends": {
+        get: { tags: ["Reviews"], summary: "Return provider reputation score, review/sentiment trend buckets, and next actions" },
+        post: { tags: ["Reviews"], summary: "Record an auditable reputation trend score snapshot" }
+      },
       "/api/v1/provider/review-requests": {
         get: { tags: ["Reviews"], summary: "List review request recipients and statuses" }
       },

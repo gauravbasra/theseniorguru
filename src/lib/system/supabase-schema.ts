@@ -192,6 +192,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
     capability: "reviews",
     summary: "Provider-owned external review source readiness, credential references, blockers, and sync evidence."
   },
+  "20260515043300_reputation_score_snapshots.sql": {
+    capability: "reviews",
+    summary: "Auditable provider reputation trend score snapshots and metric payloads."
+  },
   "20260515034200_voice_assistant_campaigns.sql": {
     capability: "growth",
     summary: "AI voice assistant campaign readiness, provider adapter, and compliance payload evidence."
@@ -365,6 +369,7 @@ const requiredTables: RequiredTable[] = [
   { table: "review_moderation_cases", requiredFor: "Review moderation audit", capability: "reviews" },
   { table: "review_sentiment", requiredFor: "Review sentiment scoring", capability: "reviews" },
   { table: "external_review_integrations", requiredFor: "External review source readiness", capability: "reviews" },
+  { table: "reputation_scores", requiredFor: "Reputation trend score snapshots", capability: "reviews" },
   { table: "content_sources", requiredFor: "AI newsroom source intake", capability: "newsroom" },
   { table: "published_articles", requiredFor: "AI newsroom publishing", capability: "newsroom" },
   { table: "content_performance_metrics", requiredFor: "Newsroom content performance reporting", capability: "newsroom" },
@@ -402,6 +407,7 @@ const requiredColumns: RequiredColumn[] = [
   { table: "review_requests", column: "delivery_payload", requiredFor: "Review request delivery evidence", capability: "reviews" },
   { table: "external_review_integrations", column: "credential_reference", requiredFor: "External review provider-owned credential references", capability: "reviews" },
   { table: "external_review_integrations", column: "blockers", requiredFor: "External review live-sync blocker evidence", capability: "reviews" },
+  { table: "reputation_scores", column: "trend_payload", requiredFor: "Reputation trend snapshot evidence", capability: "reviews" },
   { table: "api_keys", column: "last_used_at", requiredFor: "Partner API key usage monitoring", capability: "openApi" },
   { table: "webhook_subscriptions", column: "signing_secret_ciphertext", requiredFor: "Partner webhook request signing", capability: "openApi" },
   { table: "review_responses", column: "provider_id", requiredFor: "Provider-owned review responses", capability: "reviews" }
