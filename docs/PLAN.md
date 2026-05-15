@@ -186,6 +186,7 @@ Deliverables:
 - Context-specific visual asset wiring for public article, city, and care-type SEO routes. Completed.
 - Policy queue API for review-required, disclosure-required, blocked, and approved policy checks with link-health/OpenAPI coverage. Completed.
 - Policy review assignment workflow for legal, expert, and policy-review ownership with SLA due dates, audit events, Supabase schema, OpenAPI/link-health coverage, and admin console access. Completed.
+- Policy review decision dashboard API with JSON/CSV outputs, assignment SLA status, reviewer role-fit checks, ready-for-decision rows, unassigned candidate counts, OpenAPI/link-health/product-map coverage, and launch-review controls. Completed.
 - Audit event export and retention-control workflow with JSON/CSV evidence export, retention candidate preview, live-purge blocker, OpenAPI/link-health coverage, and owner approval parking-lot note. Completed.
 - Policy override request and decision APIs with audit-ready Supabase schema, local fallback, and route catalog coverage. Completed.
 - Policy override expiry worker API for requested or approved time-bound overrides with audit-ready behavior. Completed.

@@ -873,6 +873,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Policy"], summary: "List policy reviewer assignments and assignable legal, expert, or policy-review checks" },
         post: { tags: ["Policy"], summary: "Preview or record reviewer ownership for legal, expert, or policy-review checks" }
       },
+      "/api/v1/admin/policy-review-decisions": {
+        get: { tags: ["Policy"], summary: "Return JSON or CSV policy reviewer decision dashboard evidence, SLA status, role-fit checks, and blockers" }
+      },
       "/api/v1/admin/policy-overrides": {
         get: { tags: ["Policy"], summary: "List policy override approval requests" },
         post: { tags: ["Policy"], summary: "Request a governed override for an overridable policy check" }

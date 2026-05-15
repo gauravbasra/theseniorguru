@@ -450,6 +450,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/policy-queue",
       "GET /api/v1/admin/policy-review-assignments",
       "POST /api/v1/admin/policy-review-assignments",
+      "GET /api/v1/admin/policy-review-decisions",
+      "GET /api/v1/admin/policy-review-decisions?format=csv",
       "GET /api/v1/admin/policy-overrides",
       "POST /api/v1/admin/policy-overrides",
       "POST /api/v1/admin/policy-overrides/expire",
@@ -471,7 +473,7 @@ const productPillars: ProductPillar[] = [
       "audit_events",
       "scheduled_worker_runs"
     ],
-    nextBackendWork: ["Policy assignment reviewer decision dashboard", "Owner-approved audit purge execution", "Internal notification queue provider activation"]
+    nextBackendWork: ["Owner-approved audit purge execution", "Internal notification queue provider activation"]
   },
   {
     key: "open-api",

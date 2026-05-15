@@ -659,6 +659,140 @@ export async function getPolicyReviewAssignments(
   };
 }
 
+function policyReviewDecisionStatus(assignment: PolicyReviewAssignmentRecord) {
+  if (!assignment.policyCheck) {
+    return "missing_policy_check" as const;
+  }
+
+  if (assignment.policyCheck.decision === "blocked" || assignment.policyCheck.decision === "blocked_non_overridable") {
+    return "blocked_policy_check" as const;
+  }
+
+  if (assignment.dueAt && Date.parse(assignment.dueAt) < Date.now()) {
+    return "overdue" as const;
+  }
+
+  if (assignment.policyCheck.decision === "needs_legal_review" && assignment.assignedRole !== "legal_reviewer") {
+    return "role_mismatch" as const;
+  }
+
+  if (assignment.policyCheck.decision === "needs_expert_review" && assignment.assignedRole !== "expert_reviewer") {
+    return "role_mismatch" as const;
+  }
+
+  return "ready_for_reviewer_decision" as const;
+}
+
+export async function getPolicyReviewDecisionDashboard(input: { limit?: number } = {}) {
+  const summary = await getPolicyReviewAssignments({ limit: input.limit ?? 100 });
+  const rows = summary.assignments.map((assignment) => {
+    const status = policyReviewDecisionStatus(assignment);
+    const dueAtMs = assignment.dueAt ? Date.parse(assignment.dueAt) : undefined;
+    const hoursUntilDue = dueAtMs && Number.isFinite(dueAtMs) ? Math.round((dueAtMs - Date.now()) / 36_000) / 10 : undefined;
+    const blockers = [
+      ...(status === "missing_policy_check" ? ["Assignment is missing joined policy check evidence."] : []),
+      ...(status === "blocked_policy_check" ? ["Policy check is blocked and cannot be approved through reviewer decision."] : []),
+      ...(status === "overdue" ? ["Assignment is overdue and should be escalated to the launch owner."] : []),
+      ...(status === "role_mismatch" ? ["Assigned role does not match the policy decision's recommended reviewer type."] : [])
+    ];
+
+    return {
+      assignmentId: assignment.id,
+      policyCheckId: assignment.policyCheckId,
+      assignedTo: assignment.assignedTo,
+      assignedRole: assignment.assignedRole,
+      assignedBy: assignment.assignedBy,
+      assignedAt: assignment.assignedAt,
+      dueAt: assignment.dueAt,
+      hoursUntilDue,
+      status,
+      subjectType: assignment.policyCheck?.subjectType,
+      subjectId: assignment.policyCheck?.subjectId,
+      actionKey: assignment.policyCheck?.actionKey,
+      decision: assignment.policyCheck?.decision,
+      severity: assignment.policyCheck?.severity,
+      reasons: assignment.policyCheck?.reasons ?? [],
+      blockers,
+      nextActions:
+        blockers.length > 0
+          ? ["Resolve dashboard blockers before treating this assignment as decision-ready."]
+          : ["Capture reviewer decision notes and attach them to the policy approval or override workflow."]
+    };
+  });
+
+  const unassignedCandidates = summary.candidates.filter((candidate) => !candidate.blockers.length);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: summary.source,
+    status:
+      rows.some((row) => row.status === "overdue" || row.status === "blocked_policy_check" || row.status === "role_mismatch")
+        ? "action_required"
+        : unassignedCandidates.length
+          ? "assignments_needed"
+          : rows.length
+            ? "ready_for_reviewer_decisions"
+            : "no_open_policy_reviews",
+    totals: {
+      assignments: rows.length,
+      readyForReviewerDecision: rows.filter((row) => row.status === "ready_for_reviewer_decision").length,
+      overdue: rows.filter((row) => row.status === "overdue").length,
+      roleMismatch: rows.filter((row) => row.status === "role_mismatch").length,
+      blockedPolicyChecks: rows.filter((row) => row.status === "blocked_policy_check").length,
+      missingPolicyEvidence: rows.filter((row) => row.status === "missing_policy_check").length,
+      unassignedCandidates: unassignedCandidates.length
+    },
+    reviewControls: [
+      "Legal-review policy checks must be owned by a legal_reviewer before launch execution continues.",
+      "Expert-review policy checks must be owned by an expert_reviewer before content, care, or recommendation decisions are approved.",
+      "Overdue assignments should be escalated to launch_owner and kept out of automated publish/send/import paths.",
+      "Reviewer decision notes must avoid PHI, secrets, and unsupported medical or legal conclusions."
+    ],
+    rows,
+    unassignedCandidates,
+    nextActions: [
+      ...summary.nextActions,
+      ...(unassignedCandidates.length ? ["Assign every unowned review-required policy check before launch go/no-go review."] : []),
+      ...(rows.some((row) => row.status === "ready_for_reviewer_decision")
+        ? ["Capture reviewer decision notes for ready assignments and reconcile them with policy override or approval workflows."]
+        : [])
+    ]
+  };
+}
+
+export async function exportPolicyReviewDecisionDashboardCsv(input: { limit?: number } = {}) {
+  const dashboard = await getPolicyReviewDecisionDashboard(input);
+  const columns = [
+    "assignmentId",
+    "policyCheckId",
+    "assignedTo",
+    "assignedRole",
+    "status",
+    "subjectType",
+    "subjectId",
+    "actionKey",
+    "decision",
+    "severity",
+    "dueAt",
+    "hoursUntilDue",
+    "blockers"
+  ] as const;
+  const csvValue = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const csv = [
+    columns.join(","),
+    ...dashboard.rows.map((row) =>
+      columns
+        .map((column) => csvValue(column === "blockers" ? row.blockers.join(" ") : row[column]))
+        .join(",")
+    )
+  ].join("\n");
+
+  return {
+    filename: "policy-review-decision-dashboard.csv",
+    csv
+  };
+}
+
 export async function assignPolicyReview(input: AssignPolicyReviewInput = {}): Promise<AssignPolicyReviewResult> {
   const dryRun = input.dryRun ?? !input.policyCheckId;
   const assignmentSummary = await getPolicyReviewAssignments({ policyCheckId: input.policyCheckId, limit: input.limit ?? 100 });
