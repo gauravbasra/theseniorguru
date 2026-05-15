@@ -137,6 +137,7 @@ Deliverables:
 - Admin Open API operations console for clients, scoped keys, webhooks, dry-run delivery, retries, and audit visibility. Completed.
 - Admin operations health charts backed by dashboard metrics for claims, reviews, events, community, APIs, and workers. Completed.
 - Scheduled worker health API for expected cron cadence, stale workers, failures, and launch blockers. Completed.
+- Cron live approval dashboard API with JSON/CSV outputs, per-cron env gate evidence, owner approval blockers, route guardrails, OpenAPI/link-health/product-map coverage, and safe preview-mode next actions. Completed.
 - Scheduled worker alert delivery workflow with dry-run/manual-export payloads, internal notification queue blocker, audit evidence, OpenAPI/link-health coverage, and admin console access. Completed.
 - Admin acquisition health API and console panel for 5,000-listing launch readiness, source coverage, image backlog, import queues, crawl queues, blockers, and next actions. Completed.
 - Webhook delivery retry API with policy-gated requeue and audit trail. Completed.

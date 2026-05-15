@@ -670,6 +670,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/scheduled-worker-health": {
         get: { tags: ["System"], summary: "Summarize expected cron worker health, stale runs, failures, and launch blockers" }
       },
+      "/api/v1/admin/cron-live-approvals": {
+        get: { tags: ["System"], summary: "Return JSON or CSV live cron approval readiness, env evidence, owner blockers, and guardrails" }
+      },
       "/api/v1/admin/scheduled-worker-alerts": {
         post: { tags: ["System"], summary: "Preview or record scheduled-worker alert delivery with manual export and live-provider blockers" }
       },

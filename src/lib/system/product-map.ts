@@ -303,6 +303,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/source-adapter-manifests/fetch",
       "POST /api/v1/admin/source-adapter-manifests/fetch/worker",
       "GET /api/v1/admin/source-adapter-manifests/storage-readiness",
+      "GET /api/v1/admin/cron-live-approvals",
+      "GET /api/v1/admin/cron-live-approvals?format=csv",
       "GET /api/cron/source-manifests",
       "GET /api/v1/admin/vendor-feed-connections",
       "POST /api/v1/admin/vendor-feed-connections",
@@ -339,7 +341,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Cron live-mode owner approvals", "Source manifest fetch source-object production credentials"]
+    nextBackendWork: ["Source manifest fetch source-object production credentials"]
   },
   {
     key: "reviews",
@@ -444,6 +446,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/visual-assets",
       "GET /api/v1/admin/scheduled-worker-runs",
       "GET /api/v1/admin/scheduled-worker-health",
+      "GET /api/v1/admin/cron-live-approvals",
+      "GET /api/v1/admin/cron-live-approvals?format=csv",
       "POST /api/v1/admin/scheduled-worker-alerts",
       "GET /api/v1/admin/audit-events",
       "GET /api/v1/admin/audit-events/export",
