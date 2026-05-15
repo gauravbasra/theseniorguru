@@ -231,7 +231,7 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
       batchId,
       sourceKind: batch.source_kind,
       recordCount: input.records.length,
-      dryRun: input.dryRun ?? false
+      dryRun: input.dryRun !== false
     }
   });
 
@@ -245,7 +245,7 @@ export async function runImportBatch(batchId: string, input: RunImportBatchInput
     throw new Error(policy.reasons[0] ?? "Import batch blocked by policy");
   }
 
-  const dryRun = input.dryRun ?? false;
+  const dryRun = input.dryRun !== false;
   const startedAt = new Date().toISOString();
 
   if (!dryRun) {

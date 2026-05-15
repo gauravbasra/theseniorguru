@@ -14,11 +14,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       data: await runImportBatch(id, {
         records: body.records,
         actorId: body.actorId,
-        dryRun: body.dryRun
+        dryRun: body.dryRun !== false
       })
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
 }
-

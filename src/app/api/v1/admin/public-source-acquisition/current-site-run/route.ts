@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     const maxRecords = Number(body.maxRecords ?? 18);
     const data = await runCurrentSiteRealListingAcquisition({
       actorId: typeof body.actorId === "string" ? body.actorId : undefined,
-      dryRun: Boolean(body.dryRun),
+      dryRun: body.dryRun !== false,
       maxRecords: Number.isFinite(maxRecords) ? maxRecords : 18,
       order: body.order === "asc" ? "asc" : "desc"
     });

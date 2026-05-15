@@ -638,7 +638,7 @@ export async function runCurrentSiteRealListingAcquisition(input: {
   const run = await runImportBatch(batch.id, {
     records,
     actorId: input.actorId,
-    dryRun: input.dryRun ?? false
+    dryRun: input.dryRun !== false
   });
 
   return {
@@ -801,7 +801,7 @@ export async function runPublicSourceSampleAcquisition(input: {
   const run = await runImportBatch(batch.id, {
     records,
     actorId: input.actorId,
-    dryRun: input.dryRun ?? false
+    dryRun: input.dryRun !== false
   });
   const qualityGaps = records.map(qualityGapsFor).filter((gap): gap is QualityGap => Boolean(gap));
   const totalImages = records.reduce((sum, record) => sum + (record.imageAssets?.length ?? 0), 0);

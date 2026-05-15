@@ -134,6 +134,7 @@ Deliverables:
 - Extracted entity duplicate match scoring. Completed.
 - Extracted entity merge-readiness API with matched-provider field comparison, safe missing-field update plan, blocker reporting, optional audit evidence, OpenAPI/link-health coverage, and admin console action. Completed.
 - Import batch worker run API. Completed.
+- Import batch and public-source acquisition worker dry-run hardening so missing `dryRun` stays preview-only and live persisted staging requires explicit `dryRun=false`. Completed.
 - Import batch requeue and shared status helpers for failed, blocked, and partial aggregation jobs. Completed.
 - Crawl job create/list/run APIs and unresolved data quality queue API. Completed.
 - Aggregation launch readiness API and admin console action. Completed.

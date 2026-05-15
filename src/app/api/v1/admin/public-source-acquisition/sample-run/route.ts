@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const data = await runPublicSourceSampleAcquisition({
       actorId: typeof body.actorId === "string" ? body.actorId : undefined,
-      dryRun: Boolean(body.dryRun)
+      dryRun: body.dryRun !== false
     });
 
     return NextResponse.json({ data });
