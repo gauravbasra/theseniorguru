@@ -64,6 +64,7 @@ export const migrationManifest = [
   "20260515033200_review_request_delivery_payloads.sql",
   "20260515034200_voice_assistant_campaigns.sql",
   "20260515035200_campaign_recommendation_actions.sql",
+  "20260515040200_google_ad_manager_sync.sql",
   "20260510220000_dual_funnel_leads.sql",
   "20260511001000_review_moderation_sentiment.sql",
   "20260511010000_public_source_acquisition_staging.sql",
@@ -194,6 +195,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260515035200_campaign_recommendation_actions.sql": {
     capability: "growth",
     summary: "Provider campaign optimization recommendation actions, task queueing, and dismissal evidence."
+  },
+  "20260515040200_google_ad_manager_sync.sql": {
+    capability: "ads",
+    summary: "Google Ad Manager ad-unit sync evidence and launch-safe backfill readiness."
   },
   "20260510220000_dual_funnel_leads.sql": {
     capability: "leadIntake",
@@ -344,6 +349,7 @@ const requiredTables: RequiredTable[] = [
   { table: "ad_creatives", requiredFor: "Sponsored ad creative", capability: "ads" },
   { table: "ad_impressions", requiredFor: "Sponsored impression tracking", capability: "ads" },
   { table: "ad_clicks", requiredFor: "Sponsored click tracking", capability: "ads" },
+  { table: "google_ad_units", requiredFor: "Google Ad Manager unit sync evidence", capability: "ads" },
   { table: "marketing_campaigns", requiredFor: "Growth engine campaigns", capability: "growth" },
   { table: "campaign_recommendation_actions", requiredFor: "Campaign optimization recommendation workflow", capability: "growth" },
   { table: "growth_plans", requiredFor: "Paid plan catalog", capability: "growth" },
@@ -378,6 +384,8 @@ const requiredColumns: RequiredColumn[] = [
   { table: "care_circle_members", column: "invite_delivery_payload", requiredFor: "Care-circle invite payload evidence", capability: "community" },
   { table: "ad_impressions", column: "request_id", requiredFor: "Ad impression dedupe", capability: "ads" },
   { table: "ad_clicks", column: "request_id", requiredFor: "Ad click dedupe", capability: "ads" },
+  { table: "google_ad_units", column: "sync_payload", requiredFor: "Google Ad Manager unit payload evidence", capability: "ads" },
+  { table: "google_ad_units", column: "blockers", requiredFor: "Google Ad Manager launch blockers", capability: "ads" },
   { table: "news_items", column: "source_url", requiredFor: "RSS source URL dedupe", capability: "newsroom" },
   { table: "published_articles", column: "approval_payload", requiredFor: "Editorial approval audit", capability: "newsroom" },
   { table: "content_performance_metrics", column: "metric_payload", requiredFor: "Newsroom metric attribution and audit metadata", capability: "newsroom" },

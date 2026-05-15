@@ -133,3 +133,39 @@ export type AdReadinessSummary = {
   blockers: string[];
   nextActions: string[];
 };
+
+export type GoogleAdManagerSyncMode = "preview" | "manual_export" | "google_ad_manager";
+
+export type GoogleAdManagerSyncInput = {
+  mode?: GoogleAdManagerSyncMode;
+  placementKeys?: string[];
+  dryRun?: boolean;
+  actorId?: string;
+};
+
+export type GoogleAdManagerUnit = {
+  placementKey: string;
+  surface: AdPlacementRecord["surface"];
+  status: "ready" | "blocked";
+  adUnitCode: string;
+  disclosureLabel: string;
+  activeCreatives: number;
+  payload: Record<string, unknown>;
+  blockers: string[];
+};
+
+export type GoogleAdManagerSyncResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  mode: GoogleAdManagerSyncMode;
+  status: "preview" | "manual_export_ready" | "blocked" | "synced";
+  googleBackfillConfigured: boolean;
+  totals: {
+    placementsReviewed: number;
+    readyUnits: number;
+    blockedUnits: number;
+  };
+  units: GoogleAdManagerUnit[];
+  blockers: string[];
+  nextActions: string[];
+};

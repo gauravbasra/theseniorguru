@@ -324,6 +324,7 @@ Deliverables:
 - Google Ad Manager/AdSense hooks.
 - Impression/click tracking.
 - Direct-sold and Google backfill ad readiness API plus admin console action. Completed.
+- Google Ad Manager sync preview/manual-export workflow with ad-unit payload evidence, direct-sold-first backfill guardrails, audit events, and Supabase schema readiness. Completed.
 - Direct-sold placement reporting with impressions, clicks, CTR, and next actions. Completed.
 - Frequency caps and disclosures. Completed.
 

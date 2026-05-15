@@ -236,6 +236,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/ads/placements",
       "POST /api/v1/admin/ads/placements",
       "POST /api/v1/admin/ads/creatives",
+      "POST /api/v1/admin/ads/google-sync",
       "GET /api/v1/admin/ads/reporting",
       "GET /api/v1/admin/ad-readiness",
       "POST /api/v1/ads/impression",
@@ -250,7 +251,7 @@ const productPillars: ProductPillar[] = [
       "ad_clicks",
       "google_ad_units"
     ],
-    nextBackendWork: ["Google Ad Manager sync", "Frequency caps", "Provider-facing ad campaign dashboard"]
+    nextBackendWork: ["Provider-facing ad campaign dashboard"]
   },
   {
     key: "aggregation",

@@ -5,6 +5,9 @@ import type {
   AdCreativeRecord,
   AdEventRecordResult,
   AdEventInput,
+  GoogleAdManagerSyncInput,
+  GoogleAdManagerSyncResult,
+  GoogleAdManagerUnit,
   AdPlacementRecord,
   AdPlacementReadinessItem,
   AdPlacementResponse,
@@ -12,6 +15,7 @@ import type {
   CreateAdCreativeInput,
   UpsertAdPlacementInput
 } from "@/lib/domain/ads";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { requireProviderFeature } from "@/lib/billing/entitlements";
 import { getAppEnv } from "@/lib/env";
 import { runPolicyCheck } from "@/lib/policy";
@@ -44,6 +48,7 @@ type FallbackAdEvent = AdEventInput & {
 };
 
 const fallbackAdEvents: FallbackAdEvent[] = [];
+const fallbackGoogleAdUnits: GoogleAdManagerUnit[] = [];
 const defaultFrequencyCap = {
   maxImpressions: 3,
   windowHours: 24
@@ -758,5 +763,135 @@ export async function getAdReadinessSummary(): Promise<AdReadinessSummary> {
           "Frequency caps are enforced when visitorKey, sessionKey, or anonymousId is supplied with ad placement/impression calls."
         ]
       : ["Direct-sold placements, Google backfill, disclosures, and frequency caps are ready for launch monitoring."]
+  };
+}
+
+function normalizeGoogleSyncMode(mode?: GoogleAdManagerSyncInput["mode"]): NonNullable<GoogleAdManagerSyncInput["mode"]> {
+  if (mode === "manual_export" || mode === "google_ad_manager") return mode;
+  return "preview";
+}
+
+function googleAdUnitCode(placementKey: string) {
+  return `tsg_${placementKey.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`;
+}
+
+async function buildGoogleAdUnit(placement: AdPlacementRecord): Promise<GoogleAdManagerUnit> {
+  const response = await getAdPlacement(placement.placementKey);
+  const blockers = [
+    ...(placement.disclosureRequired && !placement.disclosureLabel ? ["Sponsored disclosure label is required."] : []),
+    ...(!placement.isActive ? ["Placement is inactive."] : []),
+    ...(!response.creatives.length ? ["No active direct-sold creative is assigned for backfill fallback."] : [])
+  ];
+
+  return {
+    placementKey: placement.placementKey,
+    surface: placement.surface,
+    status: blockers.length ? "blocked" : "ready",
+    adUnitCode: googleAdUnitCode(placement.placementKey),
+    disclosureLabel: placement.disclosureLabel,
+    activeCreatives: response.creatives.length,
+    payload: {
+      placementKey: placement.placementKey,
+      adUnitCode: googleAdUnitCode(placement.placementKey),
+      surface: placement.surface,
+      disclosureLabel: placement.disclosureLabel,
+      frequencyCap: defaultFrequencyCap,
+      backfillPriority: response.creatives.length ? "direct_sold_first_google_backfill_second" : "google_backfill_blocked_until_direct_sold_ready"
+    },
+    blockers
+  };
+}
+
+async function persistGoogleAdUnits(units: GoogleAdManagerUnit[]) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    fallbackGoogleAdUnits.unshift(...units);
+    return;
+  }
+
+  const { error } = await supabase.from("google_ad_units").upsert(
+    units.map((unit) => ({
+      placement_key: unit.placementKey,
+      ad_unit_code: unit.adUnitCode,
+      surface: unit.surface,
+      status: unit.status,
+      sync_payload: unit.payload,
+      blockers: unit.blockers
+    })),
+    { onConflict: "placement_key" }
+  );
+
+  if (error) {
+    throw new Error(`Google ad unit sync persistence failed: ${error.message}`);
+  }
+}
+
+export async function runGoogleAdManagerSync(input: GoogleAdManagerSyncInput = {}): Promise<GoogleAdManagerSyncResult> {
+  const mode = normalizeGoogleSyncMode(input.mode);
+  const dryRun = input.dryRun ?? mode === "preview";
+  const env = getAppEnv();
+  const googleBackfillConfigured = Boolean(
+    env.googleAdsClientId && env.googleAdsClientSecret && env.googleAdsDeveloperToken
+  );
+  const placements = (await listAdPlacements()).filter((placement) =>
+    input.placementKeys?.length ? input.placementKeys.includes(placement.placementKey) : true
+  );
+  const units = await Promise.all(placements.map(buildGoogleAdUnit));
+  const unitBlockers = units.flatMap((unit) => unit.blockers.map((blocker) => `${unit.placementKey}: ${blocker}`));
+  const credentialBlockers = googleBackfillConfigured
+    ? []
+    : ["Google Ads/Ad Manager credentials are not configured; keep Google sync in manual-export or preview mode."];
+  const modeBlockers = mode === "google_ad_manager" ? credentialBlockers : [];
+  const blockers = [...unitBlockers, ...modeBlockers];
+  const status: GoogleAdManagerSyncResult["status"] = dryRun
+    ? "preview"
+    : mode === "manual_export"
+      ? "manual_export_ready"
+      : blockers.length
+        ? "blocked"
+        : "synced";
+
+  if (!dryRun && (mode === "manual_export" || status === "synced")) {
+    await persistGoogleAdUnits(units);
+  }
+
+  if (!dryRun) {
+    await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: "ads.google_ad_manager_sync",
+      subjectType: "ad_backfill_sync",
+      payload: {
+        mode,
+        status,
+        googleBackfillConfigured,
+        placementsReviewed: units.length,
+        readyUnits: units.filter((unit) => unit.status === "ready").length,
+        blockedUnits: units.filter((unit) => unit.status === "blocked").length,
+        blockers
+      }
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    mode,
+    status,
+    googleBackfillConfigured,
+    totals: {
+      placementsReviewed: units.length,
+      readyUnits: units.filter((unit) => unit.status === "ready").length,
+      blockedUnits: units.filter((unit) => unit.status === "blocked").length
+    },
+    units,
+    blockers,
+    nextActions: blockers.length
+      ? [
+          ...blockers,
+          "Keep direct-sold inventory active and use manual export until Google credentials and ad-unit review are approved."
+        ]
+      : ["Google ad units are ready for direct-sold-first backfill monitoring."]
   };
 }

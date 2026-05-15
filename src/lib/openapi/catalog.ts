@@ -266,6 +266,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/ads/reporting": {
         get: { tags: ["Ads"], summary: "Return direct-sold ad placement impressions, clicks, CTR, and optimization next actions" }
       },
+      "/api/v1/admin/ads/google-sync": {
+        post: { tags: ["Ads"], summary: "Preview or record Google Ad Manager ad-unit sync evidence with direct-sold backfill guardrails" }
+      },
       "/api/v1/admin/ad-readiness": {
         get: { tags: ["Ads"], summary: "Return direct-sold and Google backfill advertising readiness" }
       },
