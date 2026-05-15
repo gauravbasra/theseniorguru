@@ -106,6 +106,15 @@ export type PublishReviewResponseInput = {
   body: string;
   generatedByAi?: boolean;
   actorId?: string;
+  dryRun?: boolean;
+};
+
+export type PublishReviewResponseResult = {
+  response: ReviewResponseRecord;
+  dryRun: boolean;
+  policyDecision: string;
+  nextStatus: ReviewResponseRecord["status"];
+  auditEventId?: string;
 };
 
 export type ReviewRequestCampaignStatus = "draft" | "queued" | "sent" | "blocked_by_policy" | "completed_with_errors";

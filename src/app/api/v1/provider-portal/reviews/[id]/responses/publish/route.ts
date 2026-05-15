@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { publishReviewResponse } from "@/lib/reviews/reviews";
+import { ReviewResponsePublishError, publishReviewResponse } from "@/lib/reviews/reviews";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -17,21 +17,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           providerId: body.providerId,
           body: body.body,
           generatedByAi: body.generatedByAi,
-          actorId: body.actorId
+          actorId: body.actorId,
+          dryRun: body.dryRun === false ? false : true
         })
       },
-      { status: 201 }
+      { status: body.dryRun === false ? 201 : 200 }
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    const status =
-      message === "Review not found" || message === "Provider not found"
-        ? 404
-        : message.includes("provider mismatch")
-          ? 403
-          : message.includes("must be published")
-            ? 409
-            : 500;
+    const status = error instanceof ReviewResponsePublishError ? error.status : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

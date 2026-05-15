@@ -67,6 +67,7 @@ Deliverables:
 - Review moderation and sentiment scoring APIs with audit-ready schema. Completed.
 - Provider reputation readiness API and provider console action. Completed.
 - Policy-gated review response publish API. Completed.
+- Review response publish hardening so omitted `dryRun` returns policy/audit preview evidence without inserting a public response and live publishing requires explicit `dryRun=false`. Completed.
 - External review integration readiness API with provider-owned credential references, live-sync blockers, Supabase schema readiness, OpenAPI/link-health coverage, and owner credential parking-lot note. Completed.
 - Reputation trend analytics API with review/sentiment buckets, external source signals, auditable score snapshots, Supabase schema readiness, OpenAPI/link-health coverage, and provider route validation. Completed.
 - Admin review moderation dashboard API with SLA risk, queue health, provider breakdown, recent decisions, OpenAPI/link-health coverage, and route smoke coverage. Completed.

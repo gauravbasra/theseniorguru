@@ -1,6 +1,7 @@
 import type {
   CreateReviewInput,
   PublishReviewResponseInput,
+  PublishReviewResponseResult,
   ReviewModerationDashboard,
   ReviewModerationInput,
   ReviewModerationRecord,
@@ -9,6 +10,7 @@ import type {
   ReviewResponseRecord,
   ReviewSentimentRecord
 } from "@/lib/domain/reviews";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -17,6 +19,16 @@ const seedReviews: ReviewRecord[] = [];
 const seedReviewResponses: ReviewResponseRecord[] = [];
 const seedReviewModerationCases: ReviewModerationRecord[] = [];
 const seedReviewSentiment: ReviewSentimentRecord[] = [];
+
+export class ReviewResponsePublishError extends Error {
+  status: number;
+
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = "ReviewResponsePublishError";
+    this.status = status;
+  }
+}
 
 function mapReview(row: Record<string, unknown>): ReviewRecord {
   return {
@@ -505,27 +517,28 @@ export async function generateReviewResponse(reviewId: string): Promise<ReviewRe
   };
 }
 
-export async function publishReviewResponse(input: PublishReviewResponseInput): Promise<ReviewResponseRecord> {
+export async function publishReviewResponse(input: PublishReviewResponseInput): Promise<PublishReviewResponseResult> {
   const review = await getReviewById(input.reviewId);
 
   if (!review) {
-    throw new Error("Review not found");
+    throw new ReviewResponsePublishError("Review not found", 404);
   }
 
   if (input.providerId !== review.providerId) {
-    throw new Error("Review response provider mismatch");
+    throw new ReviewResponsePublishError("Review response provider mismatch", 403);
   }
 
   if (review.status !== "published") {
-    throw new Error("Review must be published before a provider response can be published");
+    throw new ReviewResponsePublishError("Review must be published before a provider response can be published", 409);
   }
 
   const provider = await getProviderById(input.providerId);
 
   if (!provider) {
-    throw new Error("Provider not found");
+    throw new ReviewResponsePublishError("Provider not found", 404);
   }
 
+  const dryRun = input.dryRun !== false;
   const policy = await runPolicyCheck({
     subjectType: "review_response",
     subjectId: input.reviewId,
@@ -534,7 +547,8 @@ export async function publishReviewResponse(input: PublishReviewResponseInput): 
       review,
       providerId: input.providerId,
       body: input.body,
-      generatedByAi: input.generatedByAi ?? false
+      generatedByAi: input.generatedByAi ?? false,
+      dryRun
     }
   });
 
@@ -548,46 +562,101 @@ export async function publishReviewResponse(input: PublishReviewResponseInput): 
       reviewId: input.reviewId,
       providerId: review.providerId,
       body: input.body,
-      status: blocked ? "blocked" : "published",
+      status: blocked ? "blocked" : dryRun ? "approved" : "published",
       generatedByAi: input.generatedByAi ?? false,
       policyDecision: policy.decision,
       createdAt: now,
-      publishedAt: blocked ? undefined : now
+      publishedAt: blocked || dryRun ? undefined : now
     };
-    seedReviewResponses.unshift(response);
-    return response;
+
+    if (!dryRun) {
+      seedReviewResponses.unshift(response);
+    }
+
+    const auditEvent = await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "provider" : "system",
+      eventType: blocked
+        ? "review_response.blocked"
+        : dryRun
+          ? "review_response.publish_previewed"
+          : "review_response.published",
+      subjectType: "review",
+      subjectId: input.reviewId,
+      payload: {
+        providerId: review.providerId,
+        dryRun,
+        generatedByAi: input.generatedByAi ?? false,
+        policyDecision: policy.decision,
+        reasons: policy.reasons
+      }
+    });
+
+    return {
+      response,
+      dryRun,
+      policyDecision: policy.decision,
+      nextStatus: response.status,
+      auditEventId: auditEvent.id
+    };
   }
 
-  const { data, error } = await supabase
-    .from("review_responses")
-    .insert({
-      review_id: input.reviewId,
-      provider_id: review.providerId,
-      body: input.body,
-      status: blocked ? "blocked" : "published",
-      generated_by_ai: input.generatedByAi ?? false,
-      published_at: blocked ? undefined : now
-    })
-    .select("*")
-    .single();
+  let response: ReviewResponseRecord = {
+    id: `review-response-preview-${Date.now()}`,
+    reviewId: input.reviewId,
+    providerId: review.providerId,
+    body: input.body,
+    status: blocked ? "blocked" : "approved",
+    generatedByAi: input.generatedByAi ?? false,
+    policyDecision: policy.decision,
+    createdAt: now
+  };
 
-  if (error) {
-    throw new Error(`Review response publish failed: ${error.message}`);
+  if (!dryRun) {
+    const { data, error } = await supabase
+      .from("review_responses")
+      .insert({
+        review_id: input.reviewId,
+        provider_id: review.providerId,
+        body: input.body,
+        status: blocked ? "blocked" : "published",
+        generated_by_ai: input.generatedByAi ?? false,
+        published_at: blocked ? undefined : now
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      throw new ReviewResponsePublishError(`Review response publish failed: ${error.message}`, 500);
+    }
+
+    response = { ...mapReviewResponse(data), policyDecision: policy.decision };
   }
 
-  await supabase.from("audit_events").insert({
-    actor_id: input.actorId,
-    actor_type: input.actorId ? "provider" : "system",
-    event_type: blocked ? "review_response.blocked" : "review_response.published",
-    subject_type: "review",
-    subject_id: input.reviewId,
+  const auditEvent = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "provider" : "system",
+    eventType: blocked
+      ? "review_response.blocked"
+      : dryRun
+        ? "review_response.publish_previewed"
+        : "review_response.published",
+    subjectType: "review",
+    subjectId: input.reviewId,
     payload: {
       providerId: review.providerId,
+      dryRun,
       generatedByAi: input.generatedByAi ?? false,
       policyDecision: policy.decision,
       reasons: policy.reasons
     }
   });
 
-  return { ...mapReviewResponse(data), policyDecision: policy.decision };
+  return {
+    response,
+    dryRun,
+    policyDecision: policy.decision,
+    nextStatus: response.status,
+    auditEventId: auditEvent.id
+  };
 }
