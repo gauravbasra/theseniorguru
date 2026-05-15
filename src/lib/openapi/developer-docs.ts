@@ -47,6 +47,7 @@ type SdkPackage = {
 const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/events",
+  "/api/v1/partner/reviews",
   "/api/v1/partner/usage",
   "/api/v1/partner/onboarding-checklist",
   "/api/v1/partner/changelog",
@@ -159,6 +160,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not mirror events publicly until partner display rules and sponsorship disclosures are reviewed."
     },
     {
+      key: "read-published-reviews",
+      title: "Call published review inventory without reviewer email exposure",
+      owner: "partner_engineer",
+      requiredScopes: ["reviews:read"],
+      endpoint: "GET /api/v1/partner/reviews",
+      completionSignal: "Response includes only published reviews, provider context, pagination metadata, and no reviewer email field.",
+      blocker: "Do not syndicate reviews until partner display rules, attribution, and moderation status handling are approved."
+    },
+    {
       key: "verify-usage-evidence",
       title: "Review JSON and CSV usage evidence",
       owner: "partner_ops",
@@ -243,6 +253,7 @@ export function getPartnerApiChangelog() {
       affectedEndpoints: [
         "GET /api/v1/partner/providers",
         "GET /api/v1/partner/events",
+        "GET /api/v1/partner/reviews",
         "GET /api/v1/partner/usage",
         "GET /api/v1/partner/onboarding-checklist",
         "GET /api/v1/partner/developer-docs",
@@ -510,7 +521,8 @@ export function getPartnerResponsePaginationContract() {
     },
     paginatedEndpoints: [
       "GET /api/v1/partner/providers",
-      "GET /api/v1/partner/events"
+      "GET /api/v1/partner/events",
+      "GET /api/v1/partner/reviews"
     ],
     metaShape: {
       pagination: {
@@ -577,7 +589,7 @@ export function getPartnerDeveloperDocs() {
     authentication: {
       type: "apiKey",
       header: catalog.components.securitySchemes.partnerApiKey.name,
-      requiredScopes: ["providers:read", "events:read", "usage:read", "webhooks:write"]
+      requiredScopes: ["providers:read", "events:read", "reviews:read", "usage:read", "webhooks:write"]
     },
     endpoints,
     webhooks: {

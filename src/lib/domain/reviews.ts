@@ -11,6 +11,11 @@ export type ReviewRecord = {
   createdAt: string;
 };
 
+export type PartnerReviewRecord = Omit<ReviewRecord, "reviewerEmail"> & {
+  providerSlug?: string;
+  providerName?: string;
+};
+
 export type ReviewModerationStatus = "published" | "hidden" | "removed";
 
 export type ReviewModerationInput = {

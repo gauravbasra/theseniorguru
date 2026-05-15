@@ -2,6 +2,7 @@ import type {
   CreateReviewInput,
   PublishReviewResponseInput,
   PublishReviewResponseResult,
+  PartnerReviewRecord,
   ReviewModerationDashboard,
   ReviewModerationInput,
   ReviewModerationRecord,
@@ -12,7 +13,7 @@ import type {
 } from "@/lib/domain/reviews";
 import { recordAuditEvent } from "@/lib/audit-events";
 import { runPolicyCheck } from "@/lib/policy";
-import { getProviderById } from "@/lib/providers";
+import { getProviderById, listProviders } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedReviews: ReviewRecord[] = [];
@@ -251,6 +252,62 @@ export async function listProviderReviews(providerId: string): Promise<ReviewRec
   }
 
   return (data ?? []).map(mapReview);
+}
+
+export async function listPartnerReviews(input: { providerId?: string } = {}): Promise<PartnerReviewRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    const providers = await listProviders();
+    const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+
+    return seedReviews
+      .filter((review) => review.status === "published")
+      .filter((review) => !input.providerId || review.providerId === input.providerId)
+      .map(({ reviewerEmail: _reviewerEmail, ...review }) => {
+        const provider = providerById.get(review.providerId);
+
+        return {
+          ...review,
+          providerSlug: provider?.slug,
+          providerName: provider?.name
+        };
+      });
+  }
+
+  let query = supabase
+    .from("reviews")
+    .select("*, providers(id, slug, name)")
+    .eq("status", "published")
+    .order("created_at", { ascending: false });
+
+  if (input.providerId) {
+    query = query.eq("provider_id", input.providerId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Partner review query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => {
+    const review = mapReview(row);
+    const providerRow = Array.isArray(row.providers) ? row.providers[0] : row.providers;
+    const { reviewerEmail: _reviewerEmail, ...publicReview } = review;
+
+    return {
+      ...publicReview,
+      providerSlug:
+        providerRow && typeof providerRow === "object" && "slug" in providerRow
+          ? String((providerRow as Record<string, unknown>).slug)
+          : undefined,
+      providerName:
+        providerRow && typeof providerRow === "object" && "name" in providerRow
+          ? String((providerRow as Record<string, unknown>).name)
+          : undefined
+    };
+  });
 }
 
 export async function listProviderReviewPipeline(providerId: string): Promise<ReviewRecord[]> {
