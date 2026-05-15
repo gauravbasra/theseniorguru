@@ -172,14 +172,18 @@ export type NewsletterEditionActionInput = {
   notes?: string;
   scheduledFor?: string;
   deliveryProvider?: string;
+  dryRun?: boolean;
 };
 
 export type NewsletterEditionActionResult = {
   id: string;
   status: NewsletterEditionStatus;
   policyDecision: string;
+  dryRun?: boolean;
+  previousStatus?: NewsletterEditionStatus;
   scheduledFor?: string;
   sentAt?: string;
+  auditEventId?: string;
 };
 
 export type NewsletterDeliveryProvider = "mailjet" | "manual_export";

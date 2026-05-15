@@ -14,7 +14,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       data: await scheduleNewsletterEdition(id, {
         actorId: body.actorId,
         notes: body.notes,
-        scheduledFor: body.scheduledFor
+        scheduledFor: body.scheduledFor,
+        dryRun: body.dryRun === false ? false : true
       })
     });
   } catch (error) {

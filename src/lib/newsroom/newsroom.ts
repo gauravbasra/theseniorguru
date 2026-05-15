@@ -1203,14 +1203,44 @@ export async function scheduleNewsletterEdition(
     throw new Error("scheduledFor must be a valid ISO date");
   }
 
+  const dryRun = input.dryRun !== false;
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
     const edition = getSeedNewsletterEdition(editionId);
     assertNewsletterCanBeScheduled(edition);
+    const previousStatus = edition.status;
     const policy = await policyCheckNewsletterAction(edition, "schedule_newsletter_edition", input);
-    edition.status = "scheduled";
-    edition.scheduledFor = input.scheduledFor;
-    return { id: edition.id, status: edition.status, policyDecision: policy.decision, scheduledFor: edition.scheduledFor };
+
+    if (!dryRun) {
+      edition.status = "scheduled";
+      edition.scheduledFor = input.scheduledFor;
+    }
+
+    const auditEvent = await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: dryRun ? "newsletter.schedule_previewed" : "newsletter.scheduled",
+      subjectType: "newsletter_edition",
+      subjectId: editionId,
+      payload: {
+        notes: input.notes,
+        dryRun,
+        previousStatus,
+        nextStatus: "scheduled",
+        scheduledFor: input.scheduledFor,
+        policyDecision: policy.decision
+      }
+    });
+
+    return {
+      id: edition.id,
+      status: edition.status,
+      policyDecision: policy.decision,
+      dryRun,
+      previousStatus,
+      scheduledFor: dryRun ? input.scheduledFor : edition.scheduledFor,
+      auditEventId: auditEvent.id
+    };
   }
 
   const edition = await getNewsletterEdition(editionId);
@@ -1218,23 +1248,50 @@ export async function scheduleNewsletterEdition(
     throw new Error("Newsletter edition not found");
   }
   assertNewsletterCanBeScheduled(edition);
+  const previousStatus = edition.status;
   const policy = await policyCheckNewsletterAction(edition, "schedule_newsletter_edition", input);
 
-  const { error } = await supabase
-    .from("newsletter_editions")
-    .update({
-      status: "scheduled",
-      scheduled_for: input.scheduledFor,
-      metadata: { scheduledBy: input.actorId ?? "system", notes: input.notes, policyDecision: policy.decision },
-      updated_at: new Date().toISOString()
-    })
-    .eq("id", editionId);
+  if (!dryRun) {
+    const { error } = await supabase
+      .from("newsletter_editions")
+      .update({
+        status: "scheduled",
+        scheduled_for: input.scheduledFor,
+        metadata: { scheduledBy: input.actorId ?? "system", notes: input.notes, policyDecision: policy.decision },
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", editionId);
 
-  if (error) {
-    throw new Error(`Newsletter scheduling failed: ${error.message}`);
+    if (error) {
+      throw new Error(`Newsletter scheduling failed: ${error.message}`);
+    }
   }
 
-  return { id: editionId, status: "scheduled", policyDecision: policy.decision, scheduledFor: input.scheduledFor };
+  const auditEvent = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: dryRun ? "newsletter.schedule_previewed" : "newsletter.scheduled",
+    subjectType: "newsletter_edition",
+    subjectId: editionId,
+    payload: {
+      notes: input.notes,
+      dryRun,
+      previousStatus,
+      nextStatus: "scheduled",
+      scheduledFor: input.scheduledFor,
+      policyDecision: policy.decision
+    }
+  });
+
+  return {
+    id: editionId,
+    status: dryRun ? edition.status : "scheduled",
+    policyDecision: policy.decision,
+    dryRun,
+    previousStatus,
+    scheduledFor: input.scheduledFor,
+    auditEventId: auditEvent.id
+  };
 }
 
 export async function sendNewsletterEdition(
