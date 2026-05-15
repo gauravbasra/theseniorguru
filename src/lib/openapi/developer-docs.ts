@@ -69,6 +69,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/campaigns",
   "/api/v1/partner/claims",
   "/api/v1/partner/claims/{id}",
+  "/api/v1/partner/claims/{id}/verification-evidence",
   "/api/v1/partner/usage",
   "/api/v1/partner/onboarding-checklist",
   "/api/v1/partner/changelog",
@@ -379,6 +380,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not expose claim status in partner systems unless the claimant email match and partner data-use approval are both preserved."
     },
     {
+      key: "submit-provider-claim-evidence",
+      title: "Submit provider claim verification evidence with claimant match",
+      owner: "partner_engineer",
+      requiredScopes: ["claims:write"],
+      endpoint: "POST /api/v1/partner/claims/{id}/verification-evidence",
+      completionSignal: "Response includes safe verification attempt status and refreshed claim checklist after claimantEmail match and attestation acceptance; raw evidence, attempt IDs, verification targets, and policy decisions are excluded.",
+      blocker: "Do not submit or display claim evidence unless the claimant email matches the original claim and the claimant has accepted the attestation."
+    },
+    {
       key: "verify-usage-evidence",
       title: "Review JSON and CSV usage evidence",
       owner: "partner_ops",
@@ -485,6 +495,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/campaigns",
         "POST /api/v1/partner/claims",
         "GET /api/v1/partner/claims/{id}",
+        "POST /api/v1/partner/claims/{id}/verification-evidence",
         "GET /api/v1/partner/usage",
         "GET /api/v1/partner/onboarding-checklist",
         "GET /api/v1/partner/developer-docs",

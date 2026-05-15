@@ -743,6 +743,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/claims/{id}": {
         get: { tags: ["Claims"], summary: "Partner provider claim status API requiring claims:write scope and matching claimant email" }
       },
+      "/api/v1/partner/claims/{id}/verification-evidence": {
+        post: { tags: ["Claims"], summary: "Partner provider claim evidence submission API requiring claims:write scope, claimant email match, and attestation" }
+      },
       "/api/v1/partner/usage": {
         get: { tags: ["System"], summary: "Partner-scoped API usage summary, retention policy, or CSV export requiring usage:read scope" }
       },
