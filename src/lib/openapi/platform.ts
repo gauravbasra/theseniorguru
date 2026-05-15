@@ -1563,6 +1563,26 @@ async function recordWebhookDeliveryAttempt(input: {
   return mapWebhookDeliveryAttempt(data);
 }
 
+function previewWebhookDeliveryAttempt(input: {
+  deliveryId: string;
+  targetUrl: string;
+  status: WebhookDeliveryAttemptRecord["status"];
+  statusCode?: number;
+  error?: string;
+  signaturePreview?: string;
+}): WebhookDeliveryAttemptRecord {
+  return {
+    id: `webhook-attempt-preview-${crypto.randomUUID()}`,
+    deliveryId: input.deliveryId,
+    targetUrl: input.targetUrl,
+    status: input.status,
+    statusCode: input.statusCode,
+    error: input.error,
+    signaturePreview: input.signaturePreview,
+    createdAt: new Date().toISOString()
+  };
+}
+
 async function updateWebhookDeliveryStatus(input: {
   deliveryId: string;
   status: WebhookDeliveryRecord["status"];
@@ -1623,14 +1643,16 @@ export async function processWebhookDeliveries(
 
     if (!subscription || subscription.status !== "active") {
       blocked += 1;
-      attempts.push(
-        await recordWebhookDeliveryAttempt({
-          deliveryId: delivery.id,
-          targetUrl: subscription?.targetUrl ?? "unknown",
-          status: "blocked",
-          error: "Webhook subscription is missing or inactive"
-        })
-      );
+      const blockedAttempt = {
+        deliveryId: delivery.id,
+        targetUrl: subscription?.targetUrl ?? "unknown",
+        status: "blocked" as const,
+        error: "Webhook subscription is missing or inactive"
+      };
+      attempts.push(dryRun ? previewWebhookDeliveryAttempt(blockedAttempt) : await recordWebhookDeliveryAttempt(blockedAttempt));
+      if (dryRun) {
+        continue;
+      }
       await updateWebhookDeliveryStatus({
         deliveryId: delivery.id,
         status: "blocked",
@@ -1643,14 +1665,16 @@ export async function processWebhookDeliveries(
 
     if (!secretMaterial) {
       blocked += 1;
-      attempts.push(
-        await recordWebhookDeliveryAttempt({
-          deliveryId: delivery.id,
-          targetUrl: subscription.targetUrl,
-          status: "blocked",
-          error: "Webhook signing secret is unavailable or cannot be decrypted"
-        })
-      );
+      const blockedAttempt = {
+        deliveryId: delivery.id,
+        targetUrl: subscription.targetUrl,
+        status: "blocked" as const,
+        error: "Webhook signing secret is unavailable or cannot be decrypted"
+      };
+      attempts.push(dryRun ? previewWebhookDeliveryAttempt(blockedAttempt) : await recordWebhookDeliveryAttempt(blockedAttempt));
+      if (dryRun) {
+        continue;
+      }
       await updateWebhookDeliveryStatus({
         deliveryId: delivery.id,
         status: "blocked",
@@ -1672,7 +1696,7 @@ export async function processWebhookDeliveries(
 
     if (dryRun) {
       attempts.push(
-        await recordWebhookDeliveryAttempt({
+        previewWebhookDeliveryAttempt({
           deliveryId: delivery.id,
           targetUrl: subscription.targetUrl,
           status: "dry_run",

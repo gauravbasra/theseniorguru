@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       data: await processWebhookDeliveries({
         limit: body.limit,
-        dryRun: body.dryRun
+        dryRun: body.dryRun !== false
       })
     });
   } catch (error) {

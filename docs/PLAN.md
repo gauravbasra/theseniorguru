@@ -103,6 +103,7 @@ Deliverables:
 - Partner production promotion workflow with sandbox evidence checks, active key/subscription/usage gates, owner approval guard, sandboxMode promotion update, API audit evidence, OpenAPI/link-health coverage, product map, and Open API console action. Completed.
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.
+- Webhook delivery worker dry-run hardening so admin-run previews no longer persist delivery attempts or mutate delivery status unless explicitly run live. Completed.
 - Admin Open API operations console for clients, scoped keys, webhooks, dry-run delivery, retries, and audit visibility. Completed.
 - Admin operations health charts backed by dashboard metrics for claims, reviews, events, community, APIs, and workers. Completed.
 - Scheduled worker health API for expected cron cadence, stale workers, failures, and launch blockers. Completed.
