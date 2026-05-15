@@ -133,3 +133,66 @@ export type ProviderCampaignOptimizationSummary = {
   recommendationCount: number;
   recommendations: CampaignOptimizationRecommendation[];
 };
+
+export type VoiceAssistantProvider = "manual_export" | "internal_notification_queue" | "twilio" | "retell" | "elevenlabs";
+
+export type VoiceAssistantStatus = "preview" | "queued" | "configured" | "blocked_by_policy" | "failed";
+
+export type VoiceAssistantChannelReadiness = {
+  provider: VoiceAssistantProvider;
+  status: "ready" | "blocked";
+  blockers: string[];
+  evidence: Record<string, unknown>;
+};
+
+export type VoiceAssistantReadiness = {
+  providerId?: string;
+  providerName?: string;
+  generatedAt: string;
+  entitlement: {
+    featureKey: "ai_voice";
+    allowed: boolean;
+    reason: string;
+  };
+  channels: VoiceAssistantChannelReadiness[];
+  recommendedProvider: VoiceAssistantProvider;
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type VoiceAssistantPreviewInput = {
+  providerId: string;
+  assistantName?: string;
+  phoneNumber?: string;
+  transferNumber?: string;
+  greeting?: string;
+  missedCallPolicy?: "capture_callback" | "route_to_staff" | "send_sms_followup";
+  deliveryProvider?: VoiceAssistantProvider;
+  dryRun?: boolean;
+  actorId?: string;
+};
+
+export type VoiceAssistantCampaignRecord = {
+  id: string;
+  providerId: string;
+  assistantName: string;
+  status: VoiceAssistantStatus;
+  deliveryProvider: VoiceAssistantProvider;
+  phoneNumber?: string;
+  transferNumber?: string;
+  greeting: string;
+  missedCallPolicy: VoiceAssistantPreviewInput["missedCallPolicy"];
+  readinessPayload: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type VoiceAssistantPreviewResult = {
+  dryRun: boolean;
+  status: VoiceAssistantStatus;
+  deliveryProvider: VoiceAssistantProvider;
+  readiness: VoiceAssistantReadiness;
+  campaign: VoiceAssistantCampaignRecord;
+  payload: Record<string, unknown>;
+  blockers: string[];
+  nextActions: string[];
+};

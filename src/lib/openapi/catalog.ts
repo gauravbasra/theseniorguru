@@ -313,6 +313,10 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/campaigns/optimization-recommendations": {
         get: { tags: ["Campaigns"], summary: "Return provider-facing campaign optimization recommendations from recorded metrics" }
       },
+      "/api/v1/provider/voice-assistant": {
+        get: { tags: ["Campaigns"], summary: "Report AI voice assistant readiness, entitlement, and provider blockers" },
+        post: { tags: ["Campaigns"], summary: "Preview or record an AI voice assistant adapter configuration with compliance evidence" }
+      },
       "/api/v1/provider/review-request-campaigns": {
         get: { tags: ["Reviews"], summary: "List provider review request campaigns" },
         post: { tags: ["Reviews"], summary: "Create a consent-gated review request campaign" }

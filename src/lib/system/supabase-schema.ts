@@ -62,6 +62,7 @@ export const migrationManifest = [
   "20260510193500_webhook_delivery_worker.sql",
   "20260510210500_review_request_campaigns.sql",
   "20260515033200_review_request_delivery_payloads.sql",
+  "20260515034200_voice_assistant_campaigns.sql",
   "20260510220000_dual_funnel_leads.sql",
   "20260511001000_review_moderation_sentiment.sql",
   "20260511010000_public_source_acquisition_staging.sql",
@@ -184,6 +185,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260515033200_review_request_delivery_payloads.sql": {
     capability: "reviews",
     summary: "Review request delivery provider and per-recipient payload evidence."
+  },
+  "20260515034200_voice_assistant_campaigns.sql": {
+    capability: "growth",
+    summary: "AI voice assistant campaign readiness, provider adapter, and compliance payload evidence."
   },
   "20260510220000_dual_funnel_leads.sql": {
     capability: "leadIntake",
@@ -337,6 +342,7 @@ const requiredTables: RequiredTable[] = [
   { table: "marketing_campaigns", requiredFor: "Growth engine campaigns", capability: "growth" },
   { table: "growth_plans", requiredFor: "Paid plan catalog", capability: "growth" },
   { table: "provider_growth_subscriptions", requiredFor: "Provider contract subscriptions", capability: "growth" },
+  { table: "voice_campaigns", requiredFor: "AI voice assistant adapter evidence", capability: "growth" },
   { table: "reviews", requiredFor: "Reviews and reputation", capability: "reviews" },
   { table: "review_request_campaigns", requiredFor: "Review request campaigns", capability: "reviews" },
   { table: "review_requests", requiredFor: "Review request delivery recipients", capability: "reviews" },
@@ -370,6 +376,8 @@ const requiredColumns: RequiredColumn[] = [
   { table: "published_articles", column: "approval_payload", requiredFor: "Editorial approval audit", capability: "newsroom" },
   { table: "content_performance_metrics", column: "metric_payload", requiredFor: "Newsroom metric attribution and audit metadata", capability: "newsroom" },
   { table: "newsletter_delivery_attempts", column: "payload_preview", requiredFor: "Newsletter provider payload audit", capability: "newsroom" },
+  { table: "voice_campaigns", column: "readiness_payload", requiredFor: "AI voice assistant readiness evidence", capability: "growth" },
+  { table: "voice_campaigns", column: "delivery_provider", requiredFor: "AI voice assistant delivery adapter", capability: "growth" },
   { table: "review_requests", column: "delivery_provider", requiredFor: "Review request delivery adapter", capability: "reviews" },
   { table: "review_requests", column: "delivery_payload", requiredFor: "Review request delivery evidence", capability: "reviews" },
   { table: "api_keys", column: "last_used_at", requiredFor: "Partner API key usage monitoring", capability: "openApi" },

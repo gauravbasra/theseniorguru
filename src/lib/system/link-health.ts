@@ -32,6 +32,8 @@ const routeContracts: LinkContract[] = [
   { label: "Denver senior living", href: "/senior-living/co/denver", method: "GET", owner: "public" },
   { label: "Denver assisted living", href: "/senior-care/co/denver/assisted-living", method: "GET", owner: "public" },
   { label: "Provider console", href: "/provider", method: "GET", owner: "provider" },
+  { label: "AI voice assistant readiness API", href: "/api/v1/provider/voice-assistant", method: "GET", owner: "provider" },
+  { label: "AI voice assistant adapter API", href: "/api/v1/provider/voice-assistant", method: "POST", owner: "provider" },
   { label: "Admin", href: "/admin", method: "GET", owner: "admin" },
   { label: "Owner login", href: "/login", method: "GET", owner: "admin" },
   { label: "Owner session API", href: "/api/v1/auth/session", method: "GET", owner: "admin" },

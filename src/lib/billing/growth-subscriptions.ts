@@ -39,7 +39,7 @@ const seedGrowthPlans: GrowthPlanRecord[] = [
     description: "Bundled growth engine with campaigns, SEO, social, reviews, events, and AI assistant features.",
     monthlyPriceCents: 25000,
     defaultTermMonths: 6,
-    featureFlags: ["campaigns", "ai_social", "ai_seo", "enhanced_chat", "reviews", "event_promotions", "provider_dashboard"],
+    featureFlags: ["campaigns", "ai_social", "ai_seo", "enhanced_chat", "ai_voice", "reviews", "event_promotions", "provider_dashboard"],
     isActive: true,
     createdAt: "2026-05-10T00:00:00.000Z"
   }
@@ -92,6 +92,16 @@ const seedEntitlements: ProviderFeatureEntitlementRecord[] = [
     providerId: "seed-cottages-dayton-place",
     subscriptionId: "seed-growth-pro-subscription",
     featureKey: "reviews",
+    status: "active",
+    startsAt: "2026-05-10T00:00:00.000Z",
+    endsAt: "2026-11-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z"
+  },
+  {
+    id: "seed-entitlement-ai-voice",
+    providerId: "seed-cottages-dayton-place",
+    subscriptionId: "seed-growth-pro-subscription",
+    featureKey: "ai_voice",
     status: "active",
     startsAt: "2026-05-10T00:00:00.000Z",
     endsAt: "2026-11-10T00:00:00.000Z",
