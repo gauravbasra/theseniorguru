@@ -11,6 +11,7 @@ import type {
   JoinCommunityGroupInput,
   RunCommunityDigestInput,
   SendCommunityInvitationInput,
+  SendCommunityInvitationResult,
   UpsertCommunityTopicSubscriptionInput
 } from "@/lib/domain/community";
 import { recordAuditEvent } from "@/lib/audit-events";
@@ -409,8 +410,9 @@ export async function createCommunityInvitation(
 
 export async function sendCommunityInvitation(
   input: SendCommunityInvitationInput
-): Promise<CommunityInvitationRecord> {
+): Promise<SendCommunityInvitationResult> {
   const supabase = getSupabaseAdminClient();
+  const dryRun = input.dryRun !== false;
   const now = new Date().toISOString();
 
   if (!supabase) {
@@ -420,6 +422,7 @@ export async function sendCommunityInvitation(
       throw new Error("Community invitation not found");
     }
 
+    const previousStatus = invitation.status;
     const policy = await runPolicyCheck({
       subjectType: "community_invitation",
       subjectId: input.invitationId,
@@ -431,17 +434,45 @@ export async function sendCommunityInvitation(
       }
     });
 
-    if (policy.decision.startsWith("blocked")) {
-      invitation.status = "blocked";
-      return invitation;
+    const nextStatus: CommunityInvitationRecord["status"] = policy.decision.startsWith("blocked") ? "blocked" : "sent";
+    const previewInvitation: CommunityInvitationRecord = {
+      ...invitation,
+      status: nextStatus,
+      deliveryChannel: input.deliveryChannel ?? invitation.deliveryChannel,
+      deliveryProvider: input.deliveryProvider ?? (nextStatus === "sent" ? "manual" : "pending"),
+      deliveryId: input.deliveryId,
+      sentAt: nextStatus === "sent" ? now : invitation.sentAt
+    };
+
+    if (!dryRun) {
+      Object.assign(invitation, previewInvitation);
     }
 
-    invitation.status = "sent";
-    invitation.deliveryChannel = input.deliveryChannel ?? invitation.deliveryChannel;
-    invitation.deliveryProvider = input.deliveryProvider ?? "manual";
-    invitation.deliveryId = input.deliveryId;
-    invitation.sentAt = now;
-    return invitation;
+    const auditEvent = await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: dryRun ? "community_invitation.delivery_previewed" : "community_invitation.delivery_processed",
+      subjectType: "community_invitation",
+      subjectId: input.invitationId,
+      payload: {
+        communityId: invitation.communityId,
+        deliveryChannel: previewInvitation.deliveryChannel,
+        deliveryProvider: previewInvitation.deliveryProvider,
+        dryRun,
+        previousStatus,
+        nextStatus,
+        policyDecision: policy.decision
+      }
+    });
+
+    return {
+      invitation: dryRun ? previewInvitation : invitation,
+      dryRun,
+      policyDecision: policy.decision,
+      previousStatus,
+      nextStatus,
+      auditEventId: auditEvent.id
+    };
   }
 
   const { data: existing, error: lookupError } = await supabase
@@ -454,6 +485,7 @@ export async function sendCommunityInvitation(
     throw new Error(`Community invitation lookup failed: ${lookupError.message}`);
   }
 
+  const previousStatus = existing.status as CommunityInvitationRecord["status"];
   const policy = await runPolicyCheck({
     subjectType: "community_invitation",
     subjectId: input.invitationId,
@@ -465,45 +497,66 @@ export async function sendCommunityInvitation(
     }
   });
   const status: CommunityInvitationRecord["status"] = policy.decision.startsWith("blocked") ? "blocked" : "sent";
+  let invitation: CommunityInvitationRecord = {
+    ...mapInvitation(existing),
+    status,
+    deliveryChannel: input.deliveryChannel ?? existing.delivery_channel,
+    deliveryProvider: input.deliveryProvider ?? (status === "sent" ? "manual" : "pending"),
+    deliveryId: input.deliveryId,
+    sentAt: status === "sent" ? now : existing.sent_at
+  };
 
-  const { data, error } = await supabase
-    .from("community_invitations")
-    .update({
-      status,
-      delivery_channel: input.deliveryChannel ?? existing.delivery_channel,
-      delivery_provider: input.deliveryProvider ?? (status === "sent" ? "manual" : "pending"),
-      delivery_id: input.deliveryId,
-      delivery_payload: {
-        policyDecision: policy.decision,
-        messageTemplate: "community_group_invitation"
-      },
-      sent_at: status === "sent" ? now : existing.sent_at,
-      updated_at: now
-    })
-    .eq("id", input.invitationId)
-    .select("*")
-    .single();
+  if (!dryRun) {
+    const { data, error } = await supabase
+      .from("community_invitations")
+      .update({
+        status,
+        delivery_channel: input.deliveryChannel ?? existing.delivery_channel,
+        delivery_provider: input.deliveryProvider ?? (status === "sent" ? "manual" : "pending"),
+        delivery_id: input.deliveryId,
+        delivery_payload: {
+          policyDecision: policy.decision,
+          messageTemplate: "community_group_invitation"
+        },
+        sent_at: status === "sent" ? now : existing.sent_at,
+        updated_at: now
+      })
+      .eq("id", input.invitationId)
+      .select("*")
+      .single();
 
-  if (error) {
-    throw new Error(`Community invitation delivery update failed: ${error.message}`);
+    if (error) {
+      throw new Error(`Community invitation delivery update failed: ${error.message}`);
+    }
+
+    invitation = mapInvitation(data);
   }
 
-  await supabase.from("audit_events").insert({
-    actor_id: input.actorId,
-    actor_type: input.actorId ? "admin" : "system",
-    event_type: "community_invitation.delivery_processed",
-    subject_type: "community_invitation",
-    subject_id: input.invitationId,
+  const auditEvent = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: dryRun ? "community_invitation.delivery_previewed" : "community_invitation.delivery_processed",
+    subjectType: "community_invitation",
+    subjectId: input.invitationId,
     payload: {
       communityId: existing.community_id,
-      deliveryChannel: data.delivery_channel,
-      deliveryProvider: data.delivery_provider,
-      status,
+      deliveryChannel: invitation.deliveryChannel,
+      deliveryProvider: invitation.deliveryProvider,
+      dryRun,
+      previousStatus,
+      nextStatus: status,
       policyDecision: policy.decision
     }
   });
 
-  return mapInvitation(data);
+  return {
+    invitation,
+    dryRun,
+    policyDecision: policy.decision,
+    previousStatus,
+    nextStatus: status,
+    auditEventId: auditEvent.id
+  };
 }
 
 export async function listCommunityTopicSubscriptions(filters: {

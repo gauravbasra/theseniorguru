@@ -12,7 +12,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         deliveryChannel: body.deliveryChannel,
         deliveryProvider: body.deliveryProvider,
         deliveryId: body.deliveryId,
-        actorId: body.actorId
+        actorId: body.actorId,
+        dryRun: body.dryRun === false ? false : true
       })
     });
   } catch (error) {

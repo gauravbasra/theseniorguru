@@ -80,6 +80,16 @@ export type SendCommunityInvitationInput = {
   deliveryProvider?: CommunityInvitationRecord["deliveryProvider"];
   deliveryId?: string;
   actorId?: string;
+  dryRun?: boolean;
+};
+
+export type SendCommunityInvitationResult = {
+  invitation: CommunityInvitationRecord;
+  dryRun: boolean;
+  policyDecision: string;
+  previousStatus: CommunityInvitationRecord["status"];
+  nextStatus: CommunityInvitationRecord["status"];
+  auditEventId?: string;
 };
 
 export type CommunityTopicSubscriptionRecord = {

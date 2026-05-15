@@ -305,6 +305,7 @@ Deliverables:
 - Local community group and membership APIs. Completed.
 - Local expert profile submission and verification APIs. Completed.
 - Community invitation delivery and local topic subscription APIs. Completed.
+- Community invitation delivery hardening so omitted `dryRun` returns policy/audit preview evidence without marking invitations sent and live delivery requires explicit `dryRun=false`. Completed.
 - App feed API.
 - Saved providers and care circles.
 - Saved provider and care circle APIs. Completed.
