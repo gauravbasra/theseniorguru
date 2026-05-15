@@ -107,6 +107,8 @@ export type ReviewRequestRecord = {
   channel: string;
   status: "queued" | "sent" | "blocked_by_policy" | "failed";
   consentPayload: Record<string, unknown>;
+  deliveryProvider?: string;
+  deliveryPayload?: Record<string, unknown>;
   sentAt?: string;
   createdAt: string;
 };
@@ -130,7 +132,7 @@ export type SendReviewRequestCampaignInput = {
   actorId?: string;
   limit?: number;
   dryRun?: boolean;
-  deliveryProvider?: "mailjet" | "google" | "manual" | "pending";
+  deliveryProvider?: "internal_notification_queue" | "manual_export" | "mailjet" | "google" | "manual" | "pending";
 };
 
 export type SendReviewRequestCampaignResult = {
@@ -141,7 +143,15 @@ export type SendReviewRequestCampaignResult = {
   failed: number;
   blocked: number;
   dryRun: boolean;
+  deliveryProvider: string;
   requests: ReviewRequestRecord[];
+  deliveryAttempts: Array<{
+    requestId: string;
+    status: ReviewRequestRecord["status"];
+    provider: string;
+    target?: string;
+    payload: Record<string, unknown>;
+  }>;
 };
 
 export type ReputationReadinessSummary = {

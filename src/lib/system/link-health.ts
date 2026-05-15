@@ -289,7 +289,7 @@ const routeContracts: LinkContract[] = [
   },
   { label: "Review request campaigns API", href: "/api/v1/provider/review-request-campaigns", method: "GET", owner: "provider" },
   {
-    label: "Review request send API",
+    label: "Review request delivery adapter API",
     href: "/api/v1/provider/review-request-campaigns/demo/send",
     method: "POST",
     owner: "provider"

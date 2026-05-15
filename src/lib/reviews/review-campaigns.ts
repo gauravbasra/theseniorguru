@@ -5,6 +5,7 @@ import type {
   SendReviewRequestCampaignInput,
   SendReviewRequestCampaignResult
 } from "@/lib/domain/reviews";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -42,6 +43,8 @@ function mapReviewRequest(row: Record<string, unknown>): ReviewRequestRecord {
     channel: String(row.channel),
     status: row.status as ReviewRequestRecord["status"],
     consentPayload: mapJson(row.consent_payload),
+    deliveryProvider: row.delivery_provider ? String(row.delivery_provider) : undefined,
+    deliveryPayload: mapJson(row.delivery_payload),
     sentAt: row.sent_at ? String(row.sent_at) : undefined,
     createdAt: String(row.created_at)
   };
@@ -161,6 +164,8 @@ async function updateReviewRequestStatus(input: {
   requestId: string;
   status: ReviewRequestRecord["status"];
   sentAt?: string;
+  deliveryProvider?: string;
+  deliveryPayload?: Record<string, unknown>;
 }) {
   const supabase = getSupabaseAdminClient();
 
@@ -170,6 +175,8 @@ async function updateReviewRequestStatus(input: {
     if (request) {
       request.status = input.status;
       request.sentAt = input.sentAt;
+      request.deliveryProvider = input.deliveryProvider ?? request.deliveryProvider;
+      request.deliveryPayload = input.deliveryPayload ?? request.deliveryPayload;
     }
 
     return;
@@ -179,13 +186,57 @@ async function updateReviewRequestStatus(input: {
     .from("review_requests")
     .update({
       status: input.status,
-      sent_at: input.sentAt ?? null
+      sent_at: input.sentAt ?? null,
+      delivery_provider: input.deliveryProvider,
+      delivery_payload: input.deliveryPayload ?? {}
     })
     .eq("id", input.requestId);
 
   if (error) {
     throw new Error(`Review request status update failed: ${error.message}`);
   }
+}
+
+function normalizeReviewDeliveryProvider(value?: SendReviewRequestCampaignInput["deliveryProvider"]) {
+  if (value === "manual") {
+    return "manual_export";
+  }
+
+  if (value === "internal_notification_queue" || value === "manual_export" || value === "mailjet" || value === "google") {
+    return value;
+  }
+
+  return "manual_export";
+}
+
+function buildReviewRequestDeliveryPayload(input: {
+  campaign: ReviewRequestCampaignRecord;
+  request: ReviewRequestRecord;
+  providerName?: string;
+  deliveryProvider: string;
+  policyDecision: string;
+  dryRun: boolean;
+  status: ReviewRequestRecord["status"];
+  blockers?: string[];
+}) {
+  return {
+    campaignId: input.campaign.id,
+    campaignName: input.campaign.name,
+    providerId: input.campaign.providerId,
+    providerName: input.providerName,
+    recipientName: input.request.recipientName,
+    recipientEmail: input.request.recipientEmail,
+    channel: input.request.channel,
+    message: input.campaign.message,
+    deliveryProvider: input.deliveryProvider,
+    deliveryMode: input.dryRun ? "preview" : input.deliveryProvider,
+    status: input.status,
+    blockers: input.blockers ?? [],
+    reviewUrl: `/providers/${input.campaign.providerId}/reviews/new`,
+    consentPayload: input.request.consentPayload,
+    policyDecision: input.policyDecision,
+    queueTarget: input.deliveryProvider === "internal_notification_queue" ? "audit_events:review_request_delivery_queue" : undefined
+  };
 }
 
 async function updateReviewRequestCampaignRollup(input: {
@@ -343,10 +394,13 @@ export async function sendReviewRequestCampaign(
 
   const limit = Math.max(1, Math.min(input.limit ?? 25, 100));
   const dryRun = input.dryRun ?? false;
+  const deliveryProvider = normalizeReviewDeliveryProvider(input.deliveryProvider);
   const requests = await listCampaignReviewRequests(input.campaignId);
   const queued = requests.filter((request) => request.status === "queued").slice(0, limit);
   const processedRequests: ReviewRequestRecord[] = [];
+  const deliveryAttempts: SendReviewRequestCampaignResult["deliveryAttempts"] = [];
   const now = new Date().toISOString();
+  const provider = await getProviderById(campaign.providerId);
 
   let sent = 0;
   let failed = 0;
@@ -363,31 +417,64 @@ export async function sendReviewRequestCampaign(
         recipientEmail: request.recipientEmail,
         channel: request.channel,
         consentPayload: request.consentPayload,
-        deliveryProvider: input.deliveryProvider ?? "pending"
+        deliveryProvider
       }
     });
 
     const nextRequest = { ...request };
+    let blockers: string[] = [];
 
     if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
       blocked += 1;
       nextRequest.status = "blocked_by_policy";
+      blockers = ["Policy gate blocked review request delivery."];
     } else if (request.channel === "email" && !request.recipientEmail) {
       failed += 1;
       nextRequest.status = "failed";
+      blockers = ["Email review requests require a recipient email address."];
+    } else if (deliveryProvider === "manual_export") {
+      nextRequest.status = "queued";
+      blockers = ["Manual export selected; request remains queued until operator delivery is confirmed."];
+    } else if (deliveryProvider === "mailjet" || deliveryProvider === "google") {
+      failed += 1;
+      nextRequest.status = "failed";
+      blockers = [`${deliveryProvider} review delivery credentials are not configured for live handoff.`];
     } else {
       sent += 1;
       nextRequest.status = "sent";
       nextRequest.sentAt = now;
     }
 
+    const deliveryPayload = buildReviewRequestDeliveryPayload({
+      campaign,
+      request,
+      providerName: provider?.name,
+      deliveryProvider,
+      policyDecision: policy.decision,
+      dryRun,
+      status: nextRequest.status,
+      blockers
+    });
+
+    nextRequest.deliveryProvider = deliveryProvider;
+    nextRequest.deliveryPayload = deliveryPayload;
+
     processedRequests.push(nextRequest);
+    deliveryAttempts.push({
+      requestId: request.id,
+      status: nextRequest.status,
+      provider: deliveryProvider,
+      target: request.recipientEmail,
+      payload: deliveryPayload
+    });
 
     if (!dryRun) {
       await updateReviewRequestStatus({
         requestId: request.id,
         status: nextRequest.status,
-        sentAt: nextRequest.sentAt
+        sentAt: nextRequest.sentAt,
+        deliveryProvider,
+        deliveryPayload
       });
     }
   }
@@ -405,24 +492,21 @@ export async function sendReviewRequestCampaign(
       requests: rollupRequests
     });
 
-    const supabase = getSupabaseAdminClient();
-
-    if (supabase) {
-      await supabase.from("audit_events").insert({
-        actor_id: input.actorId,
-        actor_type: input.actorId ? "provider" : "system",
-        event_type: "review_request_campaign.sent",
-        subject_type: "review_request_campaign",
-        subject_id: input.campaignId,
-        payload: {
-          processed: processedRequests.length,
-          sent,
-          failed,
-          blocked,
-          deliveryProvider: input.deliveryProvider ?? "pending"
-        }
-      });
-    }
+    await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "provider" : "system",
+      eventType: "review_request_campaign.delivery_processed",
+      subjectType: "review_request_campaign",
+      subjectId: input.campaignId,
+      payload: {
+        processed: processedRequests.length,
+        sent,
+        failed,
+        blocked,
+        manualExport: processedRequests.filter((request) => request.deliveryProvider === "manual_export").length,
+        deliveryProvider
+      }
+    });
   }
 
   return {
@@ -433,6 +517,8 @@ export async function sendReviewRequestCampaign(
     failed,
     blocked,
     dryRun,
-    requests: processedRequests
+    deliveryProvider,
+    requests: processedRequests,
+    deliveryAttempts
   };
 }

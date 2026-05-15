@@ -214,11 +214,12 @@ const productPillars: ProductPillar[] = [
       "ai_generations",
       "content_assets",
       "social_posts",
-      "review_campaigns",
+      "review_request_campaigns",
+      "review_requests",
       "voice_campaigns",
       "chat_agents"
     ],
-    nextBackendWork: ["AI voice assistant adapter", "Review request delivery provider adapter", "Campaign recommendation delivery UI"]
+    nextBackendWork: ["AI voice assistant adapter", "Campaign recommendation delivery UI"]
   },
   {
     key: "ads",

@@ -61,6 +61,7 @@ export const migrationManifest = [
   "20260510184500_open_api_platform.sql",
   "20260510193500_webhook_delivery_worker.sql",
   "20260510210500_review_request_campaigns.sql",
+  "20260515033200_review_request_delivery_payloads.sql",
   "20260510220000_dual_funnel_leads.sql",
   "20260511001000_review_moderation_sentiment.sql",
   "20260511010000_public_source_acquisition_staging.sql",
@@ -179,6 +180,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260510210500_review_request_campaigns.sql": {
     capability: "reviews",
     summary: "Consent-gated review request campaigns and recipient send tracking."
+  },
+  "20260515033200_review_request_delivery_payloads.sql": {
+    capability: "reviews",
+    summary: "Review request delivery provider and per-recipient payload evidence."
   },
   "20260510220000_dual_funnel_leads.sql": {
     capability: "leadIntake",
@@ -334,6 +339,7 @@ const requiredTables: RequiredTable[] = [
   { table: "provider_growth_subscriptions", requiredFor: "Provider contract subscriptions", capability: "growth" },
   { table: "reviews", requiredFor: "Reviews and reputation", capability: "reviews" },
   { table: "review_request_campaigns", requiredFor: "Review request campaigns", capability: "reviews" },
+  { table: "review_requests", requiredFor: "Review request delivery recipients", capability: "reviews" },
   { table: "review_moderation_cases", requiredFor: "Review moderation audit", capability: "reviews" },
   { table: "review_sentiment", requiredFor: "Review sentiment scoring", capability: "reviews" },
   { table: "content_sources", requiredFor: "AI newsroom source intake", capability: "newsroom" },
@@ -364,6 +370,8 @@ const requiredColumns: RequiredColumn[] = [
   { table: "published_articles", column: "approval_payload", requiredFor: "Editorial approval audit", capability: "newsroom" },
   { table: "content_performance_metrics", column: "metric_payload", requiredFor: "Newsroom metric attribution and audit metadata", capability: "newsroom" },
   { table: "newsletter_delivery_attempts", column: "payload_preview", requiredFor: "Newsletter provider payload audit", capability: "newsroom" },
+  { table: "review_requests", column: "delivery_provider", requiredFor: "Review request delivery adapter", capability: "reviews" },
+  { table: "review_requests", column: "delivery_payload", requiredFor: "Review request delivery evidence", capability: "reviews" },
   { table: "api_keys", column: "last_used_at", requiredFor: "Partner API key usage monitoring", capability: "openApi" },
   { table: "webhook_subscriptions", column: "signing_secret_ciphertext", requiredFor: "Partner webhook request signing", capability: "openApi" },
   { table: "review_responses", column: "provider_id", requiredFor: "Provider-owned review responses", capability: "reviews" }
