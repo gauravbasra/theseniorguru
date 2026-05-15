@@ -292,6 +292,7 @@ Deliverables:
 - Session-bound app device registration API with push-token validation, audit evidence, fallback persistence, and Supabase migration readiness. Completed.
 - Community digest delivery worker with topic subscription targeting, app feed payload preview, device-target counts, internal queue audit evidence, and Supabase delivery-job migration readiness. Completed.
 - Session-owned care-circle family invite delivery jobs with preview, manual export, internal queue audit evidence, and delivery metadata persistence. Completed.
+- Expert answer ranking API with verified expert scoring, location/specialty routing reasons, audit event evidence, and Supabase ranking snapshot readiness. Completed.
 
 ## Phase 6: Marketing Growth Engine
 

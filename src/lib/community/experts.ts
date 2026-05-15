@@ -1,8 +1,11 @@
 import type {
+  ExpertAnswerRankingInput,
+  ExpertAnswerRankingResult,
   ExpertProfileRecord,
   SubmitExpertProfileInput,
   VerifyExpertProfileInput
 } from "@/lib/domain/community";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -40,6 +43,75 @@ function mapExpert(row: Record<string, unknown>): ExpertProfileRecord {
     status: row.status as ExpertProfileRecord["status"],
     verifiedAt: row.verified_at ? String(row.verified_at) : undefined,
     createdAt: String(row.created_at)
+  };
+}
+
+function tokenize(value?: string) {
+  return new Set(
+    (value ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length > 2)
+  );
+}
+
+function overlapScore(left: Set<string>, right: Set<string>) {
+  let score = 0;
+
+  for (const token of left) {
+    if (right.has(token)) score += 1;
+  }
+
+  return score;
+}
+
+function verificationFreshnessScore(expert: ExpertProfileRecord) {
+  const timestamp = Date.parse(expert.verifiedAt ?? expert.createdAt);
+
+  if (!Number.isFinite(timestamp)) return 0;
+
+  const days = Math.max(0, (Date.now() - timestamp) / 86_400_000);
+  return Math.max(0, 10 - Math.floor(days / 90));
+}
+
+function scoreExpertForQuestion(expert: ExpertProfileRecord, input: ExpertAnswerRankingInput) {
+  const reasons: string[] = [];
+  let score = 20;
+
+  if (input.city && expert.city?.toLowerCase() === input.city.toLowerCase()) {
+    score += 25;
+    reasons.push("same city");
+  }
+
+  if (input.state && expert.state?.toLowerCase() === input.state.toLowerCase()) {
+    score += 15;
+    reasons.push("same state");
+  }
+
+  const questionTokens = tokenize([input.question, input.topicKey].filter(Boolean).join(" "));
+  const specialtyTokens = tokenize([expert.specialty, expert.title, expert.bio, expert.credentialSummary].filter(Boolean).join(" "));
+  const matchedTokens = overlapScore(questionTokens, specialtyTokens);
+
+  if (matchedTokens) {
+    score += matchedTokens * 12;
+    reasons.push(`${matchedTokens} specialty match${matchedTokens === 1 ? "" : "es"}`);
+  }
+
+  if (expert.credentialSummary) {
+    score += 8;
+    reasons.push("credential summary present");
+  }
+
+  if (expert.verifiedAt) {
+    const freshness = verificationFreshnessScore(expert);
+    score += freshness;
+    reasons.push("verified expert");
+  }
+
+  return {
+    score,
+    reasons: reasons.length ? reasons : ["verified expert available"]
   };
 }
 
@@ -205,4 +277,101 @@ export async function verifyExpertProfile(input: VerifyExpertProfileInput): Prom
   });
 
   return mapExpert(data);
+}
+
+export async function rankExpertAnswers(input: ExpertAnswerRankingInput): Promise<ExpertAnswerRankingResult> {
+  if (!input.question?.trim()) {
+    throw new Error("question is required");
+  }
+
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 5), 20));
+  const policy = await runPolicyCheck({
+    subjectType: "expert_answer_ranking",
+    actionKey: "rank_expert_answers",
+    input: {
+      question: input.question,
+      city: input.city,
+      state: input.state,
+      topicKey: input.topicKey,
+      limit
+    }
+  });
+
+  if (policy.decision.startsWith("blocked")) {
+    throw new Error(policy.reasons[0] ?? "Expert answer ranking blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const experts = await listExpertProfiles({
+    status: "verified",
+    state: input.state
+  });
+  const rankings = experts
+    .map((expert) => {
+      const scored = scoreExpertForQuestion(expert, input);
+
+      return {
+        expert,
+        score: scored.score,
+        rank: 0,
+        reasons: scored.reasons
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.expert.displayName.localeCompare(right.expert.displayName))
+    .slice(0, limit)
+    .map((ranking, index) => ({ ...ranking, rank: index + 1 }));
+
+  const auditEvent = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: "expert_answer.ranked",
+    subjectType: "expert_answer_ranking",
+    payload: {
+      city: input.city,
+      state: input.state,
+      topicKey: input.topicKey,
+      limit,
+      rankedExpertIds: rankings.map((ranking) => ranking.expert.id),
+      policyDecision: policy.decision
+    }
+  });
+
+  if (supabase) {
+    const { error } = await supabase.from("expert_answer_rankings").insert({
+      question: input.question,
+      city: input.city,
+      state: input.state,
+      topic_key: input.topicKey,
+      ranking_payload: {
+        rankings: rankings.map((ranking) => ({
+          expertId: ranking.expert.id,
+          score: ranking.score,
+          rank: ranking.rank,
+          reasons: ranking.reasons
+        })),
+        auditEventId: auditEvent.id,
+        policyDecision: policy.decision
+      }
+    });
+
+    if (error) {
+      throw new Error(`Expert answer ranking persistence failed: ${error.message}`);
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    source: supabase ? "supabase" : "local_fallback",
+    query: {
+      question: input.question,
+      city: input.city,
+      state: input.state,
+      topicKey: input.topicKey
+    },
+    rankings,
+    auditEventId: auditEvent.id,
+    nextActions: rankings.length
+      ? ["Route the question to the top verified expert or present ranked options for staff review."]
+      : ["No verified experts matched this question. Invite or verify local experts before enabling automatic routing."]
+  };
 }

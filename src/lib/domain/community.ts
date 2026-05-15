@@ -195,6 +195,36 @@ export type VerifyExpertProfileInput = {
   actorId?: string;
 };
 
+export type ExpertAnswerRankingInput = {
+  question: string;
+  city?: string;
+  state?: string;
+  topicKey?: string;
+  limit?: number;
+  actorId?: string;
+};
+
+export type ExpertAnswerRankingRecord = {
+  expert: ExpertProfileRecord;
+  score: number;
+  rank: number;
+  reasons: string[];
+};
+
+export type ExpertAnswerRankingResult = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  query: {
+    question: string;
+    city?: string;
+    state?: string;
+    topicKey?: string;
+  };
+  rankings: ExpertAnswerRankingRecord[];
+  auditEventId?: string;
+  nextActions: string[];
+};
+
 export type CommunityPostRecord = {
   id: string;
   communityId?: string;

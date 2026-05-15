@@ -228,6 +228,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/community/experts/{id}/verify": {
         post: { tags: ["Community"], summary: "Verify, reject, or suspend a local expert profile with policy audit" }
       },
+      "/api/v1/community/expert-answers/rank": {
+        post: { tags: ["Community"], summary: "Rank verified local experts for a senior-care question using audited routing logic" }
+      },
       "/api/v1/community/posts/{id}/comments": {
         get: { tags: ["Community"], summary: "List published comments for a community post" },
         post: { tags: ["Community"], summary: "Create a policy-gated community comment" }
