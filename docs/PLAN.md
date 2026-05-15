@@ -350,5 +350,6 @@ Deliverables:
 - Newsletter delivery provider preview adapter with consent/tracking payload, credential checks, and safe live-send blockers. Completed.
 - Policy-gated newsletter delivery send API with dry-run support, delivery-attempt persistence, manual export sent evidence, and Mailjet live-send blockers. Completed.
 - Editorial performance trend export API with daily/weekly aggregation, CSV output, policy checks, and OpenAPI/link-health coverage. Completed.
+- Provider-facing newsletter analytics API with provider-tagged opens/clicks/leads, delivery health, manual/Mailjet blocker visibility, OpenAPI/link-health coverage, and route smoke coverage. Completed.
 - Preview-first webhook retry scheduler with protected cron route, dry-run candidate reporting, live-mode retry processing, and worker observability. Completed.
 - Data source approval queue API with source risk levels, missing review fields, import-readiness gates, policy checks, and OpenAPI/link-health coverage. Completed.

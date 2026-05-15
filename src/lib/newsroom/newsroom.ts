@@ -19,12 +19,14 @@ import type {
   NewsItemRecord,
   NewsletterDeliveryPreviewInput,
   NewsletterDeliveryPreviewResult,
+  NewsletterDeliveryAttemptRecord,
   NewsletterDeliveryProvider,
   NewsletterDeliverySendInput,
   NewsletterDeliverySendResult,
   NewsletterEditionActionInput,
   NewsletterEditionActionResult,
   NewsletterEditionRecord,
+  ProviderNewsletterAnalytics,
   NewsroomReadinessSummary,
   RecordContentPerformanceMetricInput,
   RunScheduledRssImportsInput,
@@ -32,6 +34,7 @@ import type {
 } from "@/lib/domain/newsroom";
 import { getAppEnv } from "@/lib/env";
 import { runPolicyCheck } from "@/lib/policy";
+import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedNewsItems: NewsItemRecord[] = [
@@ -193,6 +196,34 @@ function mapNewsletterEdition(row: Record<string, unknown>): NewsletterEditionRe
     scheduledFor: row.scheduled_for ? String(row.scheduled_for) : undefined,
     sentAt: row.sent_at ? String(row.sent_at) : undefined,
     createdAt: String(row.created_at)
+  };
+}
+
+function mapNewsletterDeliveryAttempt(row: Record<string, unknown>): NewsletterDeliveryAttemptRecord {
+  return {
+    id: String(row.id),
+    newsletterEditionId: String(row.newsletter_edition_id),
+    deliveryProvider: row.delivery_provider as NewsletterDeliveryProvider,
+    deliveryMode: row.delivery_mode as NewsletterDeliveryAttemptRecord["deliveryMode"],
+    status: row.status as NewsletterDeliveryAttemptRecord["status"],
+    recipientSegments: Array.isArray(row.recipient_segments)
+      ? row.recipient_segments as NewsletterDeliveryAttemptRecord["recipientSegments"]
+      : [],
+    payloadPreview: row.payload_preview && typeof row.payload_preview === "object"
+      ? row.payload_preview as NewsletterDeliveryAttemptRecord["payloadPreview"]
+      : {
+        subject: "",
+        preheader: "",
+        articleIds: [],
+        unsubscribeRequired: true,
+        tracking: { opens: true, clicks: true, campaignKey: "" }
+      },
+    providerMessageId: row.provider_message_id ? String(row.provider_message_id) : undefined,
+    error: row.error ? String(row.error) : undefined,
+    policyDecision: String(row.policy_decision),
+    actorId: row.actor_id ? String(row.actor_id) : undefined,
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    sentAt: row.sent_at ? String(row.sent_at) : undefined
   };
 }
 
@@ -1311,6 +1342,48 @@ async function persistNewsletterDeliveryAttempt(input: NewsletterDeliverySendRes
   }
 }
 
+async function listNewsletterDeliveryAttempts(input: { editionIds?: string[] } = {}): Promise<NewsletterDeliveryAttemptRecord[]> {
+  const supabase = getSupabaseAdminClient();
+  const editionIds = input.editionIds?.filter(Boolean) ?? [];
+
+  if (!supabase) {
+    return seedNewsletterDeliveryAttempts
+      .filter((attempt) => !editionIds.length || editionIds.includes(attempt.editionId))
+      .map((attempt): NewsletterDeliveryAttemptRecord => ({
+        id: attempt.deliveryId,
+        newsletterEditionId: attempt.editionId,
+        deliveryProvider: attempt.deliveryProvider,
+        deliveryMode: attempt.deliveryMode,
+        status: attempt.status,
+        recipientSegments: attempt.preview.recipientSegments,
+        payloadPreview: attempt.preview.payloadPreview,
+        providerMessageId: attempt.providerMessageId,
+        error: attempt.blockers.join(" ") || undefined,
+        policyDecision: attempt.policyDecision,
+        actorId: attempt.actorId,
+        createdAt: attempt.sentAt ?? new Date().toISOString(),
+        sentAt: attempt.sentAt
+      }));
+  }
+
+  let query = supabase
+    .from("newsletter_delivery_attempts")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (editionIds.length) {
+    query = query.in("newsletter_edition_id", editionIds);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Newsletter delivery attempt query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapNewsletterDeliveryAttempt);
+}
+
 function deliveryModeForProvider(provider: NewsletterDeliveryProvider) {
   const env = getAppEnv();
 
@@ -1397,6 +1470,98 @@ export async function sendNewsletterDelivery(input: NewsletterDeliverySendInput)
 
   await persistNewsletterDeliveryAttempt(result);
   return result;
+}
+
+function metricTargetsProvider(metric: ContentPerformanceMetricRecord, providerId: string) {
+  const providerSignals = [
+    metric.metricPayload.providerId,
+    metric.metricPayload.targetProviderId,
+    metric.metricPayload.provider_id,
+    metric.metricPayload.target_provider_id
+  ];
+
+  return providerSignals.some((value) => typeof value === "string" && value === providerId);
+}
+
+export async function getProviderNewsletterAnalytics(providerId: string): Promise<ProviderNewsletterAnalytics> {
+  const provider = await getProviderById(providerId);
+
+  if (!provider) {
+    throw new Error("Provider not found");
+  }
+
+  const newsletters = (await listNewsletterEditions()).filter((edition) =>
+    edition.audience.includes("providers") || edition.audience.includes("operators")
+  );
+  const newsletterIds = newsletters.map((edition) => edition.id);
+  const [attempts, allMetrics] = await Promise.all([
+    listNewsletterDeliveryAttempts({ editionIds: newsletterIds }),
+    listContentPerformanceMetrics({ subjectType: "newsletter" })
+  ]);
+  const metrics = allMetrics.filter((metric) =>
+    newsletterIds.includes(metric.subjectId) && metricTargetsProvider(metric, provider.id)
+  );
+  const metricTotalsFor = (editionId: string, key: ContentPerformanceMetricKey) =>
+    metrics
+      .filter((metric) => metric.subjectId === editionId && metric.metricKey === key)
+      .reduce((total, metric) => total + metric.metricValue, 0);
+  const editions = newsletters.map((edition) => {
+    const opens = metricTotalsFor(edition.id, "newsletter_open");
+    const clicks = metricTotalsFor(edition.id, "newsletter_click");
+    const leads = metricTotalsFor(edition.id, "lead");
+
+    return {
+      id: edition.id,
+      subject: edition.subject,
+      status: edition.status,
+      audience: edition.audience,
+      sentAt: edition.sentAt,
+      opens,
+      clicks,
+      leads,
+      clickThroughRate: contentCtr(opens, clicks)
+    };
+  });
+  const opens = editions.reduce((total, edition) => total + edition.opens, 0);
+  const clicks = editions.reduce((total, edition) => total + edition.clicks, 0);
+  const leads = editions.reduce((total, edition) => total + edition.leads, 0);
+  const blockers = [
+    ...(!newsletters.length ? ["No provider/operator newsletter editions exist yet."] : []),
+    ...(attempts.some((attempt) => attempt.status === "blocked") ? ["One or more newsletter delivery attempts are blocked."] : []),
+    ...(newsletters.length && !metrics.length ? ["No provider-tagged newsletter performance metrics have been recorded yet."] : [])
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    providerId: provider.id,
+    providerName: provider.name,
+    totals: {
+      newsletters: newsletters.length,
+      deliveryAttempts: attempts.length,
+      sentAttempts: attempts.filter((attempt) => attempt.status === "sent").length,
+      blockedAttempts: attempts.filter((attempt) => attempt.status === "blocked").length,
+      opens,
+      clicks,
+      leads,
+      clickThroughRate: contentCtr(opens, clicks)
+    },
+    editions,
+    deliveryHealth: attempts.map((attempt) => ({
+      deliveryId: attempt.id,
+      editionId: attempt.newsletterEditionId,
+      status: attempt.status,
+      deliveryProvider: attempt.deliveryProvider,
+      deliveryMode: attempt.deliveryMode,
+      recipientSegments: attempt.recipientSegments,
+      blockers: attempt.error ? [attempt.error] : [],
+      sentAt: attempt.sentAt,
+      createdAt: attempt.createdAt
+    })),
+    blockers,
+    nextActions: blockers.length
+      ? blockers
+      : ["Provider newsletter analytics are collecting performance signals. Review clicks and leads weekly."]
+  };
 }
 
 async function getSeedOrPersistentNewsletter(editionId: string) {

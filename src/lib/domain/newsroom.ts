@@ -247,6 +247,46 @@ export type NewsletterDeliveryAttemptRecord = {
   sentAt?: string;
 };
 
+export type ProviderNewsletterAnalytics = {
+  generatedAt: string;
+  providerId: string;
+  providerName?: string;
+  totals: {
+    newsletters: number;
+    deliveryAttempts: number;
+    sentAttempts: number;
+    blockedAttempts: number;
+    opens: number;
+    clicks: number;
+    leads: number;
+    clickThroughRate: number;
+  };
+  editions: Array<{
+    id: string;
+    subject: string;
+    status: NewsletterEditionStatus;
+    audience: string[];
+    sentAt?: string;
+    opens: number;
+    clicks: number;
+    leads: number;
+    clickThroughRate: number;
+  }>;
+  deliveryHealth: Array<{
+    deliveryId: string;
+    editionId: string;
+    status: NewsletterDeliveryAttemptStatus;
+    deliveryProvider: NewsletterDeliveryProvider;
+    deliveryMode: NewsletterDeliveryMode;
+    recipientSegments: NewsletterDeliveryAttemptRecord["recipientSegments"];
+    blockers: string[];
+    sentAt?: string;
+    createdAt: string;
+  }>;
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ContentPerformanceSubjectType = "article" | "newsletter" | "derivative";
 
 export type ContentPerformanceMetricKey =

@@ -266,6 +266,12 @@ const routeContracts: LinkContract[] = [
     method: "GET",
     owner: "admin"
   },
+  {
+    label: "Provider newsletter analytics API",
+    href: "/api/v1/provider/newsletter-analytics?providerId=seed-cottages-dayton-place",
+    method: "GET",
+    owner: "provider"
+  },
   { label: "Newsroom readiness API", href: "/api/v1/admin/newsroom/readiness", method: "GET", owner: "admin" },
   { label: "Partner providers API", href: "/api/v1/partner/providers", method: "GET", owner: "provider" },
   { label: "Partner events API", href: "/api/v1/partner/events", method: "GET", owner: "provider" },

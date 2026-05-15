@@ -430,6 +430,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/newsroom/performance/export": {
         get: { tags: ["Newsroom"], summary: "Export daily or weekly editorial performance trend rows as JSON or CSV" }
       },
+      "/api/v1/provider/newsletter-analytics": {
+        get: { tags: ["Newsroom"], summary: "Return provider-facing newsletter delivery health, opens, clicks, leads, and next actions" }
+      },
       "/api/v1/newsletters/{id}": {
         get: { tags: ["Newsroom"], summary: "Get an approved, scheduled, or sent newsletter edition" }
       },
