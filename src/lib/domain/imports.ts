@@ -171,6 +171,15 @@ export type LaunchImportExecutionSummary = {
   generatedAt: string;
   mode: "status" | "execute";
   dryRun: boolean;
+  blockedByLiveApproval?: boolean;
+  liveApproval?: {
+    approved: boolean;
+    approvedBy?: string;
+    approvedAt?: string;
+    approvedAtValid: boolean;
+    canRunLive: boolean;
+    blockers: string[];
+  };
   batchesReviewed: number;
   runnableBatches: number;
   executedBatches: number;

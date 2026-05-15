@@ -7,6 +7,7 @@ import type {
   LaunchImportExecutionBatchSummary,
   LaunchImportExecutionSummary
 } from "@/lib/domain/imports";
+import { getAppEnv } from "@/lib/env";
 import { listImportBatches } from "@/lib/import-batches";
 
 type LaunchImportExecutionInput = {
@@ -33,6 +34,28 @@ function isLaunchBatch(batch: ImportBatchRecord) {
 
 function isCurrentSiteBatch(batch: ImportBatchRecord) {
   return batch.name.includes("TheSeniorGuru.com current public listing index");
+}
+
+function getLaunchExecutionLiveApproval() {
+  const env = getAppEnv();
+  const approved = env.importLaunchExecutionLiveApproved === "true";
+  const approvedBy = env.importLaunchExecutionApprovedBy;
+  const approvedAt = env.importLaunchExecutionApprovedAt;
+  const approvedAtValid = Boolean(approvedAt && !Number.isNaN(new Date(approvedAt).getTime()));
+  const blockers = [
+    ...(!approved ? ["Set IMPORT_LAUNCH_EXECUTION_LIVE_APPROVED=true after owner approval."] : []),
+    ...(!approvedBy ? ["Set IMPORT_LAUNCH_EXECUTION_APPROVED_BY to the owner/admin who approved live launch imports."] : []),
+    ...(!approvedAtValid ? ["Set IMPORT_LAUNCH_EXECUTION_APPROVED_AT to a valid ISO approval timestamp."] : [])
+  ];
+
+  return {
+    approved,
+    approvedBy,
+    approvedAt,
+    approvedAtValid,
+    blockers,
+    canRunLive: approved && Boolean(approvedBy) && approvedAtValid
+  };
 }
 
 function adapterBlockerFor(batch: ImportBatchRecord) {
@@ -99,6 +122,8 @@ function buildSummary(input: {
   dryRun: boolean;
   batches: LaunchImportExecutionBatchSummary[];
   previewError?: string;
+  blockedByLiveApproval?: boolean;
+  liveApproval?: LaunchImportExecutionSummary["liveApproval"];
 }): LaunchImportExecutionSummary {
   const totals = input.batches.reduce(
     (current, batch) => ({
@@ -111,6 +136,9 @@ function buildSummary(input: {
     { totalRecords: 0, stagedRecords: 0, skippedRecords: 0, rejectedRecords: 0, errorRecords: 0 }
   );
   const blockers = [
+    ...(input.blockedByLiveApproval && input.liveApproval
+      ? input.liveApproval.blockers.map((blocker) => `Live launch import approval: ${blocker}`)
+      : []),
     ...input.batches
       .filter((batch) => batch.action === "blocked")
       .map((batch) => `${batch.name}: ${batch.reason}`),
@@ -123,6 +151,8 @@ function buildSummary(input: {
     generatedAt: new Date().toISOString(),
     mode: input.mode,
     dryRun: input.dryRun,
+    blockedByLiveApproval: input.blockedByLiveApproval,
+    liveApproval: input.liveApproval,
     batchesReviewed: input.batches.length,
     runnableBatches: readyCount + executedCount,
     executedBatches: executedCount,
@@ -137,6 +167,9 @@ function buildSummary(input: {
         : []),
       ...(executedCount && input.dryRun
         ? ["Review dry-run output, then rerun with dryRun=false after Supabase persistence and owner source limits are confirmed."]
+        : []),
+      ...(input.blockedByLiveApproval
+        ? ["Record owner approval metadata before running launch import execution with dryRun=false."]
         : []),
       ...(executedCount && !input.dryRun
         ? ["Review staged extracted entities for duplicate scoring, image rights review, and publication approval."]
@@ -163,6 +196,7 @@ export async function runLaunchImportExecution(
   input: LaunchImportExecutionInput = {}
 ): Promise<LaunchImportExecutionSummary> {
   const dryRun = input.dryRun ?? true;
+  const liveApproval = getLaunchExecutionLiveApproval();
   const maxRecords = clampPositiveInteger(input.maxRecords, 25, 250);
   const starterBatchSize = clampPositiveInteger(input.starterBatchSize, Math.max(maxRecords, 25), 2500);
 
@@ -176,6 +210,17 @@ export async function runLaunchImportExecution(
 
   const launchBatches = (await listImportBatches()).filter(isLaunchBatch);
   const batchSummaries = launchBatches.map(summarizeStatusBatch);
+
+  if (!dryRun && !liveApproval.canRunLive) {
+    return buildSummary({
+      mode: "execute",
+      dryRun: true,
+      batches: batchSummaries,
+      blockedByLiveApproval: true,
+      liveApproval
+    });
+  }
+
   const currentSiteBatch = launchBatches.find((batch) => batch.status === "queued" && isCurrentSiteBatch(batch));
   let previewRecords: ImportRecordInput[] = [];
   let previewError: string | undefined;
@@ -218,6 +263,7 @@ export async function runLaunchImportExecution(
     mode: "execute",
     dryRun,
     batches: executedBatches,
+    liveApproval: dryRun ? undefined : liveApproval,
     previewError
   });
 }

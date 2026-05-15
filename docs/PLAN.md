@@ -190,6 +190,7 @@ Deliverables:
 - Immutable operational audit event browser API with policy override request, decision, and expiry evidence coverage. Completed.
 - Launch import source seeding API for approved CMS/current-site/state-license sources and optional starter batches. Completed.
 - Launch import execution API for current-site starter batches with explicit CMS/state adapter blockers. Completed.
+- Launch import execution live-mode owner approval gate with explicit approval env metadata, blocked live-run evidence, and owner-dependent parking-lot note. Completed.
 - Import adapter readiness API for CMS, state license, owner-controlled manual, provider website, RSS, and vendor sources. Completed.
 - Source adapter import readiness and direct runner API for approved CMS, state license, and owner-controlled payload records. Completed.
 - Scheduled source adapter worker preview/run API for approved CMS, state license, and owner-controlled payload records without fabricated records. Completed.
