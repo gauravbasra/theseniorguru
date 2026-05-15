@@ -712,6 +712,158 @@ export async function getExtractedEntityMergeReadiness(
   };
 }
 
+function csvCell(value: unknown) {
+  const text = Array.isArray(value) ? value.join(" ") : String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+export async function getDuplicateMergeReviewDashboard(input: { limit?: number; minImages?: number } = {}) {
+  const queue = await getExtractedEntityReviewQueue({
+    status: "all",
+    limit: input.limit ?? 100,
+    minImages: input.minImages ?? 3
+  });
+  const duplicateItems = queue.items.filter((item) => item.route === "duplicate_review" || item.duplicateRisk !== "low");
+  const rows = await Promise.all(
+    duplicateItems.map(async (item) => {
+      try {
+        const mergeReadiness = await getExtractedEntityMergeReadiness({
+          entityId: item.entity.id,
+          matchedProviderId: item.entity.matchedProviderId,
+          recordAudit: false
+        });
+        const status =
+          mergeReadiness.status === "ready_to_merge"
+            ? "ready_to_merge"
+            : mergeReadiness.status === "blocked"
+              ? "blocked"
+              : "needs_reviewer_decision";
+
+        return {
+          entityId: item.entity.id,
+          name: item.entity.name,
+          reviewStatus: item.entity.reviewStatus,
+          route: item.route,
+          duplicateRisk: item.duplicateRisk,
+          confidenceBand: item.confidenceBand,
+          priority: item.priority,
+          slaStatus: item.slaStatus,
+          assignedTo: item.assignment?.assignedTo,
+          matchedProviderId: mergeReadiness.providerId,
+          matchedProviderName: mergeReadiness.providerName,
+          matchScore: mergeReadiness.matchScore,
+          mergeStatus: mergeReadiness.status,
+          decisionStatus: status,
+          conflictFields: mergeReadiness.comparisons
+            .filter((comparison) => comparison.status === "conflict")
+            .map((comparison) => comparison.field),
+          proposedUpdateFields: Object.keys(mergeReadiness.proposedUpdates),
+          blockers: [...item.blockers, ...mergeReadiness.blockers],
+          nextActions:
+            status === "ready_to_merge"
+              ? ["Approve the merge only after reviewer confirms the matched provider and proposed updates."]
+              : [
+                  ...mergeReadiness.nextActions,
+                  "If the entity should not update an existing provider, use the duplicate decision endpoint with reviewer notes."
+                ]
+        };
+      } catch (error) {
+        return {
+          entityId: item.entity.id,
+          name: item.entity.name,
+          reviewStatus: item.entity.reviewStatus,
+          route: item.route,
+          duplicateRisk: item.duplicateRisk,
+          confidenceBand: item.confidenceBand,
+          priority: item.priority,
+          slaStatus: item.slaStatus,
+          assignedTo: item.assignment?.assignedTo,
+          matchedProviderId: item.entity.matchedProviderId,
+          matchedProviderName: undefined,
+          matchScore: Number(item.entity.duplicateMatchData?.matchScore ?? item.entity.duplicateMatchData?.topScore ?? 0),
+          mergeStatus: "blocked" as const,
+          decisionStatus: "readiness_error" as const,
+          conflictFields: [],
+          proposedUpdateFields: [],
+          blockers: [error instanceof Error ? error.message : "Unknown duplicate merge readiness error"],
+          nextActions: ["Fix merge-readiness blockers before duplicate reviewer decision."]
+        };
+      }
+    })
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: rows.some((row) => row.decisionStatus === "blocked" || row.decisionStatus === "readiness_error")
+      ? "blocked"
+      : rows.some((row) => row.decisionStatus === "needs_reviewer_decision")
+        ? "action_required"
+        : rows.length
+          ? "ready_for_merge_review"
+          : "no_duplicate_candidates",
+    totals: {
+      queueEntities: queue.totals.entities,
+      duplicateCandidates: rows.length,
+      readyToMerge: rows.filter((row) => row.decisionStatus === "ready_to_merge").length,
+      needsReviewerDecision: rows.filter((row) => row.decisionStatus === "needs_reviewer_decision").length,
+      blocked: rows.filter((row) => row.decisionStatus === "blocked" || row.decisionStatus === "readiness_error").length,
+      unassigned: rows.filter((row) => row.slaStatus === "unassigned").length,
+      overdue: rows.filter((row) => row.slaStatus === "overdue").length
+    },
+    reviewControls: [
+      "Duplicate candidates must be reviewed before approving new provider inventory.",
+      "Merge-ready rows still require reviewer confirmation of the matched provider and proposed update fields.",
+      "Rows with field conflicts, low match scores, or restricted source terms must not be merged until blockers are resolved.",
+      "Duplicate decisions must include reviewer notes when the source record should not update an existing provider."
+    ],
+    rows,
+    nextActions:
+      rows.length === 0
+        ? ["Continue running import batches and quality audits; duplicate candidates will appear here when match evidence exists."]
+        : [
+            ...(rows.some((row) => row.slaStatus === "unassigned")
+              ? ["Assign duplicate-review candidates to a launch owner before merge or duplicate decisions."]
+              : []),
+            ...(rows.some((row) => row.decisionStatus === "ready_to_merge")
+              ? ["Review ready-to-merge rows and approve only safe missing-field updates."]
+              : []),
+            ...(rows.some((row) => row.decisionStatus !== "ready_to_merge")
+              ? ["Resolve merge blockers or mark confirmed duplicates with reviewer notes."]
+              : [])
+          ]
+  };
+}
+
+export async function exportDuplicateMergeReviewDashboardCsv(input: { limit?: number; minImages?: number } = {}) {
+  const dashboard = await getDuplicateMergeReviewDashboard(input);
+  const columns = [
+    "entityId",
+    "name",
+    "reviewStatus",
+    "duplicateRisk",
+    "priority",
+    "slaStatus",
+    "assignedTo",
+    "matchedProviderId",
+    "matchedProviderName",
+    "matchScore",
+    "mergeStatus",
+    "decisionStatus",
+    "conflictFields",
+    "proposedUpdateFields",
+    "blockers"
+  ] as const;
+  const csv = [
+    columns.join(","),
+    ...dashboard.rows.map((row) => columns.map((column) => csvCell(row[column])).join(","))
+  ].join("\n");
+
+  return {
+    filename: "duplicate-merge-review-dashboard.csv",
+    csv
+  };
+}
+
 async function listExtractedEntityReviewAssignments(entityIds: string[]): Promise<ExtractedEntityReviewAssignmentRecord[]> {
   if (entityIds.length === 0) return [];
 

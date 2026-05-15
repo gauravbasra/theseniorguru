@@ -414,6 +414,18 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Duplicate merge review dashboard API",
+    href: "/api/v1/admin/extracted-entities/duplicate-review",
+    method: "GET",
+    owner: "admin"
+  },
+  {
+    label: "Duplicate merge review dashboard CSV export",
+    href: "/api/v1/admin/extracted-entities/duplicate-review?format=csv",
+    method: "GET",
+    owner: "admin"
+  },
+  {
     label: "Extracted entity escalation report",
     href: "/api/v1/admin/extracted-entities/escalations",
     method: "GET",

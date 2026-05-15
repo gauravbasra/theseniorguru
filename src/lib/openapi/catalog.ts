@@ -476,6 +476,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/extracted-entities/review-queue": {
         get: { tags: ["Aggregation"], summary: "Review confidence, duplicate, legal, and image-rights routing for staged entities" }
       },
+      "/api/v1/admin/extracted-entities/duplicate-review": {
+        get: { tags: ["Aggregation"], summary: "Return JSON or CSV duplicate merge reviewer dashboard evidence, merge readiness, conflicts, and decision blockers" }
+      },
       "/api/v1/admin/extracted-entities/escalations": {
         get: { tags: ["Aggregation"], summary: "Summarize overdue, due-soon, unassigned, and blocked extracted-entity reviews" }
       },

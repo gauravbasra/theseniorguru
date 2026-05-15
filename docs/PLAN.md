@@ -221,6 +221,7 @@ Deliverables:
 - Provider website parser impact evidence attachment workflow with retained comparison validation, attachment audit event, audit dashboard counts, OpenAPI/link-health coverage, and admin console access. Completed.
 - Extracted entity confidence review queue API for approval-ready, human-review, legal-review, image-rights, and duplicate routing. Completed.
 - Extracted entity review assignment and SLA API with Supabase migration, local fallback, and admin console action. Completed.
+- Duplicate merge review dashboard API with JSON/CSV outputs, duplicate-risk rows, merge-readiness status, conflict/proposed-update evidence, assignment/SLA signals, OpenAPI/link-health/product-map coverage, and reviewer next actions. Completed.
 - Import operator escalation report API for overdue, due-soon, unassigned, and blocked extracted-entity reviews. Completed.
 - Import escalation notification preview/dispatch API with dry-run safety, manual export payload, and audit evidence. Completed.
 - Import escalation delivery readiness API with internal queue blocker reporting and manual export fallback. Completed.
