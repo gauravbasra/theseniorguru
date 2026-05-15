@@ -283,6 +283,7 @@ Deliverables:
 - RSVP flow.
 - Event promotion products.
 - Sponsored event promotion creation and activation. Completed.
+- Sponsored event promotion activation hardening so omitted `dryRun` returns policy/audit preview evidence without changing promotion status and live activation requires explicit `dryRun=false`. Completed.
 - Reminder/follow-up automation. Completed.
 - Reminder/follow-up delivery provider adapter with dry-run preview, manual export guard, internal queue processing, sent-state updates, and audit evidence. Completed.
 - Attendance and no-show capture with analytics update. Completed.

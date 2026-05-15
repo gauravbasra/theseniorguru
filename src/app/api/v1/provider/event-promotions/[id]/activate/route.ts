@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { activateEventPromotion } from "@/lib/events/event-promotions";
+import { EventPromotionActivationError, activateEventPromotion } from "@/lib/events/event-promotions";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -9,11 +9,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       data: await activateEventPromotion({
         promotionId: id,
-        actorId: body.actorId
+        actorId: body.actorId,
+        dryRun: body.dryRun === false ? false : true
       })
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const status = error instanceof EventPromotionActivationError ? error.status : 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status });
   }
 }
-

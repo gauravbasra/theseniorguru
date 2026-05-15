@@ -107,6 +107,16 @@ export type CreateEventPromotionInput = {
 export type ActivateEventPromotionInput = {
   promotionId: string;
   actorId?: string;
+  dryRun?: boolean;
+};
+
+export type ActivateEventPromotionResult = {
+  promotion: EventPromotionRecord;
+  dryRun: boolean;
+  policyDecision: string;
+  previousStatus: EventPromotionStatus;
+  nextStatus: EventPromotionStatus;
+  auditEventId?: string;
 };
 
 export type EventAnalyticsSummary = {

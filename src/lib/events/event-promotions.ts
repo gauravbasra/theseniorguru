@@ -1,14 +1,26 @@
 import type {
   ActivateEventPromotionInput,
+  ActivateEventPromotionResult,
   CreateEventPromotionInput,
   EventPromotionRecord
 } from "@/lib/domain/events";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { requireProviderFeature } from "@/lib/billing/entitlements";
 import { getEventById } from "@/lib/events/events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedPromotions: EventPromotionRecord[] = [];
+
+export class EventPromotionActivationError extends Error {
+  status: number;
+
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = "EventPromotionActivationError";
+    this.status = status;
+  }
+}
 
 function mapEventPromotion(row: Record<string, unknown>): EventPromotionRecord {
   return {
@@ -135,30 +147,62 @@ export async function createEventPromotion(input: CreateEventPromotionInput): Pr
   return mapEventPromotion(data);
 }
 
-export async function activateEventPromotion(input: ActivateEventPromotionInput): Promise<EventPromotionRecord> {
+export async function activateEventPromotion(input: ActivateEventPromotionInput): Promise<ActivateEventPromotionResult> {
+  const dryRun = input.dryRun !== false;
   const policy = await runPolicyCheck({
     subjectType: "event_promotion",
     subjectId: input.promotionId,
     actionKey: "activate_sponsored_event_promotion",
-    input
+    input: { ...input, dryRun }
   });
 
   if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
-    throw new Error(policy.reasons[0] ?? "Event promotion blocked by policy");
+    throw new EventPromotionActivationError(policy.reasons[0] ?? "Event promotion blocked by policy", 403);
   }
 
   const supabase = getSupabaseAdminClient();
-  const now = new Date().toISOString();
 
   if (!supabase) {
     const promotion = seedPromotions.find((item) => item.id === input.promotionId);
 
     if (!promotion) {
-      throw new Error("Event promotion not found");
+      throw new EventPromotionActivationError("Event promotion not found", 404);
     }
 
-    promotion.status = "active";
-    return promotion;
+    const event = await getEventById(promotion.eventId);
+    if (!event) {
+      throw new EventPromotionActivationError("Event not found", 404);
+    }
+
+    const previousStatus = promotion.status;
+    if (!dryRun) {
+      promotion.status = "active";
+    }
+
+    const auditEvent = await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "provider" : "system",
+      eventType: dryRun ? "event_promotion.activation_previewed" : "event_promotion.activated",
+      subjectType: "event_promotion",
+      subjectId: input.promotionId,
+      payload: {
+        eventId: promotion.eventId,
+        dryRun,
+        previousStatus,
+        nextStatus: "active",
+        policyDecision: policy.decision,
+        disclosureLabel: promotion.disclosureLabel
+      }
+    });
+
+    return {
+      promotion,
+      dryRun,
+      policyDecision: policy.decision,
+      previousStatus,
+      nextStatus: "active",
+      auditEventId: auditEvent.id
+    };
   }
 
   const { data: promotion, error: promotionError } = await supabase
@@ -168,54 +212,75 @@ export async function activateEventPromotion(input: ActivateEventPromotionInput)
     .single();
 
   if (promotionError) {
-    throw new Error(`Event promotion lookup failed: ${promotionError.message}`);
+    throw new EventPromotionActivationError(`Event promotion lookup failed: ${promotionError.message}`, 500);
+  }
+
+  if (!promotion) {
+    throw new EventPromotionActivationError("Event promotion not found", 404);
   }
 
   const event = await getEventById(String(promotion.event_id));
 
   if (!event) {
-    throw new Error("Event not found");
+    throw new EventPromotionActivationError("Event not found", 404);
   }
 
   if (event.providerId) {
     await requireProviderFeature(event.providerId, "event_promotions");
   }
 
-  const { data, error } = await supabase
-    .from("event_promotions")
-    .update({ status: "active" })
-    .eq("id", input.promotionId)
-    .select("*")
-    .single();
+  const previousStatus = promotion.status as EventPromotionRecord["status"];
+  let activatedPromotion = mapEventPromotion(promotion);
 
-  if (error) {
-    throw new Error(`Event promotion activation failed: ${error.message}`);
+  if (!dryRun) {
+    const { data, error } = await supabase
+      .from("event_promotions")
+      .update({ status: "active" })
+      .eq("id", input.promotionId)
+      .select("*")
+      .single();
+
+    if (error) {
+      throw new EventPromotionActivationError(`Event promotion activation failed: ${error.message}`, 500);
+    }
+
+    activatedPromotion = mapEventPromotion(data);
+
+    await createSponsoredEventCreative({
+      promotion: activatedPromotion,
+      eventTitle: event.title,
+      eventDescription: event.description,
+      providerId: event.providerId,
+      destinationUrl: event.registrationUrl,
+      actorId: input.actorId,
+      policyDecision: policy.decision
+    });
   }
 
-  await createSponsoredEventCreative({
-    promotion: mapEventPromotion(data),
-    eventTitle: event.title,
-    eventDescription: event.description,
-    providerId: event.providerId,
-    destinationUrl: event.registrationUrl,
+  const auditEvent = await recordAuditEvent({
     actorId: input.actorId,
-    policyDecision: policy.decision
-  });
-
-  await supabase.from("audit_events").insert({
-    actor_id: input.actorId,
-    actor_type: input.actorId ? "provider" : "system",
-    event_type: "event_promotion.activated",
-    subject_type: "event_promotion",
-    subject_id: input.promotionId,
+    actorType: input.actorId ? "provider" : "system",
+    eventType: dryRun ? "event_promotion.activation_previewed" : "event_promotion.activated",
+    subjectType: "event_promotion",
+    subjectId: input.promotionId,
     payload: {
       eventId: promotion.event_id,
+      dryRun,
+      previousStatus,
+      nextStatus: "active",
       policyDecision: policy.decision,
-      disclosureLabel: data.disclosure_label
+      disclosureLabel: activatedPromotion.disclosureLabel
     }
   });
 
-  return mapEventPromotion(data);
+  return {
+    promotion: activatedPromotion,
+    dryRun,
+    policyDecision: policy.decision,
+    previousStatus,
+    nextStatus: "active",
+    auditEventId: auditEvent.id
+  };
 }
 
 async function createSponsoredEventCreative(input: {
