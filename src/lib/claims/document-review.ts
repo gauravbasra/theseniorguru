@@ -184,3 +184,23 @@ export async function reviewProviderClaimDocument(
 
   return { review: mapDocumentReview(data), attempt: completedAttempt };
 }
+
+export async function listProviderClaimDocumentReviews(claimId: string): Promise<ProviderClaimDocumentReviewRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedDocumentReviews.filter((review) => review.claimId === claimId);
+  }
+
+  const { data, error } = await supabase
+    .from("provider_claim_document_reviews")
+    .select("*")
+    .eq("provider_claim_id", claimId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Provider claim document review query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapDocumentReview);
+}

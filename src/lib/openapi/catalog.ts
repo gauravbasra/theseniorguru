@@ -76,6 +76,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Claims"], summary: "List verification attempts for a provider claim" },
         post: { tags: ["Claims"], summary: "Create a policy-gated verification attempt for a provider claim" }
       },
+      "/api/v1/admin/provider-claims/{id}/evidence": {
+        get: { tags: ["Claims"], summary: "Export consolidated provider claim verification evidence, blockers, and next actions as JSON or CSV" }
+      },
       "/api/v1/admin/provider-verification-attempts/{id}/complete": {
         post: { tags: ["Claims"], summary: "Complete a provider claim verification attempt with evidence" }
       },

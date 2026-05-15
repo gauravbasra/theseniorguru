@@ -313,6 +313,12 @@ const routeContracts: LinkContract[] = [
     owner: "provider"
   },
   {
+    label: "Admin provider claim evidence export API",
+    href: "/api/v1/admin/provider-claims/demo/evidence",
+    method: "GET",
+    owner: "admin"
+  },
+  {
     label: "Provider verification delivery API",
     href: "/api/v1/admin/provider-verification-attempts/demo/send",
     method: "POST",
