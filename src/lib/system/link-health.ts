@@ -84,6 +84,7 @@ const routeContracts: LinkContract[] = [
   },
   { label: "Community invitation delivery API", href: "/api/v1/admin/community/invitations/demo/send", method: "POST", owner: "admin" },
   { label: "Community topic subscriptions API", href: "/api/v1/community/topic-subscriptions", method: "GET", owner: "family" },
+  { label: "Community digest delivery worker API", href: "/api/v1/admin/community/digests/run", method: "POST", owner: "admin" },
   { label: "Community experts API", href: "/api/v1/community/experts", method: "GET", owner: "family" },
   { label: "Community expert verification API", href: "/api/v1/admin/community/experts/demo/verify", method: "POST", owner: "admin" },
   { label: "Readiness API", href: "/api/v1/system/readiness", method: "GET", owner: "admin" },

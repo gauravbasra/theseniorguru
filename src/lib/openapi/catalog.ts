@@ -218,6 +218,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["Community"], summary: "List local community topic subscriptions" },
         post: { tags: ["Community"], summary: "Subscribe a user to a local senior-care topic" }
       },
+      "/api/v1/admin/community/digests/run": {
+        post: { tags: ["Community"], summary: "Preview, manual-export, or queue local topic community digest delivery jobs" }
+      },
       "/api/v1/community/experts": {
         get: { tags: ["Community"], summary: "List verified local senior-care experts" },
         post: { tags: ["Community"], summary: "Submit a local expert profile for verification review" }

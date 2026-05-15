@@ -104,6 +104,56 @@ export type UpsertCommunityTopicSubscriptionInput = {
   actorId?: string;
 };
 
+export type CommunityDigestDeliveryProvider = "manual_export" | "internal_notification_queue";
+
+export type CommunityDigestDeliveryStatus = "preview" | "queued" | "skipped";
+
+export type CommunityDigestDeliveryRecord = {
+  id: string;
+  userKey: string;
+  topicKey?: string;
+  city?: string;
+  state?: string;
+  deliveryProvider: CommunityDigestDeliveryProvider;
+  deliveryStatus: CommunityDigestDeliveryStatus;
+  feedItemCount: number;
+  recipientDeviceCount: number;
+  deliveryPayload: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type RunCommunityDigestInput = {
+  city?: string;
+  state?: string;
+  topicKey?: string;
+  userKey?: string;
+  dryRun?: boolean;
+  deliveryProvider?: CommunityDigestDeliveryProvider;
+  actorId?: string;
+};
+
+export type CommunityDigestRunResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  deliveryProvider: CommunityDigestDeliveryProvider;
+  source: "supabase" | "local_fallback";
+  filters: {
+    city?: string;
+    state?: string;
+    topicKey?: string;
+    userKey?: string;
+  };
+  totals: {
+    activeSubscriptions: number;
+    recipientUsers: number;
+    feedItems: number;
+    queuedDeliveries: number;
+    skippedDeliveries: number;
+  };
+  deliveries: CommunityDigestDeliveryRecord[];
+  nextActions: string[];
+};
+
 export type ExpertProfileRecord = {
   id: string;
   userKey: string;

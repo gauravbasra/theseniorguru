@@ -1,4 +1,7 @@
 import type {
+  CommunityDigestDeliveryProvider,
+  CommunityDigestDeliveryRecord,
+  CommunityDigestRunResult,
   CommunityInvitationRecord,
   CommunityGroupRecord,
   CommunityMembershipRecord,
@@ -6,9 +9,13 @@ import type {
   CreateCommunityInvitationInput,
   CreateCommunityGroupInput,
   JoinCommunityGroupInput,
+  RunCommunityDigestInput,
   SendCommunityInvitationInput,
   UpsertCommunityTopicSubscriptionInput
 } from "@/lib/domain/community";
+import { recordAuditEvent } from "@/lib/audit-events";
+import { filterAppFeedForDigest, getAppFeed } from "@/lib/community/feed";
+import { listAppDevices } from "@/lib/mobile/devices";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
@@ -27,6 +34,7 @@ const seedGroups: CommunityGroupRecord[] = [
 const seedMemberships: CommunityMembershipRecord[] = [];
 const seedInvitations: CommunityInvitationRecord[] = [];
 const seedTopicSubscriptions: CommunityTopicSubscriptionRecord[] = [];
+const seedDigestDeliveries: CommunityDigestDeliveryRecord[] = [];
 
 function slugify(value: string) {
   return value
@@ -96,6 +104,29 @@ function mapTopicSubscription(row: Record<string, unknown>): CommunityTopicSubsc
 
 function topicScopeKey(input: { city?: string; state?: string }) {
   return [input.city?.trim().toLowerCase() || "*", input.state?.trim().toUpperCase() || "*"].join(":");
+}
+
+function parseDigestDeliveryProvider(value?: CommunityDigestDeliveryProvider): CommunityDigestDeliveryProvider {
+  return value === "internal_notification_queue" ? value : "manual_export";
+}
+
+function mapDigestDelivery(row: Record<string, unknown>): CommunityDigestDeliveryRecord {
+  return {
+    id: String(row.id),
+    userKey: String(row.user_key),
+    topicKey: row.topic_key ? String(row.topic_key) : undefined,
+    city: row.city ? String(row.city) : undefined,
+    state: row.state ? String(row.state) : undefined,
+    deliveryProvider: row.delivery_provider as CommunityDigestDeliveryProvider,
+    deliveryStatus: row.delivery_status as CommunityDigestDeliveryRecord["deliveryStatus"],
+    feedItemCount: Number(row.feed_item_count ?? 0),
+    recipientDeviceCount: Number(row.recipient_device_count ?? 0),
+    deliveryPayload:
+      row.delivery_payload && typeof row.delivery_payload === "object"
+        ? (row.delivery_payload as Record<string, unknown>)
+        : {},
+    createdAt: String(row.created_at)
+  };
 }
 
 export async function listCommunityGroups(filters: { city?: string; state?: string } = {}): Promise<CommunityGroupRecord[]> {
@@ -604,4 +635,166 @@ export async function upsertCommunityTopicSubscription(
   });
 
   return mapTopicSubscription(data);
+}
+
+export async function runCommunityDigestDelivery(
+  input: RunCommunityDigestInput = {}
+): Promise<CommunityDigestRunResult> {
+  const dryRun = input.dryRun ?? true;
+  const deliveryProvider = parseDigestDeliveryProvider(input.deliveryProvider);
+  const policy = await runPolicyCheck({
+    subjectType: "community_digest_delivery",
+    actionKey: "run_community_digest_delivery",
+    input: {
+      city: input.city,
+      state: input.state,
+      topicKey: input.topicKey,
+      userKey: input.userKey,
+      dryRun,
+      deliveryProvider
+    }
+  });
+
+  if (policy.decision.startsWith("blocked")) {
+    throw new Error(policy.reasons[0] ?? "Community digest delivery blocked by policy");
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const subscriptions = await listCommunityTopicSubscriptions({
+    userKey: input.userKey,
+    city: input.city,
+    state: input.state,
+    status: "active"
+  });
+  const scopedSubscriptions = subscriptions.filter((subscription) => !input.topicKey || subscription.topicKey === input.topicKey);
+  const feedItems = filterAppFeedForDigest(await getAppFeed(), {
+    city: input.city,
+    state: input.state,
+    topicKey: input.topicKey
+  });
+  const now = new Date().toISOString();
+  const deliveries: CommunityDigestDeliveryRecord[] = [];
+
+  for (const subscription of scopedSubscriptions) {
+    const devices = await listAppDevices(subscription.userKey);
+    const deliveryStatus: CommunityDigestDeliveryRecord["deliveryStatus"] =
+      dryRun ? "preview" : deliveryProvider === "internal_notification_queue" && feedItems.length ? "queued" : "skipped";
+    const deliveryPayload = {
+      policyDecision: policy.decision,
+      topicLabel: subscription.topicLabel,
+      digestWindow: "daily",
+      feedItems: feedItems.map((item) => ({
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        href: item.href,
+        city: item.city,
+        state: item.state,
+        sponsored: item.sponsored,
+        disclosureLabel: item.disclosureLabel
+      })),
+      deviceTargets: devices.map((device) => ({
+        id: device.id,
+        platform: device.platform,
+        tokenProvider: device.tokenProvider
+      })),
+      queueTarget: deliveryProvider === "internal_notification_queue" ? "audit_events:community_digest_delivery_queue" : undefined
+    };
+
+    const draft: CommunityDigestDeliveryRecord = {
+      id: `community-digest-${Date.now()}-${deliveries.length}`,
+      userKey: subscription.userKey,
+      topicKey: subscription.topicKey,
+      city: subscription.city,
+      state: subscription.state,
+      deliveryProvider,
+      deliveryStatus,
+      feedItemCount: feedItems.length,
+      recipientDeviceCount: devices.length,
+      deliveryPayload,
+      createdAt: now
+    };
+
+    if (supabase && !dryRun) {
+      const { data, error } = await supabase
+        .from("community_digest_deliveries")
+        .insert({
+          user_key: draft.userKey,
+          topic_key: draft.topicKey,
+          city: draft.city,
+          state: draft.state,
+          delivery_provider: draft.deliveryProvider,
+          delivery_status: draft.deliveryStatus,
+          feed_item_count: draft.feedItemCount,
+          recipient_device_count: draft.recipientDeviceCount,
+          delivery_payload: draft.deliveryPayload
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw new Error(`Community digest delivery job creation failed: ${error.message}`);
+      }
+
+      deliveries.push(mapDigestDelivery(data));
+    } else {
+      seedDigestDeliveries.unshift(draft);
+      deliveries.push(draft);
+    }
+  }
+
+  if (!dryRun) {
+    await recordAuditEvent({
+      actorType: input.actorId ? "admin" : "system",
+      actorId: input.actorId,
+      eventType: "community_digest.delivery_run",
+      subjectType: "community_digest_delivery",
+      payload: {
+        deliveryProvider,
+        filters: {
+          city: input.city,
+          state: input.state,
+          topicKey: input.topicKey,
+          userKey: input.userKey
+        },
+        activeSubscriptions: scopedSubscriptions.length,
+        queuedDeliveries: deliveries.filter((delivery) => delivery.deliveryStatus === "queued").length,
+        skippedDeliveries: deliveries.filter((delivery) => delivery.deliveryStatus === "skipped").length,
+        feedItemCount: feedItems.length,
+        policyDecision: policy.decision
+      }
+    });
+  }
+
+  const queuedDeliveries = deliveries.filter((delivery) => delivery.deliveryStatus === "queued").length;
+  const skippedDeliveries = deliveries.filter((delivery) => delivery.deliveryStatus === "skipped").length;
+
+  return {
+    generatedAt: now,
+    dryRun,
+    deliveryProvider,
+    source: supabase ? "supabase" : "local_fallback",
+    filters: {
+      city: input.city,
+      state: input.state,
+      topicKey: input.topicKey,
+      userKey: input.userKey
+    },
+    totals: {
+      activeSubscriptions: scopedSubscriptions.length,
+      recipientUsers: new Set(scopedSubscriptions.map((subscription) => subscription.userKey)).size,
+      feedItems: feedItems.length,
+      queuedDeliveries,
+      skippedDeliveries
+    },
+    deliveries,
+    nextActions: [
+      ...(dryRun ? ["Review digest preview payloads before queueing delivery jobs."] : []),
+      ...(!dryRun && queuedDeliveries
+        ? ["Internal notification queue accepted community digest jobs with audit evidence."]
+        : []),
+      ...(!dryRun && skippedDeliveries ? ["Skipped digest jobs need feed content or an internal queue provider selection."] : []),
+      ...(!scopedSubscriptions.length ? ["No active topic subscriptions matched the digest filters."] : [])
+    ]
+  };
 }

@@ -88,7 +88,8 @@ export const migrationManifest = [
   "20260514190000_policy_review_assignments.sql",
   "20260515021000_consumer_profile_sessions.sql",
   "20260515022000_app_device_registrations.sql",
-  "20260515023100_care_circle_invite_delivery.sql"
+  "20260515023100_care_circle_invite_delivery.sql",
+  "20260515024200_community_digest_deliveries.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -143,6 +144,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260515023100_care_circle_invite_delivery.sql": {
     capability: "community",
     summary: "Care-circle family invite delivery status, payload evidence, and queue/manual handoff metadata."
+  },
+  "20260515024200_community_digest_deliveries.sql": {
+    capability: "community",
+    summary: "Community topic digest delivery jobs, internal queue evidence, and recipient device counts."
   },
   "20260510160122_provider_growth_subscriptions.sql": {
     capability: "growth",
@@ -298,6 +303,7 @@ const requiredTables: RequiredTable[] = [
   { table: "community_memberships", requiredFor: "Local community membership graph", capability: "community" },
   { table: "community_invitations", requiredFor: "Community invitation delivery", capability: "community" },
   { table: "community_topic_subscriptions", requiredFor: "Local topic subscriptions", capability: "community" },
+  { table: "community_digest_deliveries", requiredFor: "Community digest delivery jobs", capability: "community" },
   { table: "community_posts", requiredFor: "Community feed", capability: "community" },
   { table: "expert_profiles", requiredFor: "Verified local expert profiles", capability: "community" },
   { table: "ad_placements", requiredFor: "Advertising inventory", capability: "ads" },

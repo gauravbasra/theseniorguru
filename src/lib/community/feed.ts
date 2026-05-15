@@ -98,3 +98,38 @@ export async function getAppFeed(): Promise<AppFeedItem[]> {
   ];
 }
 
+export function filterAppFeedForDigest(
+  feedItems: AppFeedItem[],
+  filters: { city?: string; state?: string; topicKey?: string }
+): AppFeedItem[] {
+  const city = filters.city?.trim().toLowerCase();
+  const state = filters.state?.trim().toLowerCase();
+  const topic = filters.topicKey?.trim().toLowerCase().replaceAll("-", " ");
+
+  return feedItems
+    .filter((item) => !city || item.city?.toLowerCase() === city)
+    .filter((item) => !state || item.state?.toLowerCase() === state)
+    .filter((item) => {
+      if (!topic) return true;
+
+      const searchable = [
+        item.title,
+        item.subtitle,
+        item.city,
+        item.state,
+        String(item.payload?.category ?? ""),
+        String(item.payload?.postType ?? ""),
+        String(item.payload?.eventType ?? ""),
+        String(item.payload?.body ?? "")
+      ]
+        .join(" ")
+        .toLowerCase()
+        .replaceAll("_", " ");
+
+      return topic
+        .split(/\s+/)
+        .filter(Boolean)
+        .some((token) => searchable.includes(token));
+    })
+    .slice(0, 12);
+}
