@@ -196,11 +196,20 @@ export function getSystemReadiness() {
     {
       key: "SOURCE_MANIFEST_FETCH_CRON_MODE",
       label: "Source manifest fetch cron mode",
-      status: env.sourceManifestFetchCronMode === "live" ? "ready" : "partial",
+      status:
+        env.sourceManifestFetchCronMode === "live" &&
+        env.sourceManifestFetchCronLiveApproved === "true" &&
+        Boolean(env.sourceManifestFetchCronApprovedBy) &&
+        Boolean(env.sourceManifestFetchCronApprovedAt && !Number.isNaN(new Date(env.sourceManifestFetchCronApprovedAt).getTime()))
+          ? "ready"
+          : "partial",
       action:
-        env.sourceManifestFetchCronMode === "live"
+        env.sourceManifestFetchCronMode === "live" &&
+        env.sourceManifestFetchCronLiveApproved === "true" &&
+        env.sourceManifestFetchCronApprovedBy &&
+        env.sourceManifestFetchCronApprovedAt
           ? undefined
-          : "Set SOURCE_MANIFEST_FETCH_CRON_MODE=live only after fetch-ready source manifests are approved for unattended imports; preview mode is non-mutating."
+          : "Set SOURCE_MANIFEST_FETCH_CRON_MODE=live only with SOURCE_MANIFEST_FETCH_CRON_LIVE_APPROVED=true, SOURCE_MANIFEST_FETCH_CRON_APPROVED_BY, and SOURCE_MANIFEST_FETCH_CRON_APPROVED_AT after owner approval."
     },
     {
       key: "IMPORT_ESCALATION_RETRY_CRON_MODE",

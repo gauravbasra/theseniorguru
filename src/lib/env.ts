@@ -18,6 +18,9 @@ export type AppEnv = {
   webhookRetryCronLimit?: string;
   sourceManifestFetchCronMode?: string;
   sourceManifestFetchCronLimit?: string;
+  sourceManifestFetchCronLiveApproved?: string;
+  sourceManifestFetchCronApprovedBy?: string;
+  sourceManifestFetchCronApprovedAt?: string;
   importEscalationRetryCronMode?: string;
   importEscalationRetryCronLimit?: string;
   importEscalationRetryCronProvider?: string;
@@ -57,6 +60,9 @@ export function getAppEnv(): AppEnv {
     webhookRetryCronLimit: process.env.WEBHOOK_RETRY_CRON_LIMIT,
     sourceManifestFetchCronMode: process.env.SOURCE_MANIFEST_FETCH_CRON_MODE,
     sourceManifestFetchCronLimit: process.env.SOURCE_MANIFEST_FETCH_CRON_LIMIT,
+    sourceManifestFetchCronLiveApproved: process.env.SOURCE_MANIFEST_FETCH_CRON_LIVE_APPROVED,
+    sourceManifestFetchCronApprovedBy: process.env.SOURCE_MANIFEST_FETCH_CRON_APPROVED_BY,
+    sourceManifestFetchCronApprovedAt: process.env.SOURCE_MANIFEST_FETCH_CRON_APPROVED_AT,
     importEscalationRetryCronMode: process.env.IMPORT_ESCALATION_RETRY_CRON_MODE,
     importEscalationRetryCronLimit: process.env.IMPORT_ESCALATION_RETRY_CRON_LIMIT,
     importEscalationRetryCronProvider: process.env.IMPORT_ESCALATION_RETRY_CRON_PROVIDER,
