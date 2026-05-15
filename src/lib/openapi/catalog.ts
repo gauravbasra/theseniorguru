@@ -677,6 +677,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/events": {
         get: { tags: ["Events"], summary: "Partner events API requiring events:read scope" }
       },
+      "/api/v1/partner/events/{id}/analytics": {
+        get: { tags: ["Events"], summary: "Partner event analytics API requiring events:read scope with aggregate RSVP and promotion metrics" }
+      },
       "/api/v1/partner/reviews": {
         get: { tags: ["Reviews"], summary: "Partner published reviews API requiring reviews:read scope with privacy-safe reviewer fields" }
       },

@@ -47,6 +47,7 @@ type SdkPackage = {
 const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/events",
+  "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
   "/api/v1/partner/community/posts",
   "/api/v1/partner/newsroom/articles",
@@ -168,6 +169,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       endpoint: "GET /api/v1/partner/events",
       completionSignal: "Response includes event records with community-safe metadata for sandbox validation.",
       blocker: "Do not mirror events publicly until partner display rules and sponsorship disclosures are reviewed."
+    },
+    {
+      key: "read-event-analytics",
+      title: "Call aggregate event analytics without attendee PII",
+      owner: "partner_ops",
+      requiredScopes: ["events:read"],
+      endpoint: "GET /api/v1/partner/events/{id}/analytics",
+      completionSignal: "Response includes aggregate RSVP, promotion, and ad metrics with partner envelope headers and no attendee names, emails, phones, or consent payloads.",
+      blocker: "Do not share event performance externally if attendee PII, consent payloads, or provider-only notes are required by the partner workflow."
     },
     {
       key: "read-published-reviews",
@@ -353,6 +363,7 @@ export function getPartnerApiChangelog() {
       affectedEndpoints: [
         "GET /api/v1/partner/providers",
         "GET /api/v1/partner/events",
+        "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",
         "GET /api/v1/partner/community/posts",
         "GET /api/v1/partner/newsroom/articles",
