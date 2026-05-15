@@ -331,6 +331,7 @@ Deliverables:
 - Review request campaign send hardening so omitted `dryRun` returns preview evidence without mutating queued requests and live send processing requires explicit `dryRun=false`. Completed.
 - AI voice assistant adapter readiness and configuration API with entitlement checks, manual/internal queue fallback, live voice provider blockers, compliance payload evidence, audit events, and Supabase schema readiness. Completed.
 - Campaign optimization recommendation action workflow with create-task, internal queue, review, and dismissal actions backed by policy checks, persistence, audit evidence, OpenAPI/link-health coverage, and Supabase schema readiness. Completed.
+- Provider campaign publish hardening so omitted `dryRun` returns policy/audit preview evidence without mutating campaign status and live publish processing requires explicit `dryRun=false`. Completed.
 
 ## Phase 7: Advertising and Placement Engine
 

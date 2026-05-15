@@ -8,6 +8,8 @@ import type {
   CampaignRecommendationActionResult,
   CreateCampaignInput,
   MarketingCampaignRecord,
+  PublishCampaignInput,
+  PublishCampaignResult,
   ProviderCampaignOptimizationSummary,
   ProviderCampaignMetricsSummary,
   RecordCampaignMetricInput,
@@ -29,6 +31,16 @@ export class CampaignMetricIngestionError extends Error {
   constructor(message: string, status = 422) {
     super(message);
     this.name = "CampaignMetricIngestionError";
+    this.status = status;
+  }
+}
+
+export class CampaignPublishError extends Error {
+  status: number;
+
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = "CampaignPublishError";
     this.status = status;
   }
 }
@@ -120,6 +132,22 @@ export async function listCampaigns(): Promise<MarketingCampaignRecord[]> {
   }
 
   return (data ?? []).map(mapCampaign);
+}
+
+async function getCampaign(campaignId: string): Promise<MarketingCampaignRecord | undefined> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedCampaigns.find((campaign) => campaign.id === campaignId);
+  }
+
+  const { data, error } = await supabase.from("marketing_campaigns").select("*").eq("id", campaignId).maybeSingle();
+
+  if (error) {
+    throw new CampaignPublishError(`Campaign lookup failed: ${error.message}`, 500);
+  }
+
+  return data ? mapCampaign(data) : undefined;
 }
 
 export async function createCampaign(input: CreateCampaignInput): Promise<MarketingCampaignRecord> {
@@ -314,24 +342,83 @@ export async function recordCampaignMetric(input: RecordCampaignMetricInput): Pr
   return { campaign, metric: mapCampaignMetric(data), policyDecision: policy.decision };
 }
 
-export async function publishCampaign(campaignId: string) {
+export async function publishCampaign(input: PublishCampaignInput): Promise<PublishCampaignResult> {
+  const dryRun = input.dryRun !== false;
+  const campaign = await getCampaign(input.campaignId);
+
+  if (!campaign) {
+    throw new CampaignPublishError("Campaign not found.", 404);
+  }
+
+  if (campaign.status === "blocked_by_policy") {
+    throw new CampaignPublishError("Blocked campaigns cannot be published.", 403);
+  }
+
+  const previousStatus = campaign.status;
   const policy = await runPolicyCheck({
     subjectType: "marketing_campaign",
-    subjectId: campaignId,
+    subjectId: input.campaignId,
     actionKey: "publish_campaign",
-    input: { campaignId }
+    input: {
+      campaignId: input.campaignId,
+      campaignType: campaign.campaignType,
+      currentStatus: previousStatus,
+      dryRun
+    }
   });
 
   if (policy.decision.startsWith("blocked")) {
-    throw new Error(policy.reasons[0] ?? "Campaign blocked by policy");
+    throw new CampaignPublishError(policy.reasons[0] ?? "Campaign blocked by policy", 403);
   }
 
-  const supabase = getSupabaseAdminClient();
-  if (supabase) {
-    await supabase.from("marketing_campaigns").update({ status: "published" }).eq("id", campaignId);
+  let nextCampaign = campaign;
+
+  if (!dryRun) {
+    const supabase = getSupabaseAdminClient();
+    if (!supabase) {
+      campaign.status = "published";
+      nextCampaign = campaign;
+    } else {
+      const { data, error } = await supabase
+        .from("marketing_campaigns")
+        .update({ status: "published" })
+        .eq("id", input.campaignId)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw new CampaignPublishError(`Campaign publish failed: ${error.message}`, 500);
+      }
+
+      nextCampaign = mapCampaign(data);
+    }
   }
 
-  return { id: campaignId, status: "published" };
+  const auditEvent = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "provider" : "system",
+    eventType: dryRun ? "marketing_campaign.publish_previewed" : "marketing_campaign.published",
+    subjectType: "marketing_campaign",
+    subjectId: input.campaignId,
+    payload: {
+      providerId: campaign.providerId,
+      campaignType: campaign.campaignType,
+      previousStatus,
+      nextStatus: "published",
+      dryRun,
+      policyDecision: policy.decision,
+      policyReasons: policy.reasons
+    }
+  });
+
+  return {
+    campaign: nextCampaign,
+    dryRun,
+    policyDecision: policy.decision,
+    previousStatus,
+    nextStatus: "published",
+    auditEventId: auditEvent.id
+  };
 }
 
 function metricValue(metrics: CampaignMetricRecord[], key: string) {

@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
-import { publishCampaign } from "@/lib/campaigns/campaigns";
+import { CampaignPublishError, publishCampaign } from "@/lib/campaigns/campaigns";
 
-export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    return NextResponse.json({ data: await publishCampaign(id) });
+    const body = await request.json().catch(() => ({}));
+    return NextResponse.json({
+      data: await publishCampaign({
+        campaignId: id,
+        actorId: typeof body.actorId === "string" ? body.actorId : undefined,
+        dryRun: body.dryRun === false ? false : true
+      })
+    });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const status = error instanceof CampaignPublishError ? error.status : 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status });
   }
 }
-

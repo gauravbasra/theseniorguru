@@ -82,6 +82,21 @@ export type RecordCampaignMetricResult = {
   policyDecision: string;
 };
 
+export type PublishCampaignInput = {
+  campaignId: string;
+  actorId?: string;
+  dryRun?: boolean;
+};
+
+export type PublishCampaignResult = {
+  campaign: MarketingCampaignRecord;
+  dryRun: boolean;
+  policyDecision: string;
+  previousStatus: MarketingCampaignStatus;
+  nextStatus: MarketingCampaignStatus;
+  auditEventId?: string;
+};
+
 export type ProviderCampaignMetricsSummary = {
   providerId?: string;
   generatedAt: string;
