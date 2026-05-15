@@ -47,6 +47,7 @@ Deliverables:
 - Comparison lists, care notes, tour plans, and notification preference APIs. Completed.
 - Provider portal profile update audit API. Completed.
 - Provider-facing profile edit approval status API. Completed.
+- Provider-facing profile edit approval status dashboard and console actions backed by profile-update submission/status APIs. Completed.
 - Mobile completion and provider profile audit schema. Completed.
 - Community post, comment, report, and moderation APIs. Completed.
 - Ad placement schema. Completed.

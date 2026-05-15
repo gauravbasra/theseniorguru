@@ -61,7 +61,7 @@ const productPillars: ProductPillar[] = [
       "provider_source_records",
       "provider_profile_audits"
     ],
-    nextBackendWork: ["Provider-facing edit approval status UI", "Transactional email adapter for verification delivery", "Provider claim SLA alert live queue adapter"]
+    nextBackendWork: ["Transactional email adapter for verification delivery", "Provider claim SLA alert live queue adapter"]
   },
   {
     key: "mobile",

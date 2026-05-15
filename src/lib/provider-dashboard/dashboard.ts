@@ -5,6 +5,7 @@ import { listEvents } from "@/lib/events/events";
 import { getProviderProfileCompletionAssistant } from "@/lib/provider-dashboard/profile-completion-assistant";
 import { getProviderVisibilityReport } from "@/lib/provider-dashboard/visibility-report";
 import { listProviders } from "@/lib/providers";
+import { getProviderProfileUpdateStatus } from "@/lib/providers/profile-updates";
 
 export async function getProviderDashboard() {
   const [providers, claims, campaigns, events, placement] = await Promise.all([
@@ -21,11 +22,13 @@ export async function getProviderDashboard() {
   const providerEvents = provider ? events.filter((event) => event.providerId === provider.id) : [];
   const visibilityReport = provider ? await getProviderVisibilityReport(provider.id) : null;
   const profileAssistant = provider ? await getProviderProfileCompletionAssistant(provider.id) : null;
+  const profileUpdateStatus = provider ? await getProviderProfileUpdateStatus(provider.id) : null;
 
   return {
     provider,
     visibilityReport,
     profileAssistant,
+    profileUpdateStatus,
     stats: {
       claimStatus: providerClaims[0]?.status ?? "not_claimed",
       campaigns: providerCampaigns.length,

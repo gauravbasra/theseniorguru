@@ -3,6 +3,8 @@ import type { CSSProperties } from "react";
 import { ProviderActionConsole } from "@/components/provider-action-console";
 import { getProviderDashboard } from "@/lib/provider-dashboard/dashboard";
 
+export const dynamic = "force-dynamic";
+
 export default async function ProviderDashboardPage() {
   const dashboard = await getProviderDashboard();
 
@@ -99,6 +101,36 @@ export default async function ProviderDashboardPage() {
                 <small>{suggestion.reason}</small>
               </article>
             ))}
+          </div>
+        </section>
+      ) : null}
+
+      {dashboard.profileUpdateStatus ? (
+        <section className="visibility-report">
+          <div className="visibility-score-card">
+            <p className="eyebrow">Profile edit approval</p>
+            <h2>{dashboard.profileUpdateStatus.latestStatus.replaceAll("_", " ")}</h2>
+            <p>
+              {dashboard.profileUpdateStatus.totals.pendingReview} pending, {dashboard.profileUpdateStatus.totals.applied} applied, and{" "}
+              {dashboard.profileUpdateStatus.totals.rejected} rejected profile edit review{dashboard.profileUpdateStatus.totals.updates === 1 ? "" : "s"}.
+            </p>
+          </div>
+          <div className="visibility-actions">
+            <p className="eyebrow">Review trail</p>
+            {dashboard.profileUpdateStatus.updates.slice(0, 4).map((update) => (
+              <article className={`visibility-action ${update.status === "rejected" ? "high" : update.status === "pending_review" ? "medium" : "low"}`} key={update.id}>
+                <span>{update.status.replaceAll("_", " ")}</span>
+                <strong>{update.changedFields.join(", ") || "Profile update"}</strong>
+                <small>{update.reviewerNotes ?? `Submitted ${new Date(update.createdAt).toLocaleDateString("en-US")}`}</small>
+              </article>
+            ))}
+            {!dashboard.profileUpdateStatus.updates.length ? (
+              <article className="visibility-action low">
+                <span>not started</span>
+                <strong>No profile edits submitted</strong>
+                <small>Attested listing edits will appear here after submission.</small>
+              </article>
+            ) : null}
           </div>
         </section>
       ) : null}

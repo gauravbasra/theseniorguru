@@ -127,6 +127,37 @@ export function ProviderActionConsole({ providerId }: ProviderActionConsoleProps
           }
         />
         <ConsoleButton
+          icon={<FileCheck2 aria-hidden="true" />}
+          disabled={disabled}
+          loading={loadingKey === "profile-update"}
+          label="Submit profile edit"
+          onClick={() =>
+            runAction("Submit profile edit", "profile-update", () =>
+              fetch(`/api/v1/provider-portal/providers/${providerId}`, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "provider-console",
+                  summary: "Attested provider profile update submitted from the provider console for Senior Guru review.",
+                  phone: "303-555-0198",
+                  attestationAccepted: true
+                })
+              })
+            )
+          }
+        />
+        <ConsoleButton
+          icon={<ListChecks aria-hidden="true" />}
+          disabled={disabled}
+          loading={loadingKey === "profile-update-status"}
+          label="Edit status"
+          onClick={() =>
+            runAction("Profile edit status", "profile-update-status", () =>
+              fetch(`/api/v1/provider-portal/providers/${providerId}/profile-updates`)
+            )
+          }
+        />
+        <ConsoleButton
           icon={<CalendarPlus aria-hidden="true" />}
           disabled={disabled}
           loading={loadingKey === "event"}
@@ -259,6 +290,16 @@ function summarizeProviderAction(key: string, data: unknown) {
     const suggestions = Array.isArray(record.suggestions) ? record.suggestions.length : 0;
     const readyFields = Array.isArray(record.readyToSubmitFields) ? record.readyToSubmitFields.length : 0;
     return `${suggestions} profile suggestions found; ${readyFields} fields are ready for audit submission.`;
+  }
+
+  if (key === "profile-update") {
+    const fields = Array.isArray(record.changedFields) ? record.changedFields.length : 0;
+    return `Profile edit ${String(record.status ?? "submitted")} with ${fields} field${fields === 1 ? "" : "s"} queued for Senior Guru review.`;
+  }
+
+  if (key === "profile-update-status") {
+    const totals = isRecord(record.totals) ? record.totals : {};
+    return `${String(totals.pendingReview ?? 0)} profile edit${totals.pendingReview === 1 ? "" : "s"} pending review, ${String(totals.applied ?? 0)} applied, and ${String(totals.rejected ?? 0)} rejected.`;
   }
 
   if (key === "event") {
