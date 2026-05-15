@@ -19,7 +19,8 @@ export async function POST(request: Request) {
         status: body.status,
         limit: body.limit,
         reason: body.reason,
-        actorId: body.actorId
+        actorId: body.actorId,
+        dryRun: body.dryRun !== false
       })
     });
   } catch (error) {

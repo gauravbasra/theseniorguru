@@ -1269,6 +1269,7 @@ export async function replayWebhookDeliveries(
   const deliveryIds = Array.from(new Set(input.deliveryIds?.map((id) => String(id).trim()).filter(Boolean) ?? []));
   const requestedLimit = input.limit ?? (deliveryIds.length || 10);
   const limit = Math.max(1, Math.min(requestedLimit, 50));
+  const dryRun = input.dryRun !== false;
 
   if (!replayableStatuses.includes(status)) {
     throw new Error("Only failed, blocked, or delivered webhook deliveries can be replayed");
@@ -1311,27 +1312,31 @@ export async function replayWebhookDeliveries(
       createdAt: new Date().toISOString()
     }));
 
-    seedWebhookDeliveries.unshift(...replayed);
+    if (!dryRun) {
+      seedWebhookDeliveries.unshift(...replayed);
 
-    await recordApiAuditEvent({
-      eventType: "webhook_delivery.replayed",
-      subjectType: "webhook_delivery",
-      subjectId: candidates.map((delivery) => delivery.id).join(",") || undefined,
-      status: "allowed",
-      requestMetadata: {
-        reason: input.reason,
-        actorId: input.actorId,
-        sourceStatus: status,
-        replayed: replayed.length,
-        replayedDeliveryIds: replayed.map((delivery) => delivery.id)
-      }
-    });
+      await recordApiAuditEvent({
+        eventType: "webhook_delivery.replayed",
+        subjectType: "webhook_delivery",
+        subjectId: candidates.map((delivery) => delivery.id).join(",") || undefined,
+        status: "allowed",
+        requestMetadata: {
+          reason: input.reason,
+          actorId: input.actorId,
+          sourceStatus: status,
+          replayed: replayed.length,
+          replayedDeliveryIds: replayed.map((delivery) => delivery.id),
+          dryRun
+        }
+      });
+    }
 
     return {
       replayed: replayed.length,
       sourceDeliveryIds: candidates.map((delivery) => delivery.id),
-      replayedDeliveryIds: replayed.map((delivery) => delivery.id),
-      status: "queued"
+      replayedDeliveryIds: dryRun ? [] : replayed.map((delivery) => delivery.id),
+      status: "queued",
+      dryRun
     };
   }
 
@@ -1365,11 +1370,12 @@ export async function replayWebhookDeliveries(
         reason: input.reason,
         actorId: input.actorId,
         sourceStatus: status,
-        replayed: 0
+        replayed: 0,
+        dryRun
       }
     });
 
-    return { replayed: 0, sourceDeliveryIds: [], replayedDeliveryIds: [], status: "queued" };
+    return { replayed: 0, sourceDeliveryIds: [], replayedDeliveryIds: [], status: "queued", dryRun };
   }
 
   const rows = sourceDeliveries.map((delivery) => ({
@@ -1383,6 +1389,16 @@ export async function replayWebhookDeliveries(
     status: "queued",
     attempts: 0
   }));
+  if (dryRun) {
+    return {
+      replayed: rows.length,
+      sourceDeliveryIds: sourceDeliveries.map((delivery) => delivery.id),
+      replayedDeliveryIds: [],
+      status: "queued",
+      dryRun
+    };
+  }
+
   const { data: replayedRows, error: insertError } = await supabase.from("webhook_deliveries").insert(rows).select("*");
 
   if (insertError) {
@@ -1401,7 +1417,8 @@ export async function replayWebhookDeliveries(
       actorId: input.actorId,
       sourceStatus: status,
       replayed: replayedDeliveryIds.length,
-      replayedDeliveryIds
+      replayedDeliveryIds,
+      dryRun
     }
   });
 
@@ -1409,7 +1426,8 @@ export async function replayWebhookDeliveries(
     replayed: replayedDeliveryIds.length,
     sourceDeliveryIds: sourceDeliveries.map((delivery) => delivery.id),
     replayedDeliveryIds,
-    status: "queued"
+    status: "queued",
+    dryRun
   };
 }
 

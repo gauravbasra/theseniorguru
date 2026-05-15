@@ -300,6 +300,7 @@ export type ReplayWebhookDeliveriesInput = {
   limit?: number;
   reason?: string;
   actorId?: string;
+  dryRun?: boolean;
 };
 
 export type ReplayWebhookDeliveriesResult = {
@@ -307,6 +308,7 @@ export type ReplayWebhookDeliveriesResult = {
   sourceDeliveryIds: string[];
   replayedDeliveryIds: string[];
   status: "queued";
+  dryRun: boolean;
 };
 
 export type WebhookReplayEvidenceExportRow = {
