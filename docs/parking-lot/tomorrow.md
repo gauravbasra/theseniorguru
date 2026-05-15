@@ -9,6 +9,7 @@ These items require owner credentials, production access, or confirmation. Imple
 - Provide `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 - Provide `SUPABASE_SERVICE_ROLE_KEY` for server-only API routes and import workers.
 - Add the three Supabase variables to Vercel Production; current production writes are intentionally marked `fallback_memory` by `/api/v1/system/persistence` until these are present.
+- Use `GET /api/v1/system/credential-installation` or its CSV export before and after installing secrets to track missing credential families, validation commands, and audit evidence.
 - Apply committed migrations through `20260511102000_import_idempotency.sql` before persistent staging/import runs.
 - Confirm whether Supabase Auth will use email/password, magic links, Google OAuth, or all of the above.
 

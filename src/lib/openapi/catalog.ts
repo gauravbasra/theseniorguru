@@ -664,6 +664,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["System"], summary: "Return latest owner DNS cutover approval or deferral evidence" },
         post: { tags: ["System"], summary: "Record an audited owner DNS cutover approval, deferral, or readiness review" }
       },
+      "/api/v1/system/credential-installation": {
+        get: { tags: ["System"], summary: "Return production credential installation runbook, blockers, validation checks, and CSV evidence" },
+        post: { tags: ["System"], summary: "Record a no-secret credential installation review with audit evidence" }
+      },
       "/api/v1/system/rollback-evidence": {
         get: { tags: ["System"], summary: "Export production rollback evidence, deployment metadata, launch blockers, and recovery steps as JSON or CSV" }
       },

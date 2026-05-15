@@ -645,6 +645,25 @@ export function AdminOperationsConsole() {
         />
         <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
+          label="Credential runbook"
+          loading={loadingKey === "credential-installation"}
+          onClick={() =>
+            runOperation("Credential installation runbook", "credential-installation", () =>
+              fetch("/api/v1/system/credential-installation", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "admin-console",
+                  reviewedKeys: ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "CRON_SECRET"],
+                  ownerApproved: false,
+                  installationNotes: "Admin console credential installation readiness review; no secret values submitted."
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
+          icon={<FileCheck2 aria-hidden="true" />}
           label="Rollback evidence"
           loading={loadingKey === "rollback-evidence"}
           onClick={() =>
@@ -995,6 +1014,12 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "dns-cutover-approval") {
     const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
     return `DNS cutover approval record is ${String(record.status ?? "unknown")} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"} archived to audit evidence.`;
+  }
+
+  if (key === "credential-installation") {
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    const reviewedKeys = Array.isArray(record.reviewedKeys) ? record.reviewedKeys.length : 0;
+    return `Credential installation review is ${String(record.status ?? "unknown")} for ${String(reviewedKeys)} key${reviewedKeys === 1 ? "" : "s"} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
   }
 
   if (key === "import-plan") {
