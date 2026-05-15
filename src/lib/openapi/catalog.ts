@@ -800,6 +800,9 @@ export function getOpenApiCatalog() {
         get: { tags: ["System"], summary: "Run public-domain smoke checks against theseniorguru.com or a deployment target" },
         post: { tags: ["System"], summary: "Archive public-domain smoke evidence for DNS cutover completion review" }
       },
+      "/api/v1/system/production-origin-diagnostics": {
+        get: { tags: ["System"], summary: "Diagnose whether the final domain and active deployment serve the Next runtime marker or an old origin" }
+      },
       "/api/v1/system/credential-installation": {
         get: { tags: ["System"], summary: "Return production credential installation runbook, blockers, validation checks, and CSV evidence" },
         post: { tags: ["System"], summary: "Record a no-secret credential installation review with audit evidence" }
