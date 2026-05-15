@@ -52,6 +52,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/newsroom/articles",
   "/api/v1/partner/newsroom/newsletters",
   "/api/v1/partner/newsroom/performance",
+  "/api/v1/partner/newsroom/readiness",
   "/api/v1/partner/ads/placements",
   "/api/v1/partner/campaigns",
   "/api/v1/partner/claims",
@@ -213,6 +214,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not use partner content performance evidence unless aggregation-only reporting and recipient privacy boundaries are preserved."
     },
     {
+      key: "read-newsroom-readiness",
+      title: "Call newsroom syndication readiness before mirroring content",
+      owner: "partner_ops",
+      requiredScopes: ["newsroom:read"],
+      endpoint: "GET /api/v1/partner/newsroom/readiness",
+      completionSignal: "Response includes aggregate source, article, derivative, and blocker summaries with no draft bodies, source item bodies, or admin review notes.",
+      blocker: "Do not enable partner syndication when readiness status is blocked or action_required without partner content-use and editorial approval."
+    },
+    {
       key: "read-ad-placements",
       title: "Call ad placement inventory with disclosure metadata",
       owner: "partner_engineer",
@@ -338,6 +348,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/newsroom/articles",
         "GET /api/v1/partner/newsroom/newsletters",
         "GET /api/v1/partner/newsroom/performance",
+        "GET /api/v1/partner/newsroom/readiness",
         "GET /api/v1/partner/ads/placements",
         "GET /api/v1/partner/campaigns",
         "POST /api/v1/partner/claims",
