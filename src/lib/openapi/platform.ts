@@ -1648,7 +1648,7 @@ export async function processWebhookDeliveries(
   input: ProcessWebhookDeliveriesInput = {}
 ): Promise<ProcessWebhookDeliveriesResult> {
   const limit = Math.max(1, Math.min(input.limit ?? 10, 50));
-  const dryRun = input.dryRun ?? false;
+  const dryRun = input.dryRun ?? true;
   const queued = await listQueuedWebhookDeliveries(limit);
   const attempts: WebhookDeliveryAttemptRecord[] = [];
 

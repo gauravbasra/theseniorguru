@@ -21,7 +21,8 @@ export async function GET(request: Request) {
         limit: 50
       }),
       processWebhookDeliveries({
-        limit: 25
+        limit: 25,
+        dryRun: true
       }),
       runEventReminderAutomation({
         actorId: "cron:operations"
