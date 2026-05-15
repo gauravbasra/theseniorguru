@@ -11,11 +11,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         entityId: id,
         decision: "rejected",
         actorId: body.actorId,
-        adminNotes: body.adminNotes
+        adminNotes: body.adminNotes,
+        dryRun: body.dryRun !== false
       })
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
 }
-

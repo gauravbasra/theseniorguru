@@ -1631,15 +1631,38 @@ export async function decideExtractedEntity(input: ExtractedEntityDecisionInput)
 
   const supabase = getSupabaseAdminClient();
   const now = new Date().toISOString();
+  const dryRun = input.dryRun !== false;
 
   if (!supabase) {
+    const existing = seedExtractedEntities.find((entity) => entity.id === input.entityId);
+    const reviewStatus = policy.decision === "needs_legal_review" ? "needs_legal_review" : input.decision;
+
+    if (!existing) {
+      throw new Error("Extracted entity not found");
+    }
+
+    if (!dryRun) {
+      existing.reviewStatus = reviewStatus;
+      existing.matchedProviderId = input.matchedProviderId;
+      existing.auditTrail = [
+        ...(existing.auditTrail ?? []),
+        {
+          at: now,
+          actor: input.actorId ?? "system",
+          action: `decision:${reviewStatus}`,
+          notes: input.adminNotes
+        }
+      ];
+    }
+
     return {
-      id: input.entityId,
-      reviewStatus: policy.decision === "needs_legal_review" ? "needs_legal_review" : input.decision,
+      ...existing,
+      reviewStatus,
       matchedProviderId: input.matchedProviderId,
       adminNotes: input.adminNotes,
       decidedAt: now,
-      policyDecision: policy.decision
+      policyDecision: policy.decision,
+      dryRun
     };
   }
 
@@ -1651,6 +1674,18 @@ export async function decideExtractedEntity(input: ExtractedEntityDecisionInput)
 
   if (entityError) {
     throw new Error(`Extracted entity lookup failed: ${entityError.message}`);
+  }
+
+  if (dryRun) {
+    return {
+      ...mapExtractedEntity(entity),
+      reviewStatus: policy.decision === "needs_legal_review" ? "needs_legal_review" : input.decision,
+      matchedProviderId: input.matchedProviderId ?? entity.matched_provider_id ?? undefined,
+      adminNotes: input.adminNotes,
+      decidedAt: now,
+      policyDecision: policy.decision,
+      dryRun
+    };
   }
 
   if (policy.decision === "needs_legal_review") {
@@ -1689,7 +1724,7 @@ export async function decideExtractedEntity(input: ExtractedEntityDecisionInput)
       event_type: `extracted_entity.${input.decision}`,
       subject_type: "extracted_entity",
       subject_id: input.entityId,
-      payload: { matchedProviderId: input.matchedProviderId, adminNotes: input.adminNotes, policyDecision: policy.decision }
+      payload: { matchedProviderId: input.matchedProviderId, adminNotes: input.adminNotes, policyDecision: policy.decision, dryRun }
     });
 
     return mapExtractedEntity(data);
@@ -1714,7 +1749,7 @@ export async function decideExtractedEntity(input: ExtractedEntityDecisionInput)
     event_type: "extracted_entity.approved",
     subject_type: "extracted_entity",
     subject_id: input.entityId,
-    payload: { providerId, adminNotes: input.adminNotes, policyDecision: policy.decision }
+    payload: { providerId, adminNotes: input.adminNotes, policyDecision: policy.decision, dryRun }
   });
 
   return mapExtractedEntity(updatedEntity);

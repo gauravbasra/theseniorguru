@@ -12,11 +12,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         decision: "approved",
         actorId: body.actorId,
         adminNotes: body.adminNotes,
-        matchedProviderId: body.matchedProviderId
+        matchedProviderId: body.matchedProviderId,
+        dryRun: body.dryRun !== false
       })
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
 }
-

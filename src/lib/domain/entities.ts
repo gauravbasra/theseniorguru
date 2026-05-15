@@ -115,6 +115,7 @@ export type ExtractedEntityDecisionInput = {
   actorId?: string;
   adminNotes?: string;
   matchedProviderId?: string;
+  dryRun?: boolean;
 };
 
 export type EntityMatchCandidateRecord = {
