@@ -18,14 +18,16 @@ export async function GET(request: Request) {
     const [verificationExpiry, webhookDelivery, eventAutomation] = await Promise.all([
       expireProviderVerificationAttempts({
         actorId: "cron:operations",
-        limit: 50
+        limit: 50,
+        dryRun: true
       }),
       processWebhookDeliveries({
         limit: 25,
         dryRun: true
       }),
       runEventReminderAutomation({
-        actorId: "cron:operations"
+        actorId: "cron:operations",
+        dryRun: true
       })
     ]);
     const run = await recordScheduledWorkerRun({
@@ -34,12 +36,15 @@ export async function GET(request: Request) {
       startedAt,
       summary: {
         expiredVerificationAttempts: verificationExpiry.expired,
+        verificationExpiryDryRun: verificationExpiry.dryRun,
         webhookProcessed: webhookDelivery.processed,
+        webhookDryRun: webhookDelivery.dryRun,
         webhookDelivered: webhookDelivery.delivered,
         webhookFailed: webhookDelivery.failed,
         webhookBlocked: webhookDelivery.blocked,
         eventRemindersQueued: eventAutomation.remindersQueued,
         eventFollowupsQueued: eventAutomation.followupsQueued,
+        eventAutomationDryRun: eventAutomation.dryRun,
         eventAutomationSkippedExisting: eventAutomation.skippedExisting
       }
     });

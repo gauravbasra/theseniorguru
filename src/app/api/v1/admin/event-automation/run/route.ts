@@ -11,7 +11,8 @@ export async function POST(request: Request) {
         reminderWindowHours: typeof body.reminderWindowHours === "number" ? body.reminderWindowHours : undefined,
         followupWindowHours: typeof body.followupWindowHours === "number" ? body.followupWindowHours : undefined,
         deliveryProvider: typeof body.deliveryProvider === "string" ? body.deliveryProvider : undefined,
-        actorId: typeof body.actorId === "string" ? body.actorId : "admin:event-automation"
+        actorId: typeof body.actorId === "string" ? body.actorId : "admin:event-automation",
+        dryRun: body.dryRun !== false
       })
     });
   } catch (error) {

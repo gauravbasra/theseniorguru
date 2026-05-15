@@ -69,6 +69,22 @@ function mapFollowup(row: Record<string, unknown>): EventFollowupRecord {
   };
 }
 
+function mapReminderInsertPreview(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: `event-reminder-preview-${crypto.randomUUID()}`,
+    created_at: new Date().toISOString(),
+    ...row
+  };
+}
+
+function mapFollowupInsertPreview(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: `event-followup-preview-${crypto.randomUUID()}`,
+    created_at: new Date().toISOString(),
+    ...row
+  };
+}
+
 function summarizeStatuses(records: Array<{ status: string }>) {
   return records.reduce(
     (summary, record) => {
@@ -272,6 +288,7 @@ async function runFallbackEventAutomation(input: {
   followupWindowHours: number;
   deliveryProvider: string;
   actorId?: string;
+  dryRun: boolean;
 }): Promise<EventAutomationRunSummary> {
   const events = await listEvents();
   const reminderCutoff = addHours(input.now, input.reminderWindowHours);
@@ -313,7 +330,9 @@ async function runFallbackEventAutomation(input: {
         deliveryPayload: reminderPayload(event, rsvp),
         createdAt: input.now.toISOString()
       };
-      fallbackReminders.unshift(record);
+      if (!input.dryRun) {
+        fallbackReminders.unshift(record);
+      }
       queuedReminders.push(record);
     }
   }
@@ -339,12 +358,15 @@ async function runFallbackEventAutomation(input: {
         deliveryPayload: followupPayload(event, rsvp),
         createdAt: input.now.toISOString()
       };
-      fallbackFollowups.unshift(record);
+      if (!input.dryRun) {
+        fallbackFollowups.unshift(record);
+      }
       queuedFollowups.push(record);
     }
   }
 
   const summary = {
+    dryRun: input.dryRun,
     reminderWindowHours: input.reminderWindowHours,
     followupWindowHours: input.followupWindowHours,
     scannedEvents: candidateEvents.length,
@@ -377,6 +399,7 @@ export async function runEventReminderAutomation(input: EventAutomationRunInput 
   const reminderWindowHours = normalizeHours(input.reminderWindowHours, 48);
   const followupWindowHours = normalizeHours(input.followupWindowHours, 48);
   const deliveryProvider = input.deliveryProvider ?? "internal_notification_queue";
+  const dryRun = input.dryRun ?? true;
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
@@ -385,7 +408,8 @@ export async function runEventReminderAutomation(input: EventAutomationRunInput 
       reminderWindowHours,
       followupWindowHours,
       deliveryProvider,
-      actorId: input.actorId
+      actorId: input.actorId,
+      dryRun
     });
   }
 
@@ -478,8 +502,8 @@ export async function runEventReminderAutomation(input: EventAutomationRunInput 
   const reminderKeys = new Set((existingReminders.data ?? []).map((row) => `${row.event_id}:${row.rsvp_id}:${row.reminder_type}`));
   const followupKeys = new Set((existingFollowups.data ?? []).map((row) => `${row.event_id}:${row.rsvp_id}:${row.followup_type}`));
   let skippedExisting = 0;
-  const reminderInserts = [];
-  const followupInserts = [];
+  const reminderInserts: Record<string, unknown>[] = [];
+  const followupInserts: Record<string, unknown>[] = [];
 
   for (const event of reminderEvents) {
     for (const rsvp of rsvps.filter((item) => item.eventId === event.id && item.status === "confirmed")) {
@@ -527,14 +551,19 @@ export async function runEventReminderAutomation(input: EventAutomationRunInput 
     }
   }
 
-  const [insertedReminders, insertedFollowups] = await Promise.all([
-    reminderInserts.length
-      ? supabase.from("event_reminders").insert(reminderInserts).select("*")
-      : Promise.resolve({ data: [], error: null }),
-    followupInserts.length
-      ? supabase.from("event_followups").insert(followupInserts).select("*")
-      : Promise.resolve({ data: [], error: null })
-  ]);
+  const [insertedReminders, insertedFollowups] = dryRun
+    ? await Promise.all([
+        Promise.resolve({ data: reminderInserts.map(mapReminderInsertPreview), error: null }),
+        Promise.resolve({ data: followupInserts.map(mapFollowupInsertPreview), error: null })
+      ])
+    : await Promise.all([
+        reminderInserts.length
+          ? supabase.from("event_reminders").insert(reminderInserts).select("*")
+          : Promise.resolve({ data: [], error: null }),
+        followupInserts.length
+          ? supabase.from("event_followups").insert(followupInserts).select("*")
+          : Promise.resolve({ data: [], error: null })
+      ]);
 
   if (insertedReminders.error) {
     throw new Error(`Event reminder queue insert failed: ${insertedReminders.error.message}`);
@@ -545,6 +574,7 @@ export async function runEventReminderAutomation(input: EventAutomationRunInput 
   }
 
   const summary: EventAutomationRunSummary = {
+    dryRun,
     reminderWindowHours,
     followupWindowHours,
     scannedEvents: candidateEvents.length,

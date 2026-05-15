@@ -126,6 +126,7 @@ export type ConfirmProviderVerificationCodeInput = {
 
 export type ProviderVerificationExpiryResult = {
   generatedAt: string;
+  dryRun: boolean;
   expired: number;
   attempts: ProviderVerificationAttemptRecord[];
 };

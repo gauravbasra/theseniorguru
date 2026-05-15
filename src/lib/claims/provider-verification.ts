@@ -478,9 +478,11 @@ export async function expireProviderVerificationAttempts(input: {
   claimId?: string;
   actorId?: string;
   limit?: number;
+  dryRun?: boolean;
 } = {}): Promise<ProviderVerificationExpiryResult> {
   const now = new Date().toISOString();
   const limit = Math.max(1, Math.min(input.limit ?? 100, 250));
+  const dryRun = input.dryRun ?? true;
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
@@ -489,20 +491,26 @@ export async function expireProviderVerificationAttempts(input: {
       .filter((attempt) => isExpiredPendingAttempt(attempt))
       .slice(0, limit);
 
-    for (const attempt of expired) {
-      attempt.status = "expired";
-      attempt.completedAt = now;
-      attempt.attemptPayload = {
-        ...attempt.attemptPayload,
-        expiredBy: "verification_expiry_worker",
-        expiredAt: now
-      };
+    if (!dryRun) {
+      for (const attempt of expired) {
+        attempt.status = "expired";
+        attempt.completedAt = now;
+        attempt.attemptPayload = {
+          ...attempt.attemptPayload,
+          expiredBy: "verification_expiry_worker",
+          expiredAt: now
+        };
+      }
     }
 
     return {
       generatedAt: now,
+      dryRun,
       expired: expired.length,
-      attempts: expired
+      attempts: expired.map((attempt) => ({
+        ...attempt,
+        ...(dryRun ? {} : { status: "expired" as const, completedAt: now })
+      }))
     };
   }
 
@@ -529,8 +537,18 @@ export async function expireProviderVerificationAttempts(input: {
   if (expired.length === 0) {
     return {
       generatedAt: now,
+      dryRun,
       expired: 0,
       attempts: []
+    };
+  }
+
+  if (dryRun) {
+    return {
+      generatedAt: now,
+      dryRun,
+      expired: expired.length,
+      attempts: expired
     };
   }
 
@@ -560,6 +578,7 @@ export async function expireProviderVerificationAttempts(input: {
 
   return {
     generatedAt: now,
+    dryRun,
     expired: expired.length,
     attempts: expired.map((attempt) => ({
       ...attempt,

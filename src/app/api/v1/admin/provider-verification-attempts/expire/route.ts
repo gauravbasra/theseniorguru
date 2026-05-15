@@ -9,7 +9,8 @@ export async function POST(request: Request) {
       data: await expireProviderVerificationAttempts({
         claimId: typeof body.claimId === "string" ? body.claimId : undefined,
         actorId: typeof body.actorId === "string" ? body.actorId : undefined,
-        limit: Number.isFinite(Number(body.limit)) ? Number(body.limit) : undefined
+        limit: Number.isFinite(Number(body.limit)) ? Number(body.limit) : undefined,
+        dryRun: body.dryRun !== false
       })
     });
   } catch (error) {

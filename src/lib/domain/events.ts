@@ -168,9 +168,11 @@ export type EventAutomationRunInput = {
   followupWindowHours?: number;
   deliveryProvider?: string;
   actorId?: string;
+  dryRun?: boolean;
 };
 
 export type EventAutomationRunSummary = {
+  dryRun: boolean;
   reminderWindowHours: number;
   followupWindowHours: number;
   scannedEvents: number;
