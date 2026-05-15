@@ -231,6 +231,9 @@ export function getOpenApiCatalog() {
       "/api/v1/community/expert-answers/rank": {
         post: { tags: ["Community"], summary: "Rank verified local experts for a senior-care question using audited routing logic" }
       },
+      "/api/v1/community/trust-score": {
+        get: { tags: ["Community"], summary: "Calculate local community trust score from verified experts, feed activity, subscriptions, and moderation load" }
+      },
       "/api/v1/community/posts/{id}/comments": {
         get: { tags: ["Community"], summary: "List published comments for a community post" },
         post: { tags: ["Community"], summary: "Create a policy-gated community comment" }

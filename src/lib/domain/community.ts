@@ -225,6 +225,34 @@ export type ExpertAnswerRankingResult = {
   nextActions: string[];
 };
 
+export type LocalTrustScoreInput = {
+  city?: string;
+  state?: string;
+  actorId?: string;
+};
+
+export type LocalTrustScoreResult = {
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  scope: {
+    city?: string;
+    state?: string;
+  };
+  score: number;
+  rating: "strong" | "developing" | "needs_review";
+  signals: {
+    communityGroups: number;
+    activeMembers: number;
+    verifiedExperts: number;
+    activeTopicSubscriptions: number;
+    localFeedItems: number;
+    moderationReports: number;
+  };
+  reasons: string[];
+  auditEventId?: string;
+  nextActions: string[];
+};
+
 export type CommunityPostRecord = {
   id: string;
   communityId?: string;

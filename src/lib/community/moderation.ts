@@ -225,6 +225,31 @@ export async function createCommunityReport(input: CreateCommunityReportInput): 
   return mapCommunityReport(data);
 }
 
+export async function listCommunityReports(
+  filters: { status?: CommunityReportRecord["status"]; subjectType?: string } = {}
+): Promise<CommunityReportRecord[]> {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedReports
+      .filter((report) => !filters.status || report.status === filters.status)
+      .filter((report) => !filters.subjectType || report.subjectType === filters.subjectType);
+  }
+
+  let query = supabase.from("community_reports").select("*").order("created_at", { ascending: false }).limit(250);
+
+  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.subjectType) query = query.eq("subject_type", filters.subjectType);
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Community report query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapCommunityReport);
+}
+
 export async function moderateCommunitySubject(input: ModerateCommunityInput) {
   const policy = await runPolicyCheck({
     subjectType: input.subjectType,
@@ -271,4 +296,3 @@ export async function moderateCommunitySubject(input: ModerateCommunityInput) {
 
   return input.subjectType === "community_post" ? mapCommunityPost(data) : mapCommunityComment(data);
 }
-

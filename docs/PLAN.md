@@ -293,6 +293,7 @@ Deliverables:
 - Community digest delivery worker with topic subscription targeting, app feed payload preview, device-target counts, internal queue audit evidence, and Supabase delivery-job migration readiness. Completed.
 - Session-owned care-circle family invite delivery jobs with preview, manual export, internal queue audit evidence, and delivery metadata persistence. Completed.
 - Expert answer ranking API with verified expert scoring, location/specialty routing reasons, audit event evidence, and Supabase ranking snapshot readiness. Completed.
+- Local trust score API with community activity, verified expert, topic subscription, feed, moderation-load signals, audit event evidence, and Supabase score snapshot readiness. Completed.
 
 ## Phase 6: Marketing Growth Engine
 

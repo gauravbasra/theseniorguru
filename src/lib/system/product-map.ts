@@ -125,6 +125,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/community/experts",
       "POST /api/v1/admin/community/experts/{id}/verify",
       "POST /api/v1/community/expert-answers/rank",
+      "GET /api/v1/community/trust-score",
       "POST /api/v1/community/posts",
       "GET /api/v1/community/posts/{id}/comments",
       "POST /api/v1/community/posts/{id}/comments",
@@ -142,9 +143,10 @@ const productPillars: ProductPillar[] = [
       "community_reports",
       "moderation_cases",
       "expert_profiles",
-      "expert_answer_rankings"
+      "expert_answer_rankings",
+      "local_trust_scores"
     ],
-    nextBackendWork: ["Local trust scoring"]
+    nextBackendWork: []
   },
   {
     key: "events",

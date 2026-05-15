@@ -88,6 +88,7 @@ const routeContracts: LinkContract[] = [
   { label: "Community experts API", href: "/api/v1/community/experts", method: "GET", owner: "family" },
   { label: "Community expert verification API", href: "/api/v1/admin/community/experts/demo/verify", method: "POST", owner: "admin" },
   { label: "Expert answer ranking API", href: "/api/v1/community/expert-answers/rank", method: "POST", owner: "family" },
+  { label: "Local trust score API", href: "/api/v1/community/trust-score", method: "GET", owner: "family" },
   { label: "Readiness API", href: "/api/v1/system/readiness", method: "GET", owner: "admin" },
   { label: "Launch checklist API", href: "/api/v1/system/launch-checklist", method: "GET", owner: "admin" },
   { label: "Supabase schema API", href: "/api/v1/system/supabase-schema", method: "GET", owner: "admin" },

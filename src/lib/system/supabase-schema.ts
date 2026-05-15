@@ -90,7 +90,8 @@ export const migrationManifest = [
   "20260515022000_app_device_registrations.sql",
   "20260515023100_care_circle_invite_delivery.sql",
   "20260515024200_community_digest_deliveries.sql",
-  "20260515025100_expert_answer_rankings.sql"
+  "20260515025100_expert_answer_rankings.sql",
+  "20260515030200_local_trust_scores.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -153,6 +154,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260515025100_expert_answer_rankings.sql": {
     capability: "community",
     summary: "Audited verified-expert ranking snapshots for senior-care question routing."
+  },
+  "20260515030200_local_trust_scores.sql": {
+    capability: "community",
+    summary: "Local community trust score snapshots from community, expert, feed, subscription, and moderation signals."
   },
   "20260510160122_provider_growth_subscriptions.sql": {
     capability: "growth",
@@ -312,6 +317,7 @@ const requiredTables: RequiredTable[] = [
   { table: "community_posts", requiredFor: "Community feed", capability: "community" },
   { table: "expert_profiles", requiredFor: "Verified local expert profiles", capability: "community" },
   { table: "expert_answer_rankings", requiredFor: "Expert answer routing and score audit", capability: "community" },
+  { table: "local_trust_scores", requiredFor: "Local trust score snapshots", capability: "community" },
   { table: "ad_placements", requiredFor: "Advertising inventory", capability: "ads" },
   { table: "ad_campaigns", requiredFor: "Direct-sold ad campaigns", capability: "ads" },
   { table: "ad_creatives", requiredFor: "Sponsored ad creative", capability: "ads" },
