@@ -188,6 +188,7 @@ Deliverables:
 - Import escalation delivery callback reconciliation API with policy gate and operational audit evidence. Completed.
 - Import escalation retry scheduler API with dry-run candidate detection, live retry scheduling audit evidence, and admin console access. Completed.
 - Import escalation retry delivery executor API with dry-run batch preview, manual export execution evidence, internal queue readiness gates, and admin console access. Completed.
+- Import escalation retry cron live-mode owner approval gate with explicit approval env metadata, blocked worker-run evidence, readiness reporting, and route smoke coverage. Completed.
 - Protected import escalation retry cron route with preview/live mode safety, retry scheduling, retry delivery rollups, and scheduled worker run observability. Completed.
 - Vercel hourly import escalation retry cron schedule with preview/manual-export default and owner-dependent live queue parking-lot notes. Completed.
 - Supabase project credentials. Parked for tomorrow.

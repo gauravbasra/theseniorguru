@@ -30,6 +30,9 @@ export type AppEnv = {
   importEscalationRetryCronMode?: string;
   importEscalationRetryCronLimit?: string;
   importEscalationRetryCronProvider?: string;
+  importEscalationRetryCronLiveApproved?: string;
+  importEscalationRetryCronApprovedBy?: string;
+  importEscalationRetryCronApprovedAt?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
   providerVerificationMailjetSenderEmail?: string;
@@ -78,6 +81,9 @@ export function getAppEnv(): AppEnv {
     importEscalationRetryCronMode: process.env.IMPORT_ESCALATION_RETRY_CRON_MODE,
     importEscalationRetryCronLimit: process.env.IMPORT_ESCALATION_RETRY_CRON_LIMIT,
     importEscalationRetryCronProvider: process.env.IMPORT_ESCALATION_RETRY_CRON_PROVIDER,
+    importEscalationRetryCronLiveApproved: process.env.IMPORT_ESCALATION_RETRY_CRON_LIVE_APPROVED,
+    importEscalationRetryCronApprovedBy: process.env.IMPORT_ESCALATION_RETRY_CRON_APPROVED_BY,
+    importEscalationRetryCronApprovedAt: process.env.IMPORT_ESCALATION_RETRY_CRON_APPROVED_AT,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     providerVerificationMailjetSenderEmail: process.env.PROVIDER_VERIFICATION_MAILJET_SENDER_EMAIL,

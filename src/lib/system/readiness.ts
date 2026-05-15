@@ -232,11 +232,20 @@ export function getSystemReadiness() {
     {
       key: "IMPORT_ESCALATION_RETRY_CRON_MODE",
       label: "Import escalation retry cron mode",
-      status: env.importEscalationRetryCronMode === "live" ? "ready" : "partial",
+      status:
+        env.importEscalationRetryCronMode === "live" &&
+        env.importEscalationRetryCronLiveApproved === "true" &&
+        Boolean(env.importEscalationRetryCronApprovedBy) &&
+        Boolean(env.importEscalationRetryCronApprovedAt && !Number.isNaN(new Date(env.importEscalationRetryCronApprovedAt).getTime()))
+          ? "ready"
+          : "partial",
       action:
-        env.importEscalationRetryCronMode === "live"
+        env.importEscalationRetryCronMode === "live" &&
+        env.importEscalationRetryCronLiveApproved === "true" &&
+        env.importEscalationRetryCronApprovedBy &&
+        env.importEscalationRetryCronApprovedAt
           ? undefined
-          : "Set IMPORT_ESCALATION_RETRY_CRON_MODE=live only after retry delivery provider readiness is approved; preview mode is non-mutating."
+          : "Set IMPORT_ESCALATION_RETRY_CRON_MODE=live only with IMPORT_ESCALATION_RETRY_CRON_LIVE_APPROVED=true, IMPORT_ESCALATION_RETRY_CRON_APPROVED_BY, and IMPORT_ESCALATION_RETRY_CRON_APPROVED_AT after owner approval."
     }
   ];
   const parkedChecks: ReadinessCheck[] = [
