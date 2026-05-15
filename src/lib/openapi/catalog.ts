@@ -683,6 +683,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/providers/{id}/reputation-readiness": {
         get: { tags: ["Reviews"], summary: "Partner provider reputation readiness API requiring reviews:read scope with aggregate review, campaign, and sentiment health" }
       },
+      "/api/v1/partner/providers/{id}/review-summary": {
+        get: { tags: ["Reviews"], summary: "Partner provider review summary API requiring reviews:read scope with aggregate rating, source, and sentiment metrics" }
+      },
       "/api/v1/partner/events": {
         get: { tags: ["Events"], summary: "Partner events API requiring events:read scope" }
       },
