@@ -689,6 +689,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/newsroom/newsletters": {
         get: { tags: ["Newsroom"], summary: "Partner public newsletter editions API requiring newsroom:read scope with recipient-safe metadata" }
       },
+      "/api/v1/partner/newsroom/performance": {
+        get: { tags: ["Newsroom"], summary: "Partner aggregated newsroom performance API requiring newsroom:read scope without raw metric payloads" }
+      },
       "/api/v1/partner/ads/placements": {
         get: { tags: ["Ads"], summary: "Partner ad placement inventory API requiring ads:read scope with disclosure and optional delivery preview metadata" }
       },

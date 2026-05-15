@@ -51,6 +51,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/community/posts",
   "/api/v1/partner/newsroom/articles",
   "/api/v1/partner/newsroom/newsletters",
+  "/api/v1/partner/newsroom/performance",
   "/api/v1/partner/ads/placements",
   "/api/v1/partner/campaigns",
   "/api/v1/partner/claims",
@@ -203,6 +204,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not syndicate newsletter editions unless attribution, unsubscribe expectations, and recipient privacy boundaries are preserved."
     },
     {
+      key: "read-newsroom-performance",
+      title: "Call aggregated newsroom performance without raw payloads",
+      owner: "partner_ops",
+      requiredScopes: ["newsroom:read"],
+      endpoint: "GET /api/v1/partner/newsroom/performance",
+      completionSignal: "Response includes aggregate totals, channel rollups, top article/newsletter rows, partner envelope metadata, and no raw metric payloads or recipient records.",
+      blocker: "Do not use partner content performance evidence unless aggregation-only reporting and recipient privacy boundaries are preserved."
+    },
+    {
       key: "read-ad-placements",
       title: "Call ad placement inventory with disclosure metadata",
       owner: "partner_engineer",
@@ -327,6 +337,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/community/posts",
         "GET /api/v1/partner/newsroom/articles",
         "GET /api/v1/partner/newsroom/newsletters",
+        "GET /api/v1/partner/newsroom/performance",
         "GET /api/v1/partner/ads/placements",
         "GET /api/v1/partner/campaigns",
         "POST /api/v1/partner/claims",
