@@ -62,5 +62,17 @@ export type ActivateGrowthSubscriptionInput = {
   subscriptionId: string;
   startsAt?: string;
   actorId?: string;
+  dryRun?: boolean;
 };
 
+export type ActivateGrowthSubscriptionResult = {
+  subscription: ProviderGrowthSubscriptionRecord;
+  dryRun: boolean;
+  policyDecision: string;
+  previousStatus: GrowthSubscriptionStatus;
+  nextStatus: GrowthSubscriptionStatus;
+  featureFlags: string[];
+  startsAt: string;
+  endsAt: string;
+  auditEventId?: string;
+};

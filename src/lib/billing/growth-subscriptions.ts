@@ -1,10 +1,12 @@
 import type {
   ActivateGrowthSubscriptionInput,
+  ActivateGrowthSubscriptionResult,
   CreateGrowthSubscriptionInput,
   GrowthPlanRecord,
   ProviderFeatureEntitlementRecord,
   ProviderGrowthSubscriptionRecord
 } from "@/lib/domain/billing";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -108,6 +110,16 @@ const seedEntitlements: ProviderFeatureEntitlementRecord[] = [
     createdAt: "2026-05-10T00:00:00.000Z"
   }
 ];
+
+export class GrowthSubscriptionActivationError extends Error {
+  status: number;
+
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = "GrowthSubscriptionActivationError";
+    this.status = status;
+  }
+}
 
 function addMonths(date: Date, months: number) {
   const next = new Date(date);
@@ -319,16 +331,17 @@ export async function createGrowthSubscription(
 
 export async function activateGrowthSubscription(
   input: ActivateGrowthSubscriptionInput
-): Promise<ProviderGrowthSubscriptionRecord> {
+): Promise<ActivateGrowthSubscriptionResult> {
+  const dryRun = input.dryRun !== false;
   const policy = await runPolicyCheck({
     subjectType: "provider_growth_subscription",
     subjectId: input.subscriptionId,
     actionKey: "activate_provider_growth_subscription",
-    input
+    input: { ...input, dryRun }
   });
 
   if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
-    throw new Error(policy.reasons[0] ?? "Growth subscription activation blocked by policy");
+    throw new GrowthSubscriptionActivationError(policy.reasons[0] ?? "Growth subscription activation blocked by policy", 403);
   }
 
   const supabase = getSupabaseAdminClient();
@@ -337,56 +350,89 @@ export async function activateGrowthSubscription(
 
   if (!supabase) {
     const existing = seedSubscriptions.find((subscription) => subscription.id === input.subscriptionId);
-    const termMonths = existing?.termMonths ?? 3;
-    const plan = seedGrowthPlans.find((item) => item.id === existing?.growthPlanId);
+    if (!existing) {
+      throw new GrowthSubscriptionActivationError("Growth subscription not found", 404);
+    }
+
+    const termMonths = existing.termMonths;
+    const plan = seedGrowthPlans.find((item) => item.id === existing.growthPlanId);
+    const previousStatus = existing.status;
     const activated: ProviderGrowthSubscriptionRecord = {
       id: input.subscriptionId,
-      providerId: existing?.providerId ?? "fallback-provider",
-      growthPlanId: existing?.growthPlanId ?? "fallback-plan",
+      providerId: existing.providerId,
+      growthPlanId: existing.growthPlanId,
       status: "active",
       termMonths,
-      monthlyPriceCents: existing?.monthlyPriceCents ?? 10000,
-      autoRenews: existing?.autoRenews ?? true,
-      contractPayload: existing?.contractPayload ?? {},
+      monthlyPriceCents: existing.monthlyPriceCents,
+      autoRenews: existing.autoRenews,
+      contractPayload: existing.contractPayload,
       startsAt: startsAt.toISOString(),
       endsAt: addMonths(startsAt, termMonths).toISOString(),
       activatedAt: now,
-      createdAt: existing?.createdAt ?? now,
+      createdAt: existing.createdAt,
       updatedAt: now
     };
 
-    if (existing) {
+    if (!dryRun) {
       Object.assign(existing, activated);
-    } else {
-      seedSubscriptions.unshift(activated);
-    }
 
-    for (const featureKey of plan?.featureFlags ?? []) {
-      const entitlement: ProviderFeatureEntitlementRecord = {
-        id: `seed-entitlement-${activated.providerId}-${featureKey}-${Date.now()}`,
-        providerId: activated.providerId,
-        subscriptionId: activated.id,
-        featureKey,
-        status: "active",
-        startsAt: activated.startsAt,
-        endsAt: activated.endsAt,
-        createdAt: now
-      };
-      const existingIndex = seedEntitlements.findIndex(
-        (item) =>
-          item.providerId === entitlement.providerId &&
-          item.subscriptionId === entitlement.subscriptionId &&
-          item.featureKey === entitlement.featureKey
-      );
+      for (const featureKey of plan?.featureFlags ?? []) {
+        const entitlement: ProviderFeatureEntitlementRecord = {
+          id: `seed-entitlement-${activated.providerId}-${featureKey}-${Date.now()}`,
+          providerId: activated.providerId,
+          subscriptionId: activated.id,
+          featureKey,
+          status: "active",
+          startsAt: activated.startsAt,
+          endsAt: activated.endsAt,
+          createdAt: now
+        };
+        const existingIndex = seedEntitlements.findIndex(
+          (item) =>
+            item.providerId === entitlement.providerId &&
+            item.subscriptionId === entitlement.subscriptionId &&
+            item.featureKey === entitlement.featureKey
+        );
 
-      if (existingIndex >= 0) {
-        seedEntitlements[existingIndex] = entitlement;
-      } else {
-        seedEntitlements.unshift(entitlement);
+        if (existingIndex >= 0) {
+          seedEntitlements[existingIndex] = entitlement;
+        } else {
+          seedEntitlements.unshift(entitlement);
+        }
       }
     }
 
-    return activated;
+    const featureFlags = plan?.featureFlags ?? [];
+    const auditEvent = await recordAuditEvent({
+      actorId: input.actorId,
+      actorType: input.actorId ? "admin" : "system",
+      eventType: dryRun ? "provider_growth_subscription.activation_previewed" : "provider_growth_subscription.activated",
+      subjectType: "provider_growth_subscription",
+      subjectId: input.subscriptionId,
+      payload: {
+        providerId: existing.providerId,
+        planKey: plan?.planKey,
+        featureFlags,
+        dryRun,
+        previousStatus,
+        nextStatus: "active",
+        startsAt: startsAt.toISOString(),
+        endsAt: activated.endsAt,
+        policyDecision: policy.decision
+      }
+    });
+
+    return {
+      subscription: dryRun ? existing : activated,
+      dryRun,
+      policyDecision: policy.decision,
+      previousStatus,
+      nextStatus: "active",
+      featureFlags,
+      startsAt: startsAt.toISOString(),
+      endsAt: activated.endsAt ?? addMonths(startsAt, termMonths).toISOString(),
+      auditEventId: auditEvent.id
+    };
   }
 
   const { data: subscription, error: subscriptionError } = await supabase
@@ -396,63 +442,86 @@ export async function activateGrowthSubscription(
     .single();
 
   if (subscriptionError) {
-    throw new Error(`Growth subscription lookup failed: ${subscriptionError.message}`);
+    throw new GrowthSubscriptionActivationError(`Growth subscription lookup failed: ${subscriptionError.message}`, 500);
+  }
+
+  if (!subscription) {
+    throw new GrowthSubscriptionActivationError("Growth subscription not found", 404);
   }
 
   const endsAt = addMonths(startsAt, Number(subscription.term_months));
-  const { data, error } = await supabase
-    .from("provider_growth_subscriptions")
-    .update({
-      status: "active",
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-      activated_at: now,
-      updated_at: now
-    })
-    .eq("id", input.subscriptionId)
-    .select("*")
-    .single();
-
-  if (error) {
-    throw new Error(`Growth subscription activation failed: ${error.message}`);
-  }
-
   const planData = Array.isArray(subscription.growth_plans) ? subscription.growth_plans[0] : subscription.growth_plans;
   const featureFlags: string[] = Array.isArray(planData?.feature_flags) ? planData.feature_flags.map(String) : [];
+  const previousStatus = subscription.status as ProviderGrowthSubscriptionRecord["status"];
+  let activatedSubscription = mapSubscription(subscription);
 
-  if (featureFlags.length > 0) {
-    const { error: entitlementError } = await supabase.from("provider_feature_entitlements").upsert(
-      featureFlags.map((featureKey) => ({
-        provider_id: subscription.provider_id,
-        subscription_id: input.subscriptionId,
-        feature_key: featureKey,
+  if (!dryRun) {
+    const { data, error } = await supabase
+      .from("provider_growth_subscriptions")
+      .update({
         status: "active",
         starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString()
-      })),
-      { onConflict: "provider_id,subscription_id,feature_key" }
-    );
+        ends_at: endsAt.toISOString(),
+        activated_at: now,
+        updated_at: now
+      })
+      .eq("id", input.subscriptionId)
+      .select("*")
+      .single();
 
-    if (entitlementError) {
-      throw new Error(`Growth entitlement activation failed: ${entitlementError.message}`);
+    if (error) {
+      throw new GrowthSubscriptionActivationError(`Growth subscription activation failed: ${error.message}`, 500);
+    }
+
+    activatedSubscription = mapSubscription(data);
+
+    if (featureFlags.length > 0) {
+      const { error: entitlementError } = await supabase.from("provider_feature_entitlements").upsert(
+        featureFlags.map((featureKey) => ({
+          provider_id: subscription.provider_id,
+          subscription_id: input.subscriptionId,
+          feature_key: featureKey,
+          status: "active",
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString()
+        })),
+        { onConflict: "provider_id,subscription_id,feature_key" }
+      );
+
+      if (entitlementError) {
+        throw new GrowthSubscriptionActivationError(`Growth entitlement activation failed: ${entitlementError.message}`, 500);
+      }
     }
   }
 
-  await supabase.from("audit_events").insert({
-    actor_id: input.actorId,
-    actor_type: input.actorId ? "admin" : "system",
-    event_type: "provider_growth_subscription.activated",
-    subject_type: "provider_growth_subscription",
-    subject_id: input.subscriptionId,
+  const auditEvent = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: dryRun ? "provider_growth_subscription.activation_previewed" : "provider_growth_subscription.activated",
+    subjectType: "provider_growth_subscription",
+    subjectId: input.subscriptionId,
     payload: {
       providerId: subscription.provider_id,
       planKey: planData?.plan_key,
       featureFlags,
+      dryRun,
+      previousStatus,
+      nextStatus: "active",
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
       policyDecision: policy.decision
     }
   });
 
-  return mapSubscription(data);
+  return {
+    subscription: activatedSubscription,
+    dryRun,
+    policyDecision: policy.decision,
+    previousStatus,
+    nextStatus: "active",
+    featureFlags,
+    startsAt: startsAt.toISOString(),
+    endsAt: endsAt.toISOString(),
+    auditEventId: auditEvent.id
+  };
 }

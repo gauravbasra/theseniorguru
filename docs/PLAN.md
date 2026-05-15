@@ -58,6 +58,7 @@ Deliverables:
 - Campaign create/generate/publish APIs. Completed.
 - Provider growth plans, subscriptions, and entitlements schema. Completed.
 - Contract-first provider growth subscription APIs. Completed.
+- Provider growth subscription activation hardening so omitted `dryRun` returns policy/audit preview evidence without changing subscription status or entitlements and live activation requires explicit `dryRun=false`. Completed.
 - Provider feature entitlement check API and enforcement hooks. Completed.
 - Reviews/reputation schema. Completed.
 - Review submit/list and AI response draft APIs. Completed.

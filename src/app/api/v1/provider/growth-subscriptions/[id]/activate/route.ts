@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { activateGrowthSubscription } from "@/lib/billing/growth-subscriptions";
+import { GrowthSubscriptionActivationError, activateGrowthSubscription } from "@/lib/billing/growth-subscriptions";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -10,11 +10,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       data: await activateGrowthSubscription({
         subscriptionId: id,
         startsAt: body.startsAt,
-        actorId: body.actorId
+        actorId: body.actorId,
+        dryRun: body.dryRun === false ? false : true
       })
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const status = error instanceof GrowthSubscriptionActivationError ? error.status : 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status });
   }
 }
-
