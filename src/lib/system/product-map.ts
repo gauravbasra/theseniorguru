@@ -303,6 +303,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/admin/source-adapter-manifests/fetch",
       "POST /api/v1/admin/source-adapter-manifests/fetch/worker",
       "GET /api/v1/admin/source-adapter-manifests/storage-readiness",
+      "GET /api/v1/admin/source-adapter-manifests/credential-readiness",
+      "GET /api/v1/admin/source-adapter-manifests/credential-readiness?format=csv",
       "GET /api/v1/admin/cron-live-approvals",
       "GET /api/v1/admin/cron-live-approvals?format=csv",
       "GET /api/cron/source-manifests",
@@ -341,7 +343,7 @@ const productPillars: ProductPillar[] = [
       "data_quality_flags",
       "import_batches"
     ],
-    nextBackendWork: ["Source manifest fetch source-object production credentials"]
+    nextBackendWork: ["Owner-provided source object credential references and path allow-lists"]
   },
   {
     key: "reviews",

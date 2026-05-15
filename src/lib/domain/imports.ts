@@ -420,6 +420,53 @@ export type SourceAdapterStorageReadinessSummary = {
   nextActions: string[];
 };
 
+export type SourceManifestCredentialReadinessItem = {
+  manifestId: string;
+  dataSourceId: string;
+  dataSourceName?: string;
+  sourceType?: string;
+  fileName: string;
+  fileUrl?: string;
+  scheme: SourceAdapterStorageScheme;
+  storageStatus: SourceAdapterManifestStorageStatus;
+  mappingStatus: SourceAdapterManifestMappingStatus;
+  fetchStatus: SourceAdapterStorageReadinessItem["status"];
+  credentialReferenceRequired: boolean;
+  credentialReferenceKey?: string;
+  credentialReferenceConfigured: boolean;
+  pathAllowListKey?: string;
+  pathAllowListConfigured: boolean;
+  checksumRequired: boolean;
+  ownerApprovalRequired: boolean;
+  ownerApprovalConfigured: boolean;
+  status: "live_ready" | "manual_ready" | "blocked";
+  blockers: string[];
+  nextActions: string[];
+};
+
+export type SourceManifestCredentialReadinessSummary = {
+  generatedAt: string;
+  totals: {
+    manifests: number;
+    liveReady: number;
+    manualReady: number;
+    blocked: number;
+    credentialReferencesRequired: number;
+    credentialReferencesConfigured: number;
+    pathAllowListsConfigured: number;
+  };
+  approval: {
+    approved: boolean;
+    approvedBy?: string;
+    approvedAt?: string;
+    approvedAtValid: boolean;
+    requiredEnv: string[];
+  };
+  manifests: SourceManifestCredentialReadinessItem[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type SourceAdapterManifestPayloadLoadInput = {
   manifestId: string;
   records: ImportRecordInput[];

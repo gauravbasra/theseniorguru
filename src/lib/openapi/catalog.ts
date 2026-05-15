@@ -552,6 +552,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/source-adapter-manifests/storage-readiness": {
         get: { tags: ["Aggregation"], summary: "Report source manifest object-storage scheme readiness and owner credential blockers" }
       },
+      "/api/v1/admin/source-adapter-manifests/credential-readiness": {
+        get: { tags: ["Aggregation"], summary: "Report source manifest production credential-reference, path allow-list, and owner approval readiness" }
+      },
       "/api/v1/admin/vendor-feed-connections": {
         get: { tags: ["Aggregation"], summary: "Report vendor feed contract, credential reference, and field mapping readiness" },
         post: { tags: ["Aggregation"], summary: "Record safe vendor feed credential metadata without storing vendor secrets" }

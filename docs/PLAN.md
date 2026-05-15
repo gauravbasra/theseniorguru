@@ -206,6 +206,7 @@ Deliverables:
 - Protected source manifest fetch cron route with preview/live mode safety and scheduled worker run observability. Completed.
 - Source manifest fetch cron live-mode owner approval gate with explicit approval env metadata, blocked worker-run evidence, readiness reporting, and route smoke coverage. Completed.
 - Vercel daily source manifest fetch cron schedule with preview/live env gate and owner-dependent live-mode parking-lot notes. Completed.
+- Source manifest production credential readiness API with non-secret credential reference checks, path allow-list checks, owner approval metadata, CSV evidence export, OpenAPI/link-health/product-map wiring, and owner-dependent credential parking-lot notes. Completed.
 - Partner aggregation readiness API with `providers:read` scope, aggregate source/import/crawler/quality health, source URL/terms/queue/import/crawler/quality row exclusions, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
 - Vendor feed credential metadata and readiness workflow with contract, vault reference, and field mapping gates. Completed.
 - Vendor feed import runner API for ready vendor metadata and source records through the governed import worker. Completed.
@@ -252,7 +253,7 @@ Deliverables:
 - Current-site public JSON acquisition worker for real production listing records. Completed.
 - Source acquisition cron live-mode owner approval gate with explicit approval env metadata, blocked worker-run evidence, readiness reporting, and route smoke coverage. Completed.
 - Current-site parsed record preview/export API. Completed.
-- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, signed object fetch executor, scheduled signed-object fetch worker, protected source manifest fetch cron route, Vercel source-manifest cron schedule, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, override rollback workflow, override replacement workflow, override impact comparison, impact evidence retention, impact evidence export, and impact evidence attachment completed.
+- CMS/state/public-source import adapters. Direct runner, scheduled payload worker, file manifest ingestion, manifest payload loader, object-storage readiness checks, source-object credential readiness, signed object fetch executor, scheduled signed-object fetch worker, protected source manifest fetch cron route, Vercel source-manifest cron schedule, provider website parser rule readiness, source-specific parser overrides, parser override audit dashboard, override rollback workflow, override replacement workflow, override impact comparison, impact evidence retention, impact evidence export, and impact evidence attachment completed.
 - JSON import worker for approved sources. Completed.
 - Public-source acquisition staging contract for rich provider/community records, provenance, images, quality gaps, and audit metadata. Completed.
 - Public-source sample acquisition worker API with seeded official-directory-style adapter and image coverage report. Completed.
