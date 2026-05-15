@@ -668,6 +668,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["System"], summary: "Return production credential installation runbook, blockers, validation checks, and CSV evidence" },
         post: { tags: ["System"], summary: "Record a no-secret credential installation review with audit evidence" }
       },
+      "/api/v1/system/credential-smoke-evidence": {
+        get: { tags: ["System"], summary: "Export credential smoke evidence rows, validation status, blockers, and CSV evidence" },
+        post: { tags: ["System"], summary: "Archive credential smoke evidence to operational audit events" }
+      },
       "/api/v1/system/post-cutover-monitor": {
         get: { tags: ["System"], summary: "Return deployment, DNS, persistence, credential, rollback, and link-health monitor probes" },
         post: { tags: ["System"], summary: "Record an audited post-cutover synthetic monitor run" }

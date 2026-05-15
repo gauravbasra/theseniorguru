@@ -663,6 +663,24 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<FileCheck2 aria-hidden="true" />}
+          label="Credential smoke"
+          loading={loadingKey === "credential-smoke-evidence"}
+          onClick={() =>
+            runOperation("Credential smoke evidence", "credential-smoke-evidence", () =>
+              fetch("/api/v1/system/credential-smoke-evidence", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "admin-console",
+                  dryRun: true,
+                  notes: "Admin console credential smoke evidence archive."
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<Radar aria-hidden="true" />}
           label="Cutover monitor"
           loading={loadingKey === "post-cutover-monitor"}
@@ -1038,6 +1056,11 @@ function summarizeOperation(key: string, data: unknown) {
     const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
     const reviewedKeys = Array.isArray(record.reviewedKeys) ? record.reviewedKeys.length : 0;
     return `Credential installation review is ${String(record.status ?? "unknown")} for ${String(reviewedKeys)} key${reviewedKeys === 1 ? "" : "s"} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
+  }
+
+  if (key === "credential-smoke-evidence") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `Credential smoke evidence is ${String(record.status ?? "unknown")} across ${String(totals?.credentials ?? 0)} credential${totals?.credentials === 1 ? "" : "s"} with ${String(totals?.blocked ?? 0)} blocked.`;
   }
 
   if (key === "post-cutover-monitor") {

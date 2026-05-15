@@ -507,6 +507,9 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/credential-installation",
       "GET /api/v1/system/credential-installation?format=csv",
       "POST /api/v1/system/credential-installation",
+      "GET /api/v1/system/credential-smoke-evidence",
+      "GET /api/v1/system/credential-smoke-evidence?format=csv",
+      "POST /api/v1/system/credential-smoke-evidence",
       "GET /api/v1/system/post-cutover-monitor",
       "POST /api/v1/system/post-cutover-monitor",
       "GET /api/v1/system/rollback-evidence",
@@ -518,7 +521,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/scheduled-worker-runs"
     ],
     requiredTables: ["audit_events"],
-    nextBackendWork: ["DNS cutover change-window smoke checklist", "Production credential smoke evidence export", "Monitor alert delivery integration"]
+    nextBackendWork: ["DNS cutover change-window smoke checklist", "Monitor alert delivery integration", "Credential evidence retention dashboard"]
   }
 ];
 
