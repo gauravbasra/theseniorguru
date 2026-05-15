@@ -54,6 +54,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/providers/{id}/community-summary",
   "/api/v1/partner/providers/{id}/ad-summary",
   "/api/v1/partner/providers/{id}/campaign-summary",
+  "/api/v1/partner/providers/{id}/newsletter-summary",
   "/api/v1/partner/events",
   "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
@@ -296,6 +297,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not syndicate newsletter editions unless attribution, unsubscribe expectations, and recipient privacy boundaries are preserved."
     },
     {
+      key: "read-provider-newsletter-summary",
+      title: "Call provider newsletter summary without recipient details",
+      owner: "partner_ops",
+      requiredScopes: ["newsroom:read"],
+      endpoint: "GET /api/v1/partner/providers/{id}/newsletter-summary",
+      completionSignal: "Response includes provider-scoped newsletter delivery and performance rollups, blocker evidence, and no recipient identities, delivery payload previews, delivery attempt IDs, audience segments, or raw metric payloads.",
+      blocker: "Do not use provider newsletter analytics unless aggregate-only reporting and recipient privacy boundaries are preserved."
+    },
+    {
       key: "read-newsroom-performance",
       title: "Call aggregated newsroom performance without raw payloads",
       owner: "partner_ops",
@@ -450,6 +460,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/providers/{id}/community-summary",
         "GET /api/v1/partner/providers/{id}/ad-summary",
         "GET /api/v1/partner/providers/{id}/campaign-summary",
+        "GET /api/v1/partner/providers/{id}/newsletter-summary",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",

@@ -397,6 +397,7 @@ Deliverables:
 - Newsletter delivery send hardening so omitted `dryRun` returns preview delivery evidence and live/manual sent evidence requires explicit `dryRun=false`. Completed.
 - Newsroom article publish hardening so omitted `dryRun` returns policy/audit preview evidence without changing approved article status and live publishing requires explicit `dryRun=false`. Completed.
 - Newsletter scheduling hardening so omitted `dryRun` returns policy/audit preview evidence without changing approved edition status and live scheduling requires explicit `dryRun=false`. Completed.
+- Partner provider newsletter summary API with `newsroom:read` scope, provider-scoped newsletter delivery/performance rollups, recipient/delivery payload/raw metric exclusions, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
 - Preview-first webhook retry scheduler with protected cron route, dry-run candidate reporting, live-mode retry processing, and worker observability. Completed.
 - Webhook retry cron live-mode owner approval gate with explicit approval env metadata, blocked worker-run evidence, readiness reporting, and route smoke coverage. Completed.
 - Data source approval queue API with source risk levels, missing review fields, import-readiness gates, policy checks, and OpenAPI/link-health coverage. Completed.
