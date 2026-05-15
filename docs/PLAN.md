@@ -107,6 +107,7 @@ Deliverables:
 - Partner published community posts API with `community:read` scope, published-only filtering, location/type/provider/community filters, disclosure-preserving payloads, pagination/envelope metadata, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
 - Partner ad placement inventory API with `ads:read` scope, active/surface/placement filters, disclosure metadata, optional delivery preview payloads, pagination/envelope metadata, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
 - Partner published campaigns API with `campaigns:read` scope, published/non-blocked filtering, provider/type/status filters, optional provider metrics rollup, pagination/envelope metadata, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
+- Partner claim/data-correction submission API with `claims:write` scope, shared claim service path, verification attempt creation, status checklist evidence, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
 - Partner production promotion workflow with sandbox evidence checks, active key/subscription/usage gates, owner approval guard, sandboxMode promotion update, API audit evidence, OpenAPI/link-health coverage, product map, and Open API console action. Completed.
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.

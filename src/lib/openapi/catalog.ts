@@ -689,6 +689,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/campaigns": {
         get: { tags: ["Campaigns"], summary: "Partner published campaigns API requiring campaigns:read scope with optional provider metrics rollup" }
       },
+      "/api/v1/partner/claims": {
+        post: { tags: ["Claims"], summary: "Partner provider claim/data-correction submission API requiring claims:write scope with verification checklist evidence" }
+      },
       "/api/v1/partner/usage": {
         get: { tags: ["System"], summary: "Partner-scoped API usage summary, retention policy, or CSV export requiring usage:read scope" }
       },

@@ -51,6 +51,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/community/posts",
   "/api/v1/partner/ads/placements",
   "/api/v1/partner/campaigns",
+  "/api/v1/partner/claims",
   "/api/v1/partner/usage",
   "/api/v1/partner/onboarding-checklist",
   "/api/v1/partner/changelog",
@@ -199,6 +200,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not mirror campaign content until partner campaign purpose, channel rules, consent boundaries, and attribution are approved."
     },
     {
+      key: "submit-provider-claim",
+      title: "Submit a provider claim or data correction request",
+      owner: "partner_engineer",
+      requiredScopes: ["claims:write"],
+      endpoint: "POST /api/v1/partner/claims",
+      completionSignal: "Response includes the created provider claim, verification checklist, next action, partner envelope metadata, and API audit evidence.",
+      blocker: "Do not submit third-party correction claims without claimant authority, provider identity evidence, and partner data-use approval."
+    },
+    {
       key: "verify-usage-evidence",
       title: "Review JSON and CSV usage evidence",
       owner: "partner_ops",
@@ -287,6 +297,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/community/posts",
         "GET /api/v1/partner/ads/placements",
         "GET /api/v1/partner/campaigns",
+        "POST /api/v1/partner/claims",
         "GET /api/v1/partner/usage",
         "GET /api/v1/partner/onboarding-checklist",
         "GET /api/v1/partner/developer-docs",
