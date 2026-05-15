@@ -48,6 +48,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/providers/{id}",
   "/api/v1/partner/providers/{id}/visibility",
+  "/api/v1/partner/providers/{id}/reputation-readiness",
   "/api/v1/partner/events",
   "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
@@ -180,6 +181,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       endpoint: "GET /api/v1/partner/providers/{id}/visibility",
       completionSignal: "Response includes aggregate provider readiness scores, metrics, missing public profile fields, and next-best-action labels without entitlement keys, internal URLs, or claim evidence.",
       blocker: "Do not use provider readiness evidence for partner ranking when internal entitlements, audit records, or claim verification evidence are required by the partner workflow."
+    },
+    {
+      key: "read-provider-reputation-readiness",
+      title: "Call provider reputation readiness without reviewer identity",
+      owner: "partner_ops",
+      requiredScopes: ["reviews:read"],
+      endpoint: "GET /api/v1/partner/providers/{id}/reputation-readiness",
+      completionSignal: "Response includes aggregate review, campaign, sentiment, blocker, and next-action readiness with partner envelope headers and no reviewer emails, request recipients, moderation notes, or internal action URLs.",
+      blocker: "Do not use reputation readiness externally when the partner workflow requires raw reviewer identity, moderation evidence, or recipient-level request records."
     },
     {
       key: "read-community-events",
@@ -384,6 +394,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/providers",
         "GET /api/v1/partner/providers/{id}",
         "GET /api/v1/partner/providers/{id}/visibility",
+        "GET /api/v1/partner/providers/{id}/reputation-readiness",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",
