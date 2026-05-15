@@ -939,7 +939,7 @@ async function persistGoogleAdUnits(units: GoogleAdManagerUnit[]) {
 
 export async function runGoogleAdManagerSync(input: GoogleAdManagerSyncInput = {}): Promise<GoogleAdManagerSyncResult> {
   const mode = normalizeGoogleSyncMode(input.mode);
-  const dryRun = input.dryRun ?? mode === "preview";
+  const dryRun = input.dryRun !== false;
   const env = getAppEnv();
   const googleBackfillConfigured = Boolean(
     env.googleAdsClientId && env.googleAdsClientSecret && env.googleAdsDeveloperToken

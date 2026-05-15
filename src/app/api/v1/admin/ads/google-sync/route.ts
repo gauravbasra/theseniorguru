@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       data: await runGoogleAdManagerSync({
         mode: body.mode,
         placementKeys: body.placementKeys?.map(String),
-        dryRun: body.dryRun,
+        dryRun: body.dryRun !== false,
         actorId: body.actorId
       })
     });
