@@ -16,7 +16,7 @@ export async function POST(request: Request, context: { params: Promise<unknown>
       actorId: body.actorId,
       notes: body.notes,
       deliveryProvider: body.deliveryProvider,
-      dryRun: Boolean(body.dryRun),
+      dryRun: body.dryRun !== false,
       deliveryId: typeof body.deliveryId === "string" ? body.deliveryId : undefined
     });
 

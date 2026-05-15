@@ -362,6 +362,7 @@ Deliverables:
 - Editorial performance trend export API with daily/weekly aggregation, CSV output, policy checks, and OpenAPI/link-health coverage. Completed.
 - Provider-facing newsletter analytics API with provider-tagged opens/clicks/leads, delivery health, manual/Mailjet blocker visibility, OpenAPI/link-health coverage, and route smoke coverage. Completed.
 - Mailjet/manual audience-recipient export API with consent segment evidence, synthetic sample recipients, sender/live/owner approval gates, OpenAPI/link-health coverage, and route smoke coverage. Completed.
+- Newsletter delivery send hardening so omitted `dryRun` returns preview delivery evidence and live/manual sent evidence requires explicit `dryRun=false`. Completed.
 - Preview-first webhook retry scheduler with protected cron route, dry-run candidate reporting, live-mode retry processing, and worker observability. Completed.
 - Webhook retry cron live-mode owner approval gate with explicit approval env metadata, blocked worker-run evidence, readiness reporting, and route smoke coverage. Completed.
 - Data source approval queue API with source risk levels, missing review fields, import-readiness gates, policy checks, and OpenAPI/link-health coverage. Completed.

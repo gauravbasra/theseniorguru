@@ -1516,8 +1516,9 @@ export async function exportNewsletterAudienceRecipients(
 }
 
 export async function sendNewsletterDelivery(input: NewsletterDeliverySendInput): Promise<NewsletterDeliverySendResult> {
+  const dryRun = input.dryRun !== false;
   const preview = await previewNewsletterDelivery(input);
-  const deliveryMode = deliveryModeForProvider(preview.deliveryProvider);
+  const deliveryMode = dryRun ? "preview" : deliveryModeForProvider(preview.deliveryProvider);
   const deliveryId = input.deliveryId?.trim() || `newsletter-delivery-${Date.now()}`;
   const blockers = [...preview.blockers];
 
@@ -1533,7 +1534,7 @@ export async function sendNewsletterDelivery(input: NewsletterDeliverySendInput)
     deliveryProvider: preview.deliveryProvider
   });
 
-  if (input.dryRun) {
+  if (dryRun) {
     const result: NewsletterDeliverySendResult = {
       editionId: preview.editionId,
       status: blockers.length ? "blocked" : "dry_run",
