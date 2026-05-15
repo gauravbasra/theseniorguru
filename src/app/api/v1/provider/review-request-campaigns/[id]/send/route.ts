@@ -20,7 +20,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         campaignId: id,
         actorId: body.actorId,
         limit: body.limit,
-        dryRun: body.dryRun,
+        dryRun: body.dryRun !== false,
         deliveryProvider: body.deliveryProvider
       })
     });

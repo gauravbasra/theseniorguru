@@ -393,7 +393,7 @@ export async function sendReviewRequestCampaign(
   }
 
   const limit = Math.max(1, Math.min(input.limit ?? 25, 100));
-  const dryRun = input.dryRun ?? false;
+  const dryRun = input.dryRun !== false;
   const deliveryProvider = normalizeReviewDeliveryProvider(input.deliveryProvider);
   const requests = await listCampaignReviewRequests(input.campaignId);
   const queued = requests.filter((request) => request.status === "queued").slice(0, limit);
