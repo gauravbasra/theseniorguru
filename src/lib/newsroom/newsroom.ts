@@ -398,6 +398,7 @@ export async function createNewsItem(input: CreateNewsItemInput): Promise<NewsIt
 
 export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRssFeedResult> {
   const limit = Math.min(Math.max(input.limit ?? 10, 1), 25);
+  const dryRun = input.dryRun !== false;
   const sources = await listContentSources();
   const source = input.contentSourceId
     ? sources.find((candidate) => candidate.id === input.contentSourceId)
@@ -457,12 +458,12 @@ export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRs
 
     if (policy.decision.startsWith("blocked")) {
       blocked += 1;
-      if (input.dryRun) {
+      if (dryRun) {
         continue;
       }
     }
 
-    if (input.dryRun) {
+    if (dryRun) {
       const item: NewsItemRecord = {
         id: `dry-run-rss-${createdItems.length + 1}`,
         contentSourceId: source?.id,
@@ -497,7 +498,7 @@ export async function importRssFeed(input: ImportRssFeedInput): Promise<ImportRs
     sourceId: source?.id,
     sourceName,
     feedUrl,
-    dryRun: Boolean(input.dryRun),
+    dryRun,
     processed: rssItems.length,
     staged: createdItems.filter((item) => item.status !== "blocked_by_policy").length,
     blocked,
@@ -533,7 +534,7 @@ export async function runScheduledRssImports(
     runs.push(await importRssFeed({
       contentSourceId: source.id,
       limit: input.limit,
-      dryRun: input.dryRun,
+      dryRun: input.dryRun !== false,
       items: input.items
     }));
   }
@@ -552,17 +553,17 @@ export async function runScheduledRssImports(
     nextActions.push("Approve RSS sources and confirm feed URLs before enabling scheduled live intake.");
   }
 
-  if (runs.length && staged === 0 && !input.dryRun) {
+  if (runs.length && staged === 0 && input.dryRun === false) {
     nextActions.push("Review duplicate detection, source quality, and policy decisions because no live items were staged.");
   }
 
   if (!nextActions.length) {
-    nextActions.push(input.dryRun ? "Dry-run RSS scheduling is ready for live intake." : "Scheduled RSS intake completed.");
+    nextActions.push(input.dryRun !== false ? "Dry-run RSS scheduling is ready for live intake." : "Scheduled RSS intake completed.");
   }
 
   return {
     generatedAt: new Date().toISOString(),
-    dryRun: Boolean(input.dryRun),
+    dryRun: input.dryRun !== false,
     sourceCount: runnableSources.length,
     processed,
     staged,

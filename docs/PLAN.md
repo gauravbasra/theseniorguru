@@ -357,6 +357,7 @@ Deliverables:
 - Content performance metric ingestion and rollup APIs for articles, newsletters, and derivatives. Completed.
 - Protected newsroom RSS cron route with preview/live mode safety and scheduled worker run observability. Completed.
 - Newsroom RSS cron live-mode owner approval gate with explicit approval env metadata, blocked worker-run evidence, readiness reporting, and route smoke coverage. Completed.
+- Newsroom RSS import and scheduled-run hardening so omitted `dryRun` previews feed items and live staging requires explicit `dryRun=false`. Completed.
 - Newsletter delivery provider preview adapter with consent/tracking payload, credential checks, and safe live-send blockers. Completed.
 - Policy-gated newsletter delivery send API with dry-run support, delivery-attempt persistence, manual export sent evidence, and Mailjet live-send blockers. Completed.
 - Editorial performance trend export API with daily/weekly aggregation, CSV output, policy checks, and OpenAPI/link-health coverage. Completed.
