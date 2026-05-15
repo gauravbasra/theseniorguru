@@ -65,6 +65,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/newsroom/readiness",
   "/api/v1/partner/newsroom/sources",
   "/api/v1/partner/ads/placements",
+  "/api/v1/partner/aggregation/readiness",
   "/api/v1/partner/campaigns",
   "/api/v1/partner/claims",
   "/api/v1/partner/claims/{id}",
@@ -342,6 +343,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not render paid placements unless the partner UI preserves disclosure labels and separates organic ranking from sponsored placement."
     },
     {
+      key: "read-aggregation-readiness",
+      title: "Call aggregation readiness before relying on provider inventory freshness",
+      owner: "partner_ops",
+      requiredScopes: ["providers:read"],
+      endpoint: "GET /api/v1/partner/aggregation/readiness",
+      completionSignal: "Response includes aggregate source, import, crawler, launch target, and quality health with no source IDs, base URLs, terms notes, queue rows, import batches, crawl jobs, or quality flag rows.",
+      blocker: "Do not market inventory freshness or launch coverage claims unless aggregate readiness is ready or action_required blockers are accepted."
+    },
+    {
       key: "read-published-campaigns",
       title: "Call published campaign inventory with optional metrics",
       owner: "partner_engineer",
@@ -471,6 +481,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/newsroom/readiness",
         "GET /api/v1/partner/newsroom/sources",
         "GET /api/v1/partner/ads/placements",
+        "GET /api/v1/partner/aggregation/readiness",
         "GET /api/v1/partner/campaigns",
         "POST /api/v1/partner/claims",
         "GET /api/v1/partner/claims/{id}",

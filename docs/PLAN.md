@@ -195,6 +195,7 @@ Deliverables:
 - Protected source manifest fetch cron route with preview/live mode safety and scheduled worker run observability. Completed.
 - Source manifest fetch cron live-mode owner approval gate with explicit approval env metadata, blocked worker-run evidence, readiness reporting, and route smoke coverage. Completed.
 - Vercel daily source manifest fetch cron schedule with preview/live env gate and owner-dependent live-mode parking-lot notes. Completed.
+- Partner aggregation readiness API with `providers:read` scope, aggregate source/import/crawler/quality health, source URL/terms/queue/import/crawler/quality row exclusions, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
 - Vendor feed credential metadata and readiness workflow with contract, vault reference, and field mapping gates. Completed.
 - Vendor feed import runner API for ready vendor metadata and source records through the governed import worker. Completed.
 - Scheduled vendor feed worker preview/run API for ready vendor metadata and supplied vendor payloads without fabricated records. Completed.
