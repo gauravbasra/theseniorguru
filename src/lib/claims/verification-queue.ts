@@ -320,6 +320,40 @@ function uniqueSlaAlertItems(summary: ProviderVerificationSlaSummary) {
   return [...uniqueItems.values()].slice(0, 25);
 }
 
+async function queueProviderVerificationSlaAlert(input: {
+  payloadPreview: ProviderVerificationSlaAlertResult["payloadPreview"];
+  summary: ProviderVerificationSlaSummary;
+  actorId?: string;
+}) {
+  const queuedAt = new Date().toISOString();
+  const deliveryAttempt = {
+    id: `provider-verification-sla-alert-${Date.now()}`,
+    provider: "internal_notification_queue" as const,
+    target: "audit_events:provider_verification_sla_alert_queue",
+    status: "queued" as const,
+    queuedAt,
+    alertCount: input.payloadPreview.alertCount
+  };
+
+  await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "admin" : "system",
+    eventType: "provider_verification.sla_alert_queued",
+    subjectType: "provider_verification_sla",
+    subjectId: deliveryAttempt.id,
+    payload: {
+      deliveryProvider: deliveryAttempt.provider,
+      target: deliveryAttempt.target,
+      status: deliveryAttempt.status,
+      queuedAt,
+      totals: input.summary.totals,
+      payloadPreview: input.payloadPreview
+    }
+  });
+
+  return deliveryAttempt;
+}
+
 export async function notifyProviderVerificationSlaAlerts(
   input: NotifyProviderVerificationSlaAlertsInput = {}
 ): Promise<ProviderVerificationSlaAlertResult> {
@@ -342,11 +376,7 @@ export async function notifyProviderVerificationSlaAlerts(
     throw new Error(policy.reasons[0] ?? "Provider verification SLA alert delivery blocked by policy");
   }
 
-  const blockers = [
-    ...(deliveryProvider === "internal_notification_queue" && !dryRun
-      ? ["Internal notification queue provider is not configured for live claim verification SLA alerts yet."]
-      : [])
-  ];
+  const blockers: string[] = [];
   const payloadPreview = {
     subject:
       summary.status === "ready"
@@ -362,6 +392,10 @@ export async function notifyProviderVerificationSlaAlerts(
   };
   const resultStatus =
     summary.status === "ready" ? "no_action" : blockers.length ? "blocked" : dryRun ? "ready" : "sent";
+  const deliveryAttempt =
+    !dryRun && !blockers.length && summary.status !== "ready" && deliveryProvider === "internal_notification_queue"
+      ? await queueProviderVerificationSlaAlert({ payloadPreview, summary, actorId: input.actorId })
+      : undefined;
 
   if (!dryRun && !blockers.length && summary.status !== "ready") {
     await recordAuditEvent({
@@ -373,7 +407,8 @@ export async function notifyProviderVerificationSlaAlerts(
         deliveryProvider,
         totals: summary.totals,
         alertCount: items.length,
-        policyDecision: policy.decision
+        policyDecision: policy.decision,
+        deliveryAttempt
       }
     });
   }
@@ -384,14 +419,15 @@ export async function notifyProviderVerificationSlaAlerts(
     deliveryProvider,
     status: resultStatus,
     recipients: ["claim-ops"],
+    deliveryAttempt,
     slaSummary: summary,
     payloadPreview,
     blockers,
     nextActions: [
       ...(summary.status === "ready" ? ["No claim verification SLA alert is needed right now."] : []),
       ...(dryRun && summary.status !== "ready" ? ["Review the payload preview, then run with dryRun=false after choosing the delivery provider."] : []),
-      ...(!dryRun && blockers.length ? ["Keep delivery in manual export mode until the internal notification queue is configured."] : []),
-      ...(!dryRun && !blockers.length && summary.status !== "ready" ? ["Claim verification SLA alert was recorded for launch operations follow-up."] : [])
+      ...(!dryRun && deliveryAttempt ? ["Internal notification queue accepted the claim verification SLA alert with audit evidence."] : []),
+      ...(!dryRun && !deliveryAttempt && !blockers.length && summary.status !== "ready" ? ["Claim verification SLA alert was recorded for launch operations follow-up."] : [])
     ]
   };
 }

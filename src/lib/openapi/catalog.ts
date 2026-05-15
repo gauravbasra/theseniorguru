@@ -92,7 +92,7 @@ export function getOpenApiCatalog() {
         get: { tags: ["Claims"], summary: "Return claim verification SLA buckets for overdue, due-soon, delivery, failure, and review work" }
       },
       "/api/v1/admin/provider-verification-sla/notify": {
-        post: { tags: ["Claims"], summary: "Preview or record policy-gated claim verification SLA alert delivery" }
+        post: { tags: ["Claims"], summary: "Preview, manual-export, or queue policy-gated claim verification SLA alert delivery" }
       },
       "/api/v1/admin/provider-verification-delivery-readiness": {
         get: { tags: ["Claims"], summary: "Report claim verification delivery adapter readiness by Mailjet email, SMS, phone, and manual channel" }

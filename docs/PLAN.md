@@ -32,7 +32,7 @@ Deliverables:
 - Admin claimed-provider profile edit review queue and decision APIs with policy/audit controls. Completed.
 - Admin provider verification queue API for ready, pending-delivery, failed/expired, and not-started claim work. Completed.
 - Admin provider verification SLA API for overdue, due-soon, delivery, failed/expired, and review-ready claim work. Completed.
-- Admin provider verification SLA alert preview/record API with policy gate, manual export path, and blocked live queue adapter. Completed.
+- Admin provider verification SLA alert preview/record API with policy gate, manual export path, and audit-backed internal queue adapter. Completed.
 - Admin provider verification delivery readiness API for manual, email, SMS, and phone adapter status. Completed.
 - Provider verification transactional email adapter with Mailjet payload preview, explicit live-mode guard, sender approval blockers, and manual fallback evidence. Completed.
 - Event marketplace schema. Completed.

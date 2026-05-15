@@ -285,6 +285,14 @@ export type ProviderVerificationSlaAlertResult = {
   deliveryProvider: "manual_export" | "internal_notification_queue";
   status: "ready" | "blocked" | "sent" | "no_action";
   recipients: string[];
+  deliveryAttempt?: {
+    id: string;
+    provider: "internal_notification_queue";
+    target: string;
+    status: "queued";
+    queuedAt: string;
+    alertCount: number;
+  };
   slaSummary: ProviderVerificationSlaSummary;
   payloadPreview: {
     subject: string;

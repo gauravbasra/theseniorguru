@@ -61,7 +61,7 @@ const productPillars: ProductPillar[] = [
       "provider_source_records",
       "provider_profile_audits"
     ],
-    nextBackendWork: ["Provider claim SLA alert live queue adapter"]
+    nextBackendWork: []
   },
   {
     key: "mobile",
