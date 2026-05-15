@@ -87,7 +87,8 @@ export const migrationManifest = [
   "20260514153500_provider_website_parser_rule_overrides.sql",
   "20260514190000_policy_review_assignments.sql",
   "20260515021000_consumer_profile_sessions.sql",
-  "20260515022000_app_device_registrations.sql"
+  "20260515022000_app_device_registrations.sql",
+  "20260515023100_care_circle_invite_delivery.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -138,6 +139,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260515022000_app_device_registrations.sql": {
     capability: "community",
     summary: "Session-bound mobile and web app device registration for push-token delivery readiness."
+  },
+  "20260515023100_care_circle_invite_delivery.sql": {
+    capability: "community",
+    summary: "Care-circle family invite delivery status, payload evidence, and queue/manual handoff metadata."
   },
   "20260510160122_provider_growth_subscriptions.sql": {
     capability: "growth",
@@ -327,6 +332,8 @@ const requiredColumns: RequiredColumn[] = [
   { table: "import_batches", column: "skipped_records", requiredFor: "Idempotent import batch accounting", capability: "aggregation" },
   { table: "provider_verification_attempts", column: "expires_at", requiredFor: "Claim verification expiry worker", capability: "claims" },
   { table: "provider_verification_attempts", column: "attempt_payload", requiredFor: "Claim verification evidence audit", capability: "claims" },
+  { table: "care_circle_members", column: "invite_delivery_status", requiredFor: "Care-circle family invite delivery jobs", capability: "community" },
+  { table: "care_circle_members", column: "invite_delivery_payload", requiredFor: "Care-circle invite payload evidence", capability: "community" },
   { table: "ad_impressions", column: "request_id", requiredFor: "Ad impression dedupe", capability: "ads" },
   { table: "ad_clicks", column: "request_id", requiredFor: "Ad click dedupe", capability: "ads" },
   { table: "news_items", column: "source_url", requiredFor: "RSS source URL dedupe", capability: "newsroom" },

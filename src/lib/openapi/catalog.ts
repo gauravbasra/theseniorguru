@@ -171,8 +171,11 @@ export function getOpenApiCatalog() {
         post: { tags: ["Community"], summary: "Create a care circle bound to a signed senior/caregiver app session" }
       },
       "/api/v1/app/care-circles/{id}/members": {
-        get: { tags: ["Community"], summary: "List members of a care circle" },
-        post: { tags: ["Community"], summary: "Invite or add a member to a care circle" }
+        get: { tags: ["Community"], summary: "List members of a care circle owned by the signed app session" },
+        post: { tags: ["Community"], summary: "Invite or add a member to a signed-session care circle" }
+      },
+      "/api/v1/app/care-circles/{id}/members/{memberId}/invite": {
+        post: { tags: ["Community"], summary: "Preview, manual-export, or queue a care-circle family invite delivery job" }
       },
       "/api/v1/app/comparison-lists": {
         get: { tags: ["Community"], summary: "List provider comparison lists for a senior or caregiver app user" },

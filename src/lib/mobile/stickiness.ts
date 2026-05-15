@@ -10,12 +10,15 @@ import type {
   CreateCareNoteInput,
   CreateComparisonListInput,
   CreateTourPlanInput,
+  CareCircleMemberInviteDeliveryResult,
   NotificationPreferencesRecord,
   SavedProviderRecord,
   SaveProviderInput,
+  SendCareCircleMemberInviteInput,
   TourPlanRecord,
   UpdateNotificationPreferencesInput
 } from "@/lib/domain/mobile";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -69,6 +72,14 @@ function mapCareCircleMember(row: Record<string, unknown>): CareCircleMemberReco
     email: row.email ? String(row.email) : undefined,
     role: row.role as CareCircleMemberRecord["role"],
     inviteStatus: row.invite_status as CareCircleMemberRecord["inviteStatus"],
+    inviteDeliveryProvider: row.invite_delivery_provider
+      ? (String(row.invite_delivery_provider) as CareCircleMemberRecord["inviteDeliveryProvider"])
+      : undefined,
+    inviteDeliveryStatus: row.invite_delivery_status
+      ? (String(row.invite_delivery_status) as CareCircleMemberRecord["inviteDeliveryStatus"])
+      : undefined,
+    inviteSentAt: row.invite_sent_at ? String(row.invite_sent_at) : undefined,
+    inviteDeliveryPayload: mapJson(row.invite_delivery_payload),
     createdAt: String(row.created_at)
   };
 }
@@ -365,6 +376,157 @@ export async function addCareCircleMember(input: AddCareCircleMemberInput): Prom
   }
 
   return mapCareCircleMember(data);
+}
+
+function careCircleInviteActionUrl(member: CareCircleMemberRecord) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  return `${baseUrl.replace(/\/$/, "")}/seniors?careCircle=${member.careCircleId}&invite=${member.id}`;
+}
+
+function buildCareCircleInvitePayload(member: CareCircleMemberRecord) {
+  return {
+    subject: "You have been invited to a Senior Guru care circle",
+    recipientEmail: member.email,
+    memberName: member.displayName,
+    role: member.role,
+    careCircleId: member.careCircleId,
+    actionUrl: careCircleInviteActionUrl(member)
+  };
+}
+
+async function updateCareCircleMemberInviteDelivery(
+  member: CareCircleMemberRecord,
+  input: {
+    deliveryProvider: CareCircleMemberRecord["inviteDeliveryProvider"];
+    deliveryStatus: CareCircleMemberRecord["inviteDeliveryStatus"];
+    sentAt?: string;
+    payload: Record<string, unknown>;
+  }
+) {
+  const supabase = getSupabaseAdminClient();
+  const nextMember = {
+    ...member,
+    inviteDeliveryProvider: input.deliveryProvider,
+    inviteDeliveryStatus: input.deliveryStatus,
+    inviteSentAt: input.sentAt,
+    inviteDeliveryPayload: input.payload
+  };
+
+  if (!supabase) {
+    const existing = seedCareCircleMembers.find((item) => item.id === member.id);
+    if (existing) {
+      Object.assign(existing, nextMember);
+    }
+    return nextMember;
+  }
+
+  const { data, error } = await supabase
+    .from("care_circle_members")
+    .update({
+      invite_delivery_provider: input.deliveryProvider,
+      invite_delivery_status: input.deliveryStatus,
+      invite_sent_at: input.sentAt,
+      invite_delivery_payload: input.payload
+    })
+    .eq("id", member.id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Care circle invite delivery update failed: ${error.message}`);
+  }
+
+  return mapCareCircleMember(data);
+}
+
+export async function sendCareCircleMemberInvite(
+  input: SendCareCircleMemberInviteInput
+): Promise<CareCircleMemberInviteDeliveryResult> {
+  const deliveryProvider = input.deliveryProvider ?? "manual_export";
+  const dryRun = input.dryRun ?? true;
+  const member = (await listCareCircleMembers(input.careCircleId)).find((item) => item.id === input.memberId);
+
+  if (!member) {
+    throw new Error("Care circle member not found");
+  }
+
+  const payloadPreview = buildCareCircleInvitePayload(member);
+  const policy = await runPolicyCheck({
+    subjectType: "care_circle_member",
+    subjectId: member.id,
+    actionKey: "send_care_circle_member_invite",
+    input: {
+      careCircleId: input.careCircleId,
+      memberId: input.memberId,
+      actorUserKey: input.actorUserKey,
+      deliveryProvider,
+      dryRun,
+      recipientEmail: member.email,
+      role: member.role
+    }
+  });
+
+  if (policy.decision === "blocked" || policy.decision === "blocked_non_overridable") {
+    throw new Error(policy.reasons[0] ?? "Care circle invite delivery blocked by policy");
+  }
+
+  const blockers = [
+    ...(!member.email ? ["Member email is required before a care-circle invite can leave manual follow-up."] : [])
+  ];
+  const status =
+    member.inviteStatus !== "pending"
+      ? "no_action"
+      : blockers.length
+        ? "blocked"
+        : dryRun
+          ? "ready"
+          : deliveryProvider === "internal_notification_queue"
+            ? "queued"
+            : "manual_exported";
+  const sentAt = !dryRun && !blockers.length && member.inviteStatus === "pending" ? new Date().toISOString() : undefined;
+  const deliveryPayload = {
+    ...payloadPreview,
+    deliveryProvider,
+    status,
+    policyDecision: policy.decision
+  };
+  const nextMember =
+    dryRun || status === "blocked" || status === "no_action"
+      ? member
+      : await updateCareCircleMemberInviteDelivery(member, {
+          deliveryProvider,
+          deliveryStatus: status,
+          sentAt,
+          payload: deliveryPayload
+        });
+
+  if (!dryRun && status !== "blocked" && status !== "no_action") {
+    await recordAuditEvent({
+      actorType: "family",
+      actorId: input.actorUserKey,
+      eventType: "care_circle_member.invite_delivery",
+      subjectType: "care_circle_member",
+      subjectId: member.id,
+      payload: deliveryPayload
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    deliveryProvider,
+    status,
+    member: nextMember,
+    payloadPreview,
+    blockers,
+    nextActions: [
+      ...(status === "ready" ? ["Review the invite preview, then dispatch through manual export or internal notification queue."] : []),
+      ...(status === "manual_exported" ? ["Manual care-circle invite evidence was recorded for family follow-up."] : []),
+      ...(status === "queued" ? ["Internal notification queue accepted the care-circle invite handoff with audit evidence."] : []),
+      ...(status === "blocked" ? blockers : []),
+      ...(status === "no_action" ? ["Member invite is no longer pending."] : [])
+    ]
+  };
 }
 
 export async function listComparisonLists(userKey: string): Promise<ComparisonListRecord[]> {

@@ -68,6 +68,12 @@ const routeContracts: LinkContract[] = [
   { label: "Care notes API", href: "/api/v1/app/care-notes", method: "GET", owner: "family" },
   { label: "Tour plans API", href: "/api/v1/app/tour-plans", method: "GET", owner: "family" },
   { label: "Notification preferences API", href: "/api/v1/me/notification-preferences", method: "GET", owner: "family" },
+  {
+    label: "Care-circle family invite delivery API",
+    href: "/api/v1/app/care-circles/demo/members/demo/invite",
+    method: "POST",
+    owner: "family"
+  },
   { label: "Community groups API", href: "/api/v1/community/groups", method: "GET", owner: "family" },
   { label: "Community group membership API", href: "/api/v1/community/groups/seed-denver-caregivers/members", method: "GET", owner: "family" },
   {

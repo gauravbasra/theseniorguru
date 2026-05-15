@@ -80,6 +80,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/app/care-circles",
       "POST /api/v1/app/care-circles",
       "POST /api/v1/app/care-circles/{id}/members",
+      "POST /api/v1/app/care-circles/{id}/members/{memberId}/invite",
       "GET /api/v1/app/comparison-lists",
       "POST /api/v1/app/comparison-lists",
       "POST /api/v1/app/comparison-lists/{id}/providers",
@@ -100,7 +101,7 @@ const productPillars: ProductPillar[] = [
       "app_notification_preferences",
       "app_device_registrations"
     ],
-    nextBackendWork: ["Family invite delivery jobs"]
+    nextBackendWork: []
   },
   {
     key: "community",

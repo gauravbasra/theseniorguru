@@ -34,6 +34,10 @@ export type CareCircleMemberRecord = {
   email?: string;
   role: CareCircleMemberRole;
   inviteStatus: "pending" | "accepted" | "declined" | "removed";
+  inviteDeliveryProvider?: "manual_export" | "internal_notification_queue";
+  inviteDeliveryStatus?: "pending" | "ready" | "manual_exported" | "queued" | "sent" | "blocked";
+  inviteSentAt?: string;
+  inviteDeliveryPayload?: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -50,6 +54,32 @@ export type AddCareCircleMemberInput = {
   displayName: string;
   email?: string;
   role?: CareCircleMemberRole;
+};
+
+export type SendCareCircleMemberInviteInput = {
+  careCircleId: string;
+  memberId: string;
+  actorUserKey: string;
+  dryRun?: boolean;
+  deliveryProvider?: "manual_export" | "internal_notification_queue";
+};
+
+export type CareCircleMemberInviteDeliveryResult = {
+  generatedAt: string;
+  dryRun: boolean;
+  deliveryProvider: "manual_export" | "internal_notification_queue";
+  status: "ready" | "manual_exported" | "queued" | "blocked" | "no_action";
+  member: CareCircleMemberRecord;
+  payloadPreview: {
+    subject: string;
+    recipientEmail?: string;
+    memberName: string;
+    role: CareCircleMemberRole;
+    careCircleId: string;
+    actionUrl: string;
+  };
+  blockers: string[];
+  nextActions: string[];
 };
 
 export type ComparisonListRecord = {

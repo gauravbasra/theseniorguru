@@ -290,6 +290,7 @@ Deliverables:
 - Comparison lists, care notes, tour plans, and notification preferences. Completed.
 - Signed senior/caregiver app session API with consumer profile binding and session-aware mobile action routes. Completed.
 - Session-bound app device registration API with push-token validation, audit evidence, fallback persistence, and Supabase migration readiness. Completed.
+- Session-owned care-circle family invite delivery jobs with preview, manual export, internal queue audit evidence, and delivery metadata persistence. Completed.
 
 ## Phase 6: Marketing Growth Engine
 
