@@ -16,6 +16,7 @@ import type {
 import { getAppEnv } from "@/lib/env";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
+import { Buffer } from "node:buffer";
 import { createHash, randomInt } from "node:crypto";
 
 const seedVerificationAttempts: ProviderVerificationAttemptRecord[] = [];
@@ -110,12 +111,12 @@ function buildDeliveryRecord(
   const channel = input.channel ?? deliveryChannelForMethod(attempt.method);
   const target = input.target ?? attempt.target;
   const readiness = deliveryReadinessForChannel(channel);
-  const canSendLive = Boolean(target) && readiness.status === "ready";
+  const canSendLive = Boolean(target) && readiness.status === "ready" && !input.dryRun;
   const sentAt = canSendLive && channel !== "manual" ? new Date().toISOString() : undefined;
 
   return {
     attemptId: attempt.id,
-    status: canSendLive && channel !== "manual" ? "sent" : "manual_required",
+    status: input.dryRun && readiness.status === "ready" ? "queued" : canSendLive && channel !== "manual" ? "sent" : "manual_required",
     channel,
     target,
     actionUrl: buildVerificationActionUrl(attempt),
@@ -127,6 +128,9 @@ function buildDeliveryRecord(
       method: attempt.method,
       deliveryProvider: readiness.provider,
       deliveryReadiness: readiness.status,
+      deliveryMode: input.dryRun ? "preview" : readiness.status === "ready" && channel !== "manual" ? "live" : "manual",
+      providerMessageId: undefined,
+      emailPreview: channel === "email" ? buildProviderVerificationEmailPreview(attempt, target) : undefined,
       blockers: [
         ...readiness.blockers,
         ...(!target ? ["Verification delivery target is required before non-manual delivery can be sent."] : [])
@@ -134,6 +138,89 @@ function buildDeliveryRecord(
       nextActions: readiness.nextActions
     }
   };
+}
+
+function providerVerificationMailjetConfig() {
+  const env = getAppEnv();
+
+  return {
+    apiKey: env.mailjetApiKey,
+    apiSecret: env.mailjetApiSecret,
+    senderEmail: env.providerVerificationMailjetSenderEmail,
+    senderName: env.providerVerificationMailjetSenderName ?? "The Senior Guru",
+    sendMode: env.providerVerificationMailjetSendMode
+  };
+}
+
+function buildProviderVerificationEmailPreview(attempt: ProviderVerificationAttemptRecord, target?: string) {
+  const actionUrl = buildVerificationActionUrl(attempt);
+  const subject = "The Senior Guru provider claim verification";
+
+  return {
+    to: target,
+    subject,
+    text: [
+      "A provider claim verification is ready for review.",
+      `Claim ID: ${attempt.providerClaimId}`,
+      `Verification method: ${attempt.method}`,
+      `Secure action link: ${actionUrl}`,
+      "If you did not request this verification, ignore this message or contact The Senior Guru support."
+    ].join("\n"),
+    html: [
+      "<p>A provider claim verification is ready for review.</p>",
+      `<p><strong>Claim ID:</strong> ${attempt.providerClaimId}</p>`,
+      `<p><strong>Verification method:</strong> ${attempt.method}</p>`,
+      `<p><a href="${actionUrl}">Open secure verification link</a></p>`,
+      "<p>If you did not request this verification, ignore this message or contact The Senior Guru support.</p>"
+    ].join("")
+  };
+}
+
+async function dispatchProviderVerificationMailjetEmail(delivery: ProviderVerificationDeliveryRecord, attempt: ProviderVerificationAttemptRecord) {
+  const config = providerVerificationMailjetConfig();
+  const preview = buildProviderVerificationEmailPreview(attempt, delivery.target);
+
+  if (!config.apiKey || !config.apiSecret || !config.senderEmail || config.sendMode !== "live") {
+    throw new Error("Provider verification Mailjet email delivery is not configured for live send mode");
+  }
+
+  if (!delivery.target) {
+    throw new Error("Provider verification email target is required before live delivery");
+  }
+
+  const response = await fetch("https://api.mailjet.com/v3.1/send", {
+    method: "POST",
+    headers: {
+      authorization: `Basic ${Buffer.from(`${config.apiKey}:${config.apiSecret}`).toString("base64")}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      Messages: [
+        {
+          From: { Email: config.senderEmail, Name: config.senderName },
+          To: [{ Email: delivery.target }],
+          Subject: preview.subject,
+          TextPart: preview.text,
+          HTMLPart: preview.html,
+          CustomID: `provider-verification:${attempt.id}`
+        }
+      ]
+    })
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (!response.ok) {
+    throw new Error(`Mailjet provider verification delivery failed with ${response.status}`);
+  }
+
+  const messages = Array.isArray(payload.Messages) ? payload.Messages : [];
+  const firstMessage = messages[0] && typeof messages[0] === "object" ? (messages[0] as Record<string, unknown>) : {};
+  const to = Array.isArray(firstMessage.To) ? firstMessage.To : [];
+  const firstRecipient = to[0] && typeof to[0] === "object" ? (to[0] as Record<string, unknown>) : {};
+  const messageId = firstRecipient.MessageID ?? firstRecipient.MessageUUID ?? firstMessage.MessageID;
+
+  return typeof messageId === "string" || typeof messageId === "number" ? String(messageId) : undefined;
 }
 
 function assertCodeMethod(attempt: ProviderVerificationAttemptRecord) {
@@ -191,8 +278,21 @@ function buildCodeDeliveryRecord(
 }
 
 function verificationDeliveryChannels(): ProviderVerificationDeliveryReadinessChannel[] {
-  const env = getAppEnv();
-  const emailReady = Boolean(env.mailjetApiKey && env.mailjetApiSecret);
+  const emailConfig = providerVerificationMailjetConfig();
+  const hasMailjetCredentials = Boolean(emailConfig.apiKey && emailConfig.apiSecret);
+  const hasMailjetSender = Boolean(emailConfig.senderEmail);
+  const emailReady = hasMailjetCredentials && hasMailjetSender && emailConfig.sendMode === "live";
+  const emailBlockers = [
+    ...(!hasMailjetCredentials
+      ? ["MAILJET_API_KEY and MAILJET_API_SECRET are required before email verification delivery can leave manual mode."]
+      : []),
+    ...(!hasMailjetSender
+      ? ["PROVIDER_VERIFICATION_MAILJET_SENDER_EMAIL is required before provider verification email can be sent."]
+      : []),
+    ...(hasMailjetCredentials && hasMailjetSender && emailConfig.sendMode !== "live"
+      ? ["Provider verification Mailjet send mode is not live. Set PROVIDER_VERIFICATION_MAILJET_SEND_MODE=live after sender approval."]
+      : [])
+  ];
 
   return [
     {
@@ -204,14 +304,12 @@ function verificationDeliveryChannels(): ProviderVerificationDeliveryReadinessCh
     },
     {
       channel: "email",
-      status: emailReady ? "manual_only" : "blocked",
-      provider: emailReady ? "mailjet_configuration_detected_pending_transactional_adapter" : "mailjet_not_configured",
-      blockers: emailReady
-        ? ["Mailjet credentials are configured, but the provider claim transactional email adapter is not enabled yet."]
-        : ["MAILJET_API_KEY and MAILJET_API_SECRET are required before email verification delivery can leave manual mode."],
+      status: emailReady ? "ready" : hasMailjetCredentials || hasMailjetSender ? "manual_only" : "blocked",
+      provider: emailReady ? "mailjet_transactional_email" : "mailjet_transactional_email_manual_guard",
+      blockers: emailBlockers,
       nextActions: emailReady
-        ? ["Wire provider claim verification templates to the transactional email adapter before live sends."]
-        : ["Configure Mailjet credentials or keep business-email verification in manual delivery mode."]
+        ? ["Provider verification email can dispatch through Mailjet for non-dry-run business-email attempts."]
+        : ["Configure Mailjet credentials, approved sender email, and live send mode or keep business-email verification in manual delivery mode."]
     },
     {
       channel: "sms",
@@ -603,6 +701,16 @@ export async function sendProviderVerificationAttempt(
   }
 
   const delivery = buildDeliveryRecord(attempt, input, policy.decision);
+  let providerMessageId: string | undefined;
+
+  if (delivery.channel === "email" && delivery.status === "sent") {
+    providerMessageId = await dispatchProviderVerificationMailjetEmail(delivery, attempt);
+    delivery.deliveryPayload = {
+      ...delivery.deliveryPayload,
+      providerMessageId
+    };
+  }
+
   const updatedPayload = {
     ...attempt.attemptPayload,
     delivery

@@ -12,6 +12,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         channel: body.channel,
         target: body.target,
         messageTemplate: body.messageTemplate,
+        dryRun: body.dryRun === true,
         actorId: body.actorId
       })
     });

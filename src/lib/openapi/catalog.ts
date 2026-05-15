@@ -80,7 +80,7 @@ export function getOpenApiCatalog() {
         post: { tags: ["Claims"], summary: "Complete a provider claim verification attempt with evidence" }
       },
       "/api/v1/admin/provider-verification-attempts/{id}/send": {
-        post: { tags: ["Claims"], summary: "Run policy-gated verification delivery with live-adapter readiness and manual fallback guards" }
+        post: { tags: ["Claims"], summary: "Run policy-gated verification delivery with Mailjet transactional email readiness, dry-run preview, and manual fallback guards" }
       },
       "/api/v1/admin/provider-verification-attempts/expire": {
         post: { tags: ["Claims"], summary: "Expire pending provider claim verification attempts whose deadline has passed" }
@@ -95,7 +95,7 @@ export function getOpenApiCatalog() {
         post: { tags: ["Claims"], summary: "Preview or record policy-gated claim verification SLA alert delivery" }
       },
       "/api/v1/admin/provider-verification-delivery-readiness": {
-        get: { tags: ["Claims"], summary: "Report claim verification delivery adapter readiness by email, SMS, phone, and manual channel" }
+        get: { tags: ["Claims"], summary: "Report claim verification delivery adapter readiness by Mailjet email, SMS, phone, and manual channel" }
       },
       "/api/v1/admin/provider-outreach": {
         get: { tags: ["Claims"], summary: "List provider claim outreach queue items" },

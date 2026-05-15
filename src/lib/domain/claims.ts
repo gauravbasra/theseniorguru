@@ -75,6 +75,7 @@ export type SendProviderVerificationAttemptInput = {
   channel?: "email" | "sms" | "phone" | "manual";
   target?: string;
   messageTemplate?: string;
+  dryRun?: boolean;
   actorId?: string;
 };
 

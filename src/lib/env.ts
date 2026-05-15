@@ -20,6 +20,9 @@ export type AppEnv = {
   importEscalationRetryCronProvider?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
+  providerVerificationMailjetSenderEmail?: string;
+  providerVerificationMailjetSenderName?: string;
+  providerVerificationMailjetSendMode?: string;
   newsletterMailjetSenderEmail?: string;
   newsletterMailjetSendMode?: string;
   googleAdsClientId?: string;
@@ -53,6 +56,9 @@ export function getAppEnv(): AppEnv {
     importEscalationRetryCronProvider: process.env.IMPORT_ESCALATION_RETRY_CRON_PROVIDER,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
+    providerVerificationMailjetSenderEmail: process.env.PROVIDER_VERIFICATION_MAILJET_SENDER_EMAIL,
+    providerVerificationMailjetSenderName: process.env.PROVIDER_VERIFICATION_MAILJET_SENDER_NAME,
+    providerVerificationMailjetSendMode: process.env.PROVIDER_VERIFICATION_MAILJET_SEND_MODE,
     newsletterMailjetSenderEmail: process.env.NEWSLETTER_MAILJET_SENDER_EMAIL,
     newsletterMailjetSendMode: process.env.NEWSLETTER_MAILJET_SEND_MODE,
     googleAdsClientId: process.env.GOOGLE_ADS_CLIENT_ID,
