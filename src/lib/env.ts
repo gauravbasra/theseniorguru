@@ -19,6 +19,9 @@ export type AppEnv = {
   newsroomRssCronApprovedAt?: string;
   webhookRetryCronMode?: string;
   webhookRetryCronLimit?: string;
+  webhookRetryCronLiveApproved?: string;
+  webhookRetryCronApprovedBy?: string;
+  webhookRetryCronApprovedAt?: string;
   sourceManifestFetchCronMode?: string;
   sourceManifestFetchCronLimit?: string;
   sourceManifestFetchCronLiveApproved?: string;
@@ -64,6 +67,9 @@ export function getAppEnv(): AppEnv {
     newsroomRssCronApprovedAt: process.env.NEWSROOM_RSS_CRON_APPROVED_AT,
     webhookRetryCronMode: process.env.WEBHOOK_RETRY_CRON_MODE,
     webhookRetryCronLimit: process.env.WEBHOOK_RETRY_CRON_LIMIT,
+    webhookRetryCronLiveApproved: process.env.WEBHOOK_RETRY_CRON_LIVE_APPROVED,
+    webhookRetryCronApprovedBy: process.env.WEBHOOK_RETRY_CRON_APPROVED_BY,
+    webhookRetryCronApprovedAt: process.env.WEBHOOK_RETRY_CRON_APPROVED_AT,
     sourceManifestFetchCronMode: process.env.SOURCE_MANIFEST_FETCH_CRON_MODE,
     sourceManifestFetchCronLimit: process.env.SOURCE_MANIFEST_FETCH_CRON_LIMIT,
     sourceManifestFetchCronLiveApproved: process.env.SOURCE_MANIFEST_FETCH_CRON_LIVE_APPROVED,

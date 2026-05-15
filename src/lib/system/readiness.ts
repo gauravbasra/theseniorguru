@@ -196,11 +196,20 @@ export function getSystemReadiness() {
     {
       key: "WEBHOOK_RETRY_CRON_MODE",
       label: "Webhook retry cron mode",
-      status: env.webhookRetryCronMode === "live" ? "ready" : "partial",
+      status:
+        env.webhookRetryCronMode === "live" &&
+        env.webhookRetryCronLiveApproved === "true" &&
+        Boolean(env.webhookRetryCronApprovedBy) &&
+        Boolean(env.webhookRetryCronApprovedAt && !Number.isNaN(new Date(env.webhookRetryCronApprovedAt).getTime()))
+          ? "ready"
+          : "partial",
       action:
-        env.webhookRetryCronMode === "live"
+        env.webhookRetryCronMode === "live" &&
+        env.webhookRetryCronLiveApproved === "true" &&
+        env.webhookRetryCronApprovedBy &&
+        env.webhookRetryCronApprovedAt
           ? undefined
-          : "Set WEBHOOK_RETRY_CRON_MODE=live only after partner target endpoints and signing secrets are confirmed; preview mode is non-mutating."
+          : "Set WEBHOOK_RETRY_CRON_MODE=live only with WEBHOOK_RETRY_CRON_LIVE_APPROVED=true, WEBHOOK_RETRY_CRON_APPROVED_BY, and WEBHOOK_RETRY_CRON_APPROVED_AT after owner approval."
     },
     {
       key: "SOURCE_MANIFEST_FETCH_CRON_MODE",
