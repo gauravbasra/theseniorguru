@@ -4,7 +4,8 @@ import type {
   ProviderOutreachStatus,
   RequeueProviderOutreachInput,
   RequeueProviderOutreachResult,
-  SendProviderOutreachInput
+  SendProviderOutreachInput,
+  SendProviderOutreachResult
 } from "@/lib/domain/outreach";
 import { runPolicyCheck } from "@/lib/policy";
 import { getProviderById } from "@/lib/providers";
@@ -224,7 +225,7 @@ export async function requeueProviderOutreach(
   return { outreach: mapProviderOutreach(data), previousStatus, status: "queued" };
 }
 
-export async function sendProviderOutreach(input: SendProviderOutreachInput): Promise<ProviderOutreachRecord> {
+export async function sendProviderOutreach(input: SendProviderOutreachInput): Promise<SendProviderOutreachResult> {
   const policy = await runPolicyCheck({
     subjectType: "provider_outreach",
     subjectId: input.outreachId,
@@ -238,9 +239,32 @@ export async function sendProviderOutreach(input: SendProviderOutreachInput): Pr
 
   const supabase = getSupabaseAdminClient();
   const now = new Date().toISOString();
+  const dryRun = input.dryRun !== false;
+  const deliveryProvider = input.deliveryProvider ?? "pending";
 
   if (!supabase) {
     const existing = seedOutreach.find((item) => item.id === input.outreachId);
+    const preview: ProviderOutreachRecord = existing
+      ? { ...existing }
+      : {
+          id: input.outreachId,
+          providerId: "fallback-provider",
+          sequenceKey: "claim_invite_v1",
+          status: "queued",
+          channel: "manual",
+          createdAt: now
+        };
+
+    if (dryRun) {
+      return {
+        outreach: preview,
+        dryRun,
+        status: "preview",
+        deliveryProvider,
+        policyDecision: policy.decision
+      };
+    }
+
     const outreach: ProviderOutreachRecord = {
       id: input.outreachId,
       providerId: existing?.providerId ?? "fallback-provider",
@@ -260,7 +284,30 @@ export async function sendProviderOutreach(input: SendProviderOutreachInput): Pr
       seedOutreach.unshift(outreach);
     }
 
-    return outreach;
+    return {
+      outreach,
+      dryRun,
+      status: "sent",
+      deliveryProvider,
+      policyDecision: policy.decision,
+      sentAt: now
+    };
+  }
+
+  if (dryRun) {
+    const existing = await getProviderOutreach(input.outreachId);
+
+    if (!existing) {
+      throw new Error("Provider outreach not found");
+    }
+
+    return {
+      outreach: existing,
+      dryRun,
+      status: "preview",
+      deliveryProvider,
+      policyDecision: policy.decision
+    };
   }
 
   const { data, error } = await supabase
@@ -282,11 +329,18 @@ export async function sendProviderOutreach(input: SendProviderOutreachInput): Pr
     subject_id: input.outreachId,
     payload: {
       providerId: data.provider_id,
-      deliveryProvider: input.deliveryProvider ?? "pending",
+      deliveryProvider,
       deliveryId: input.deliveryId,
       policyDecision: policy.decision
     }
   });
 
-  return mapProviderOutreach(data);
+  return {
+    outreach: mapProviderOutreach(data),
+    dryRun,
+    status: "sent",
+    deliveryProvider,
+    policyDecision: policy.decision,
+    sentAt: now
+  };
 }

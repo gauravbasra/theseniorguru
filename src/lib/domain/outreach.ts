@@ -40,6 +40,16 @@ export type SendProviderOutreachInput = {
   actorId?: string;
   deliveryProvider?: "mailjet" | "google" | "manual" | "pending";
   deliveryId?: string;
+  dryRun?: boolean;
+};
+
+export type SendProviderOutreachResult = {
+  outreach: ProviderOutreachRecord;
+  dryRun: boolean;
+  status: "preview" | "sent";
+  deliveryProvider: "mailjet" | "google" | "manual" | "pending";
+  policyDecision: string;
+  sentAt?: string;
 };
 
 export type RequeueProviderOutreachInput = {

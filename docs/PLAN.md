@@ -141,6 +141,7 @@ Deliverables:
 - Launch import wave planning API and admin console action. Completed.
 - Provider claim outreach queue APIs. Completed.
 - Provider outreach requeue API for blocked or bounced claim invites. Completed.
+- Provider claim outreach send hardening so omitted `dryRun` previews policy-approved delivery without mutating queued state and live sent state requires explicit `dryRun=false`. Completed.
 - Family inquiry, free listing, and operator demo intake APIs. Completed.
 - Admin lead intake queue API and operations console action. Completed.
 - Supabase migration manifest and live table readiness API. Completed.
