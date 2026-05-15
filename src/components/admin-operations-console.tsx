@@ -644,6 +644,24 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ListChecks aria-hidden="true" />}
+          label="DNS smoke"
+          loading={loadingKey === "dns-cutover-smoke-checklist"}
+          onClick={() =>
+            runOperation("DNS cutover smoke checklist", "dns-cutover-smoke-checklist", () =>
+              fetch("/api/v1/system/dns-cutover-smoke-checklist", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "admin-console",
+                  dryRun: true,
+                  notes: "Admin console DNS cutover smoke checklist archive."
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Credential runbook"
           loading={loadingKey === "credential-installation"}
@@ -1050,6 +1068,12 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "dns-cutover-approval") {
     const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
     return `DNS cutover approval record is ${String(record.status ?? "unknown")} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"} archived to audit evidence.`;
+  }
+
+  if (key === "dns-cutover-smoke-checklist") {
+    const steps = Array.isArray(record.steps) ? record.steps.length : 0;
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    return `DNS cutover smoke checklist is ${String(record.status ?? "unknown")} across ${String(steps)} step${steps === 1 ? "" : "s"} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
   }
 
   if (key === "credential-installation") {

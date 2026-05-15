@@ -504,6 +504,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/production-cutover",
       "GET /api/v1/system/dns-cutover-approval",
       "POST /api/v1/system/dns-cutover-approval",
+      "GET /api/v1/system/dns-cutover-smoke-checklist",
+      "POST /api/v1/system/dns-cutover-smoke-checklist",
       "GET /api/v1/system/credential-installation",
       "GET /api/v1/system/credential-installation?format=csv",
       "POST /api/v1/system/credential-installation",
@@ -521,7 +523,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/scheduled-worker-runs"
     ],
     requiredTables: ["audit_events"],
-    nextBackendWork: ["DNS cutover change-window smoke checklist", "Monitor alert delivery integration", "Credential evidence retention dashboard"]
+    nextBackendWork: ["Monitor alert delivery integration", "Credential evidence retention dashboard", "Post-cutover public-domain browser smoke"]
   }
 ];
 

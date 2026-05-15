@@ -117,6 +117,7 @@ Deliverables:
 - Live credential installation runbook API with no-secret review audit, credential family blockers, validation steps, JSON/CSV output, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - Post-cutover synthetic monitor API with deployment, DNS approval, persistence, credential, cutover, rollback, link-health probes, audit-run recording, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - Production credential smoke evidence export API with credential-level validation rows, JSON/CSV output, audit archiving, OpenAPI/link-health coverage, product map, and admin console action. Completed.
+- DNS cutover change-window smoke checklist API with pre-change, DNS-change, post-change, rollback phases, route evidence requirements, audit archiving, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.

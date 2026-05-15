@@ -85,6 +85,8 @@ const routeContracts: LinkContract[] = [
   { label: "Production cutover readiness API", href: "/api/v1/system/production-cutover", method: "GET", owner: "admin" },
   { label: "DNS cutover approval API", href: "/api/v1/system/dns-cutover-approval", method: "GET", owner: "admin" },
   { label: "DNS cutover approval recorder API", href: "/api/v1/system/dns-cutover-approval", method: "POST", owner: "admin" },
+  { label: "DNS cutover smoke checklist API", href: "/api/v1/system/dns-cutover-smoke-checklist", method: "GET", owner: "admin" },
+  { label: "DNS cutover smoke checklist archive API", href: "/api/v1/system/dns-cutover-smoke-checklist", method: "POST", owner: "admin" },
   { label: "Credential installation runbook API", href: "/api/v1/system/credential-installation", method: "GET", owner: "admin" },
   { label: "Credential installation runbook CSV", href: "/api/v1/system/credential-installation?format=csv", method: "GET", owner: "admin" },
   { label: "Credential installation review API", href: "/api/v1/system/credential-installation", method: "POST", owner: "admin" },
