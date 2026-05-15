@@ -47,6 +47,7 @@ type SdkPackage = {
 const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/providers/{id}",
+  "/api/v1/partner/providers/{id}/visibility",
   "/api/v1/partner/events",
   "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
@@ -170,6 +171,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       endpoint: "GET /api/v1/partner/providers/{id}",
       completionSignal: "Response includes one approved provider record, source provenance, lookup metadata, partner envelope headers, and excludes internal admin notes or claim verification evidence.",
       blocker: "Do not hydrate partner provider profiles from non-approved statuses or from internal claim verification evidence."
+    },
+    {
+      key: "read-provider-visibility",
+      title: "Call provider visibility readiness without internal action links",
+      owner: "partner_ops",
+      requiredScopes: ["providers:read"],
+      endpoint: "GET /api/v1/partner/providers/{id}/visibility",
+      completionSignal: "Response includes aggregate provider readiness scores, metrics, missing public profile fields, and next-best-action labels without entitlement keys, internal URLs, or claim evidence.",
+      blocker: "Do not use provider readiness evidence for partner ranking when internal entitlements, audit records, or claim verification evidence are required by the partner workflow."
     },
     {
       key: "read-community-events",
@@ -373,6 +383,7 @@ export function getPartnerApiChangelog() {
       affectedEndpoints: [
         "GET /api/v1/partner/providers",
         "GET /api/v1/partner/providers/{id}",
+        "GET /api/v1/partner/providers/{id}/visibility",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",

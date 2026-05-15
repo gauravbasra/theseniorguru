@@ -677,6 +677,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/providers/{id}": {
         get: { tags: ["Providers"], summary: "Partner provider detail API requiring providers:read scope with source provenance metadata" }
       },
+      "/api/v1/partner/providers/{id}/visibility": {
+        get: { tags: ["Providers"], summary: "Partner provider visibility readiness API requiring providers:read scope with aggregate scores" }
+      },
       "/api/v1/partner/events": {
         get: { tags: ["Events"], summary: "Partner events API requiring events:read scope" }
       },
