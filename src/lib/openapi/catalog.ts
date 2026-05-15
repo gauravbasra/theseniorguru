@@ -686,6 +686,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/ads/placements": {
         get: { tags: ["Ads"], summary: "Partner ad placement inventory API requiring ads:read scope with disclosure and optional delivery preview metadata" }
       },
+      "/api/v1/partner/campaigns": {
+        get: { tags: ["Campaigns"], summary: "Partner published campaigns API requiring campaigns:read scope with optional provider metrics rollup" }
+      },
       "/api/v1/partner/usage": {
         get: { tags: ["System"], summary: "Partner-scoped API usage summary, retention policy, or CSV export requiring usage:read scope" }
       },

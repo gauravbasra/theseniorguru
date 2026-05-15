@@ -50,6 +50,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/reviews",
   "/api/v1/partner/community/posts",
   "/api/v1/partner/ads/placements",
+  "/api/v1/partner/campaigns",
   "/api/v1/partner/usage",
   "/api/v1/partner/onboarding-checklist",
   "/api/v1/partner/changelog",
@@ -189,6 +190,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not render paid placements unless the partner UI preserves disclosure labels and separates organic ranking from sponsored placement."
     },
     {
+      key: "read-published-campaigns",
+      title: "Call published campaign inventory with optional metrics",
+      owner: "partner_engineer",
+      requiredScopes: ["campaigns:read"],
+      endpoint: "GET /api/v1/partner/campaigns",
+      completionSignal: "Response includes published non-blocked campaigns, provider/type/status filters, pagination metadata, and optional metrics when includeMetrics=true.",
+      blocker: "Do not mirror campaign content until partner campaign purpose, channel rules, consent boundaries, and attribution are approved."
+    },
+    {
       key: "verify-usage-evidence",
       title: "Review JSON and CSV usage evidence",
       owner: "partner_ops",
@@ -276,6 +286,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/reviews",
         "GET /api/v1/partner/community/posts",
         "GET /api/v1/partner/ads/placements",
+        "GET /api/v1/partner/campaigns",
         "GET /api/v1/partner/usage",
         "GET /api/v1/partner/onboarding-checklist",
         "GET /api/v1/partner/developer-docs",
@@ -546,7 +557,8 @@ export function getPartnerResponsePaginationContract() {
       "GET /api/v1/partner/events",
       "GET /api/v1/partner/reviews",
       "GET /api/v1/partner/community/posts",
-      "GET /api/v1/partner/ads/placements"
+      "GET /api/v1/partner/ads/placements",
+      "GET /api/v1/partner/campaigns"
     ],
     metaShape: {
       pagination: {
@@ -613,7 +625,7 @@ export function getPartnerDeveloperDocs() {
     authentication: {
       type: "apiKey",
       header: catalog.components.securitySchemes.partnerApiKey.name,
-      requiredScopes: ["providers:read", "events:read", "reviews:read", "community:read", "ads:read", "usage:read", "webhooks:write"]
+      requiredScopes: ["providers:read", "events:read", "reviews:read", "community:read", "ads:read", "campaigns:read", "usage:read", "webhooks:write"]
     },
     endpoints,
     webhooks: {
