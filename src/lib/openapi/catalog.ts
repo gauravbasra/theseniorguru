@@ -683,6 +683,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/community/posts": {
         get: { tags: ["Community"], summary: "Partner published community posts API requiring community:read scope with pagination and sponsorship disclosures" }
       },
+      "/api/v1/partner/ads/placements": {
+        get: { tags: ["Ads"], summary: "Partner ad placement inventory API requiring ads:read scope with disclosure and optional delivery preview metadata" }
+      },
       "/api/v1/partner/usage": {
         get: { tags: ["System"], summary: "Partner-scoped API usage summary, retention policy, or CSV export requiring usage:read scope" }
       },
