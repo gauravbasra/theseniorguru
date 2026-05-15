@@ -689,6 +689,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/providers/{id}/event-summary": {
         get: { tags: ["Events"], summary: "Partner provider event summary API requiring events:read scope with aggregate RSVP, promotion, and ad metrics" }
       },
+      "/api/v1/partner/providers/{id}/community-summary": {
+        get: { tags: ["Community"], summary: "Partner provider community summary API requiring community:read scope with aggregate published-post and sponsorship metrics" }
+      },
       "/api/v1/partner/events": {
         get: { tags: ["Events"], summary: "Partner events API requiring events:read scope" }
       },

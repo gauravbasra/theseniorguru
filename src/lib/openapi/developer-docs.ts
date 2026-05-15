@@ -51,6 +51,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/providers/{id}/reputation-readiness",
   "/api/v1/partner/providers/{id}/review-summary",
   "/api/v1/partner/providers/{id}/event-summary",
+  "/api/v1/partner/providers/{id}/community-summary",
   "/api/v1/partner/events",
   "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
@@ -210,6 +211,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       endpoint: "GET /api/v1/partner/providers/{id}/event-summary",
       completionSignal: "Response includes provider-scoped event counts, RSVP totals, promotion totals, ad metrics, public event references, partner envelope headers, and no attendee names, emails, phones, consent payloads, or per-RSVP rows.",
       blocker: "Do not share provider event performance externally if the partner workflow requires attendee-level consent evidence or raw RSVP records."
+    },
+    {
+      key: "read-provider-community-summary",
+      title: "Call provider community summary without author identity",
+      owner: "partner_ops",
+      requiredScopes: ["community:read"],
+      endpoint: "GET /api/v1/partner/providers/{id}/community-summary",
+      completionSignal: "Response includes provider-scoped published post counts, sponsorship disclosure totals, post type/location distribution, public post references, partner envelope headers, and no author names, body text, comments, member identity, or moderation status.",
+      blocker: "Do not use community summary output as a raw community feed; use the published community posts endpoint when approved post display rules are required."
     },
     {
       key: "read-community-events",
@@ -417,6 +427,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/providers/{id}/reputation-readiness",
         "GET /api/v1/partner/providers/{id}/review-summary",
         "GET /api/v1/partner/providers/{id}/event-summary",
+        "GET /api/v1/partner/providers/{id}/community-summary",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",
