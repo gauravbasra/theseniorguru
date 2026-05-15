@@ -662,6 +662,25 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<PlayCircle aria-hidden="true" />}
+          label="Public smoke"
+          loading={loadingKey === "public-domain-smoke"}
+          onClick={() =>
+            runOperation("Public-domain smoke", "public-domain-smoke", () =>
+              fetch("/api/v1/system/public-domain-smoke", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "admin-console",
+                  dryRun: true,
+                  targetUrl: "https://theseniorguru.vercel.app",
+                  notes: "Admin console public-domain smoke preview against current production alias."
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Credential runbook"
           loading={loadingKey === "credential-installation"}
@@ -1113,6 +1132,12 @@ function summarizeOperation(key: string, data: unknown) {
     const steps = Array.isArray(record.steps) ? record.steps.length : 0;
     const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
     return `DNS cutover smoke checklist is ${String(record.status ?? "unknown")} across ${String(steps)} step${steps === 1 ? "" : "s"} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
+  }
+
+  if (key === "public-domain-smoke") {
+    const checks = Array.isArray(record.checks) ? record.checks.length : 0;
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    return `Public-domain smoke is ${String(record.status ?? "unknown")} for ${String(checks)} check${checks === 1 ? "" : "s"} against ${String(record.targetUrl ?? "target")} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
   }
 
   if (key === "credential-installation") {

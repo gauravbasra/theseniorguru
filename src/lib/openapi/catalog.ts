@@ -668,6 +668,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["System"], summary: "Return DNS cutover change-window smoke checklist phases, routes, blockers, and rollback steps" },
         post: { tags: ["System"], summary: "Archive DNS cutover smoke checklist evidence to operational audit events" }
       },
+      "/api/v1/system/public-domain-smoke": {
+        get: { tags: ["System"], summary: "Run public-domain smoke checks against theseniorguru.com or a deployment target" },
+        post: { tags: ["System"], summary: "Archive public-domain smoke evidence for DNS cutover completion review" }
+      },
       "/api/v1/system/credential-installation": {
         get: { tags: ["System"], summary: "Return production credential installation runbook, blockers, validation checks, and CSV evidence" },
         post: { tags: ["System"], summary: "Record a no-secret credential installation review with audit evidence" }
