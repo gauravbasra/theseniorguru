@@ -520,6 +520,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/partner/onboarding-checklist",
       "GET /api/v1/partner/changelog",
       "GET /api/v1/partner/sdk-package-plan",
+      "GET /api/v1/partner/sdk-publish-readiness",
+      "GET /api/v1/partner/sdk-publish-readiness?format=csv",
       "GET /api/v1/partner/sandbox-evidence",
       "GET /api/v1/partner/sandbox-evidence?format=csv",
       "GET /api/v1/partner/response-envelope",

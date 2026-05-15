@@ -779,6 +779,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/sdk-package-plan": {
         get: { tags: ["System"], summary: "Return webhook SDK package publishing plan, security controls, release gates, and owner blockers" }
       },
+      "/api/v1/partner/sdk-publish-readiness": {
+        get: { tags: ["System"], summary: "Return JSON or CSV webhook SDK registry publish readiness, owner approvals, and smoke evidence blockers" }
+      },
       "/api/v1/partner/sandbox-evidence": {
         get: { tags: ["System"], summary: "Return JSON or CSV partner sandbox evidence bundle for promotion review" }
       },

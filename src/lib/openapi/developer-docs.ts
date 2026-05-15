@@ -611,8 +611,122 @@ export function getWebhookSdkPackagePlan() {
   };
 }
 
+const sdkRegistryEnv = [
+  {
+    language: "node",
+    packageName: "@theseniorguru/webhooks",
+    registry: "npm",
+    ownerEnv: "SDK_NPM_ORG_OWNER",
+    approvalEnv: "SDK_NPM_PUBLISH_APPROVED",
+    provenanceEnv: "SDK_NPM_PROVENANCE_ENABLED",
+    twoFactorEnv: "SDK_NPM_2FA_CONFIRMED",
+    readmeEnv: "SDK_NPM_README_REVIEWED",
+    smokeEnv: "SDK_NPM_SMOKE_EVIDENCE_URL"
+  },
+  {
+    language: "python",
+    packageName: "theseniorguru-webhooks",
+    registry: "pypi",
+    ownerEnv: "SDK_PYPI_PROJECT_OWNER",
+    approvalEnv: "SDK_PYPI_PUBLISH_APPROVED",
+    provenanceEnv: "SDK_PYPI_TRUSTED_PUBLISHING_ENABLED",
+    twoFactorEnv: "SDK_PYPI_2FA_CONFIRMED",
+    readmeEnv: "SDK_PYPI_README_REVIEWED",
+    smokeEnv: "SDK_PYPI_SMOKE_EVIDENCE_URL"
+  }
+];
+
+function envReady(key: string) {
+  const value = process.env[key]?.trim();
+  return Boolean(value && value !== "false");
+}
+
+function sdkReadinessRow(config: (typeof sdkRegistryEnv)[number]) {
+  const blockers = [
+    ...(!envReady(config.ownerEnv) ? [`${config.ownerEnv} is required before ${config.registry} publication.`] : []),
+    ...(!envReady(config.approvalEnv) ? [`${config.approvalEnv}=true is required before ${config.registry} publication.`] : []),
+    ...(!envReady(config.provenanceEnv) ? [`${config.provenanceEnv}=true is required for signed/provenance-backed releases.`] : []),
+    ...(!envReady(config.twoFactorEnv) ? [`${config.twoFactorEnv}=true is required for owner-controlled registry security.`] : []),
+    ...(!envReady(config.readmeEnv) ? [`${config.readmeEnv}=true is required after README/API sample review.`] : []),
+    ...(!envReady(config.smokeEnv) ? [`${config.smokeEnv} must point to archived deterministic signing-guide smoke evidence.`] : [])
+  ];
+
+  return {
+    language: config.language,
+    packageName: config.packageName,
+    registry: config.registry,
+    status: blockers.length ? "blocked_pending_owner_approval" : "ready_for_signed_prerelease",
+    requiredEnv: [
+      config.ownerEnv,
+      config.approvalEnv,
+      config.provenanceEnv,
+      config.twoFactorEnv,
+      config.readmeEnv,
+      config.smokeEnv
+    ],
+    configuredEnv: [
+      ...(envReady(config.ownerEnv) ? [config.ownerEnv] : []),
+      ...(envReady(config.approvalEnv) ? [config.approvalEnv] : []),
+      ...(envReady(config.provenanceEnv) ? [config.provenanceEnv] : []),
+      ...(envReady(config.twoFactorEnv) ? [config.twoFactorEnv] : []),
+      ...(envReady(config.readmeEnv) ? [config.readmeEnv] : []),
+      ...(envReady(config.smokeEnv) ? [config.smokeEnv] : [])
+    ],
+    blockers,
+    nextActions: blockers.length
+      ? [
+          "Keep inline SDK examples as the supported production integration path.",
+          "Collect owner registry approvals and archive deterministic smoke evidence before any public package link is published."
+        ]
+      : [
+          "Publish a signed prerelease from the owner-controlled registry workflow.",
+          "Run partner smoke checks against the prerelease package before linking it from developer docs."
+        ]
+  };
+}
+
+export function getWebhookSdkPublishReadiness() {
+  const packagePlan = getWebhookSdkPackagePlan();
+  const packages = sdkRegistryEnv.map(sdkReadinessRow);
+  const blockers = packages.flatMap((item) => item.blockers.map((blocker) => `${item.packageName}: ${blocker}`));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Webhook SDK Registry Publish Readiness",
+    status: blockers.length ? "blocked_pending_owner_approval" : "ready_for_signed_prerelease",
+    packagePlanEndpoint: "GET /api/v1/partner/sdk-package-plan",
+    packages,
+    totals: {
+      packages: packages.length,
+      ready: packages.filter((item) => item.status === "ready_for_signed_prerelease").length,
+      blocked: packages.filter((item) => item.status !== "ready_for_signed_prerelease").length
+    },
+    inheritedSecurityControls: packagePlan.requiredSecurityControls,
+    blockers,
+    nextActions: [
+      ...(blockers.length
+        ? ["Resolve owner registry approvals before publishing package URLs in public developer docs."]
+        : ["Publish signed prereleases, then promote SDK links after partner smoke evidence passes."]),
+      "Keep webhook signing-guide examples authoritative until registry packages are approved."
+    ]
+  };
+}
+
+export function exportWebhookSdkPublishReadinessCsv() {
+  const readiness = getWebhookSdkPublishReadiness();
+  const columns = ["language", "packageName", "registry", "status", "requiredEnv", "configuredEnv", "blockers", "nextActions"] as const;
+  const rows = readiness.packages.map((row) => columns.map((column) => csvValue(row[column])).join(","));
+  const blockerRows = readiness.blockers.map((blocker) => ["blocker", "", "", "blocked_pending_owner_approval", "", "", blocker, ""].map(csvValue).join(","));
+  const actionRows = readiness.nextActions.map((action) => ["next_action", "", "", readiness.status, "", "", "", action].map(csvValue).join(","));
+
+  return {
+    filename: `webhook-sdk-publish-readiness-${new Date().toISOString().slice(0, 10)}.csv`,
+    csv: [columns.join(","), ...rows, ...blockerRows, ...actionRows].join("\n")
+  };
+}
+
 function csvValue(value: unknown) {
-  const text = String(value ?? "");
+  const text = Array.isArray(value) ? value.join("; ") : String(value ?? "");
   return `"${text.replaceAll('"', '""')}"`;
 }
 
