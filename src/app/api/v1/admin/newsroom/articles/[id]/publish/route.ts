@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
-import { publishArticle } from "@/lib/newsroom/newsroom";
+import { ArticlePublishError, publishArticle } from "@/lib/newsroom/newsroom";
 
-export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    return NextResponse.json({ data: await publishArticle(id) });
+    const body = await request.json().catch(() => ({}));
+
+    return NextResponse.json({
+      data: await publishArticle({
+        articleId: id,
+        actorId: typeof body.actorId === "string" ? body.actorId : undefined,
+        dryRun: body.dryRun === false ? false : true
+      })
+    });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const status = error instanceof ArticlePublishError ? error.status : 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status });
   }
 }
-

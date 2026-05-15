@@ -113,6 +113,22 @@ export type CreateArticleInput = {
   sourceLinks?: Array<{ title?: string; url: string }>;
 };
 
+export type PublishArticleInput = {
+  articleId: string;
+  actorId?: string;
+  dryRun?: boolean;
+};
+
+export type PublishArticleResult = {
+  article: ArticleRecord;
+  dryRun: boolean;
+  policyDecision: string;
+  previousStatus: ArticleRecord["status"];
+  nextStatus: ArticleRecord["status"];
+  publishedAt?: string;
+  auditEventId?: string;
+};
+
 export type ArticleDerivativeRecord = {
   id: string;
   articleId: string;
