@@ -50,6 +50,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/providers/{id}/visibility",
   "/api/v1/partner/providers/{id}/reputation-readiness",
   "/api/v1/partner/providers/{id}/review-summary",
+  "/api/v1/partner/providers/{id}/event-summary",
   "/api/v1/partner/events",
   "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
@@ -200,6 +201,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       endpoint: "GET /api/v1/partner/providers/{id}/review-summary",
       completionSignal: "Response includes aggregate published-review count, rating distribution, source counts, sentiment totals, partner envelope headers, and no reviewer names, emails, body text, moderation status, or recipient details.",
       blocker: "Do not use review summary output as a raw testimonial feed; use the published reviews endpoint when approved display attribution is required."
+    },
+    {
+      key: "read-provider-event-summary",
+      title: "Call provider event summary without attendee PII",
+      owner: "partner_ops",
+      requiredScopes: ["events:read"],
+      endpoint: "GET /api/v1/partner/providers/{id}/event-summary",
+      completionSignal: "Response includes provider-scoped event counts, RSVP totals, promotion totals, ad metrics, public event references, partner envelope headers, and no attendee names, emails, phones, consent payloads, or per-RSVP rows.",
+      blocker: "Do not share provider event performance externally if the partner workflow requires attendee-level consent evidence or raw RSVP records."
     },
     {
       key: "read-community-events",
@@ -406,6 +416,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/providers/{id}/visibility",
         "GET /api/v1/partner/providers/{id}/reputation-readiness",
         "GET /api/v1/partner/providers/{id}/review-summary",
+        "GET /api/v1/partner/providers/{id}/event-summary",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",
