@@ -676,6 +676,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/cron-live-approvals": {
         get: { tags: ["System"], summary: "Return JSON or CSV live cron approval readiness, env evidence, owner blockers, and guardrails" }
       },
+      "/api/v1/admin/internal-notification-queue/readiness": {
+        get: { tags: ["Policy"], summary: "Report internal notification queue provider activation, route coverage, and owner approval readiness" }
+      },
       "/api/v1/admin/scheduled-worker-alerts": {
         post: { tags: ["System"], summary: "Preview or record scheduled-worker alert delivery with manual export and live-provider blockers" }
       },

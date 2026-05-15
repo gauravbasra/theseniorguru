@@ -255,6 +255,7 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   { label: "Scheduled worker alert API", href: "/api/v1/admin/scheduled-worker-alerts", method: "POST", owner: "admin" },
+  { label: "Internal notification queue readiness API", href: "/api/v1/admin/internal-notification-queue/readiness", method: "GET", owner: "admin" },
   { label: "Operational audit events API", href: "/api/v1/admin/audit-events", method: "GET", owner: "admin" },
   { label: "Audit event export API", href: "/api/v1/admin/audit-events/export", method: "GET", owner: "admin" },
   { label: "Audit retention preview API", href: "/api/v1/admin/audit-events/retention", method: "GET", owner: "admin" },
