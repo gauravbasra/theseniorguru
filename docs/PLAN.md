@@ -175,6 +175,7 @@ Deliverables:
 - Supabase migration manifest and live table readiness API. Completed.
 - Protected Supabase production readiness API and admin console for persistence mode, migration coverage, and blocked capability tracking. Completed.
 - Protected Supabase migration bundle API with ordered checksums and admin console action. Completed.
+- Supabase activation review API with migration bundle checksum confirmation, env-key review evidence, no-secret blocking, owner approval gate, audit event persistence, OpenAPI/link-health/product-map coverage, and admin readiness wiring. Completed.
 - Context-specific owned visual asset registry, provenance metadata, and readiness API. Completed.
 - Context-specific visual assets for local events, newsroom guidance, and trust/safety with surface-mapped readiness metadata. Completed.
 - Context-specific visual asset wiring for public article, city, and care-type SEO routes. Completed.

@@ -106,6 +106,8 @@ const routeContracts: LinkContract[] = [
   { label: "Launch checklist API", href: "/api/v1/system/launch-checklist", method: "GET", owner: "admin" },
   { label: "Supabase schema API", href: "/api/v1/system/supabase-schema", method: "GET", owner: "admin" },
   { label: "Supabase migration plan API", href: "/api/v1/system/supabase-migration-plan", method: "GET", owner: "admin" },
+  { label: "Supabase launch readiness API", href: "/api/v1/admin/supabase-readiness", method: "GET", owner: "admin" },
+  { label: "Supabase activation review API", href: "/api/v1/admin/supabase-readiness", method: "POST", owner: "admin" },
   { label: "Deployment API", href: "/api/v1/system/deployment", method: "GET", owner: "admin" },
   { label: "Production cutover readiness API", href: "/api/v1/system/production-cutover", method: "GET", owner: "admin" },
   { label: "DNS cutover approval API", href: "/api/v1/system/dns-cutover-approval", method: "GET", owner: "admin" },
