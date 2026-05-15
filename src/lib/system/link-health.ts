@@ -88,6 +88,8 @@ const routeContracts: LinkContract[] = [
   { label: "Credential installation runbook API", href: "/api/v1/system/credential-installation", method: "GET", owner: "admin" },
   { label: "Credential installation runbook CSV", href: "/api/v1/system/credential-installation?format=csv", method: "GET", owner: "admin" },
   { label: "Credential installation review API", href: "/api/v1/system/credential-installation", method: "POST", owner: "admin" },
+  { label: "Post-cutover monitor API", href: "/api/v1/system/post-cutover-monitor", method: "GET", owner: "admin" },
+  { label: "Post-cutover monitor run API", href: "/api/v1/system/post-cutover-monitor", method: "POST", owner: "admin" },
   { label: "Production rollback evidence API", href: "/api/v1/system/rollback-evidence", method: "GET", owner: "admin" },
   { label: "Production rollback evidence CSV", href: "/api/v1/system/rollback-evidence?format=csv", method: "GET", owner: "admin" },
   { label: "Aggregation readiness API", href: "/api/v1/admin/aggregation-readiness", method: "GET", owner: "admin" },

@@ -115,6 +115,7 @@ Deliverables:
 - Production rollback evidence export API with deployment metadata, cutover blockers, link-health status, rollback steps, JSON/CSV output, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - DNS cutover approval recorder API with audited owner approval/deferral evidence, cutover readiness integration, OpenAPI/link-health coverage, product map updates, and admin console action. Completed.
 - Live credential installation runbook API with no-secret review audit, credential family blockers, validation steps, JSON/CSV output, OpenAPI/link-health coverage, product map, and admin console action. Completed.
+- Post-cutover synthetic monitor API with deployment, DNS approval, persistence, credential, cutover, rollback, link-health probes, audit-run recording, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - Extracted entity staging and review APIs. Completed.
 - Extracted entity approve/reject/duplicate publication workflow. Completed.
 - Extracted entity duplicate match scoring. Completed.

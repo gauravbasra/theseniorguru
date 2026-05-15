@@ -663,6 +663,24 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Radar aria-hidden="true" />}
+          label="Cutover monitor"
+          loading={loadingKey === "post-cutover-monitor"}
+          onClick={() =>
+            runOperation("Post-cutover monitor", "post-cutover-monitor", () =>
+              fetch("/api/v1/system/post-cutover-monitor", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "admin-console",
+                  dryRun: true,
+                  notes: "Admin console post-cutover synthetic monitor preview."
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Rollback evidence"
           loading={loadingKey === "rollback-evidence"}
@@ -1020,6 +1038,12 @@ function summarizeOperation(key: string, data: unknown) {
     const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
     const reviewedKeys = Array.isArray(record.reviewedKeys) ? record.reviewedKeys.length : 0;
     return `Credential installation review is ${String(record.status ?? "unknown")} for ${String(reviewedKeys)} key${reviewedKeys === 1 ? "" : "s"} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
+  }
+
+  if (key === "post-cutover-monitor") {
+    const probes = Array.isArray(record.probes) ? record.probes.length : 0;
+    const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
+    return `Post-cutover monitor is ${String(record.status ?? "unknown")} across ${String(probes)} probe${probes === 1 ? "" : "s"} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
   }
 
   if (key === "import-plan") {

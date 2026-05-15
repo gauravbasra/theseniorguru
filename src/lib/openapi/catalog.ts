@@ -668,6 +668,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["System"], summary: "Return production credential installation runbook, blockers, validation checks, and CSV evidence" },
         post: { tags: ["System"], summary: "Record a no-secret credential installation review with audit evidence" }
       },
+      "/api/v1/system/post-cutover-monitor": {
+        get: { tags: ["System"], summary: "Return deployment, DNS, persistence, credential, rollback, and link-health monitor probes" },
+        post: { tags: ["System"], summary: "Record an audited post-cutover synthetic monitor run" }
+      },
       "/api/v1/system/rollback-evidence": {
         get: { tags: ["System"], summary: "Export production rollback evidence, deployment metadata, launch blockers, and recovery steps as JSON or CSV" }
       },
