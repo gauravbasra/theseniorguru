@@ -237,6 +237,13 @@ const routeContracts: LinkContract[] = [
   { label: "API audit events API", href: "/api/v1/admin/api-audit-events", method: "GET", owner: "admin" },
   { label: "API usage analytics API", href: "/api/v1/admin/api-usage-analytics", method: "GET", owner: "admin" },
   { label: "API usage analytics CSV export", href: "/api/v1/admin/api-usage-analytics?format=csv", method: "GET", owner: "admin" },
+  { label: "Partner production smoke suite", href: "/api/v1/admin/partner-smoke-suite", method: "GET", owner: "admin" },
+  {
+    label: "Partner production smoke suite CSV export",
+    href: "/api/v1/admin/partner-smoke-suite?format=csv",
+    method: "GET",
+    owner: "admin"
+  },
   { label: "Scheduled worker runs API", href: "/api/v1/admin/scheduled-worker-runs", method: "GET", owner: "admin" },
   { label: "Scheduled worker health API", href: "/api/v1/admin/scheduled-worker-health", method: "GET", owner: "admin" },
   { label: "Scheduled worker alert API", href: "/api/v1/admin/scheduled-worker-alerts", method: "POST", owner: "admin" },

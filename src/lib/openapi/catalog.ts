@@ -658,6 +658,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/api-usage-analytics": {
         get: { tags: ["System"], summary: "Summarize or CSV-export partner API usage, blocked calls, rate limits, keys, webhooks, and retention policy" }
       },
+      "/api/v1/admin/partner-smoke-suite": {
+        get: { tags: ["System"], summary: "Return JSON or CSV partner production smoke readiness checks, required scopes, blockers, and live-key guardrails" }
+      },
       "/api/v1/admin/scheduled-worker-runs": {
         get: { tags: ["System"], summary: "List scheduled backend worker run history with status, duration, and summaries" }
       },
