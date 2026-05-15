@@ -552,6 +552,7 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/system/post-cutover-monitor-alerts",
       "GET /api/v1/system/rollback-evidence",
       "GET /api/v1/system/rollback-evidence?format=csv",
+      "GET /api/v1/runtime-marker",
       "GET /api/v1/system/launch-checklist",
       "GET /api/v1/system/persistence",
       "GET /api/v1/system/link-health",

@@ -55,6 +55,7 @@ const routeContracts: LinkContract[] = [
   { label: "Providers API", href: "/api/v1/providers", method: "GET", owner: "public" },
   { label: "Categories API", href: "/api/v1/categories", method: "GET", owner: "public" },
   { label: "Location search API", href: "/api/v1/locations/search", method: "GET", owner: "public" },
+  { label: "Public runtime marker API", href: "/api/v1/runtime-marker", method: "GET", owner: "public" },
   { label: "Events API", href: "/api/v1/events", method: "GET", owner: "public" },
   { label: "Event follow-up composer API", href: "/api/v1/provider/events/seed-denver-caregiver-workshop/follow-up-composer", method: "POST", owner: "provider" },
   { label: "Event automation queue API", href: "/api/v1/admin/event-automation/run", method: "POST", owner: "admin" },
