@@ -676,6 +676,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["System"], summary: "Export credential smoke evidence rows, validation status, blockers, and CSV evidence" },
         post: { tags: ["System"], summary: "Archive credential smoke evidence to operational audit events" }
       },
+      "/api/v1/system/credential-evidence-retention": {
+        get: { tags: ["System"], summary: "Return credential smoke evidence archive retention dashboard or CSV export" },
+        post: { tags: ["System"], summary: "Record credential evidence retention review with live purge blocked until owner approval" }
+      },
       "/api/v1/system/post-cutover-monitor": {
         get: { tags: ["System"], summary: "Return deployment, DNS, persistence, credential, rollback, and link-health monitor probes" },
         post: { tags: ["System"], summary: "Record an audited post-cutover synthetic monitor run" }

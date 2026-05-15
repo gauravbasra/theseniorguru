@@ -512,6 +512,9 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/system/credential-smoke-evidence",
       "GET /api/v1/system/credential-smoke-evidence?format=csv",
       "POST /api/v1/system/credential-smoke-evidence",
+      "GET /api/v1/system/credential-evidence-retention",
+      "GET /api/v1/system/credential-evidence-retention?format=csv",
+      "POST /api/v1/system/credential-evidence-retention",
       "GET /api/v1/system/post-cutover-monitor",
       "POST /api/v1/system/post-cutover-monitor",
       "GET /api/v1/system/post-cutover-monitor-alerts",
@@ -525,7 +528,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/scheduled-worker-runs"
     ],
     requiredTables: ["audit_events"],
-    nextBackendWork: ["Credential evidence retention dashboard", "Post-cutover public-domain browser smoke"]
+    nextBackendWork: ["Post-cutover public-domain browser smoke"]
   }
 ];
 

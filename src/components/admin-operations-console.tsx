@@ -699,6 +699,26 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<ShieldAlert aria-hidden="true" />}
+          label="Credential retention"
+          loading={loadingKey === "credential-evidence-retention"}
+          onClick={() =>
+            runOperation("Credential evidence retention", "credential-evidence-retention", () =>
+              fetch("/api/v1/system/credential-evidence-retention", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "admin-console",
+                  dryRun: true,
+                  retentionDays: 2555,
+                  limit: 50,
+                  notes: "Admin console credential evidence retention review."
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<Radar aria-hidden="true" />}
           label="Cutover monitor"
           loading={loadingKey === "post-cutover-monitor"}
@@ -1104,6 +1124,11 @@ function summarizeOperation(key: string, data: unknown) {
   if (key === "credential-smoke-evidence") {
     const totals = record.totals as Record<string, unknown> | undefined;
     return `Credential smoke evidence is ${String(record.status ?? "unknown")} across ${String(totals?.credentials ?? 0)} credential${totals?.credentials === 1 ? "" : "s"} with ${String(totals?.blocked ?? 0)} blocked.`;
+  }
+
+  if (key === "credential-evidence-retention") {
+    const totals = record.totals as Record<string, unknown> | undefined;
+    return `${String(totals?.archivedEvents ?? 0)} credential evidence archive${totals?.archivedEvents === 1 ? "" : "s"} reviewed, ${String(totals?.retentionCandidates ?? 0)} retention candidate${totals?.retentionCandidates === 1 ? "" : "s"}, status ${String(record.status ?? "preview")}.`;
   }
 
   if (key === "post-cutover-monitor") {
