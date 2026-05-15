@@ -79,6 +79,12 @@ const publicChecks = [
     label: "Sitemap XML",
     path: "/sitemap.xml",
     expectedText: "<urlset"
+  },
+  {
+    key: "runtime_marker_api",
+    label: "Public runtime marker API",
+    path: "/api/v1/runtime-marker",
+    expectedText: "theseniorguru-next-runtime"
   }
 ];
 
@@ -144,10 +150,15 @@ async function runPublicCheck(targetUrl: string, check: (typeof publicChecks)[nu
   try {
     const { response, body, elapsedMs } = await fetchWithTimeout(url);
     const contentType = response.headers.get("content-type") ?? undefined;
+    const serverHeader = response.headers.get("server") ?? undefined;
+    const vercelId = response.headers.get("x-vercel-id") ?? undefined;
     const expectedTextFound = body.includes(check.expectedText);
     const blockers = [
       ...(!response.ok ? [`${check.label} returned HTTP ${response.status}.`] : []),
-      ...(response.ok && !expectedTextFound ? [`${check.label} did not include expected public content marker.`] : [])
+      ...(response.ok && !expectedTextFound ? [`${check.label} did not include expected public content marker.`] : []),
+      ...(serverHeader?.toLowerCase().includes("apache")
+        ? [`${check.label} appears to be served by Apache instead of the expected Next/Vercel runtime.`]
+        : [])
     ];
 
     return {
@@ -163,6 +174,9 @@ async function runPublicCheck(targetUrl: string, check: (typeof publicChecks)[nu
         redirectedUrl: response.url,
         expectedText: check.expectedText,
         expectedTextFound,
+        serverHeader,
+        vercelId,
+        runtimeHint: vercelId ? "vercel" : serverHeader ?? "unknown",
         contentLength: body.length
       },
       blockers,

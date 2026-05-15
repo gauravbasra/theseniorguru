@@ -120,6 +120,7 @@ Deliverables:
 - Production rollback evidence export API with deployment metadata, cutover blockers, link-health status, rollback steps, JSON/CSV output, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - DNS cutover approval recorder API with audited owner approval/deferral evidence, cutover readiness integration, OpenAPI/link-health coverage, product map updates, and admin console action. Completed.
 - Public-domain smoke runner API with public page fetch checks, final-domain readiness gates, audit evidence, OpenAPI/link-health coverage, product map, and admin console action. Completed.
+- Public-domain smoke runner public runtime-marker API probe with server/runtime header evidence so Apache, wrong-origin, expired-cert, and non-Next responses become launch blockers. Completed.
 - Live credential installation runbook API with no-secret review audit, credential family blockers, validation steps, JSON/CSV output, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - Post-cutover synthetic monitor API with deployment, DNS approval, persistence, credential, cutover, rollback, link-health probes, audit-run recording, OpenAPI/link-health coverage, product map, and admin console action. Completed.
 - Post-cutover monitor alert delivery API with manual-export archive, internal notification queue readiness guard, audit evidence, OpenAPI/link-health coverage, product map, and admin console action. Completed.

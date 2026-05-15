@@ -439,6 +439,9 @@ export function getOpenApiCatalog() {
       "/api/v1/newsletters/{id}": {
         get: { tags: ["Newsroom"], summary: "Get an approved, scheduled, or sent newsletter edition" }
       },
+      "/api/v1/runtime-marker": {
+        get: { tags: ["System"], summary: "Return a public non-secret marker proving the domain is serving the Next.js runtime" }
+      },
       "/api/v1/admin/newsroom/readiness": {
         get: { tags: ["Newsroom"], summary: "Return newsroom source, article, derivative, and policy readiness" }
       },
