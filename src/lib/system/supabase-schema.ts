@@ -91,7 +91,8 @@ export const migrationManifest = [
   "20260515023100_care_circle_invite_delivery.sql",
   "20260515024200_community_digest_deliveries.sql",
   "20260515025100_expert_answer_rankings.sql",
-  "20260515030200_local_trust_scores.sql"
+  "20260515030200_local_trust_scores.sql",
+  "20260515032200_event_followup_compositions.sql"
 ];
 
 export const migrationCapabilities: Record<string, { capability: SupabaseCapabilityKey; summary: string }> = {
@@ -243,6 +244,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
     capability: "events",
     summary: "Event attendance capture and no-show tracking for RSVP conversion analytics."
   },
+  "20260515032200_event_followup_compositions.sql": {
+    capability: "events",
+    summary: "Provider-facing event follow-up composition snapshots with merge fields and recommended segments."
+  },
   "20260513191500_provider_claim_document_reviews.sql": {
     capability: "claims",
     summary: "Auditable provider claim document review decisions tied to license-document verification attempts."
@@ -306,6 +311,7 @@ const requiredTables: RequiredTable[] = [
   { table: "event_rsvps", requiredFor: "Family event RSVP capture", capability: "events" },
   { table: "event_reminders", requiredFor: "Event reminder automation", capability: "events" },
   { table: "event_followups", requiredFor: "Post-event follow-up automation", capability: "events" },
+  { table: "event_followup_compositions", requiredFor: "Provider event follow-up composer", capability: "events" },
   { table: "event_attendance", requiredFor: "Event attendance and no-show capture", capability: "events" },
   { table: "communities", requiredFor: "Local community groups", capability: "community" },
   { table: "consumer_profiles", requiredFor: "Signed senior and caregiver app sessions", capability: "community" },

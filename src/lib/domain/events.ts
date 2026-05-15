@@ -218,6 +218,33 @@ export type EventAutomationDeliveryResult = {
   nextActions: string[];
 };
 
+export type EventFollowupComposerInput = {
+  eventId: string;
+  tone?: "warm" | "professional" | "concise";
+  callToAction?: "review" | "schedule_tour" | "ask_question";
+  actorId?: string;
+};
+
+export type EventFollowupComposerResult = {
+  eventId: string;
+  generatedAt: string;
+  source: "supabase" | "local_fallback";
+  tone: "warm" | "professional" | "concise";
+  callToAction: "review" | "schedule_tour" | "ask_question";
+  audience: {
+    confirmed: number;
+    attended: number;
+    noShow: number;
+    followupEligible: number;
+  };
+  subject: string;
+  body: string;
+  mergeFields: Record<string, string>;
+  recommendedSegments: string[];
+  auditEventId?: string;
+  nextActions: string[];
+};
+
 export type EventAutomationReport = {
   eventId: string;
   generatedAt: string;

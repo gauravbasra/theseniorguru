@@ -142,6 +142,9 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/events/{id}/attendance": {
         post: { tags: ["Events"], summary: "Record attended or no-show status for an event RSVP and update event analytics" }
       },
+      "/api/v1/provider/events/{id}/follow-up-composer": {
+        post: { tags: ["Events"], summary: "Compose a provider-facing post-event follow-up package from attendance and automation signals" }
+      },
       "/api/v1/admin/event-automation/run": {
         post: { tags: ["Events"], summary: "Queue idempotent event reminders and post-event follow-ups for RSVPs" }
       },

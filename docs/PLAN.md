@@ -271,6 +271,7 @@ Deliverables:
 - Reminder/follow-up delivery provider adapter with dry-run preview, manual export guard, internal queue processing, sent-state updates, and audit evidence. Completed.
 - Attendance and no-show capture with analytics update. Completed.
 - Provider-facing event automation reporting with attendance follow-up segmentation. Completed.
+- Provider-facing event follow-up composer with tone/CTA controls, merge fields, recommended segments, audit evidence, and Supabase composition snapshot readiness. Completed.
 - Event analytics. Completed.
 
 ## Phase 5: Community and Mobile API

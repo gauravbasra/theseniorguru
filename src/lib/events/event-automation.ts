@@ -6,6 +6,8 @@ import type {
   EventAutomationReport,
   EventAutomationRunInput,
   EventAutomationRunSummary,
+  EventFollowupComposerInput,
+  EventFollowupComposerResult,
   EventFollowupRecord,
   EventRecord,
   EventReminderRecord,
@@ -128,6 +130,73 @@ function followupPayload(event: EventRecord, rsvp: EventRsvpRecord) {
     attendeeName: rsvp.attendeeName,
     partySize: rsvp.partySize ?? 1,
     requestedAction: "share_review_or_question"
+  };
+}
+
+function normalizeComposerTone(value?: EventFollowupComposerInput["tone"]): EventFollowupComposerResult["tone"] {
+  return value === "professional" || value === "concise" ? value : "warm";
+}
+
+function normalizeComposerCta(
+  value?: EventFollowupComposerInput["callToAction"]
+): EventFollowupComposerResult["callToAction"] {
+  return value === "schedule_tour" || value === "ask_question" ? value : "review";
+}
+
+function buildFollowupCopy(input: {
+  event: EventRecord;
+  tone: EventFollowupComposerResult["tone"];
+  callToAction: EventFollowupComposerResult["callToAction"];
+  followupEligible: number;
+}) {
+  const subject =
+    input.callToAction === "schedule_tour"
+      ? `Next steps after ${input.event.title}`
+      : input.callToAction === "ask_question"
+        ? `Questions after ${input.event.title}?`
+        : `Thank you for joining ${input.event.title}`;
+  const cta =
+    input.callToAction === "schedule_tour"
+      ? "schedule a tour or care planning conversation"
+      : input.callToAction === "ask_question"
+        ? "send us any question that came up after the event"
+        : "share a quick review so other families know what to expect";
+  const greeting = input.tone === "concise" ? "Thank you for joining us." : "Thank you for spending time with us.";
+  const context =
+    input.tone === "professional"
+      ? `We appreciated the opportunity to host ${input.event.title} and support families comparing senior-care options.`
+      : `We hope ${input.event.title} gave you a clearer next step as you compare care options.`;
+  const body = [
+    `Hi {{attendeeName}},`,
+    "",
+    greeting,
+    context,
+    "",
+    `If it would help, please ${cta}: {{followupUrl}}`,
+    "",
+    `Event: {{eventTitle}}`,
+    `Location: {{venueName}}, {{city}}, {{state}}`,
+    "",
+    "The Senior Guru team"
+  ].join("\n");
+
+  return {
+    subject,
+    body,
+    mergeFields: {
+      attendeeName: "RSVP attendee name",
+      eventTitle: input.event.title,
+      venueName: input.event.venueName ?? "event venue",
+      city: input.event.city ?? "",
+      state: input.event.state ?? "",
+      followupUrl: input.callToAction
+    },
+    recommendedSegments: [
+      ...(input.followupEligible ? ["attended_or_confirmed_families"] : []),
+      ...(input.callToAction === "review" ? ["attended_families"] : []),
+      ...(input.callToAction === "schedule_tour" ? ["high_intent_rsvps"] : []),
+      ...(input.callToAction === "ask_question" ? ["question_followup"] : [])
+    ]
   };
 }
 
@@ -716,6 +785,80 @@ export async function deliverQueuedEventAutomation(
       ...(dryRun ? ["Review reminder and follow-up delivery previews before processing queued automation."] : []),
       ...(!dryRun && deliveryProvider === "internal_notification_queue" ? ["Internal notification queue accepted event automation deliveries with audit evidence."] : []),
       ...(!deliveries.length ? ["No queued event automation deliveries matched the request."] : [])
+    ]
+  };
+}
+
+export async function composeProviderEventFollowup(
+  input: EventFollowupComposerInput
+): Promise<EventFollowupComposerResult> {
+  const event = (await listEvents()).find((item) => item.id === input.eventId || item.slug === input.eventId);
+
+  if (!event) {
+    throw new Error("Event not found");
+  }
+
+  const report = await getEventAutomationReport(event.id);
+  const tone = normalizeComposerTone(input.tone);
+  const callToAction = normalizeComposerCta(input.callToAction);
+  const copy = buildFollowupCopy({
+    event,
+    tone,
+    callToAction,
+    followupEligible: report.attendanceSegments.followupEligible
+  });
+  const auditEvent = await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "provider" : "system",
+    eventType: "event_followup.composed",
+    subjectType: "event",
+    subjectId: event.id,
+    payload: {
+      tone,
+      callToAction,
+      attendanceSegments: report.attendanceSegments,
+      recommendedSegments: copy.recommendedSegments
+    }
+  });
+  const supabase = getSupabaseAdminClient();
+
+  if (supabase) {
+    const { error } = await supabase.from("event_followup_compositions").insert({
+      event_id: event.id,
+      tone,
+      call_to_action: callToAction,
+      subject: copy.subject,
+      body: copy.body,
+      merge_fields: copy.mergeFields,
+      recommended_segments: copy.recommendedSegments,
+      composition_payload: {
+        attendanceSegments: report.attendanceSegments,
+        auditEventId: auditEvent.id
+      }
+    });
+
+    if (error) {
+      throw new Error(`Event follow-up composition persistence failed: ${error.message}`);
+    }
+  }
+
+  return {
+    eventId: event.id,
+    generatedAt: new Date().toISOString(),
+    source: supabase ? "supabase" : "local_fallback",
+    tone,
+    callToAction,
+    audience: report.attendanceSegments,
+    subject: copy.subject,
+    body: copy.body,
+    mergeFields: copy.mergeFields,
+    recommendedSegments: copy.recommendedSegments,
+    auditEventId: auditEvent.id,
+    nextActions: [
+      ...(report.attendanceSegments.followupEligible
+        ? ["Review the composed copy, then send it through the event automation delivery flow."]
+        : ["Capture attendance or confirmed RSVPs before sending this follow-up."]),
+      ...(callToAction === "review" ? ["Confirm review-request consent before publishing review CTAs."] : [])
     ]
   };
 }
