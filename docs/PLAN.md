@@ -313,6 +313,7 @@ Deliverables:
 - Paid feature entitlement enforcement. Completed.
 - Review request delivery provider adapter with dry-run preview, manual export guard, internal queue sent-state processing, per-request delivery payload evidence, and audit event coverage. Completed.
 - AI voice assistant adapter readiness and configuration API with entitlement checks, manual/internal queue fallback, live voice provider blockers, compliance payload evidence, audit events, and Supabase schema readiness. Completed.
+- Campaign optimization recommendation action workflow with create-task, internal queue, review, and dismissal actions backed by policy checks, persistence, audit evidence, OpenAPI/link-health coverage, and Supabase schema readiness. Completed.
 
 ## Phase 7: Advertising and Placement Engine
 

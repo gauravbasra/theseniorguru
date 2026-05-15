@@ -134,6 +134,39 @@ export type ProviderCampaignOptimizationSummary = {
   recommendations: CampaignOptimizationRecommendation[];
 };
 
+export type CampaignRecommendationActionType = "create_task" | "queue_internal" | "mark_reviewed" | "dismiss";
+
+export type CampaignRecommendationActionInput = {
+  providerId?: string;
+  recommendationId: string;
+  actionType: CampaignRecommendationActionType;
+  actorId?: string;
+  notes?: string;
+  dueAt?: string;
+};
+
+export type CampaignRecommendationActionRecord = {
+  id: string;
+  providerId?: string;
+  recommendationId: string;
+  campaignId?: string;
+  actionType: CampaignRecommendationActionType;
+  status: "queued" | "completed" | "dismissed" | "blocked_by_policy";
+  priority: CampaignOptimizationRecommendation["priority"];
+  category: CampaignOptimizationRecommendation["category"];
+  title: string;
+  actionPayload: Record<string, unknown>;
+  dueAt?: string;
+  createdAt: string;
+};
+
+export type CampaignRecommendationActionResult = {
+  recommendation: CampaignOptimizationRecommendation;
+  action: CampaignRecommendationActionRecord;
+  policyDecision: string;
+  nextActions: string[];
+};
+
 export type VoiceAssistantProvider = "manual_export" | "internal_notification_queue" | "twilio" | "retell" | "elevenlabs";
 
 export type VoiceAssistantStatus = "preview" | "queued" | "configured" | "blocked_by_policy" | "failed";

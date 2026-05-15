@@ -63,6 +63,7 @@ export const migrationManifest = [
   "20260510210500_review_request_campaigns.sql",
   "20260515033200_review_request_delivery_payloads.sql",
   "20260515034200_voice_assistant_campaigns.sql",
+  "20260515035200_campaign_recommendation_actions.sql",
   "20260510220000_dual_funnel_leads.sql",
   "20260511001000_review_moderation_sentiment.sql",
   "20260511010000_public_source_acquisition_staging.sql",
@@ -189,6 +190,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
   "20260515034200_voice_assistant_campaigns.sql": {
     capability: "growth",
     summary: "AI voice assistant campaign readiness, provider adapter, and compliance payload evidence."
+  },
+  "20260515035200_campaign_recommendation_actions.sql": {
+    capability: "growth",
+    summary: "Provider campaign optimization recommendation actions, task queueing, and dismissal evidence."
   },
   "20260510220000_dual_funnel_leads.sql": {
     capability: "leadIntake",
@@ -340,6 +345,7 @@ const requiredTables: RequiredTable[] = [
   { table: "ad_impressions", requiredFor: "Sponsored impression tracking", capability: "ads" },
   { table: "ad_clicks", requiredFor: "Sponsored click tracking", capability: "ads" },
   { table: "marketing_campaigns", requiredFor: "Growth engine campaigns", capability: "growth" },
+  { table: "campaign_recommendation_actions", requiredFor: "Campaign optimization recommendation workflow", capability: "growth" },
   { table: "growth_plans", requiredFor: "Paid plan catalog", capability: "growth" },
   { table: "provider_growth_subscriptions", requiredFor: "Provider contract subscriptions", capability: "growth" },
   { table: "voice_campaigns", requiredFor: "AI voice assistant adapter evidence", capability: "growth" },
@@ -376,6 +382,7 @@ const requiredColumns: RequiredColumn[] = [
   { table: "published_articles", column: "approval_payload", requiredFor: "Editorial approval audit", capability: "newsroom" },
   { table: "content_performance_metrics", column: "metric_payload", requiredFor: "Newsroom metric attribution and audit metadata", capability: "newsroom" },
   { table: "newsletter_delivery_attempts", column: "payload_preview", requiredFor: "Newsletter provider payload audit", capability: "newsroom" },
+  { table: "campaign_recommendation_actions", column: "action_payload", requiredFor: "Campaign recommendation action evidence", capability: "growth" },
   { table: "voice_campaigns", column: "readiness_payload", requiredFor: "AI voice assistant readiness evidence", capability: "growth" },
   { table: "voice_campaigns", column: "delivery_provider", requiredFor: "AI voice assistant delivery adapter", capability: "growth" },
   { table: "review_requests", column: "delivery_provider", requiredFor: "Review request delivery adapter", capability: "reviews" },

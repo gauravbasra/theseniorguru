@@ -313,6 +313,9 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/campaigns/optimization-recommendations": {
         get: { tags: ["Campaigns"], summary: "Return provider-facing campaign optimization recommendations from recorded metrics" }
       },
+      "/api/v1/provider/campaigns/optimization-recommendations/actions": {
+        post: { tags: ["Campaigns"], summary: "Record, queue, dismiss, or complete a provider campaign optimization recommendation action" }
+      },
       "/api/v1/provider/voice-assistant": {
         get: { tags: ["Campaigns"], summary: "Report AI voice assistant readiness, entitlement, and provider blockers" },
         post: { tags: ["Campaigns"], summary: "Preview or record an AI voice assistant adapter configuration with compliance evidence" }

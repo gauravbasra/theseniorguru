@@ -3,6 +3,9 @@ import type {
   CampaignAssetRecord,
   CampaignMetricKey,
   CampaignMetricRecord,
+  CampaignRecommendationActionInput,
+  CampaignRecommendationActionRecord,
+  CampaignRecommendationActionResult,
   CreateCampaignInput,
   MarketingCampaignRecord,
   ProviderCampaignOptimizationSummary,
@@ -10,6 +13,7 @@ import type {
   RecordCampaignMetricInput,
   RecordCampaignMetricResult
 } from "@/lib/domain/campaigns";
+import { recordAuditEvent } from "@/lib/audit-events";
 import { featureForCampaignType, requireProviderFeature } from "@/lib/billing/entitlements";
 import { runPolicyCheck } from "@/lib/policy";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
@@ -17,6 +21,7 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 const seedCampaigns: MarketingCampaignRecord[] = [];
 const seedCampaignAssets: CampaignAssetRecord[] = [];
 const seedCampaignMetrics: CampaignMetricRecord[] = [];
+const seedCampaignRecommendationActions: CampaignRecommendationActionRecord[] = [];
 
 export class CampaignMetricIngestionError extends Error {
   status: number;
@@ -26,6 +31,10 @@ export class CampaignMetricIngestionError extends Error {
     this.name = "CampaignMetricIngestionError";
     this.status = status;
   }
+}
+
+function isUuid(value?: string) {
+  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 }
 
 function mapCampaign(row: Record<string, unknown>): MarketingCampaignRecord {
@@ -71,6 +80,26 @@ function mapCampaignMetric(row: Record<string, unknown>): CampaignMetricRecord {
         ? (row.metric_payload as Record<string, unknown>)
         : {},
     recordedAt: String(row.recorded_at)
+  };
+}
+
+function mapCampaignRecommendationAction(row: Record<string, unknown>): CampaignRecommendationActionRecord {
+  return {
+    id: String(row.id),
+    providerId: row.provider_id ? String(row.provider_id) : undefined,
+    recommendationId: String(row.recommendation_id),
+    campaignId: row.campaign_id ? String(row.campaign_id) : undefined,
+    actionType: row.action_type as CampaignRecommendationActionRecord["actionType"],
+    status: row.status as CampaignRecommendationActionRecord["status"],
+    priority: row.priority as CampaignRecommendationActionRecord["priority"],
+    category: row.category as CampaignRecommendationActionRecord["category"],
+    title: String(row.title),
+    actionPayload:
+      row.action_payload && typeof row.action_payload === "object" && !Array.isArray(row.action_payload)
+        ? (row.action_payload as Record<string, unknown>)
+        : {},
+    dueAt: row.due_at ? String(row.due_at) : undefined,
+    createdAt: String(row.created_at)
   };
 }
 
@@ -423,6 +452,71 @@ function campaignRecommendationId(parts: Array<string | undefined>) {
   return parts.filter(Boolean).join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+function statusForRecommendationAction(actionType: CampaignRecommendationActionInput["actionType"]): CampaignRecommendationActionRecord["status"] {
+  if (actionType === "dismiss") return "dismissed";
+  if (actionType === "mark_reviewed") return "completed";
+  return "queued";
+}
+
+function nextActionsForRecommendationAction(record: CampaignRecommendationActionRecord) {
+  if (record.status === "blocked_by_policy") {
+    return ["Resolve policy blockers before acting on this campaign recommendation."];
+  }
+
+  if (record.status === "dismissed") {
+    return ["Keep the dismissal reason available for weekly growth review."];
+  }
+
+  if (record.status === "completed") {
+    return ["Continue monitoring campaign metrics for follow-up recommendations."];
+  }
+
+  return [
+    "Assign the queued recommendation to a provider growth owner.",
+    "Record campaign metrics after execution so the optimization engine can evaluate impact."
+  ];
+}
+
+async function persistCampaignRecommendationAction(
+  record: Omit<CampaignRecommendationActionRecord, "id" | "createdAt">
+): Promise<CampaignRecommendationActionRecord> {
+  const supabase = getSupabaseAdminClient();
+  const now = new Date().toISOString();
+
+  if (!supabase) {
+    const action: CampaignRecommendationActionRecord = {
+      ...record,
+      id: `campaign-recommendation-action-${Date.now()}`,
+      createdAt: now
+    };
+    seedCampaignRecommendationActions.unshift(action);
+    return action;
+  }
+
+  const { data, error } = await supabase
+    .from("campaign_recommendation_actions")
+    .insert({
+      provider_id: record.providerId,
+      recommendation_id: record.recommendationId,
+      campaign_id: record.campaignId,
+      action_type: record.actionType,
+      status: record.status,
+      priority: record.priority,
+      category: record.category,
+      title: record.title,
+      action_payload: record.actionPayload,
+      due_at: record.dueAt
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Campaign recommendation action persistence failed: ${error.message}`);
+  }
+
+  return mapCampaignRecommendationAction(data);
+}
+
 export async function getProviderCampaignOptimizationRecommendations(
   providerId?: string
 ): Promise<ProviderCampaignOptimizationSummary> {
@@ -544,5 +638,90 @@ export async function getProviderCampaignOptimizationRecommendations(
     campaignCount: summary.campaigns.total,
     recommendationCount: recommendations.length,
     recommendations
+  };
+}
+
+export async function actOnCampaignOptimizationRecommendation(
+  input: CampaignRecommendationActionInput
+): Promise<CampaignRecommendationActionResult> {
+  if (!input.recommendationId) {
+    throw new Error("recommendationId is required");
+  }
+
+  if (!["create_task", "queue_internal", "mark_reviewed", "dismiss"].includes(input.actionType)) {
+    throw new Error("actionType must be create_task, queue_internal, mark_reviewed, or dismiss");
+  }
+
+  if (input.dueAt && Number.isNaN(new Date(input.dueAt).getTime())) {
+    throw new Error("dueAt must be a valid ISO date when provided");
+  }
+
+  const summary = await getProviderCampaignOptimizationRecommendations(input.providerId);
+  const recommendation = summary.recommendations.find((item) => item.id === input.recommendationId);
+
+  if (!recommendation) {
+    throw new Error("Campaign recommendation not found");
+  }
+
+  const policy = await runPolicyCheck({
+    subjectType: "campaign_recommendation",
+    subjectId: isUuid(recommendation.campaignId) ? recommendation.campaignId : undefined,
+    actionKey: `campaign_recommendation_${input.actionType}`,
+    input: {
+      providerId: input.providerId,
+      recommendationId: input.recommendationId,
+      actionType: input.actionType,
+      title: recommendation.title,
+      action: recommendation.action,
+      notes: input.notes
+    }
+  });
+  const blocked = policy.decision === "blocked" || policy.decision === "blocked_non_overridable";
+  const status = blocked ? "blocked_by_policy" : statusForRecommendationAction(input.actionType);
+  const action = await persistCampaignRecommendationAction({
+    providerId: input.providerId,
+    recommendationId: recommendation.id,
+    campaignId: recommendation.campaignId,
+    actionType: input.actionType,
+    status,
+    priority: recommendation.priority,
+    category: recommendation.category,
+    title: recommendation.title,
+    dueAt: input.dueAt,
+    actionPayload: {
+      title: recommendation.title,
+      rationale: recommendation.rationale,
+      action: recommendation.action,
+      expectedImpact: recommendation.expectedImpact,
+      evidence: recommendation.evidence,
+      notes: input.notes,
+      policyDecision: policy.decision,
+      policyReasons: policy.reasons,
+      queuedTarget: input.actionType === "queue_internal" ? "audit_events:campaign_recommendation_queue" : undefined
+    }
+  });
+
+  await recordAuditEvent({
+    actorId: input.actorId,
+    actorType: input.actorId ? "provider" : "system",
+    eventType: "campaign_recommendation.action_recorded",
+    subjectType: "campaign_recommendation",
+    subjectId: action.id,
+    payload: {
+      providerId: input.providerId,
+      recommendationId: recommendation.id,
+      actionType: input.actionType,
+      status,
+      priority: recommendation.priority,
+      category: recommendation.category,
+      policyDecision: policy.decision
+    }
+  });
+
+  return {
+    recommendation,
+    action,
+    policyDecision: policy.decision,
+    nextActions: nextActionsForRecommendationAction(action)
   };
 }
