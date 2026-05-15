@@ -49,6 +49,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/events",
   "/api/v1/partner/reviews",
   "/api/v1/partner/community/posts",
+  "/api/v1/partner/newsroom/articles",
   "/api/v1/partner/ads/placements",
   "/api/v1/partner/campaigns",
   "/api/v1/partner/claims",
@@ -183,6 +184,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not mirror community content until partner moderation display rules and sponsored-content disclosure handling are approved."
     },
     {
+      key: "read-newsroom-articles",
+      title: "Call published newsroom articles with attribution metadata",
+      owner: "partner_engineer",
+      requiredScopes: ["newsroom:read"],
+      endpoint: "GET /api/v1/partner/newsroom/articles",
+      completionSignal: "Response includes only published articles, preview body text, source links, topic/audience filters, pagination metadata, and partner envelope headers.",
+      blocker: "Do not syndicate editorial content unless attribution, preview-only body display, and partner content-use approval are preserved."
+    },
+    {
       key: "read-ad-placements",
       title: "Call ad placement inventory with disclosure metadata",
       owner: "partner_engineer",
@@ -263,7 +273,7 @@ export function getPartnerSandboxOnboardingChecklist() {
     objective:
       "Move a partner from scoped sandbox access to production approval with auditable API usage, webhook verification, and explicit owner review.",
     minimumScopes: ["providers:read", "events:read", "usage:read"],
-    optionalScopes: ["webhooks:write", "reviews:read", "community:read", "campaigns:read", "ads:read", "claims:write"],
+    optionalScopes: ["webhooks:write", "reviews:read", "community:read", "newsroom:read", "campaigns:read", "ads:read", "claims:write"],
     promotionControls: [
       "Sandbox clients must keep sandboxMode=true until owner approval is recorded.",
       "Partner keys are secret-once and revocation-first if custody is uncertain.",
@@ -305,6 +315,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/reviews",
         "GET /api/v1/partner/community/posts",
+        "GET /api/v1/partner/newsroom/articles",
         "GET /api/v1/partner/ads/placements",
         "GET /api/v1/partner/campaigns",
         "POST /api/v1/partner/claims",

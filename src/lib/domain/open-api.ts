@@ -3,6 +3,7 @@ export type ApiClientScope =
   | "events:read"
   | "reviews:read"
   | "community:read"
+  | "newsroom:read"
   | "campaigns:read"
   | "ads:read"
   | "usage:read"
