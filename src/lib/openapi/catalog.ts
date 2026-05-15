@@ -695,6 +695,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/newsroom/readiness": {
         get: { tags: ["Newsroom"], summary: "Partner newsroom syndication readiness API requiring newsroom:read scope with aggregate blocker evidence" }
       },
+      "/api/v1/partner/newsroom/sources": {
+        get: { tags: ["Newsroom"], summary: "Partner approved newsroom source registry API requiring newsroom:read scope with attribution metadata" }
+      },
       "/api/v1/partner/ads/placements": {
         get: { tags: ["Ads"], summary: "Partner ad placement inventory API requiring ads:read scope with disclosure and optional delivery preview metadata" }
       },
