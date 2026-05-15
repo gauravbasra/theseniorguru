@@ -77,6 +77,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/sandbox-evidence",
   "/api/v1/partner/response-envelope",
   "/api/v1/partner/response-pagination",
+  "/api/v1/partner/pagination-evaluation",
   "/api/v1/partner/webhooks/signing-guide",
   "/api/v1/partner/webhooks/verify"
 ];
@@ -796,6 +797,131 @@ export function getPartnerResponsePaginationContract() {
   };
 }
 
+const partnerPaginationEvaluationRows = [
+  {
+    endpoint: "GET /api/v1/partner/providers",
+    currentMode: "page_pageSize_offset",
+    stableSort: "name_ascending",
+    cursorCandidate: "name+id",
+    risk: "low",
+    productionTrigger: "Provider inventory exceeds page/pageSize traversal needs for partner syncs."
+  },
+  {
+    endpoint: "GET /api/v1/partner/events",
+    currentMode: "page_pageSize_offset",
+    stableSort: "startDate_ascending",
+    cursorCandidate: "startDate+id",
+    risk: "medium",
+    productionTrigger: "Event syncs require incremental windows across large regional calendars."
+  },
+  {
+    endpoint: "GET /api/v1/partner/reviews",
+    currentMode: "page_pageSize_offset",
+    stableSort: "submittedAt_descending",
+    cursorCandidate: "submittedAt+id",
+    risk: "medium",
+    productionTrigger: "Review exports need high-volume incremental sync without duplicate rows."
+  },
+  {
+    endpoint: "GET /api/v1/partner/community/posts",
+    currentMode: "page_pageSize_offset",
+    stableSort: "publishedAt_descending",
+    cursorCandidate: "publishedAt+id",
+    risk: "medium",
+    productionTrigger: "Community partner feeds need stable pagination across frequent moderation changes."
+  },
+  {
+    endpoint: "GET /api/v1/partner/newsroom/articles",
+    currentMode: "page_pageSize_offset",
+    stableSort: "publishedAt_descending",
+    cursorCandidate: "publishedAt+id",
+    risk: "medium",
+    productionTrigger: "Article syndication partners need incremental published-content pulls."
+  },
+  {
+    endpoint: "GET /api/v1/partner/newsroom/newsletters",
+    currentMode: "page_pageSize_offset",
+    stableSort: "scheduledFor_descending",
+    cursorCandidate: "scheduledFor+id",
+    risk: "medium",
+    productionTrigger: "Newsletter archive integrations require stable historical traversal."
+  },
+  {
+    endpoint: "GET /api/v1/partner/newsroom/sources",
+    currentMode: "page_pageSize_offset",
+    stableSort: "name_ascending",
+    cursorCandidate: "name+id",
+    risk: "low",
+    productionTrigger: "Approved source registry grows beyond simple page traversal."
+  },
+  {
+    endpoint: "GET /api/v1/partner/ads/placements",
+    currentMode: "page_pageSize_offset",
+    stableSort: "placementId_ascending",
+    cursorCandidate: "placementId",
+    risk: "low",
+    productionTrigger: "Ad inventory partners need frequent placement syncs with low payload churn."
+  },
+  {
+    endpoint: "GET /api/v1/partner/campaigns",
+    currentMode: "page_pageSize_offset",
+    stableSort: "updatedAt_descending",
+    cursorCandidate: "updatedAt+id",
+    risk: "high",
+    productionTrigger: "Campaign status changes create duplicate or skipped records under offset pagination."
+  }
+] as const;
+
+export function getPartnerPaginationEvaluation() {
+  const contract = getPartnerResponsePaginationContract();
+  const highRiskRows = partnerPaginationEvaluationRows.filter((row) => row.risk === "high").length;
+  const cursorReadyRows = partnerPaginationEvaluationRows.filter((row) => row.cursorCandidate).length;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Partner Cursor Pagination Evaluation",
+    status: "offset_pagination_current",
+    recommendation: "Keep the active page/pageSize contract until production inventory volume and partner sync cadence justify cursor tokens.",
+    currentContract: {
+      status: contract.status,
+      pageSizeMax: contract.queryParameters.pageSize.max,
+      endpoints: contract.paginatedEndpoints
+    },
+    totals: {
+      evaluatedEndpoints: partnerPaginationEvaluationRows.length,
+      cursorCandidateEndpoints: cursorReadyRows,
+      highRiskEndpoints: highRiskRows
+    },
+    migrationGates: [
+      "Confirm stable per-resource ordering keys before adding cursor parameters.",
+      "Keep data and meta.pagination paths additive under the active partner response envelope.",
+      "Publish changelog and developer-docs examples before accepting cursor query parameters.",
+      "Run production partner smoke tests against page/pageSize and cursor traversal before promotion."
+    ],
+    compatibilityRules: [
+      "Do not remove page or pageSize when cursor pagination is introduced.",
+      "Cursor responses must keep pageSize, hasNextPage, and response envelope headers.",
+      "Cursor tokens must be opaque, short-lived, tenant-safe, and free of PHI or partner secrets.",
+      "CSV evidence exports must show which traversal mode generated the export."
+    ],
+    rows: partnerPaginationEvaluationRows
+  };
+}
+
+export function exportPartnerPaginationEvaluationCsv() {
+  const evaluation = getPartnerPaginationEvaluation();
+  const columns = ["endpoint", "currentMode", "stableSort", "cursorCandidate", "risk", "productionTrigger"] as const;
+  const csv = [
+    columns.join(","),
+    ...evaluation.rows.map((row) => columns.map((column) => csvValue(row[column])).join(","))
+  ].join("\n");
+
+  return {
+    filename: "partner-pagination-evaluation.csv",
+    csv
+  };
+}
+
 export function getPartnerDeveloperDocs() {
   const catalog = getOpenApiCatalog();
   const signingGuide = getWebhookSigningGuide();
@@ -855,6 +981,7 @@ export function getPartnerDeveloperDocs() {
     sandboxEvidence: getPartnerSandboxEvidenceExport(),
     responseEnvelope: getPartnerResponseEnvelopeContract(),
     responsePagination: getPartnerResponsePaginationContract(),
+    paginationEvaluation: getPartnerPaginationEvaluation(),
     operationalControls: [
       "All partner requests are audited by client, key, scope, subject, status, and rate-limit result.",
       "CSV usage evidence is available from /api/v1/partner/usage?format=csv with usage:read scope.",

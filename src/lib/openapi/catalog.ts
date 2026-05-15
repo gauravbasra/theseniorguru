@@ -773,6 +773,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/response-pagination": {
         get: { tags: ["System"], summary: "Return partner response pagination parameters, meta shape, and traversal rules" }
       },
+      "/api/v1/partner/pagination-evaluation": {
+        get: { tags: ["System"], summary: "Return JSON or CSV partner cursor pagination evaluation, offset limits, migration gates, and endpoint candidates" }
+      },
       "/api/v1/partner/developer-docs": {
         get: { tags: ["System"], summary: "Return partner developer documentation, SDK examples, OpenAPI endpoints, and webhook signing contracts" }
       },

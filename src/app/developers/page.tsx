@@ -199,6 +199,19 @@ export default function DevelopersPage() {
         </article>
       </section>
 
+      <section className="operator-band">
+        <div>
+          <p className="eyebrow">Cursor evaluation</p>
+          <h2>{docs.paginationEvaluation.status.replaceAll("_", " ")}</h2>
+          <p>{docs.paginationEvaluation.recommendation}</p>
+        </div>
+        <article className="profile-card">
+          <p className="eyebrow">Evaluated endpoints</p>
+          <h2>{docs.paginationEvaluation.totals.evaluatedEndpoints}</h2>
+          <p>{docs.paginationEvaluation.migrationGates.join(" ")}</p>
+        </article>
+      </section>
+
       <section className="category-strip">
         <div>
           <p className="eyebrow">Operations controls</p>
