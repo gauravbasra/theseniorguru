@@ -153,6 +153,8 @@ const routeContracts: LinkContract[] = [
   { label: "Vendor feed import runner API", href: "/api/v1/admin/vendor-feed-imports", method: "POST", owner: "admin" },
   { label: "Vendor feed scheduled worker API", href: "/api/v1/admin/vendor-feed-imports/worker", method: "POST", owner: "admin" },
   { label: "Launch import execution API", href: "/api/v1/admin/import-launch-execution", method: "POST", owner: "admin" },
+  { label: "Import batch evidence export API", href: "/api/v1/admin/import-batches/demo/evidence", method: "GET", owner: "admin" },
+  { label: "Import batch evidence CSV export", href: "/api/v1/admin/import-batches/demo/evidence?format=csv", method: "GET", owner: "admin" },
   { label: "Import batch requeue API", href: "/api/v1/admin/import-batches/demo/requeue", method: "POST", owner: "admin" },
   { label: "Provider website parser rules API", href: "/api/v1/admin/provider-website-parser/rules", method: "GET", owner: "admin" },
   {

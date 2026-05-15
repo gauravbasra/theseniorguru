@@ -164,6 +164,7 @@ Deliverables:
 - Extracted entity merge-readiness API with matched-provider field comparison, safe missing-field update plan, blocker reporting, optional audit evidence, OpenAPI/link-health coverage, and admin console action. Completed.
 - Extracted entity decision hardening so approve, reject, and duplicate reviewer actions default to dry-run previews and require explicit `dryRun=false` before mutating review status or publishing provider updates. Completed.
 - Import batch worker run API. Completed.
+- Import batch evidence export API with JSON/CSV outputs, staged entity rows, quality-gap blockers, launch target next actions, OpenAPI/link-health/product-map coverage, and route smoke coverage. Completed.
 - Import batch and public-source acquisition worker dry-run hardening so missing `dryRun` stays preview-only and live persisted staging requires explicit `dryRun=false`. Completed.
 - Import batch requeue and shared status helpers for failed, blocked, and partial aggregation jobs. Completed.
 - Crawl job create/list/run APIs and unresolved data quality queue API. Completed.

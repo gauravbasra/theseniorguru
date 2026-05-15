@@ -510,6 +510,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/import-batches/{id}/run": {
         post: { tags: ["Aggregation"], summary: "Run a policy-gated import batch and stage extracted provider entities" }
       },
+      "/api/v1/admin/import-batches/{id}/evidence": {
+        get: { tags: ["Aggregation"], summary: "Export import batch status, staged entity evidence, quality gaps, blockers, and next actions as JSON or CSV" }
+      },
       "/api/v1/admin/import-batches/{id}/requeue": {
         post: { tags: ["Aggregation"], summary: "Requeue a failed, blocked, or partial import batch for another run" }
       },
