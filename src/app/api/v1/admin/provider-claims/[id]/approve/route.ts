@@ -10,7 +10,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       claimId: id,
       decision: "approved",
       adminNotes: body.adminNotes,
-      actorId: body.actorId
+      actorId: body.actorId,
+      dryRun: body.dryRun === false ? false : true
     });
 
     return NextResponse.json({ data: decision });

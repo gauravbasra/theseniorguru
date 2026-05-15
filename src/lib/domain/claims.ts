@@ -31,6 +31,7 @@ export type ProviderClaimDecisionInput = {
   decision: "approved" | "rejected";
   adminNotes?: string;
   actorId?: string;
+  dryRun?: boolean;
 };
 
 export type ProviderVerificationMethod =

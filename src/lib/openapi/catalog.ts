@@ -67,10 +67,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["Providers"], summary: "Search launch locations by query, state, and category" }
       },
       "/api/v1/admin/provider-claims/{id}/approve": {
-        post: { tags: ["Claims"], summary: "Approve a provider claim and mark provider claimed" }
+        post: { tags: ["Claims"], summary: "Preview or approve a provider claim; live mutation requires dryRun=false" }
       },
       "/api/v1/admin/provider-claims/{id}/reject": {
-        post: { tags: ["Claims"], summary: "Reject a provider claim with audit notes" }
+        post: { tags: ["Claims"], summary: "Preview or reject a provider claim; live mutation requires dryRun=false" }
       },
       "/api/v1/admin/provider-claims/{id}/verification-attempts": {
         get: { tags: ["Claims"], summary: "List verification attempts for a provider claim" },

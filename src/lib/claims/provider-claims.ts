@@ -113,6 +113,7 @@ export async function submitProviderClaim(input: ProviderClaimInput): Promise<Pr
 }
 
 export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
+  const dryRun = input.dryRun ?? true;
   const policy = await runPolicyCheck({
     subjectType: "provider_claim",
     subjectId: input.claimId,
@@ -147,8 +148,33 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
       }
     }
 
+    if (dryRun) {
+      return {
+        id: input.claimId,
+        dryRun,
+        decision: input.decision,
+        currentStatus: claim.status,
+        nextStatus: input.decision,
+        providerStatus: input.decision === "approved" ? "claimed" : undefined,
+        webhookPreview:
+          input.decision === "approved"
+            ? {
+                eventType: "provider.claimed",
+                subjectId: claim.providerId,
+                payloadKeys: ["providerId", "claimId", "claimantEmail", "verificationMethod", "claimedAt", "adminNotes"]
+              }
+            : undefined,
+        policyDecision: policy.decision,
+        nextActions: [
+          "Review this provider claim decision preview, then rerun with dryRun=false to mutate claim status.",
+          ...(input.decision === "approved" ? ["Approval will enqueue provider.claimed webhook delivery evidence."] : [])
+        ]
+      };
+    }
+
     const decision = {
       id: input.claimId,
+      dryRun,
       status: input.decision,
       adminNotes: input.adminNotes,
       decidedAt: now,
@@ -199,8 +225,32 @@ export async function decideProviderClaim(input: ProviderClaimDecisionInput) {
     const passedAttempt = attempts.find((attempt) => attempt.status === "passed");
 
     if (!passedAttempt) {
-      throw new Error("Provider claim requires a passed verification attempt before approval");
+    throw new Error("Provider claim requires a passed verification attempt before approval");
     }
+  }
+
+  if (dryRun) {
+    return {
+      id: input.claimId,
+      dryRun,
+      decision: input.decision,
+      currentStatus: claim.status,
+      nextStatus: input.decision,
+      providerStatus: input.decision === "approved" ? "claimed" : undefined,
+      webhookPreview:
+        input.decision === "approved"
+          ? {
+              eventType: "provider.claimed",
+              subjectId: String(claim.provider_id),
+              payloadKeys: ["providerId", "claimId", "claimantEmail", "verificationMethod", "claimedAt", "adminNotes"]
+            }
+          : undefined,
+      policyDecision: policy.decision,
+      nextActions: [
+        "Review this provider claim decision preview, then rerun with dryRun=false to mutate claim status.",
+        ...(input.decision === "approved" ? ["Approval will update provider status and enqueue provider.claimed webhook delivery evidence."] : [])
+      ]
+    };
   }
 
   const updatePayload =
