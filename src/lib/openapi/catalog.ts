@@ -333,6 +333,10 @@ export function getOpenApiCatalog() {
       "/api/v1/provider/review-request-campaigns/{id}/send": {
         post: { tags: ["Reviews"], summary: "Run review request delivery with dry-run preview, manual export, internal queue, and provider evidence" }
       },
+      "/api/v1/provider/external-review-integrations": {
+        get: { tags: ["Reviews"], summary: "Return provider external review source readiness, credential blockers, and sync status" },
+        post: { tags: ["Reviews"], summary: "Record provider-owned external review integration readiness and credential-reference evidence" }
+      },
       "/api/v1/provider/reputation-readiness": {
         get: { tags: ["Reviews"], summary: "Return provider reputation workflow readiness, review health, campaigns, and blockers" }
       },

@@ -350,6 +350,8 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider/review-request-campaigns",
       "POST /api/v1/provider/review-request-campaigns/{id}/send",
+      "GET /api/v1/provider/external-review-integrations",
+      "POST /api/v1/provider/external-review-integrations",
       "GET /api/v1/provider/reputation-readiness",
       "GET /api/v1/provider/review-requests",
       "POST /api/v1/provider-portal/reviews/{id}/responses/publish"
@@ -363,7 +365,7 @@ const productPillars: ProductPillar[] = [
       "reputation_scores",
       "external_review_integrations"
     ],
-    nextBackendWork: ["External review integrations", "Review moderation dashboard", "Reputation trend analytics"]
+    nextBackendWork: ["Review moderation dashboard", "Reputation trend analytics"]
   },
   {
     key: "newsroom",

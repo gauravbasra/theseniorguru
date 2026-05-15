@@ -180,3 +180,57 @@ export type ReputationReadinessSummary = {
   blockers: string[];
   nextActions: string[];
 };
+
+export type ExternalReviewIntegrationSource = "google_business_profile" | "caring_com" | "facebook" | "a_place_for_mom";
+
+export type ExternalReviewIntegrationStatus =
+  | "not_connected"
+  | "owner_action_required"
+  | "credential_ready"
+  | "sync_ready"
+  | "sync_failed"
+  | "disabled";
+
+export type ExternalReviewIntegrationRecord = {
+  id: string;
+  providerId: string;
+  source: ExternalReviewIntegrationSource;
+  sourceLabel: string;
+  status: ExternalReviewIntegrationStatus;
+  syncMode: "manual_export" | "read_only_api" | "pending";
+  credentialReference?: string;
+  lastSyncAt?: string;
+  lastSyncStatus?: string;
+  reviewCount: number;
+  averageRating?: number;
+  blockers: string[];
+  payload: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type UpsertExternalReviewIntegrationInput = {
+  providerId: string;
+  source: ExternalReviewIntegrationSource;
+  credentialReference?: string;
+  syncMode?: ExternalReviewIntegrationRecord["syncMode"];
+  enabled?: boolean;
+  payload?: Record<string, unknown>;
+  actorId?: string;
+};
+
+export type ExternalReviewIntegrationSummary = {
+  generatedAt: string;
+  providerId: string;
+  providerName?: string;
+  status: "ready" | "action_required" | "not_configured";
+  integrations: ExternalReviewIntegrationRecord[];
+  totals: {
+    sources: number;
+    connected: number;
+    actionRequired: number;
+    syncReady: number;
+  };
+  blockers: string[];
+  nextActions: string[];
+};

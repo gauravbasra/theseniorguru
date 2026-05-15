@@ -188,6 +188,10 @@ export const migrationCapabilities: Record<string, { capability: SupabaseCapabil
     capability: "reviews",
     summary: "Review request delivery provider and per-recipient payload evidence."
   },
+  "20260515042200_external_review_integrations.sql": {
+    capability: "reviews",
+    summary: "Provider-owned external review source readiness, credential references, blockers, and sync evidence."
+  },
   "20260515034200_voice_assistant_campaigns.sql": {
     capability: "growth",
     summary: "AI voice assistant campaign readiness, provider adapter, and compliance payload evidence."
@@ -360,6 +364,7 @@ const requiredTables: RequiredTable[] = [
   { table: "review_requests", requiredFor: "Review request delivery recipients", capability: "reviews" },
   { table: "review_moderation_cases", requiredFor: "Review moderation audit", capability: "reviews" },
   { table: "review_sentiment", requiredFor: "Review sentiment scoring", capability: "reviews" },
+  { table: "external_review_integrations", requiredFor: "External review source readiness", capability: "reviews" },
   { table: "content_sources", requiredFor: "AI newsroom source intake", capability: "newsroom" },
   { table: "published_articles", requiredFor: "AI newsroom publishing", capability: "newsroom" },
   { table: "content_performance_metrics", requiredFor: "Newsroom content performance reporting", capability: "newsroom" },
@@ -395,6 +400,8 @@ const requiredColumns: RequiredColumn[] = [
   { table: "voice_campaigns", column: "delivery_provider", requiredFor: "AI voice assistant delivery adapter", capability: "growth" },
   { table: "review_requests", column: "delivery_provider", requiredFor: "Review request delivery adapter", capability: "reviews" },
   { table: "review_requests", column: "delivery_payload", requiredFor: "Review request delivery evidence", capability: "reviews" },
+  { table: "external_review_integrations", column: "credential_reference", requiredFor: "External review provider-owned credential references", capability: "reviews" },
+  { table: "external_review_integrations", column: "blockers", requiredFor: "External review live-sync blocker evidence", capability: "reviews" },
   { table: "api_keys", column: "last_used_at", requiredFor: "Partner API key usage monitoring", capability: "openApi" },
   { table: "webhook_subscriptions", column: "signing_secret_ciphertext", requiredFor: "Partner webhook request signing", capability: "openApi" },
   { table: "review_responses", column: "provider_id", requiredFor: "Provider-owned review responses", capability: "reviews" }

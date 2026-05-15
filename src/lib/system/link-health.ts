@@ -315,6 +315,12 @@ const routeContracts: LinkContract[] = [
     method: "GET",
     owner: "provider"
   },
+  {
+    label: "External review integrations API",
+    href: "/api/v1/provider/external-review-integrations?providerId=seed-cottages-dayton-place",
+    method: "GET",
+    owner: "provider"
+  },
   { label: "Review requests API", href: "/api/v1/provider/review-requests", method: "GET", owner: "provider" },
   { label: "Review moderation queue API", href: "/api/v1/admin/reviews/moderation", method: "GET", owner: "admin" },
   { label: "Review moderation action API", href: "/api/v1/admin/reviews/demo/moderate", method: "POST", owner: "admin" },
