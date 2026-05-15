@@ -46,6 +46,7 @@ type SdkPackage = {
 
 const partnerRouteOrder = [
   "/api/v1/partner/providers",
+  "/api/v1/partner/providers/{id}",
   "/api/v1/partner/events",
   "/api/v1/partner/events/{id}/analytics",
   "/api/v1/partner/reviews",
@@ -160,6 +161,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       endpoint: "GET /api/v1/partner/providers",
       completionSignal: "Response includes provider records and rate-limit headers with x-senior-guru-sandbox=true.",
       blocker: "403 responses mean the key is missing providers:read scope or the client is paused/revoked."
+    },
+    {
+      key: "read-provider-detail",
+      title: "Call provider detail by id or slug with source provenance",
+      owner: "partner_engineer",
+      requiredScopes: ["providers:read"],
+      endpoint: "GET /api/v1/partner/providers/{id}",
+      completionSignal: "Response includes one approved provider record, source provenance, lookup metadata, partner envelope headers, and excludes internal admin notes or claim verification evidence.",
+      blocker: "Do not hydrate partner provider profiles from non-approved statuses or from internal claim verification evidence."
     },
     {
       key: "read-community-events",
@@ -362,6 +372,7 @@ export function getPartnerApiChangelog() {
       ],
       affectedEndpoints: [
         "GET /api/v1/partner/providers",
+        "GET /api/v1/partner/providers/{id}",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/events/{id}/analytics",
         "GET /api/v1/partner/reviews",
