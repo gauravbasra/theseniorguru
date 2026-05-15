@@ -35,19 +35,39 @@ function mapCommunityPost(row: Record<string, unknown>): CommunityPostRecord {
   };
 }
 
-export async function listCommunityPosts(): Promise<CommunityPostRecord[]> {
+export async function listCommunityPosts(input: {
+  city?: string;
+  state?: string;
+  postType?: CommunityPostRecord["postType"];
+  providerId?: string;
+  communityId?: string;
+} = {}): Promise<CommunityPostRecord[]> {
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    return seedCommunityPosts;
+    return seedCommunityPosts
+      .filter((post) => post.status === "published")
+      .filter((post) => !input.city || post.city?.toLowerCase() === input.city.toLowerCase())
+      .filter((post) => !input.state || post.state?.toLowerCase() === input.state.toLowerCase())
+      .filter((post) => !input.postType || post.postType === input.postType)
+      .filter((post) => !input.providerId || post.providerId === input.providerId)
+      .filter((post) => !input.communityId || post.communityId === input.communityId);
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("community_posts")
     .select("*")
     .eq("status", "published")
     .order("created_at", { ascending: false })
     .limit(50);
+
+  if (input.city) query = query.ilike("city", input.city);
+  if (input.state) query = query.ilike("state", input.state);
+  if (input.postType) query = query.eq("post_type", input.postType);
+  if (input.providerId) query = query.eq("provider_id", input.providerId);
+  if (input.communityId) query = query.eq("community_id", input.communityId);
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Community post query failed: ${error.message}`);

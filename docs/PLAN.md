@@ -104,6 +104,7 @@ Deliverables:
 - Partner response envelope versioning with runtime envelope headers/meta for authenticated partner routes, response-envelope contract API, `/developers` section, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
 - Partner response pagination contract with runtime page/pageSize metadata for partner provider and event APIs, response-pagination contract API, `/developers` section, OpenAPI/link-health coverage, and developer-docs JSON wiring. Completed.
 - Partner published reviews API with `reviews:read` scope, privacy-safe reviewer fields, provider context, pagination/envelope metadata, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
+- Partner published community posts API with `community:read` scope, published-only filtering, location/type/provider/community filters, disclosure-preserving payloads, pagination/envelope metadata, OpenAPI catalog entry, and developer-docs evidence wiring. Completed.
 - Partner production promotion workflow with sandbox evidence checks, active key/subscription/usage gates, owner approval guard, sandboxMode promotion update, API audit evidence, OpenAPI/link-health coverage, product map, and Open API console action. Completed.
 - Open API key listing and audited revocation endpoints. Completed.
 - Signed webhook delivery worker, dry-run processing, delivery attempt records, and retry-ready schema. Completed.

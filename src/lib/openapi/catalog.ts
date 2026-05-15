@@ -680,6 +680,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/reviews": {
         get: { tags: ["Reviews"], summary: "Partner published reviews API requiring reviews:read scope with privacy-safe reviewer fields" }
       },
+      "/api/v1/partner/community/posts": {
+        get: { tags: ["Community"], summary: "Partner published community posts API requiring community:read scope with pagination and sponsorship disclosures" }
+      },
       "/api/v1/partner/usage": {
         get: { tags: ["System"], summary: "Partner-scoped API usage summary, retention policy, or CSV export requiring usage:read scope" }
       },

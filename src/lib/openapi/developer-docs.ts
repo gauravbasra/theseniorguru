@@ -48,6 +48,7 @@ const partnerRouteOrder = [
   "/api/v1/partner/providers",
   "/api/v1/partner/events",
   "/api/v1/partner/reviews",
+  "/api/v1/partner/community/posts",
   "/api/v1/partner/usage",
   "/api/v1/partner/onboarding-checklist",
   "/api/v1/partner/changelog",
@@ -169,6 +170,15 @@ export function getPartnerSandboxOnboardingChecklist() {
       blocker: "Do not syndicate reviews until partner display rules, attribution, and moderation status handling are approved."
     },
     {
+      key: "read-community-posts",
+      title: "Call published community posts with sponsorship disclosures",
+      owner: "partner_engineer",
+      requiredScopes: ["community:read"],
+      endpoint: "GET /api/v1/partner/community/posts",
+      completionSignal: "Response includes only published community posts, optional location/topic filters, pagination metadata, and disclosure labels for sponsored posts.",
+      blocker: "Do not mirror community content until partner moderation display rules and sponsored-content disclosure handling are approved."
+    },
+    {
       key: "verify-usage-evidence",
       title: "Review JSON and CSV usage evidence",
       owner: "partner_ops",
@@ -213,7 +223,7 @@ export function getPartnerSandboxOnboardingChecklist() {
     objective:
       "Move a partner from scoped sandbox access to production approval with auditable API usage, webhook verification, and explicit owner review.",
     minimumScopes: ["providers:read", "events:read", "usage:read"],
-    optionalScopes: ["webhooks:write", "reviews:read", "campaigns:read", "ads:read", "claims:write"],
+    optionalScopes: ["webhooks:write", "reviews:read", "community:read", "campaigns:read", "ads:read", "claims:write"],
     promotionControls: [
       "Sandbox clients must keep sandboxMode=true until owner approval is recorded.",
       "Partner keys are secret-once and revocation-first if custody is uncertain.",
@@ -254,6 +264,7 @@ export function getPartnerApiChangelog() {
         "GET /api/v1/partner/providers",
         "GET /api/v1/partner/events",
         "GET /api/v1/partner/reviews",
+        "GET /api/v1/partner/community/posts",
         "GET /api/v1/partner/usage",
         "GET /api/v1/partner/onboarding-checklist",
         "GET /api/v1/partner/developer-docs",
@@ -522,7 +533,8 @@ export function getPartnerResponsePaginationContract() {
     paginatedEndpoints: [
       "GET /api/v1/partner/providers",
       "GET /api/v1/partner/events",
-      "GET /api/v1/partner/reviews"
+      "GET /api/v1/partner/reviews",
+      "GET /api/v1/partner/community/posts"
     ],
     metaShape: {
       pagination: {
@@ -589,7 +601,7 @@ export function getPartnerDeveloperDocs() {
     authentication: {
       type: "apiKey",
       header: catalog.components.securitySchemes.partnerApiKey.name,
-      requiredScopes: ["providers:read", "events:read", "reviews:read", "usage:read", "webhooks:write"]
+      requiredScopes: ["providers:read", "events:read", "reviews:read", "community:read", "usage:read", "webhooks:write"]
     },
     endpoints,
     webhooks: {

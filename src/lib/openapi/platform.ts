@@ -55,6 +55,7 @@ const allowedApiScopes: ApiClientScope[] = [
   "providers:read",
   "events:read",
   "reviews:read",
+  "community:read",
   "campaigns:read",
   "ads:read",
   "usage:read",
