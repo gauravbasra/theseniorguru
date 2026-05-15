@@ -350,6 +350,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/reviews/moderation": {
         get: { tags: ["Reviews"], summary: "List reviews awaiting moderation" }
       },
+      "/api/v1/admin/reviews/moderation-dashboard": {
+        get: { tags: ["Reviews"], summary: "Return review moderation queue health, SLA risk, provider breakdown, and recent decisions" }
+      },
       "/api/v1/admin/reviews/{id}/moderate": {
         post: { tags: ["Reviews"], summary: "Moderate a review with policy and audit context" }
       },

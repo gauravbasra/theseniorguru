@@ -34,6 +34,33 @@ export type ReviewModerationRecord = {
   createdAt: string;
 };
 
+export type ReviewModerationDashboard = {
+  generatedAt: string;
+  filters: {
+    providerId?: string;
+  };
+  totals: {
+    reviews: number;
+    pendingModeration: number;
+    published: number;
+    hidden: number;
+    removed: number;
+    blockedByPolicy: number;
+    overduePending: number;
+    dueSoonPending: number;
+  };
+  providerBreakdown: Array<{
+    providerId: string;
+    pendingModeration: number;
+    overduePending: number;
+    averageRating?: number;
+  }>;
+  queue: ReviewRecord[];
+  recentDecisions: ReviewModerationRecord[];
+  blockers: string[];
+  nextActions: string[];
+};
+
 export type ReviewSentimentRecord = {
   id: string;
   reviewId: string;

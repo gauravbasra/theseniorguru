@@ -1,6 +1,7 @@
 import type {
   CreateReviewInput,
   PublishReviewResponseInput,
+  ReviewModerationDashboard,
   ReviewModerationInput,
   ReviewModerationRecord,
   ReviewRecord,
@@ -119,6 +120,104 @@ export async function listReviewModerationQueue(input: {
   }
 
   return (data ?? []).map(mapReview);
+}
+
+async function listReviewModerationCases(input: { providerId?: string; limit?: number } = {}) {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 20), 100));
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return seedReviewModerationCases
+      .filter((record) => !input.providerId || record.providerId === input.providerId)
+      .slice(0, limit);
+  }
+
+  let query = supabase
+    .from("review_moderation_cases")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (input.providerId) {
+    query = query.eq("provider_id", input.providerId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Review moderation case query failed: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapReviewModeration);
+}
+
+function hoursSince(iso: string) {
+  return (Date.now() - Date.parse(iso)) / (60 * 60 * 1000);
+}
+
+function average(values: number[]) {
+  if (!values.length) return undefined;
+  return Math.round((values.reduce((total, value) => total + value, 0) / values.length) * 100) / 100;
+}
+
+export async function getReviewModerationDashboard(input: { providerId?: string } = {}): Promise<ReviewModerationDashboard> {
+  const [reviews, recentDecisions] = await Promise.all([
+    listReviewModerationQueue({ providerId: input.providerId }),
+    listReviewModerationCases({ providerId: input.providerId, limit: 20 })
+  ]);
+  const pending = reviews.filter((review) => review.status === "pending_moderation");
+  const overduePending = pending.filter((review) => hoursSince(review.createdAt) >= 48).length;
+  const dueSoonPending = pending.filter((review) => {
+    const age = hoursSince(review.createdAt);
+    return age >= 24 && age < 48;
+  }).length;
+  const providerGroups = new Map<string, ReviewRecord[]>();
+
+  reviews.forEach((review) => {
+    providerGroups.set(review.providerId, [...(providerGroups.get(review.providerId) ?? []), review]);
+  });
+
+  const providerBreakdown = Array.from(providerGroups.entries())
+    .map(([providerId, providerReviews]) => {
+      const providerPending = providerReviews.filter((review) => review.status === "pending_moderation");
+
+      return {
+        providerId,
+        pendingModeration: providerPending.length,
+        overduePending: providerPending.filter((review) => hoursSince(review.createdAt) >= 48).length,
+        averageRating: average(providerReviews.map((review) => review.rating))
+      };
+    })
+    .sort((left, right) => right.overduePending - left.overduePending || right.pendingModeration - left.pendingModeration);
+  const blockers = [
+    ...(overduePending ? [`${overduePending} review(s) are older than the 48-hour moderation SLA.`] : []),
+    ...(pending.length >= 10 ? ["Moderation queue volume is elevated and needs reviewer assignment."] : []),
+    ...(reviews.some((review) => review.status === "blocked_by_policy") ? ["Policy-blocked review records require admin review."] : [])
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    filters: {
+      providerId: input.providerId
+    },
+    totals: {
+      reviews: reviews.length,
+      pendingModeration: pending.length,
+      published: reviews.filter((review) => review.status === "published").length,
+      hidden: reviews.filter((review) => review.status === "hidden").length,
+      removed: reviews.filter((review) => review.status === "removed").length,
+      blockedByPolicy: reviews.filter((review) => review.status === "blocked_by_policy").length,
+      overduePending,
+      dueSoonPending
+    },
+    providerBreakdown,
+    queue: pending.slice(0, 50),
+    recentDecisions,
+    blockers,
+    nextActions: blockers.length
+      ? blockers
+      : ["Review moderation is within SLA. Continue publishing eligible reviews and scoring sentiment."]
+  };
 }
 
 export async function listProviderReviews(providerId: string): Promise<ReviewRecord[]> {
