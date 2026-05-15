@@ -12,6 +12,7 @@ import type {
   AdPlacementReadinessItem,
   AdPlacementResponse,
   AdReadinessSummary,
+  ProviderAdCampaignDashboard,
   CreateAdCreativeInput,
   UpsertAdPlacementInput
 } from "@/lib/domain/ads";
@@ -19,6 +20,7 @@ import { recordAuditEvent } from "@/lib/audit-events";
 import { requireProviderFeature } from "@/lib/billing/entitlements";
 import { getAppEnv } from "@/lib/env";
 import { runPolicyCheck } from "@/lib/policy";
+import { getProviderById } from "@/lib/providers";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 const seedPlacements: Record<string, AdPlacementResponse> = {
@@ -556,6 +558,16 @@ function calculateCtr(clicks: number, impressions: number) {
   return impressions > 0 ? Number((clicks / impressions).toFixed(4)) : 0;
 }
 
+function fallbackProviderCreativeIds(providerId?: string) {
+  if (!providerId) return undefined;
+  const ids = Object.values(seedPlacements)
+    .flatMap((placement) => placement.creatives)
+    .filter((creative) => creative.payload.providerId === providerId)
+    .map((creative) => creative.id);
+
+  return new Set(ids);
+}
+
 function buildNextActions(placements: AdCampaignReportingPlacement[]) {
   const actions: string[] = [];
   const emptyTraffic = placements.filter((placement) => placement.activeCreatives > 0 && placement.impressions === 0);
@@ -581,11 +593,17 @@ export async function getAdCampaignReporting(
   );
 
   if (!supabase) {
+    const providerCreativeIds = fallbackProviderCreativeIds(filters.providerId);
     const reportingPlacements = await Promise.all(
       placements.map(async (placement): Promise<AdCampaignReportingPlacement> => {
-        const activeCreatives = (await getAdPlacement(placement.placementKey)).creatives.length;
+        const placementCreatives = (await getAdPlacement(placement.placementKey)).creatives;
+        const activeCreatives = providerCreativeIds
+          ? placementCreatives.filter((creative) => providerCreativeIds.has(creative.id)).length
+          : placementCreatives.length;
         const events = fallbackAdEvents.filter((event) =>
-          event.placementKey === placement.placementKey && withinReportingWindow(event.recordedAt, filters)
+          event.placementKey === placement.placementKey &&
+          withinReportingWindow(event.recordedAt, filters) &&
+          (!providerCreativeIds || Boolean(event.adCreativeId && providerCreativeIds.has(event.adCreativeId)))
         );
         const impressions = events.filter((event) => event.type === "impression").length;
         const clicks = events.filter((event) => event.type === "click").length;
@@ -629,23 +647,65 @@ export async function getAdCampaignReporting(
 
   const from = filters.from ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const to = filters.to ?? new Date().toISOString();
+  let providerCreativeIds: string[] | undefined;
+
+  if (filters.providerId) {
+    const { data: campaigns, error: campaignError } = await supabase
+      .from("ad_campaigns")
+      .select("id")
+      .eq("provider_id", filters.providerId);
+
+    if (campaignError) {
+      throw new Error(`Provider ad campaign lookup failed: ${campaignError.message}`);
+    }
+
+    const campaignIds = (campaigns ?? []).map((campaign) => String(campaign.id));
+
+    if (!campaignIds.length) {
+      providerCreativeIds = [];
+    } else {
+      const { data: creatives, error: creativeError } = await supabase
+        .from("ad_creatives")
+        .select("id")
+        .in("ad_campaign_id", campaignIds);
+
+      if (creativeError) {
+        throw new Error(`Provider ad creative lookup failed: ${creativeError.message}`);
+      }
+
+      providerCreativeIds = (creatives ?? []).map((creative) => String(creative.id));
+    }
+  }
   const reportingPlacements = await Promise.all(
     placements.map(async (placement): Promise<AdCampaignReportingPlacement> => {
       const placementData = await getAdPlacement(placement.placementKey);
-      const impressionQuery = supabase
+      const activeCreatives = providerCreativeIds
+        ? placementData.creatives.filter((creative) => providerCreativeIds?.includes(creative.id)).length
+        : placementData.creatives.length;
+      let impressionQuery = supabase
         .from("ad_impressions")
         .select("id,created_at", { count: "exact" })
         .eq("placement_key", placement.placementKey)
         .gte("created_at", from)
         .lte("created_at", to)
         .limit(1);
-      const clickQuery = supabase
+      let clickQuery = supabase
         .from("ad_clicks")
         .select("id,created_at", { count: "exact" })
         .eq("placement_key", placement.placementKey)
         .gte("created_at", from)
         .lte("created_at", to)
         .limit(1);
+
+      if (providerCreativeIds) {
+        if (!providerCreativeIds.length) {
+          impressionQuery = impressionQuery.eq("ad_creative_id", "00000000-0000-0000-0000-000000000000");
+          clickQuery = clickQuery.eq("ad_creative_id", "00000000-0000-0000-0000-000000000000");
+        } else {
+          impressionQuery = impressionQuery.in("ad_creative_id", providerCreativeIds);
+          clickQuery = clickQuery.in("ad_creative_id", providerCreativeIds);
+        }
+      }
       const [{ count: impressions, data: impressionRows, error: impressionError }, { count: clicks, data: clickRows, error: clickError }] =
         await Promise.all([impressionQuery, clickQuery]);
 
@@ -665,7 +725,7 @@ export async function getAdCampaignReporting(
       return {
         placementKey: placement.placementKey,
         surface: placement.surface,
-        activeCreatives: placementData.creatives.length,
+        activeCreatives,
         impressions: impressions ?? 0,
         clicks: clicks ?? 0,
         ctr: calculateCtr(clicks ?? 0, impressions ?? 0),
@@ -692,6 +752,56 @@ export async function getAdCampaignReporting(
     totals,
     placements: reportingPlacements,
     nextActions: buildNextActions(reportingPlacements)
+  };
+}
+
+function providerAdDashboardStatus(summary: AdCampaignReportingSummary): ProviderAdCampaignDashboard["status"] {
+  if (summary.totals.activeCreatives === 0) return "needs_creative";
+  if (summary.totals.impressions === 0) return "needs_distribution";
+  if (summary.totals.clicks === 0) return "needs_measurement";
+  return "active";
+}
+
+function providerAdRecommendations(summary: AdCampaignReportingSummary) {
+  const recommendations = [...summary.nextActions];
+
+  if (summary.totals.activeCreatives === 0) {
+    recommendations.push("Create or activate a sponsored creative before provider ad reporting can show delivery.");
+  }
+
+  if (summary.totals.activeCreatives > 0 && summary.totals.impressions === 0) {
+    recommendations.push("Confirm the provider creative is assigned to a rendered placement and impression events are posted.");
+  }
+
+  if (summary.totals.impressions > 0 && summary.totals.clicks === 0) {
+    recommendations.push("Review headline, destination URL, and call-to-action clarity to convert impressions into clicks.");
+  }
+
+  return Array.from(new Set(recommendations));
+}
+
+export async function getProviderAdCampaignDashboard(input: AdCampaignReportingInput & { providerId: string }): Promise<ProviderAdCampaignDashboard> {
+  const provider = await getProviderById(input.providerId);
+
+  if (!provider) {
+    throw new Error("Provider not found");
+  }
+
+  const summary = await getAdCampaignReporting(input);
+  const activePlacements = summary.placements.filter((placement) => placement.activeCreatives > 0).length;
+
+  return {
+    ...summary,
+    providerId: provider.id,
+    providerName: provider.name,
+    status: providerAdDashboardStatus(summary),
+    health: {
+      hasActiveCreatives: summary.totals.activeCreatives > 0,
+      hasTrackedTraffic: summary.totals.impressions > 0 || summary.totals.clicks > 0,
+      activePlacements,
+      averageCtr: summary.totals.ctr
+    },
+    recommendations: providerAdRecommendations(summary)
   };
 }
 

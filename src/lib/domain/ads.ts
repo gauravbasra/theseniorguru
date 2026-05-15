@@ -113,6 +113,19 @@ export type AdCampaignReportingSummary = {
   nextActions: string[];
 };
 
+export type ProviderAdCampaignDashboard = AdCampaignReportingSummary & {
+  providerId: string;
+  providerName?: string;
+  status: "active" | "needs_creative" | "needs_distribution" | "needs_measurement";
+  health: {
+    hasActiveCreatives: boolean;
+    hasTrackedTraffic: boolean;
+    activePlacements: number;
+    averageCtr: number;
+  };
+  recommendations: string[];
+};
+
 export type AdPlacementReadinessItem = {
   placementKey: string;
   surface: "web" | "mobile" | "web_mobile" | "unknown";

@@ -191,6 +191,12 @@ const routeContracts: LinkContract[] = [
   { label: "Ad placements admin API", href: "/api/v1/admin/ads/placements", method: "GET", owner: "admin" },
   { label: "Ad creative admin API", href: "/api/v1/admin/ads/creatives", method: "POST", owner: "admin" },
   { label: "Ad reporting API", href: "/api/v1/admin/ads/reporting", method: "GET", owner: "admin" },
+  {
+    label: "Provider ad reporting API",
+    href: "/api/v1/provider/ads/reporting?providerId=seed-cottages-dayton-place",
+    method: "GET",
+    owner: "provider"
+  },
   { label: "Crawl jobs API", href: "/api/v1/admin/crawl-jobs", method: "GET", owner: "admin" },
   { label: "Provider website parser API", href: "/api/v1/admin/provider-website-parser", method: "GET", owner: "admin" },
   { label: "Data quality flags API", href: "/api/v1/admin/data-quality-flags", method: "GET", owner: "admin" },
