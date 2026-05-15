@@ -794,6 +794,9 @@ export function getOpenApiCatalog() {
       "/api/v1/partner/pagination-evaluation": {
         get: { tags: ["System"], summary: "Return JSON or CSV partner cursor pagination evaluation, offset limits, migration gates, and endpoint candidates" }
       },
+      "/api/v1/partner/pagination-volume-evidence": {
+        get: { tags: ["System"], summary: "Return JSON or CSV partner cursor pagination production-volume evidence and threshold blockers" }
+      },
       "/api/v1/partner/developer-docs": {
         get: { tags: ["System"], summary: "Return partner developer documentation, SDK examples, OpenAPI endpoints, and webhook signing contracts" }
       },

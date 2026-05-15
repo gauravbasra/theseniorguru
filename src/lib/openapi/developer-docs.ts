@@ -1036,6 +1036,138 @@ export function exportPartnerPaginationEvaluationCsv() {
   };
 }
 
+function paginationVolumeEnvKey(endpoint: string, suffix: "ROWS" | "DAILY_SYNCS" | "MAX_PAGE_DEPTH") {
+  const slug = endpoint
+    .replace("GET /api/v1/partner/", "")
+    .replaceAll("/", "_")
+    .replaceAll("-", "_")
+    .toUpperCase();
+
+  return `PARTNER_${slug}_${suffix}`;
+}
+
+function numericEnv(key: string) {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function cursorThresholdForRisk(risk: (typeof partnerPaginationEvaluationRows)[number]["risk"]) {
+  if (risk === "high") {
+    return { rows: 5000, dailySyncs: 6, pageDepth: 25 };
+  }
+
+  if (risk === "medium") {
+    return { rows: 10000, dailySyncs: 12, pageDepth: 50 };
+  }
+
+  return { rows: 25000, dailySyncs: 24, pageDepth: 100 };
+}
+
+function paginationVolumeRow(row: (typeof partnerPaginationEvaluationRows)[number]) {
+  const rowCountEnv = paginationVolumeEnvKey(row.endpoint, "ROWS");
+  const dailySyncEnv = paginationVolumeEnvKey(row.endpoint, "DAILY_SYNCS");
+  const pageDepthEnv = paginationVolumeEnvKey(row.endpoint, "MAX_PAGE_DEPTH");
+  const productionRows = numericEnv(rowCountEnv);
+  const dailyPartnerSyncs = numericEnv(dailySyncEnv);
+  const observedMaxPageDepth = numericEnv(pageDepthEnv);
+  const threshold = cursorThresholdForRisk(row.risk);
+  const evidencePresent =
+    productionRows !== undefined || dailyPartnerSyncs !== undefined || observedMaxPageDepth !== undefined;
+  const thresholdMet =
+    (productionRows !== undefined && productionRows >= threshold.rows) ||
+    (dailyPartnerSyncs !== undefined && dailyPartnerSyncs >= threshold.dailySyncs) ||
+    (observedMaxPageDepth !== undefined && observedMaxPageDepth >= threshold.pageDepth);
+  const status = thresholdMet
+    ? "cursor_candidate_trigger_met"
+    : evidencePresent
+      ? "offset_pagination_still_acceptable"
+      : "blocked_pending_production_volume_evidence";
+
+  return {
+    endpoint: row.endpoint,
+    currentMode: row.currentMode,
+    stableSort: row.stableSort,
+    cursorCandidate: row.cursorCandidate,
+    risk: row.risk,
+    productionRows,
+    dailyPartnerSyncs,
+    observedMaxPageDepth,
+    thresholdRows: threshold.rows,
+    thresholdDailySyncs: threshold.dailySyncs,
+    thresholdPageDepth: threshold.pageDepth,
+    requiredEvidenceEnv: [rowCountEnv, dailySyncEnv, pageDepthEnv],
+    status,
+    blockers:
+      status === "blocked_pending_production_volume_evidence"
+        ? [`${row.endpoint} requires production row count, partner sync cadence, or max page-depth evidence before cursor work is justified.`]
+        : [],
+    nextActions:
+      status === "cursor_candidate_trigger_met"
+        ? ["Design additive cursor parameters, publish changelog examples, and keep page/pageSize compatibility."]
+        : ["Continue using page/pageSize until production volume or sync cadence reaches the cursor threshold."]
+  };
+}
+
+export function getPartnerPaginationVolumeEvidence() {
+  const evaluation = getPartnerPaginationEvaluation();
+  const rows = partnerPaginationEvaluationRows.map(paginationVolumeRow);
+  const blockers = rows.flatMap((row) => row.blockers);
+  const triggerMet = rows.filter((row) => row.status === "cursor_candidate_trigger_met").length;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    title: "Partner Cursor Pagination Production Volume Evidence",
+    status: triggerMet ? "cursor_candidate_trigger_met" : blockers.length ? "blocked_pending_production_volume_evidence" : "offset_pagination_current",
+    evaluationEndpoint: "GET /api/v1/partner/pagination-evaluation",
+    currentRecommendation: evaluation.recommendation,
+    totals: {
+      endpoints: rows.length,
+      triggerMet,
+      offsetStillAcceptable: rows.filter((row) => row.status === "offset_pagination_still_acceptable").length,
+      blockedPendingEvidence: rows.filter((row) => row.status === "blocked_pending_production_volume_evidence").length
+    },
+    rows,
+    blockers,
+    nextActions: [
+      ...(triggerMet
+        ? ["Open an additive cursor-pagination implementation slice for endpoints with trigger evidence."]
+        : ["Keep the current page/pageSize contract while production volume evidence is absent or below threshold."]),
+      ...(blockers.length ? ["Collect owner-approved production row counts, partner sync cadence, or observed page-depth evidence before cursor implementation."] : []),
+      "Do not remove page/pageSize when cursor parameters are introduced."
+    ]
+  };
+}
+
+export function exportPartnerPaginationVolumeEvidenceCsv() {
+  const evidence = getPartnerPaginationVolumeEvidence();
+  const columns = [
+    "endpoint",
+    "currentMode",
+    "stableSort",
+    "cursorCandidate",
+    "risk",
+    "status",
+    "productionRows",
+    "dailyPartnerSyncs",
+    "observedMaxPageDepth",
+    "thresholdRows",
+    "thresholdDailySyncs",
+    "thresholdPageDepth",
+    "requiredEvidenceEnv",
+    "blockers",
+    "nextActions"
+  ] as const;
+  const csv = [
+    columns.join(","),
+    ...evidence.rows.map((row) => columns.map((column) => csvValue(row[column])).join(","))
+  ].join("\n");
+
+  return {
+    filename: `partner-pagination-volume-evidence-${new Date().toISOString().slice(0, 10)}.csv`,
+    csv
+  };
+}
+
 export function getPartnerDeveloperDocs() {
   const catalog = getOpenApiCatalog();
   const signingGuide = getWebhookSigningGuide();
