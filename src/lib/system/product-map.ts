@@ -514,6 +514,8 @@ const productPillars: ProductPillar[] = [
       "POST /api/v1/system/credential-smoke-evidence",
       "GET /api/v1/system/post-cutover-monitor",
       "POST /api/v1/system/post-cutover-monitor",
+      "GET /api/v1/system/post-cutover-monitor-alerts",
+      "POST /api/v1/system/post-cutover-monitor-alerts",
       "GET /api/v1/system/rollback-evidence",
       "GET /api/v1/system/rollback-evidence?format=csv",
       "GET /api/v1/system/launch-checklist",
@@ -523,7 +525,7 @@ const productPillars: ProductPillar[] = [
       "GET /api/v1/admin/scheduled-worker-runs"
     ],
     requiredTables: ["audit_events"],
-    nextBackendWork: ["Monitor alert delivery integration", "Credential evidence retention dashboard", "Post-cutover public-domain browser smoke"]
+    nextBackendWork: ["Credential evidence retention dashboard", "Post-cutover public-domain browser smoke"]
   }
 ];
 

@@ -680,6 +680,10 @@ export function getOpenApiCatalog() {
         get: { tags: ["System"], summary: "Return deployment, DNS, persistence, credential, rollback, and link-health monitor probes" },
         post: { tags: ["System"], summary: "Record an audited post-cutover synthetic monitor run" }
       },
+      "/api/v1/system/post-cutover-monitor-alerts": {
+        get: { tags: ["System"], summary: "Preview post-cutover monitor alert payloads and delivery readiness" },
+        post: { tags: ["System"], summary: "Send or archive post-cutover monitor alert evidence through approved delivery providers" }
+      },
       "/api/v1/system/rollback-evidence": {
         get: { tags: ["System"], summary: "Export production rollback evidence, deployment metadata, launch blockers, and recovery steps as JSON or CSV" }
       },

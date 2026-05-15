@@ -95,6 +95,8 @@ const routeContracts: LinkContract[] = [
   { label: "Credential smoke evidence archive API", href: "/api/v1/system/credential-smoke-evidence", method: "POST", owner: "admin" },
   { label: "Post-cutover monitor API", href: "/api/v1/system/post-cutover-monitor", method: "GET", owner: "admin" },
   { label: "Post-cutover monitor run API", href: "/api/v1/system/post-cutover-monitor", method: "POST", owner: "admin" },
+  { label: "Post-cutover monitor alert API", href: "/api/v1/system/post-cutover-monitor-alerts", method: "GET", owner: "admin" },
+  { label: "Post-cutover monitor alert delivery API", href: "/api/v1/system/post-cutover-monitor-alerts", method: "POST", owner: "admin" },
   { label: "Production rollback evidence API", href: "/api/v1/system/rollback-evidence", method: "GET", owner: "admin" },
   { label: "Production rollback evidence CSV", href: "/api/v1/system/rollback-evidence?format=csv", method: "GET", owner: "admin" },
   { label: "Aggregation readiness API", href: "/api/v1/admin/aggregation-readiness", method: "GET", owner: "admin" },

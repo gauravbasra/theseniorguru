@@ -717,6 +717,25 @@ export function AdminOperationsConsole() {
           }
         />
         <OpsButton
+          icon={<Send aria-hidden="true" />}
+          label="Monitor alert"
+          loading={loadingKey === "post-cutover-monitor-alerts"}
+          onClick={() =>
+            runOperation("Post-cutover monitor alert", "post-cutover-monitor-alerts", () =>
+              fetch("/api/v1/system/post-cutover-monitor-alerts", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  actorId: "admin-console",
+                  dryRun: true,
+                  deliveryProvider: "manual_export",
+                  notes: "Admin console post-cutover monitor alert preview."
+                })
+              })
+            )
+          }
+        />
+        <OpsButton
           icon={<FileCheck2 aria-hidden="true" />}
           label="Rollback evidence"
           loading={loadingKey === "rollback-evidence"}
@@ -1091,6 +1110,10 @@ function summarizeOperation(key: string, data: unknown) {
     const probes = Array.isArray(record.probes) ? record.probes.length : 0;
     const blockers = Array.isArray(record.blockers) ? record.blockers.length : 0;
     return `Post-cutover monitor is ${String(record.status ?? "unknown")} across ${String(probes)} probe${probes === 1 ? "" : "s"} with ${String(blockers)} blocker${blockers === 1 ? "" : "s"}.`;
+  }
+
+  if (key === "post-cutover-monitor-alerts") {
+    return `Post-cutover monitor alert is ${String(record.status ?? "unknown")} for ${String(record.alertCount ?? 0)} alert item${record.alertCount === 1 ? "" : "s"} through ${String(record.deliveryProvider ?? "manual_export")}.`;
   }
 
   if (key === "import-plan") {
