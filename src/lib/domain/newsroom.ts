@@ -207,6 +207,48 @@ export type NewsletterDeliveryPreviewResult = {
   policyDecision: string;
 };
 
+export type NewsletterAudienceRecipientExportInput = NewsletterDeliveryPreviewInput & {
+  includeSampleRecipients?: boolean;
+  senderApproved?: boolean;
+  ownerApprovedLiveSend?: boolean;
+};
+
+export type NewsletterAudienceRecipientExportResult = {
+  editionId: string;
+  generatedAt: string;
+  status: "export_ready" | "live_ready" | "blocked";
+  deliveryProvider: NewsletterDeliveryProvider;
+  subject: string;
+  audience: string[];
+  recipientSegments: NewsletterDeliveryPreviewResult["recipientSegments"];
+  recipients: Array<{
+    email: string;
+    segmentKey: string;
+    consentStatus: "synthetic_demo_consent";
+    mergeFields: {
+      firstName: string;
+      audienceLabel: string;
+      campaignKey: string;
+    };
+  }>;
+  totals: {
+    segments: number;
+    estimatedRecipients: number;
+    exportedRecipients: number;
+  };
+  mailjet: {
+    credentialConfigured: boolean;
+    senderApproved: boolean;
+    ownerApprovedLiveSend: boolean;
+    sendMode: NewsletterDeliveryMode;
+    canSendLive: boolean;
+  };
+  preview: NewsletterDeliveryPreviewResult;
+  blockers: string[];
+  nextActions: string[];
+  policyDecision: string;
+};
+
 export type NewsletterDeliveryMode = "preview" | "live";
 
 export type NewsletterDeliveryAttemptStatus = "ready" | "sent" | "blocked" | "dry_run";

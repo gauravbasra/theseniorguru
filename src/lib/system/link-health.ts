@@ -261,6 +261,12 @@ const routeContracts: LinkContract[] = [
     owner: "admin"
   },
   {
+    label: "Newsletter audience export API",
+    href: "/api/v1/admin/newsroom/newsletters/seed-newsletter-family-tour-planning/audience-export",
+    method: "POST",
+    owner: "admin"
+  },
+  {
     label: "Newsroom performance export API",
     href: "/api/v1/admin/newsroom/performance/export?bucket=week",
     method: "GET",

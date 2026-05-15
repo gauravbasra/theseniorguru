@@ -423,6 +423,9 @@ export function getOpenApiCatalog() {
       "/api/v1/admin/newsroom/newsletters/{id}/delivery-preview": {
         post: { tags: ["Newsroom"], summary: "Preview provider-specific newsletter delivery payload, consent requirements, and credential blockers" }
       },
+      "/api/v1/admin/newsroom/newsletters/{id}/audience-export": {
+        post: { tags: ["Newsroom"], summary: "Export consent-segmented newsletter audience recipients and Mailjet live-send approval evidence" }
+      },
       "/api/v1/admin/newsroom/performance": {
         get: { tags: ["Newsroom"], summary: "Return article, newsletter, and derivative performance metric rollups" },
         post: { tags: ["Newsroom"], summary: "Record a policy-gated content view, click, share, save, open, or lead metric" }

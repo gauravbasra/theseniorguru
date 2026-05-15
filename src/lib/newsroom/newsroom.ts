@@ -17,6 +17,8 @@ import type {
   ImportRssFeedInput,
   ImportRssFeedResult,
   NewsItemRecord,
+  NewsletterAudienceRecipientExportInput,
+  NewsletterAudienceRecipientExportResult,
   NewsletterDeliveryPreviewInput,
   NewsletterDeliveryPreviewResult,
   NewsletterDeliveryAttemptRecord,
@@ -1392,6 +1394,125 @@ function deliveryModeForProvider(provider: NewsletterDeliveryProvider) {
   }
 
   return env.newsletterMailjetSendMode === "live" ? "live" as const : "preview" as const;
+}
+
+function sampleAudienceRecipients(preview: NewsletterDeliveryPreviewResult) {
+  return preview.recipientSegments.flatMap((segment) =>
+    [1, 2].map((index) => ({
+      email: `${segment.key.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-sample-${index}@synthetic.seniorguru.local`,
+      segmentKey: segment.key,
+      consentStatus: "synthetic_demo_consent" as const,
+      mergeFields: {
+        firstName: index === 1 ? "Alex" : "Jordan",
+        audienceLabel: segment.label,
+        campaignKey: preview.payloadPreview.tracking.campaignKey
+      }
+    }))
+  );
+}
+
+export async function exportNewsletterAudienceRecipients(
+  input: NewsletterAudienceRecipientExportInput
+): Promise<NewsletterAudienceRecipientExportResult> {
+  const preview = await previewNewsletterDelivery(input);
+  const env = getAppEnv();
+  const generatedAt = new Date().toISOString();
+  const sendMode = deliveryModeForProvider(preview.deliveryProvider);
+  const credentialConfigured = Boolean(env.mailjetApiKey && env.mailjetApiSecret && env.newsletterMailjetSenderEmail);
+  const senderApproved = Boolean(input.senderApproved);
+  const ownerApprovedLiveSend = Boolean(input.ownerApprovedLiveSend);
+  const recipients = input.includeSampleRecipients === false ? [] : sampleAudienceRecipients(preview);
+  const blockers = [...preview.blockers];
+
+  if (preview.deliveryProvider === "mailjet") {
+    if (!credentialConfigured) {
+      blockers.push("Mailjet API credentials and newsletter sender email must be configured before live send approval.");
+    }
+    if (!senderApproved) {
+      blockers.push("Mailjet sender/domain approval must be confirmed by the owner before live send.");
+    }
+    if (sendMode !== "live") {
+      blockers.push("NEWSLETTER_MAILJET_SEND_MODE must be set to live after sender approval and final review.");
+    }
+    if (!ownerApprovedLiveSend) {
+      blockers.push("Final owner approval is required before Mailjet live dispatch.");
+    }
+  }
+
+  const policy = await policyCheckNewsletterAction(await getSeedOrPersistentNewsletter(input.editionId), "export_newsletter_audience_recipients", {
+    actorId: input.actorId,
+    notes: input.notes,
+    deliveryProvider: preview.deliveryProvider
+  });
+  const canSendLive = preview.deliveryProvider === "mailjet" &&
+    credentialConfigured &&
+    senderApproved &&
+    ownerApprovedLiveSend &&
+    sendMode === "live" &&
+    !preview.blockers.length;
+  const status = blockers.length
+    ? preview.deliveryProvider === "manual_export" && !preview.blockers.length
+      ? "export_ready"
+      : "blocked"
+    : canSendLive
+      ? "live_ready"
+      : "export_ready";
+  const supabase = getSupabaseAdminClient();
+
+  if (supabase) {
+    await supabase.from("audit_events").insert({
+      actor_id: input.actorId,
+      actor_type: input.actorId ? "admin" : "system",
+      event_type: "newsletter.audience_exported",
+      subject_type: "newsletter_edition",
+      subject_id: preview.editionId,
+      payload: {
+        deliveryProvider: preview.deliveryProvider,
+        status,
+        recipientSegments: preview.recipientSegments,
+        exportedRecipients: recipients.length,
+        mailjet: {
+          credentialConfigured,
+          senderApproved,
+          ownerApprovedLiveSend,
+          sendMode,
+          canSendLive
+        },
+        policyDecision: policy.decision
+      }
+    });
+  }
+
+  return {
+    editionId: preview.editionId,
+    generatedAt,
+    status,
+    deliveryProvider: preview.deliveryProvider,
+    subject: preview.subject,
+    audience: preview.audience,
+    recipientSegments: preview.recipientSegments,
+    recipients,
+    totals: {
+      segments: preview.recipientSegments.length,
+      estimatedRecipients: preview.recipientSegments.reduce((total, segment) => total + segment.estimatedRecipients, 0),
+      exportedRecipients: recipients.length
+    },
+    mailjet: {
+      credentialConfigured,
+      senderApproved,
+      ownerApprovedLiveSend,
+      sendMode,
+      canSendLive
+    },
+    preview,
+    blockers,
+    nextActions: blockers.length
+      ? blockers
+      : preview.deliveryProvider === "mailjet"
+        ? ["Mailjet audience export is approved for live dispatch. Run the newsletter send endpoint with owner approval evidence."]
+        : ["Audience recipient export is ready. Use manual export delivery, then import opens, clicks, and leads as metrics."],
+    policyDecision: policy.decision
+  };
 }
 
 export async function sendNewsletterDelivery(input: NewsletterDeliverySendInput): Promise<NewsletterDeliverySendResult> {
