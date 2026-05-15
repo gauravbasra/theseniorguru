@@ -711,6 +711,10 @@ export async function sendProviderVerificationAttempt(
     };
   }
 
+  if (input.dryRun) {
+    return delivery;
+  }
+
   const updatedPayload = {
     ...attempt.attemptPayload,
     delivery

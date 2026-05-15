@@ -265,6 +265,7 @@ Deliverables:
 - Provider-facing claim checklist/status API. Completed.
 - Policy-gated verification delivery worker and audit payload. Completed.
 - Production-safe verification delivery manual fallback when email, SMS, or phone adapters are not live. Completed.
+- Provider verification delivery send hardening so omitted `dryRun` returns non-mutating preview evidence and live delivery requires explicit `dryRun=false`. Completed.
 - Owner claim verification queue with readiness, delivery, and blocker status. Completed.
 - Profile completion assistant. Completed.
 - Provider visibility report. Completed.
