@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleS
 import * as Location from "expo-location";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { api, AppRole, patch, post, saveAuthToken } from "./src/services/api";
-import { initLocalDb, loadCirclePerson, loadRole, saveCirclePerson, saveRole } from "./src/services/localStore";
+import { initLocalDb, loadCirclePerson, loadRole, loadUnitSystem, saveCirclePerson, saveRole, saveUnitSystem, UnitSystem } from "./src/services/localStore";
 import { addSafeZone, requestSafetyPermissions, getNativeHealthDiagnostics, setHealthConsent, simulateSafetyEvent, startSafetyMonitoring, syncHealthVitals, syncNativeHealthVitals, syncWearableTelemetry, triggerVoiceSos } from "./src/services/safety";
 import seedState from "./src/seedState";
 import { colors, radius } from "./src/theme/tokens";
@@ -77,6 +77,7 @@ export default function App() {
   const [state, setState] = useState<any>(null);
   const [circleState, setCircleState] = useState<any>(null);
   const [circlePersonId, setCirclePersonId] = useState("rita");
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>("imperial");
   const [loading, setLoading] = useState(true);
 
   async function refresh() {
@@ -103,6 +104,7 @@ export default function App() {
       let nextState = cloneSeedState();
       try {
         await initLocalDb();
+        setUnitSystem(await loadUnitSystem());
         savedRole = null;
         if (savedRole) await ensureDevSession(savedRole);
         nextState = await refresh();
@@ -170,24 +172,25 @@ export default function App() {
             {screen === "role" && <RoleScreen onChoose={chooseRole} />}
             {screen === "residentOnboarding" && <ResidentOnboarding state={state} onDone={async () => { await refresh(); setScreen("residentHome"); }} />}
             {screen === "residentHome" && <ResidentHome state={state} onRefresh={refresh} />}
-            {screen === "residentHelp" && <ResidentHelp state={state} onRefresh={refresh} />}
+            {screen === "residentHelp" && <ResidentHelp state={state} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "residentPeople" && <ResidentPeople state={state} />}
             {screen === "residentFeed" && <ResidentFeed />}
-            {screen === "residentServices" && <ResidentServices state={state} onRefresh={refresh} />}
-            {screen === "residentSafety" && <ResidentSafety state={state} onRefresh={refresh} />}
+            {screen === "residentServices" && <ResidentServices state={state} onRefresh={refresh} unitSystem={unitSystem} />}
+            {screen === "residentSafety" && <ResidentSafety state={state} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "notifications" && <NotificationsPage state={state} circleState={circleState} onRefresh={refresh} />}
-            {screen === "sosEvents" && <SosEventsPage state={state} circleState={circleState} circlePersonId={circlePersonId} onRefresh={refresh} />}
+            {screen === "sosEvents" && <SosEventsPage state={state} circleState={circleState} circlePersonId={circlePersonId} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "businessOnboarding" && <BusinessOnboarding state={state} onDone={async () => { await refresh(); setScreen("businessHome"); }} />}
             {screen === "businessHome" && <BusinessHome state={state} />}
-            {screen === "businessLeads" && <BusinessLeads state={state} onRefresh={refresh} />}
+            {screen === "businessLeads" && <BusinessLeads state={state} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "businessServices" && <BusinessServices state={state} onRefresh={refresh} />}
             {screen === "businessPackage" && <BusinessPackage state={state} onRefresh={refresh} />}
             {screen === "circleInvite" && <CircleInvite onAccepted={async personId => { await saveCirclePerson(personId); setCirclePersonId(personId); await refresh(); setScreen("circleSafety"); }} />}
-            {screen === "circleSafety" && <CircleSafety circleState={circleState} onRefresh={refresh} />}
+            {screen === "circleSafety" && <CircleSafety circleState={circleState} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "circleAssist" && <CircleAssist circleState={circleState} personId={circlePersonId} onRefresh={refresh} />}
             {screen === "circlePermissions" && <CirclePermissions state={state} circlePersonId={circlePersonId} onPick={async personId => { await saveCirclePerson(personId); setCirclePersonId(personId); await refresh(); }} />}
             {screen === "superadminHome" && <SuperadminHome />}
             {screen === "superadminAudit" && <SuperadminAudit />}
+            {role && <SettingsCard unitSystem={unitSystem} onChange={async next => { setUnitSystem(next); await saveUnitSystem(next); }} />}
             {role && <Pressable style={styles.secondaryButton} onPress={() => setScreen("role")}><Text style={styles.secondaryText}>Change role</Text></Pressable>}
           </ScrollView>
           {activeTabs && <Tabs tabs={activeTabs} active={screen} onChange={setScreen} />}
@@ -444,7 +447,7 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
   );
 }
 
-function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void }) {
+function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh: () => void; unitSystem: UnitSystem }) {
   const [need, setNeed] = useState("I need a ride to my doctor tomorrow.");
   const [pickup, setPickup] = useState("Use my current location");
   const [dropoff, setDropoff] = useState("");
@@ -469,7 +472,7 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
       }
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const point = {
-        label: `Current location (${Math.round(current.coords.accuracy || 0)}m accuracy)`,
+        label: `Current location (${formatAccuracyMeters(current.coords.accuracy || 0, unitSystem)} accuracy)`,
         lat: current.coords.latitude,
         lng: current.coords.longitude,
         accuracyMeters: Math.round(current.coords.accuracy || 0)
@@ -567,6 +570,7 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
       </Card>
       <Card title="Nearby support recommendations" icon="⌕">
         <Text style={styles.muted}>Google can discover nearby businesses, but only approved partners should be treated as care-ready.</Text>
+        {pickupPoint?.accuracyMeters ? <Text style={styles.safeText}>Pickup accuracy: {formatAccuracyMeters(pickupPoint.accuracyMeters, unitSystem)}</Text> : null}
         <PrimaryButton label="Find nearby support" onPress={findNearbySupport} />
         {nearbyRecommendations.map(item => <View key={item.placeId} style={styles.suggestionRow}><Text style={styles.body}>{item.name}</Text><Text style={styles.muted}>{item.address}</Text><Text style={item.vettingStatus === "approved_partner" ? styles.safeText : styles.alertText}>{item.vettingStatus === "approved_partner" ? "Approved partner" : "Google result - not vetted yet"}</Text><Text style={styles.muted}>★ {item.rating || "New"} · {item.careNote}</Text></View>)}
       </Card>
@@ -639,7 +643,7 @@ function ResidentFeed() {
   );
 }
 
-function ResidentServices({ state, onRefresh }: { state: any; onRefresh: () => void }) {
+function ResidentServices({ state, onRefresh, unitSystem }: { state: any; onRefresh: () => void; unitSystem: UnitSystem }) {
   const [outdoorActivity, setOutdoorActivity] = useState("easy walking trail");
   const [outdoorRecommendations, setOutdoorRecommendations] = useState<any[]>([]);
   const [outdoorQuote, setOutdoorQuote] = useState<any>(null);
@@ -740,7 +744,7 @@ function ResidentServices({ state, onRefresh }: { state: any; onRefresh: () => v
       <EventCard title="Memory Game Challenge" host="Community Room" time="Tomorrow, 4:00 PM" image="https://images.unsplash.com/photo-1611996575749-79a3a250f948?w=300&h=260&fit=crop" />
       <EventCard title="Community Lunch" host="Park View Community" time="Friday, 12:30 PM" image="https://images.unsplash.com/photo-1551218808-94e220e084d2?w=300&h=260&fit=crop" />
       <SectionTitle title="Safety Monitor" />
-      <MiniMap safety={state.safety} />
+      <MiniMap safety={state.safety} unitSystem={unitSystem} />
       <VoiceSosCard compact onCommand={async command => {
         await triggerVoiceSos(command);
         await onRefresh();
@@ -750,7 +754,7 @@ function ResidentServices({ state, onRefresh }: { state: any; onRefresh: () => v
   );
 }
 
-function ResidentSafety({ state, onRefresh }: { state: any; onRefresh: () => void }) {
+function ResidentSafety({ state, onRefresh, unitSystem }: { state: any; onRefresh: () => void; unitSystem: UnitSystem }) {
   const safety = state.safety;
   const health = state.healthVitals?.summary || {};
   const latestHealth = state.healthVitals?.latestSummary || health;
@@ -803,7 +807,7 @@ function ResidentSafety({ state, onRefresh }: { state: any; onRefresh: () => voi
     <View>
       <TopPhoneBar />
       <Text style={styles.h1}>Safety</Text>
-      <MiniMap safety={safety} />
+      <MiniMap safety={safety} unitSystem={unitSystem} />
       <Card title="Safe zone setup" icon="📍" tint="peach">
         <Text style={styles.muted}>Backend geofencing compares live phone coordinates against approved zones. The app cannot fake inside or outside status.</Text>
         <WellnessRow label="Active zones" value={String(safety.safeZones?.length || 0)} status={safety.safeZones?.[0]?.name || "No zone configured"} />
@@ -945,7 +949,7 @@ function BusinessHome({ state }: { state: any }) {
   return <View><Text style={styles.h1}>{state.business.name}</Text><MetricRow items={[["Requests", state.requests.length], ["Bookings", state.bookings.length], ["Plan", plan]]} /><Card title="Business profile"><Text style={styles.body}>{state.business.description}</Text><Text style={styles.muted}>Areas: {state.business.serviceAreas.join(", ")}</Text></Card></View>;
 }
 
-function BusinessLeads({ state, onRefresh }: { state: any; onRefresh: () => void }) {
+function BusinessLeads({ state, onRefresh, unitSystem }: { state: any; onRefresh: () => void; unitSystem: UnitSystem }) {
   const service = state.services.find((item: any) => item.provider === state.business.name) || state.services[0];
   async function acceptLead(request: any) {
     await post("/api/bookings", { leadId: request.id, serviceId: request.serviceId || service.id, label: request.type, time: request.time, consumeLead: true });
@@ -957,7 +961,7 @@ function BusinessLeads({ state, onRefresh }: { state: any; onRefresh: () => void
     await onRefresh();
     Alert.alert("Refill updated", `Marked as ${status}.`);
   }
-  return <View><Text style={styles.h1}>Leads</Text>{state.requests.map((request: any) => <Card key={request.id} title={request.type}><Text style={styles.body}>{request.resident} · {request.time}</Text><Text style={styles.muted}>{request.pickup?.label || "Pickup pending"} → {request.dropoff?.label || "Drop-off pending"}</Text><Text style={styles.muted}>{request.distance} · {request.duration || "ETA pending"} · {request.status}</Text><PrimaryButton label="Accept lead" onPress={() => acceptLead(request)} /></Card>)}<SectionTitle title="Medication refill requests" />{(state.refillRequests || []).length ? state.refillRequests.map((request: any) => <Card key={request.id} title={request.medication_name || "Medication refill"} icon="💊"><Text style={styles.body}>{request.resident_name} · {request.strength || ""}</Text><Text style={styles.muted}>Remaining: {request.remaining_count} · Status: {request.status}</Text><ButtonRow labels={[["Accept", "accepted"], ["Ready", "ready"], ["Completed", "completed"]]} onPress={(status: string) => updateRefill(request, status)} /></Card>) : <Card title="Medication refill requests"><Text style={styles.muted}>No refill requests yet.</Text></Card>}</View>;
+  return <View><Text style={styles.h1}>Leads</Text>{state.requests.map((request: any) => <Card key={request.id} title={request.type}><Text style={styles.body}>{request.resident} · {request.time}</Text><Text style={styles.muted}>{request.pickup?.label || "Pickup pending"} → {request.dropoff?.label || "Drop-off pending"}</Text><Text style={styles.muted}>{formatRequestDistance(request, unitSystem)} · {request.duration || "ETA pending"} · {request.status}</Text><PrimaryButton label="Accept lead" onPress={() => acceptLead(request)} /></Card>)}<SectionTitle title="Medication refill requests" />{(state.refillRequests || []).length ? state.refillRequests.map((request: any) => <Card key={request.id} title={request.medication_name || "Medication refill"} icon="💊"><Text style={styles.body}>{request.resident_name} · {request.strength || ""}</Text><Text style={styles.muted}>Remaining: {request.remaining_count} · Status: {request.status}</Text><ButtonRow labels={[["Accept", "accepted"], ["Ready", "ready"], ["Completed", "completed"]]} onPress={(status: string) => updateRefill(request, status)} /></Card>) : <Card title="Medication refill requests"><Text style={styles.muted}>No refill requests yet.</Text></Card>}</View>;
 }
 
 function BusinessServices({ state, onRefresh }: { state: any; onRefresh: () => void }) {
@@ -1044,7 +1048,7 @@ function NotificationsPage({ state, circleState, onRefresh }: { state: any; circ
   );
 }
 
-function SosEventsPage({ state, circleState, circlePersonId, onRefresh }: { state: any; circleState: any; circlePersonId: string; onRefresh: () => void }) {
+function SosEventsPage({ state, circleState, circlePersonId, onRefresh, unitSystem }: { state: any; circleState: any; circlePersonId: string; onRefresh: () => void; unitSystem: UnitSystem }) {
   const safety = circleState?.safety || state.safety || { sosEvents: [], location: { label: "Park View Community", accuracyMeters: 18 }, safeZones: [{ status: "inside" }], movement: { status: "steady", stillMinutes: 0, phoneBattery: 80 }, fallDetection: { confidence: 0, status: "clear" } };
   const events = safety.sosEvents || [];
 
@@ -1063,7 +1067,7 @@ function SosEventsPage({ state, circleState, circlePersonId, onRefresh }: { stat
       <TopPhoneBar />
       <Text style={styles.h1}>SOS Events</Text>
       <Text style={styles.copy}>Separate emergency event history, current alerts, and acknowledgement actions.</Text>
-      <MiniMap safety={safety} />
+      <MiniMap safety={safety} unitSystem={unitSystem} />
       <Card title="Active and recent SOS" icon="🚨" tint="orange">
         {events.length ? events.slice(0, 20).map((event: any) => (
           <View key={event.id} style={styles.eventRow}>
@@ -1087,7 +1091,7 @@ function CircleInvite({ onAccepted }: { onAccepted: (personId: string) => void }
   return <Card title="Trusted person invite"><Text style={styles.copy}>Enter the invite code sent by the senior. Demo: RITA-ANITA, ARJUN-ANITA, DRMEHTA-ANITA, SUNITA-ANITA.</Text><Field label="Invite code" value={inviteCode} onChangeText={setInviteCode} /><PrimaryButton label="Accept invite" onPress={accept} /></Card>;
 }
 
-function CircleSafety({ circleState, onRefresh }: { circleState: any; onRefresh: () => void }) {
+function CircleSafety({ circleState, onRefresh, unitSystem }: { circleState: any; onRefresh: () => void; unitSystem: UnitSystem }) {
   const safety = circleState?.safety || { location: { label: "Park View Community", accuracyMeters: 18 }, safeZones: [{ status: "inside" }], movement: { status: "steady", stillMinutes: 0, phoneBattery: 80 }, fallDetection: { confidence: 0, status: "clear" }, sosEvents: [] };
   const health = circleState?.healthVitals?.summary || {};
   const latestHealth = circleState?.healthVitals?.latestSummary || health;
@@ -1119,11 +1123,11 @@ function CircleSafety({ circleState, onRefresh }: { circleState: any; onRefresh:
       <TopPhoneBar />
       <Text style={styles.h1}>Live Safety</Text>
       <Text style={styles.copy}>Trusted circle view for location tracing and quick contact. Voice SOS commands stay with the senior app.</Text>
-      <MiniMap safety={safety} />
+      <MiniMap safety={safety} unitSystem={unitSystem} />
       <Card title="Local tracing" icon="📍" tint="peach">
         <WellnessRow label="Current zone" value={safety.location?.label || "Park View Community"} status={safety.safeZones?.[0]?.status || "inside"} />
         <WellnessRow label="Movement" value={safety.movement?.status || "steady"} status={`${safety.movement?.stillMinutes ?? 0} min stillness`} />
-        <WellnessRow label="Accuracy" value={`${safety.location?.accuracyMeters ?? 18}m`} status="Live phone + wearable trace" />
+        <WellnessRow label="Accuracy" value={formatAccuracyMeters(safety.location?.accuracyMeters ?? 18, unitSystem)} status="Live phone + wearable trace" />
       </Card>
       <Card title="Reach Anita" icon="♡">
         <Text style={styles.copy}>Use soft contact actions first unless there is an active SOS event.</Text>
@@ -1223,6 +1227,43 @@ function SuperadminAudit() {
   return <View><Text style={styles.h1}>Audit Logs</Text><Card title="Notification providers" icon="▣"><Text style={styles.muted}>Process queued push, SMS, and call records through provider adapters.</Text><PrimaryButton label="Process queued notifications" onPress={processNotifications} />{deliveryResult ? <View style={styles.eventRow}><Text style={styles.body}>Delivered {deliveryResult.delivered.length}</Text><Text style={styles.muted}>Remaining queued: {deliveryResult.remainingQueued}</Text>{deliveryResult.delivered.slice(0, 4).map((item: any) => <Text key={item.id} style={styles.muted}>{item.channel} · {item.provider} · {item.status}</Text>)}</View> : null}</Card>{logs.length ? logs.map(log => <Card key={log.id} title={log.action}><Text style={styles.body}>{log.entityType || log.entity_type} · {log.severity}</Text><Text style={styles.muted}>{log.details || "No details"}</Text><Text style={styles.muted}>{new Date(log.createdAt || log.created_at).toLocaleString()}</Text></Card>) : <Card title="Audit logs"><Text style={styles.muted}>No logs loaded yet.</Text></Card>}</View>;
 }
 
+function SettingsCard({ unitSystem, onChange }: { unitSystem: UnitSystem; onChange: (unitSystem: UnitSystem) => void }) {
+  return (
+    <Card title="Settings" icon="⚙">
+      <Text style={styles.muted}>Distance and location accuracy units apply across rides, safety maps, trusted-circle tracking, and business leads.</Text>
+      <ButtonRow labels={[["Imperial", "imperial"], ["Metric", "metric"]]} onPress={(value: UnitSystem) => onChange(value)} />
+      <Text style={styles.safeText}>Active units: {unitSystem === "imperial" ? "Imperial (mi / ft)" : "Metric (km / m)"}</Text>
+    </Card>
+  );
+}
+
+function formatAccuracyMeters(meters: number, unitSystem: UnitSystem) {
+  const value = Number(meters || 0);
+  if (unitSystem === "metric") return `${Math.round(value)} m`;
+  return `${Math.max(1, Math.round(value * 3.28084))} ft`;
+}
+
+function formatDistanceMeters(meters: number, unitSystem: UnitSystem) {
+  const value = Number(meters || 0);
+  if (unitSystem === "metric") {
+    if (value < 1000) return `${Math.round(value)} m`;
+    return `${(value / 1000).toFixed(value < 10000 ? 1 : 0)} km`;
+  }
+  const feet = value * 3.28084;
+  if (feet < 1000) return `${Math.max(1, Math.round(feet))} ft`;
+  return `${(value / 1609.344).toFixed(value < 16093 ? 1 : 0)} mi`;
+}
+
+function formatRequestDistance(request: any, unitSystem: UnitSystem) {
+  if (Number.isFinite(Number(request.distanceMeters))) return formatDistanceMeters(Number(request.distanceMeters), unitSystem);
+  const text = String(request.distance || "");
+  const kmMatch = text.match(/([0-9]+(?:\.[0-9]+)?)\s*km/i);
+  if (kmMatch) return formatDistanceMeters(Number(kmMatch[1]) * 1000, unitSystem);
+  const meterMatch = text.match(/([0-9]+(?:\.[0-9]+)?)\s*m\b/i);
+  if (meterMatch) return formatDistanceMeters(Number(meterMatch[1]), unitSystem);
+  return text || "Distance pending";
+}
+
 function MetricRow({ items }: { items: [string, any][] }) {
   return <View style={styles.metricRow}>{items.map(([label, value]) => <View key={label} style={styles.metric}><Text style={styles.metricValue}>{value}</Text><Text style={styles.muted}>{label}</Text></View>)}</View>;
 }
@@ -1253,7 +1294,7 @@ function ServiceCard({ service, onPress }: { service: any; onPress: () => void }
   return <View style={styles.serviceCard}><View style={styles.serviceInfo}><Text style={styles.actionTitle}>{service.name}</Text><Text style={styles.muted}>{service.category}</Text><Text style={styles.star}>★ {service.rating}</Text><Text style={styles.muted}>{service.price} · {service.eta}</Text><Pressable style={styles.smallPrimary} onPress={onPress}><Text style={styles.primaryText}>Book</Text></Pressable></View><View style={styles.serviceArt}><Text style={styles.art}>{service.category?.includes("Medicine") ? "💊" : "🚙"}</Text></View></View>;
 }
 
-function MiniMap({ safety }: { safety: any }) {
+function MiniMap({ safety, unitSystem }: { safety: any; unitSystem: UnitSystem }) {
   const outside = safety.safeZones[0]?.status === "outside";
   return (
     <View style={styles.mapCard}>
@@ -1265,7 +1306,7 @@ function MiniMap({ safety }: { safety: any }) {
       </View>
       <View style={styles.mapInfo}>
         <Text style={styles.actionTitle}>{safety.location.label}</Text>
-        <Text style={styles.muted}>Accuracy {safety.location.accuracyMeters}m · Safe zone {safety.safeZones[0]?.status}</Text>
+        <Text style={styles.muted}>Accuracy {formatAccuracyMeters(safety.location.accuracyMeters, unitSystem)} · Safe zone {safety.safeZones[0]?.status}</Text>
         <Text style={outside ? styles.alertText : styles.safeText}>{outside ? "Outside safe zone" : "Inside Park View Community"}</Text>
       </View>
     </View>

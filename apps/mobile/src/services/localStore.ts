@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { AppRole } from "./api";
 
+export type UnitSystem = "imperial" | "metric";
+
 export async function initLocalDb() {
   await AsyncStorage.getItem("safety_events");
 }
@@ -19,6 +21,15 @@ export async function saveCirclePerson(personId: string) {
 
 export async function loadCirclePerson() {
   return AsyncStorage.getItem("circlePersonId");
+}
+
+export async function saveUnitSystem(unitSystem: UnitSystem) {
+  await AsyncStorage.setItem("unitSystem", unitSystem);
+}
+
+export async function loadUnitSystem(): Promise<UnitSystem> {
+  const value = await AsyncStorage.getItem("unitSystem");
+  return value === "metric" ? "metric" : "imperial";
 }
 
 export function cacheSafetyEvent(event: { id: string; type: string; severity: string; body: string; createdAt: string }) {
