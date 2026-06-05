@@ -2144,20 +2144,25 @@ function createProductionApi(pool) {
     if (req.method === "POST" && url.pathname === "/api/places/autocomplete") {
       requireRole(user, ["senior", "business", "trusted_person"]);
       const input = String(required(payload.input, "input")).trim();
-      const data = await googleMapsGet("place/autocomplete/json", {
+      const location = payload.location && Number.isFinite(Number(payload.location.lat)) && Number.isFinite(Number(payload.location.lng))
+        ? { lat: Number(payload.location.lat), lng: Number(payload.location.lng) }
+        : null;
+      const radiusMeters = Math.max(1000, Math.min(50000, Number(payload.radiusMeters || 25000)));
+      const params = {
         input,
-        types: "geocode",
-        components: payload.components || "country:us|country:ca",
+        ...(payload.components ? { components: payload.components } : {}),
+        ...(location ? { location: `${location.lat},${location.lng}`, radius: String(radiusMeters), strictbounds: "true" } : {}),
         ...(payload.sessionToken ? { sessiontoken: payload.sessionToken } : {})
-      });
+      };
+      const data = await googleMapsGet("place/autocomplete/json", params);
       const predictions = (data.predictions || []).slice(0, 6).map(item => ({
         placeId: item.place_id,
         description: item.description,
         primaryText: item.structured_formatting?.main_text || item.description,
         secondaryText: item.structured_formatting?.secondary_text || ""
       }));
-      await audit(req, user, "google_places_autocomplete_requested", "place", null, { inputLength: input.length, results: predictions.length }, "info");
-      return { provider: "google_places_autocomplete", predictions };
+      await audit(req, user, "google_places_autocomplete_requested", "place", null, { inputLength: input.length, results: predictions.length, locationBiased: Boolean(location), radiusMeters, globalSearch: !payload.components }, "info");
+      return { provider: "google_places_autocomplete", predictions, locationBias: location, radiusMeters, globalSearch: !payload.components };
     }
 
     if (req.method === "POST" && url.pathname === "/api/places/details") {

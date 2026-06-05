@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import * as Location from "expo-location";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { api, AppRole, patch, post, saveAuthToken } from "./src/services/api";
 import { initLocalDb, loadCirclePerson, loadRole, saveCirclePerson, saveRole } from "./src/services/localStore";
@@ -445,21 +446,52 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
 
 function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void }) {
   const [need, setNeed] = useState("I need a ride to my doctor tomorrow.");
-  const [pickup, setPickup] = useState("Park View Community");
-  const [dropoff, setDropoff] = useState("City Care Hospital");
-  const [pickupPoint, setPickupPoint] = useState<any>({ label: "Park View Community", lat: 43.1001, lng: -79.1001 });
-  const [dropoffPoint, setDropoffPoint] = useState<any>({ label: "City Care Hospital", lat: 43.1189, lng: -79.1252 });
+  const [pickup, setPickup] = useState("Use my current location");
+  const [dropoff, setDropoff] = useState("");
+  const [pickupPoint, setPickupPoint] = useState<any>(null);
+  const [dropoffPoint, setDropoffPoint] = useState<any>(null);
   const [pickupSuggestions, setPickupSuggestions] = useState<any[]>([]);
   const [dropoffSuggestions, setDropoffSuggestions] = useState<any[]>([]);
   const [nearbyRecommendations, setNearbyRecommendations] = useState<any[]>([]);
   const [validationSummary, setValidationSummary] = useState("");
   const [fulfillmentMode, setFulfillmentMode] = useState("uber_health");
   const [matches, setMatches] = useState<any[]>([]);
+  const locationBias = pickupPoint && Number.isFinite(Number(pickupPoint.lat)) && Number.isFinite(Number(pickupPoint.lng))
+    ? { lat: Number(pickupPoint.lat), lng: Number(pickupPoint.lng) }
+    : null;
+
+  async function useCurrentPickup() {
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("Location permission needed", "Please allow location so pickup can use where you are now.");
+        return;
+      }
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const point = {
+        label: `Current location (${Math.round(current.coords.accuracy || 0)}m accuracy)`,
+        lat: current.coords.latitude,
+        lng: current.coords.longitude,
+        accuracyMeters: Math.round(current.coords.accuracy || 0)
+      };
+      setPickup(point.label);
+      setPickupPoint(point);
+      setPickupSuggestions([]);
+      Alert.alert("Pickup set", "Pickup is now your phone's current location.");
+    } catch {
+      Alert.alert("Could not get current location", "Please check location permission or search/select your pickup address.");
+    }
+  }
+
   async function findMatches() {
     const result: any = await post("/api/help/match", { need });
     setMatches(result.matches);
   }
   async function book(serviceId: string) {
+    if (!pickupPoint || !dropoffPoint) {
+      Alert.alert("Ride location missing", "Please set your current pickup and choose a drop-off suggestion before booking.");
+      return;
+    }
     await post("/api/bookings", {
       serviceId,
       label: need,
@@ -472,7 +504,10 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
     Alert.alert("TheSeniorguru", "Request sent and booking created.");
   }
   async function searchPlaces(kind: "pickup" | "dropoff", input: string) {
-    const result: any = await post("/api/places/autocomplete", { input });
+    const result: any = await post("/api/places/autocomplete", {
+      input,
+      ...(locationBias ? { location: locationBias, radiusMeters: kind === "dropoff" ? 30000 : 15000 } : {})
+    });
     if (kind === "pickup") setPickupSuggestions(result.predictions || []);
     else setDropoffSuggestions(result.predictions || []);
   }
@@ -490,11 +525,19 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
     }
   }
   async function validateAddresses() {
+    if (!pickupPoint || !dropoffPoint) {
+      Alert.alert("Choose exact places first", "Use current location or choose a pickup suggestion, then choose a drop-off suggestion.");
+      return;
+    }
     const pickupValidation: any = await post("/api/address/validate", { address: pickup });
     const dropoffValidation: any = await post("/api/address/validate", { address: dropoff });
     setValidationSummary(`Pickup ${pickupValidation.addressComplete ? "verified" : "needs review"} · Drop-off ${dropoffValidation.addressComplete ? "verified" : "needs review"}`);
   }
   async function findNearbySupport() {
+    if (!pickupPoint) {
+      Alert.alert("Pickup needed", "Set your current pickup first so nearby support is actually nearby.");
+      return;
+    }
     const keyword = need.toLowerCase().includes("med") ? "pharmacy" : need.toLowerCase().includes("food") ? "meal delivery" : need.toLowerCase().includes("ride") ? "senior transportation" : "senior services";
     const result: any = await post("/api/places/nearby-recommendations", { location: pickupPoint, keyword, radiusMeters: 5000 });
     setNearbyRecommendations(result.recommendations || []);
@@ -506,10 +549,11 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
       <Text style={styles.h1}>How can we help you today?</Text>
       <View style={styles.searchPill}><TextInput value={need} onChangeText={setNeed} style={styles.searchInput} placeholder="What do you need today?" /><Text style={styles.mic}>🎙</Text></View>
       <Card title="Ride details" icon="🚙" tint="peach">
-        <Field label="Pickup" value={pickup} onChangeText={(value: string) => { setPickup(value); setPickupPoint({ label: value, lat: pickupPoint.lat, lng: pickupPoint.lng }); }} />
+        <Field label="Pickup" value={pickup} onChangeText={(value: string) => { setPickup(value); setPickupPoint(null); }} />
+        <PrimaryButton label="Use my current location for pickup" onPress={useCurrentPickup} />
         <PrimaryButton label="Search pickup address" onPress={() => searchPlaces("pickup", pickup)} />
         {pickupSuggestions.map(item => <Pressable key={item.placeId} style={styles.suggestionRow} onPress={() => choosePlace("pickup", item)}><Text style={styles.body}>{item.primaryText}</Text><Text style={styles.muted}>{item.secondaryText}</Text></Pressable>)}
-        <Field label="Drop-off" value={dropoff} onChangeText={(value: string) => { setDropoff(value); setDropoffPoint({ label: value, lat: dropoffPoint.lat, lng: dropoffPoint.lng }); }} />
+        <Field label="Drop-off" value={dropoff} onChangeText={(value: string) => { setDropoff(value); setDropoffPoint(null); }} />
         <PrimaryButton label="Search drop-off address" onPress={() => searchPlaces("dropoff", dropoff)} />
         {dropoffSuggestions.map(item => <Pressable key={item.placeId} style={styles.suggestionRow} onPress={() => choosePlace("dropoff", item)}><Text style={styles.body}>{item.primaryText}</Text><Text style={styles.muted}>{item.secondaryText}</Text></Pressable>)}
         <PrimaryButton label="Validate ride addresses" onPress={validateAddresses} />
