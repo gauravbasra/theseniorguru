@@ -328,6 +328,21 @@ CREATE TABLE IF NOT EXISTS safety_telemetry (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS resident_safe_zones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  center_lat NUMERIC NOT NULL,
+  center_lng NUMERIC NOT NULL,
+  radius_meters INT NOT NULL DEFAULT 150,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_resident_safe_zones_resident_status ON resident_safe_zones(resident_id, status);
+
 CREATE TABLE IF NOT EXISTS safety_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,

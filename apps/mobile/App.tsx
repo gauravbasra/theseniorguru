@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleS
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { api, AppRole, patch, post, saveAuthToken } from "./src/services/api";
 import { initLocalDb, loadCirclePerson, loadRole, saveCirclePerson, saveRole } from "./src/services/localStore";
-import { requestSafetyPermissions, getNativeHealthDiagnostics, setHealthConsent, simulateSafetyEvent, startSafetyMonitoring, syncHealthVitals, syncNativeHealthVitals, syncWearableTelemetry, triggerVoiceSos } from "./src/services/safety";
+import { addSafeZone, requestSafetyPermissions, getNativeHealthDiagnostics, setHealthConsent, simulateSafetyEvent, startSafetyMonitoring, syncHealthVitals, syncNativeHealthVitals, syncWearableTelemetry, triggerVoiceSos } from "./src/services/safety";
 import seedState from "./src/seedState";
 import { colors, radius } from "./src/theme/tokens";
 
@@ -605,11 +605,21 @@ function ResidentSafety({ state, onRefresh }: { state: any; onRefresh: () => voi
     await onRefresh();
     Alert.alert("Wearable sync complete", `Risk level: ${result.wearables.latestSummary.riskLevel}`);
   }
+  async function addDefaultSafeZone() {
+    const result: any = await addSafeZone({ name: "Park View Community", lat: 43.1, lng: -79.1, radiusMeters: 180 });
+    await onRefresh();
+    Alert.alert("Safe zone saved", `${result.safeZone.name} is now monitored by backend geofencing.`);
+  }
   return (
     <View>
       <TopPhoneBar />
       <Text style={styles.h1}>Safety</Text>
       <MiniMap safety={safety} />
+      <Card title="Safe zone setup" icon="📍" tint="peach">
+        <Text style={styles.muted}>Backend geofencing compares live phone coordinates against approved zones. The app cannot fake inside or outside status.</Text>
+        <WellnessRow label="Active zones" value={String(safety.safeZones?.length || 0)} status={safety.safeZones?.[0]?.name || "No zone configured"} />
+        <PrimaryButton label="Add Park View safe zone" onPress={addDefaultSafeZone} />
+      </Card>
       <SectionTitle title="Wearable safety devices" />
       <Card title="Sync wearable telemetry" icon="⌚">
         <Text style={styles.muted}>Use these mobile actions to test Apple Watch, BLE tag, SOS button, and proximity ingestion.</Text>

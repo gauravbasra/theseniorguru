@@ -104,12 +104,16 @@ export async function startSafetyMonitoring(onUpdate?: (payload: SafetyPayload) 
 
 export async function simulateSafetyEvent(kind: "normal" | "wandering" | "fall" | "stillness") {
   const scenarios: Record<"normal" | "wandering" | "fall" | "stillness", SafetyPayload> = {
-    normal: { movementStatus: "walking", stillMinutes: 3, stepsLastHour: 480, fallConfidence: 0.04, impactDetected: false, safeZoneStatus: "inside", location: { label: "Park View Community - Garden Walkway" } },
-    wandering: { movementStatus: "walking", stillMinutes: 0, stepsLastHour: 1200, fallConfidence: 0.12, impactDetected: false, safeZoneStatus: "outside", location: { label: "Outside Park View safe zone - North entrance" } },
-    fall: { movementStatus: "no movement after impact", stillMinutes: 14, stepsLastHour: 12, fallConfidence: 0.91, impactDetected: true, safeZoneStatus: "inside", location: { label: "Park View Community - Apartment hallway" } },
-    stillness: { movementStatus: "still", stillMinutes: 58, stepsLastHour: 0, fallConfidence: 0.34, impactDetected: false, safeZoneStatus: "inside", location: { label: "Park View Community - Bedroom" } }
+    normal: { movementStatus: "walking", stillMinutes: 3, stepsLastHour: 480, fallConfidence: 0.04, impactDetected: false, safeZoneStatus: "inside", location: { label: "Park View Community - Garden Walkway", lat: 43.1001, lng: -79.1001, accuracyMeters: 18 } },
+    wandering: { movementStatus: "walking", stillMinutes: 0, stepsLastHour: 1200, fallConfidence: 0.12, impactDetected: false, safeZoneStatus: "inside", location: { label: "Outside Park View safe zone - North entrance", lat: 43.108, lng: -79.108, accuracyMeters: 18 } },
+    fall: { movementStatus: "no movement after impact", stillMinutes: 14, stepsLastHour: 12, fallConfidence: 0.91, impactDetected: true, safeZoneStatus: "inside", location: { label: "Park View Community - Apartment hallway", lat: 43.1002, lng: -79.1001, accuracyMeters: 12 } },
+    stillness: { movementStatus: "still", stillMinutes: 58, stepsLastHour: 0, fallConfidence: 0.34, impactDetected: false, safeZoneStatus: "inside", location: { label: "Park View Community - Bedroom", lat: 43.1000, lng: -79.0999, accuracyMeters: 10 } }
   };
   return post("/api/safety/phone-analytics", scenarios[kind]);
+}
+
+export async function addSafeZone(zone: { name: string; lat: number; lng: number; radiusMeters: number }) {
+  return post("/api/safety/safe-zones", zone);
 }
 
 export async function triggerVoiceSos(command: string) {

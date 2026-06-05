@@ -426,6 +426,50 @@ function createProductionApi(pool) {
     };
   }
 
+  function distanceMeters(lat1, lng1, lat2, lng2) {
+    const toRadians = value => (Number(value) * Math.PI) / 180;
+    const earthRadiusMeters = 6371000;
+    const dLat = toRadians(lat2 - lat1);
+    const dLng = toRadians(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  async function evaluateResidentSafeZone(residentId, location = {}, fallbackStatus = null) {
+    const zones = (await query(
+      `SELECT * FROM resident_safe_zones
+       WHERE resident_id = $1 AND status = 'active'
+       ORDER BY created_at DESC`,
+      [residentId]
+    )).rows;
+    const lat = Number(location?.lat);
+    const lng = Number(location?.lng);
+    if (!zones.length || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return {
+        status: fallbackStatus || "unknown",
+        zone: zones[0] || null,
+        distanceMeters: null,
+        evaluated: false
+      };
+    }
+    const nearest = zones
+      .map(zone => ({
+        zone,
+        distance: distanceMeters(lat, lng, Number(zone.center_lat), Number(zone.center_lng))
+      }))
+      .sort((left, right) => left.distance - right.distance)[0];
+    const radius = Number(nearest.zone.radius_meters);
+    return {
+      status: nearest.distance <= radius ? "inside" : "outside",
+      zone: nearest.zone,
+      distanceMeters: Math.round(nearest.distance),
+      evaluated: true
+    };
+  }
+
   async function trustedSafetyUserIds(residentId) {
     return (await query(
       `SELECT trusted_user_id FROM trusted_connections
@@ -840,6 +884,7 @@ function createProductionApi(pool) {
         const bookings = resident ? (await query(`SELECT * FROM bookings WHERE resident_id = $1 ORDER BY created_at DESC`, [resident.id])).rows : [];
         const safetyEvents = resident ? (await query(`SELECT * FROM safety_events WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 25`, [resident.id])).rows : [];
         const telemetry = resident ? (await query(`SELECT * FROM safety_telemetry WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 1`, [resident.id])).rows[0] : null;
+        const safeZones = resident ? (await query(`SELECT * FROM resident_safe_zones WHERE resident_id = $1 AND status = 'active' ORDER BY created_at DESC`, [resident.id])).rows : [];
         const healthConsent = resident ? (await query(`SELECT * FROM health_consents WHERE resident_id = $1`, [resident.id])).rows[0] : null;
         const healthRows = resident ? (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [resident.id])).rows : [];
         const wearableDevices = resident ? (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [resident.id])).rows : [];
@@ -888,7 +933,7 @@ function createProductionApi(pool) {
             carePreferences: { preferredHospital: "", emergencyInstructions: "" }
           }
         } : null;
-        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, refillRequests, circleMessages, circleCallRequests, safety: { latestTelemetry: telemetry, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
+        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, refillRequests, circleMessages, circleCallRequests, safety: { latestTelemetry: telemetry, safeZones, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
       }
       if (user.role === "trusted_person") {
         const connections = await query(
@@ -1443,6 +1488,9 @@ function createProductionApi(pool) {
       const telemetry = permissions.includes("location") || permissions.includes("safety")
         ? (await query(`SELECT * FROM safety_telemetry WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 1`, [connection.resident_id])).rows[0]
         : null;
+      const safeZones = permissions.includes("location") || permissions.includes("safety")
+        ? (await query(`SELECT * FROM resident_safe_zones WHERE resident_id = $1 AND status = 'active' ORDER BY created_at DESC`, [connection.resident_id])).rows
+        : [];
       const healthRows = permissions.includes("wellness")
         ? (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [connection.resident_id])).rows
         : [];
@@ -1461,7 +1509,7 @@ function createProductionApi(pool) {
         resident: { id: connection.resident_id, name: connection.resident_name, community: connection.community, mood: connection.mood },
         safety: {
           location: telemetry ? { label: connection.community || "Shared location", accuracyMeters: telemetry.accuracy_meters || 18 } : { label: connection.community || "Shared location", accuracyMeters: 18 },
-          safeZones: [{ status: telemetry?.safe_zone_status || "inside" }],
+          safeZones: safeZones.length ? safeZones.map(zone => ({ ...zone, status: telemetry?.safe_zone_status || "unknown" })) : [{ status: telemetry?.safe_zone_status || "unknown" }],
           movement: { status: telemetry?.movement_status || "steady", stillMinutes: telemetry?.still_minutes || 0, phoneBattery: telemetry?.phone_battery || 80 },
           fallDetection: { confidence: Number(telemetry?.fall_confidence || 0), status: Number(telemetry?.fall_confidence || 0) > 0.7 ? "watch" : "clear" },
           sosEvents: safetyEvents
@@ -1975,6 +2023,32 @@ function createProductionApi(pool) {
       return { delivered, failed, remainingQueued };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/safety/safe-zones") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const name = String(payload.name || "").trim();
+      const lat = Number(payload.lat ?? payload.centerLat);
+      const lng = Number(payload.lng ?? payload.centerLng);
+      const radiusMeters = Math.max(25, Math.min(5000, Number(payload.radiusMeters || 150)));
+      if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        const error = new Error("Safe zone name, latitude, and longitude are required");
+        error.status = 400;
+        throw error;
+      }
+      const safeZone = (await query(
+        `INSERT INTO resident_safe_zones (resident_id, name, center_lat, center_lng, radius_meters, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [resident.id, name, lat, lng, radiusMeters, user.id]
+      )).rows[0];
+      await audit(req, user, "resident_safe_zone_created", "resident_safe_zone", safeZone.id, { residentId: resident.id, name, radiusMeters }, "info");
+      return { safeZone };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/safety/phone-analytics") {
       requireRole(user, ["senior"]);
       const resident = await getResidentForUser(user);
@@ -1983,6 +2057,7 @@ function createProductionApi(pool) {
         error.status = 403;
         throw error;
       }
+      const safeZoneEvaluation = await evaluateResidentSafeZone(resident.id, payload.location || {}, payload.safeZoneStatus || null);
       const telemetry = (await query(
         `INSERT INTO safety_telemetry (
           resident_id, lat, lng, accuracy_meters, location_label, movement_status, steps_last_hour,
@@ -2001,7 +2076,7 @@ function createProductionApi(pool) {
           payload.phoneBattery || null,
           payload.fallConfidence || 0,
           Boolean(payload.impactDetected),
-          payload.safeZoneStatus || null
+          safeZoneEvaluation.status
         ]
       )).rows[0];
       const events = [];
@@ -2009,8 +2084,10 @@ function createProductionApi(pool) {
       if (payload.impactDetected && Number(payload.fallConfidence || 0) >= risk.fallThreshold) {
         events.push(["fall-detected", "critical", `Likely fall detected with ${Math.round(Number(payload.fallConfidence) * 100)}% confidence. Health profile notes: ${risk.fallContext || "fall-risk support should be reviewed"}.`]);
       }
-      if (payload.safeZoneStatus === "outside") {
-        events.push(["safe-zone-exit", risk.wanderingSensitive ? "critical" : "high", `Resident appears outside the approved safe zone.${risk.wanderingSensitive ? ` Memory profile guidance: ${risk.memoryContext || "use calm redirection and notify trusted circle"}.` : ""}`]);
+      if (safeZoneEvaluation.status === "outside") {
+        const distanceText = safeZoneEvaluation.distanceMeters !== null ? ` Nearest zone is ${safeZoneEvaluation.distanceMeters}m away.` : "";
+        const zoneText = safeZoneEvaluation.zone?.name ? ` (${safeZoneEvaluation.zone.name})` : "";
+        events.push(["safe-zone-exit", risk.wanderingSensitive ? "critical" : "high", `Resident appears outside the approved safe zone${zoneText}.${distanceText}${risk.wanderingSensitive ? ` Memory profile guidance: ${risk.memoryContext || "use calm redirection and notify trusted circle"}.` : ""}`]);
       }
       if (Number(payload.stillMinutes || 0) >= risk.stillnessThreshold) {
         events.push(["unusual-stillness", "high", `Phone analytics show ${payload.stillMinutes} minutes of unusual stillness. Mobility profile threshold is ${risk.stillnessThreshold} minutes.`]);
@@ -2036,8 +2113,8 @@ function createProductionApi(pool) {
           );
         }
       }
-      await audit(req, user, "safety_telemetry_ingested", "resident", resident.id, { telemetryId: telemetry.id, eventCount: createdEvents.length }, createdEvents.length ? "critical" : "info");
-      return { telemetry, events: createdEvents };
+      await audit(req, user, "safety_telemetry_ingested", "resident", resident.id, { telemetryId: telemetry.id, eventCount: createdEvents.length, safeZone: safeZoneEvaluation }, createdEvents.length ? "critical" : "info");
+      return { telemetry, safeZone: safeZoneEvaluation, events: createdEvents };
     }
 
     if (req.method === "GET" && url.pathname === "/api/superadmin/approvals") {
