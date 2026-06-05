@@ -815,6 +815,7 @@ function NotificationsPage({ state, circleState, onRefresh }: { state: any; circ
             <Text style={styles.body}>{String(item.channel || "push").toUpperCase()} · {item.status || "queued"}</Text>
             <Text style={styles.muted}>{item.eventType || item.type || "care-update"} · {item.personName || state.resident?.name || "Anita Sharma"}</Text>
             <Text style={styles.muted}>{item.body || "Care notification received."}</Text>
+            {item.latest_attempt || item.latestAttempt ? <Text style={styles.muted}>Last delivery: {(item.latest_attempt || item.latestAttempt).provider} · {(item.latest_attempt || item.latestAttempt).status}</Text> : null}
             {item.status === "queued" ? <Pressable style={styles.smallPrimary} onPress={() => markDelivered(item.id)}><Text style={styles.primaryText}>Mark delivered</Text></Pressable> : <Text style={styles.selected}>Delivered by {item.provider || "notification provider"}</Text>}
           </View>
         )) : <Text style={styles.muted}>No notifications yet.</Text>}

@@ -1625,8 +1625,32 @@ function createProductionApi(pool) {
       const personId = url.searchParams.get('personId');
       const targetUserId = user.role === "superadmin" && personId ? personId : user.id;
       const rows = user.role === "superadmin" && !personId
-        ? (await query(`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100`)).rows
-        : (await query(`SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [targetUserId])).rows;
+        ? (await query(
+          `SELECT n.*, row_to_json(nda.*) AS latest_attempt
+           FROM notifications n
+           LEFT JOIN LATERAL (
+             SELECT provider, channel, status, provider_message_id, error, attempted_at
+             FROM notification_delivery_attempts
+             WHERE notification_id = n.id
+             ORDER BY attempted_at DESC
+             LIMIT 1
+           ) nda ON true
+           ORDER BY n.created_at DESC LIMIT 100`
+        )).rows
+        : (await query(
+          `SELECT n.*, row_to_json(nda.*) AS latest_attempt
+           FROM notifications n
+           LEFT JOIN LATERAL (
+             SELECT provider, channel, status, provider_message_id, error, attempted_at
+             FROM notification_delivery_attempts
+             WHERE notification_id = n.id
+             ORDER BY attempted_at DESC
+             LIMIT 1
+           ) nda ON true
+           WHERE n.user_id = $1
+           ORDER BY n.created_at DESC LIMIT 100`,
+          [targetUserId]
+        )).rows;
       return { notifications: rows };
     }
 
@@ -1643,6 +1667,11 @@ function createProductionApi(pool) {
         error.status = 404;
         throw error;
       }
+      await query(
+        `INSERT INTO notification_delivery_attempts (notification_id, provider, channel, status, provider_message_id)
+         VALUES ($1, 'mobile-user-action', $2, 'delivered', $3)`,
+        [id, result.rows[0].channel, `mobile-user-action_${id}_${Date.now()}`]
+      );
       await audit(req, user, "notification_marked_delivered", "notification", id, {}, "info");
       return { notification: result.rows[0] };
     }
