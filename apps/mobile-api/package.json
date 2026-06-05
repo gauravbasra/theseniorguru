@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "db:schema": "psql \"$DATABASE_URL\" -f schema.sql",
-    "db:seed": "psql \"$DATABASE_URL\" -f seed.sql"
+    "db:seed": "psql \"$DATABASE_URL\" -f seed.sql",
+    "smoke:launch-readiness": "node scripts/smoke-launch-readiness.js"
   },
   "dependencies": {
     "pg": "^8.21.0"

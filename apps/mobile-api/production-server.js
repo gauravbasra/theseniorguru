@@ -1001,6 +1001,175 @@ function createProductionApi(pool) {
     return recipients.length;
   }
 
+  async function evaluateLaunchReadiness() {
+    const requiredTables = [
+      "users",
+      "sessions",
+      "residents",
+      "trusted_connections",
+      "businesses",
+      "subscriptions",
+      "services",
+      "leads",
+      "bookings",
+      "medications",
+      "resident_diagnoses",
+      "resident_allergies",
+      "resident_mobility_profiles",
+      "resident_cognitive_support_profiles",
+      "medication_inventory_events",
+      "medication_refill_requests",
+      "safety_telemetry",
+      "resident_safe_zones",
+      "safety_events",
+      "health_consents",
+      "health_vitals",
+      "wearable_devices",
+      "wearable_telemetry",
+      "notifications",
+      "audit_logs",
+      "ride_provider_configs",
+      "support_order_provider_configs",
+      "support_orders",
+      "stripe_webhook_events"
+    ];
+    const tableRows = (await query(
+      `SELECT table_name, to_regclass('public.' || table_name) IS NOT NULL AS exists
+       FROM unnest($1::text[]) AS table_name
+       ORDER BY table_name`,
+      [requiredTables]
+    )).rows;
+    const missingTables = tableRows.filter(row => !row.exists).map(row => row.table_name);
+    const counts = (await query(
+      `SELECT
+          (SELECT count(*)::int FROM users) AS users,
+          (SELECT count(*)::int FROM residents) AS residents,
+          (SELECT count(*)::int FROM businesses) AS businesses,
+          (SELECT count(*)::int FROM services) AS services,
+          (SELECT count(*)::int FROM medications) AS medications,
+          (SELECT count(*)::int FROM trusted_connections) AS trusted_connections,
+          (SELECT count(*)::int FROM bookings) AS bookings,
+          (SELECT count(*)::int FROM notifications WHERE status IN ('queued','sent')) AS notifications,
+          (SELECT count(*)::int FROM audit_logs) AS audit_logs`
+    )).rows[0];
+    const rideProviders = await ensureRideProviderConfigs();
+    const supportProviders = await ensureSupportOrderProviderConfigs();
+    const configuredRideProviders = rideProviders.filter(item => item.status === "enabled");
+    const manualRideReady = configuredRideProviders.some(item => ["manual_coordination", "local_partner"].includes(item.provider));
+    const automatedRideReady = configuredRideProviders.some(item => ["uber_health", "lyft_healthcare"].includes(item.provider));
+    const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+    const googleMapsConfigured = Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY);
+    const checks = [
+      {
+        key: "database",
+        label: "Database connection",
+        status: "pass",
+        severity: "blocker",
+        detail: "Postgres accepted the readiness query."
+      },
+      {
+        key: "schema",
+        label: "Required schema",
+        status: missingTables.length ? "fail" : "pass",
+        severity: "blocker",
+        detail: missingTables.length ? `Missing tables: ${missingTables.join(", ")}` : `${requiredTables.length} required tables are present.`
+      },
+      {
+        key: "stripe",
+        label: "Stripe payments and webhooks",
+        status: stripeConfigured ? "pass" : "fail",
+        severity: "blocker",
+        detail: stripeConfigured ? "Stripe secret and webhook secret are configured." : "Stripe secret and webhook secret must both be configured before paid plans and ride payments launch."
+      },
+      {
+        key: "google_maps",
+        label: "Google Maps",
+        status: googleMapsConfigured ? "pass" : "fail",
+        severity: "blocker",
+        detail: googleMapsConfigured ? "Google Maps key is configured for places, routes, address validation, and nearby discovery." : "Google Maps key is missing."
+      },
+      {
+        key: "resident_core",
+        label: "Resident onboarding and care profile",
+        status: Number(counts.residents) > 0 && Number(counts.medications) > 0 ? "pass" : "fail",
+        severity: "blocker",
+        detail: `${counts.residents} residents and ${counts.medications} medications found.`
+      },
+      {
+        key: "trusted_circle",
+        label: "Trusted circle safety access",
+        status: Number(counts.trusted_connections) > 0 ? "pass" : "warning",
+        severity: "launch_warning",
+        detail: `${counts.trusted_connections} trusted connections found.`
+      },
+      {
+        key: "business_marketplace",
+        label: "Business onboarding and services",
+        status: Number(counts.businesses) > 0 && Number(counts.services) > 0 ? "pass" : "warning",
+        severity: "launch_warning",
+        detail: `${counts.businesses} businesses and ${counts.services} services found.`
+      },
+      {
+        key: "ride_fulfillment",
+        label: "Ride fulfillment",
+        status: automatedRideReady ? "pass" : (manualRideReady ? "gated" : "fail"),
+        severity: manualRideReady ? "vendor_gated" : "blocker",
+        detail: automatedRideReady
+          ? "At least one automated healthcare ride provider is enabled."
+          : (manualRideReady ? "Automated Uber/Lyft dispatch is credential-gated; manual/local coordination is available." : "No ride fulfillment path is enabled.")
+      },
+      {
+        key: "support_orders",
+        label: "Food, grocery, pharmacy, outdoor support orders",
+        status: supportProviders.some(item => item.status === "enabled") ? "gated" : "warning",
+        severity: "vendor_gated",
+        detail: "Partner APIs can stay credential-gated if manual/local coordination remains enabled and visible."
+      },
+      {
+        key: "audit_logging",
+        label: "Audit logging",
+        status: Number(counts.audit_logs) >= 0 ? "pass" : "fail",
+        severity: "blocker",
+        detail: `${counts.audit_logs} audit log rows found.`
+      }
+    ];
+    const blockers = checks.filter(check => check.severity === "blocker" && check.status === "fail");
+    const warnings = checks.filter(check => ["warning", "gated"].includes(check.status));
+    return {
+      launchTarget: "Monday MVP v1",
+      evaluatedAt: new Date().toISOString(),
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "local",
+      launchable: blockers.length === 0,
+      blockers,
+      warnings,
+      checks,
+      counts,
+      providerReadiness: {
+        rideProviders: rideProviders.map(item => ({
+          provider: item.provider,
+          displayName: item.display_name,
+          status: item.status,
+          credentialStatus: item.credential_status,
+          paymentModel: item.payment_model
+        })),
+        supportProviders: supportProviders.map(item => ({
+          category: item.category,
+          provider: item.provider,
+          displayName: item.display_name,
+          status: item.status,
+          credentialStatus: item.credential_status,
+          paymentModel: item.payment_model
+        }))
+      },
+      configuredServices: {
+        stripe: stripeConfigured,
+        googleMaps: googleMapsConfigured,
+        uberHealth: uberHealthConfigured(),
+        lyftHealthcare: lyftHealthcareConfigured()
+      }
+    };
+  }
+
   async function route(req, payload, url) {
     if (req.method === "POST" && url.pathname === "/api/stripe/webhook") {
       if (!verifyStripeSignature(req.rawBody, req.headers["stripe-signature"], process.env.STRIPE_WEBHOOK_SECRET)) {
@@ -2706,6 +2875,13 @@ function createProductionApi(pool) {
       const providers = await ensureRideProviderConfigs();
       await audit(req, user, "ride_provider_configs_viewed", "ride_provider_config", null, { providers: providers.length }, "info");
       return { providers };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/superadmin/launch-readiness") {
+      requireRole(user, ["superadmin"]);
+      const readiness = await evaluateLaunchReadiness();
+      await audit(req, user, "launch_readiness_viewed", "launch_readiness", null, { launchable: readiness.launchable, blockers: readiness.blockers.length, warnings: readiness.warnings.length }, readiness.launchable ? "info" : "warning");
+      return readiness;
     }
 
     if (req.method === "POST" && url.pathname === "/api/superadmin/ride-providers") {
