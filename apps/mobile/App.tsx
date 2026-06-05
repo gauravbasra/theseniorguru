@@ -865,7 +865,7 @@ function CircleSafety({ circleState, onRefresh }: { circleState: any; onRefresh:
   }
 
   async function pingSenior() {
-    await post("/api/circle/help-message", { personId: circleState?.person?.id || "rita", body: "Rita checked in and pinged Anita from trusted circle." });
+    await post("/api/circle/help-message", { body: "Rita checked in and pinged Anita from trusted circle." });
     await onRefresh();
     Alert.alert("Ping sent", "Anita has been pinged and the care log was updated.");
   }
@@ -913,7 +913,7 @@ function CircleSafety({ circleState, onRefresh }: { circleState: any; onRefresh:
 function CircleAssist({ circleState, personId, onRefresh }: { circleState: any; personId: string; onRefresh: () => void }) {
   const [message, setMessage] = useState("Hi Anita, checking in. Do you need help today?");
   async function sendMessage() {
-    await post("/api/circle/help-message", { personId, body: message });
+    await post("/api/circle/help-message", { body: message });
     await onRefresh();
   }
   async function ack(id: string) {

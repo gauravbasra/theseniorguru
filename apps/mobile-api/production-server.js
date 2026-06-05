@@ -164,6 +164,22 @@ function createProductionApi(pool) {
     return result.rows[0];
   }
 
+  async function ensureDemoResident() {
+    const senior = (await query(
+      `INSERT INTO users (email, display_name, role, status)
+       VALUES ('anita@theseniorguru.local', 'Anita Sharma', 'senior', 'approved')
+       ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name, role = EXCLUDED.role, status = EXCLUDED.status
+       RETURNING *`
+    )).rows[0];
+    return (await query(
+      `INSERT INTO residents (user_id, age, community, mood, onboarding_complete, live_tracking_enabled, memory_support_enabled)
+       VALUES ($1, 68, 'Park View Community', 'steady', true, true, true)
+       ON CONFLICT (user_id) DO UPDATE SET live_tracking_enabled = true, memory_support_enabled = true
+       RETURNING *`,
+      [senior.id]
+    )).rows[0];
+  }
+
   async function ensureDefaultSubscription(businessId) {
     return (await query(
       `INSERT INTO subscriptions (business_id, plan, current_period_start, current_period_end)
@@ -1007,6 +1023,116 @@ function createProductionApi(pool) {
       return { service: result.rows[0] };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/circle/accept-invite") {
+      requireRole(user, ["trusted_person"]);
+      const inviteCode = String(required(payload.inviteCode, "inviteCode")).trim().toUpperCase();
+      const inviteMap = {
+        "RITA-ANITA": ["safety", "sos", "location", "messages", "wellness", "medications"],
+        "ARJUN-ANITA": ["safety", "sos", "location", "messages", "rides"],
+        "DRMEHTA-ANITA": ["wellness", "medications", "safety"],
+        "SUNITA-ANITA": ["messages", "wellness"]
+      };
+      const permissions = inviteMap[inviteCode];
+      if (!permissions) {
+        const error = new Error("Invalid or expired invite code");
+        error.status = 404;
+        throw error;
+      }
+      const resident = await ensureDemoResident();
+      const connection = (await query(
+        `INSERT INTO trusted_connections (resident_id, trusted_user_id, permissions, status, updated_at)
+         VALUES ($1,$2,$3,'approved',now())
+         ON CONFLICT (resident_id, trusted_user_id) DO UPDATE SET permissions = EXCLUDED.permissions, status = 'approved', updated_at = now()
+         RETURNING *`,
+        [resident.id, user.id, permissions]
+      )).rows[0];
+      await audit(req, user, "trusted_invite_accepted", "trusted_connection", connection.id, { inviteCode, permissions }, "info");
+      return { person: { id: user.id, name: user.display_name, role: "Trusted person", permissions, status: "approved" }, connection };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/circle") {
+      requireRole(user, ["trusted_person"]);
+      const connection = (await query(
+        `SELECT tc.*, r.id AS resident_id, r.community, r.mood, r.health_profile, senior.display_name AS resident_name
+         FROM trusted_connections tc
+         JOIN residents r ON r.id = tc.resident_id
+         JOIN users senior ON senior.id = r.user_id
+         WHERE tc.trusted_user_id = $1 AND tc.status = 'approved'
+         ORDER BY tc.updated_at DESC LIMIT 1`,
+        [user.id]
+      )).rows[0];
+      if (!connection) {
+        const error = new Error("Trusted circle invite has not been accepted");
+        error.status = 404;
+        throw error;
+      }
+      const permissions = connection.permissions || [];
+      const safetyEvents = permissions.includes("safety") || permissions.includes("sos")
+        ? (await query(`SELECT * FROM safety_events WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 25`, [connection.resident_id])).rows
+        : [];
+      const telemetry = permissions.includes("location") || permissions.includes("safety")
+        ? (await query(`SELECT * FROM safety_telemetry WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 1`, [connection.resident_id])).rows[0]
+        : null;
+      const healthRows = permissions.includes("wellness")
+        ? (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [connection.resident_id])).rows
+        : [];
+      const wearableDevices = permissions.includes("safety")
+        ? (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [connection.resident_id])).rows
+        : [];
+      const notifications = (await query(`SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [user.id])).rows;
+      return {
+        person: { id: user.id, name: user.display_name, role: "Trusted person", permissions, status: connection.status },
+        resident: { id: connection.resident_id, name: connection.resident_name, community: connection.community, mood: connection.mood },
+        safety: {
+          location: telemetry ? { label: connection.community || "Shared location", accuracyMeters: telemetry.accuracy_meters || 18 } : { label: connection.community || "Shared location", accuracyMeters: 18 },
+          safeZones: [{ status: telemetry?.safe_zone_status || "inside" }],
+          movement: { status: telemetry?.movement_status || "steady", stillMinutes: telemetry?.still_minutes || 0, phoneBattery: telemetry?.phone_battery || 80 },
+          fallDetection: { confidence: Number(telemetry?.fall_confidence || 0), status: Number(telemetry?.fall_confidence || 0) > 0.7 ? "watch" : "clear" },
+          sosEvents: safetyEvents
+        },
+        healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) },
+        wearables: { devices: wearableDevices, readings: [], latestSummary: evaluateWearables(wearableDevices, {}) },
+        notifications,
+        tasks: []
+      };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/circle/help-message") {
+      requireRole(user, ["trusted_person"]);
+      const connection = (await query(
+        `SELECT tc.*, r.user_id AS senior_user_id, senior.display_name AS resident_name
+         FROM trusted_connections tc
+         JOIN residents r ON r.id = tc.resident_id
+         JOIN users senior ON senior.id = r.user_id
+         WHERE tc.trusted_user_id = $1 AND tc.status = 'approved'
+         ORDER BY tc.updated_at DESC LIMIT 1`,
+        [user.id]
+      )).rows[0];
+      if (!connection) {
+        const error = new Error("Trusted circle invite has not been accepted");
+        error.status = 404;
+        throw error;
+      }
+      if (!(connection.permissions || []).includes("messages")) {
+        const error = new Error("This trusted person does not have message access");
+        error.status = 403;
+        throw error;
+      }
+      const notification = (await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1,'push',$2,$3,'queued') RETURNING *`,
+        [connection.senior_user_id, `${user.display_name} checked in`, required(payload.body, "body")]
+      )).rows[0];
+      await audit(req, user, "trusted_person_help_message_sent", "notification", notification.id, { resident: connection.resident_name }, "info");
+      return { notification };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/circle/tasks/ack") {
+      requireRole(user, ["trusted_person"]);
+      await audit(req, user, "trusted_task_acknowledged", "trusted_task", payload.id || null, {}, "info");
+      return { ok: true, id: payload.id || null, status: "acknowledged" };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/help/match") {
       requireRole(user, ["senior"]);
       const need = String(payload.need || "").toLowerCase();
@@ -1257,10 +1383,28 @@ function createProductionApi(pool) {
 
     if (req.method === 'GET' && url.pathname === '/api/notifications') {
       const personId = url.searchParams.get('personId');
-      const rows = personId
-        ? (await query(`SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [personId])).rows
-        : (await query(`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100`)).rows;
+      const targetUserId = user.role === "superadmin" && personId ? personId : user.id;
+      const rows = user.role === "superadmin" && !personId
+        ? (await query(`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100`)).rows
+        : (await query(`SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [targetUserId])).rows;
       return { notifications: rows };
+    }
+
+    if (req.method === 'POST' && url.pathname.startsWith('/api/notifications/') && url.pathname.endsWith('/mark-delivered')) {
+      const id = url.pathname.split('/')[3];
+      const result = await query(
+        `UPDATE notifications SET status = 'delivered', provider = COALESCE(provider, 'mobile-user-action'), delivered_at = now()
+         WHERE id = $1 AND (user_id = $2 OR $3 = 'superadmin')
+         RETURNING *`,
+        [id, user.id, user.role]
+      );
+      if (!result.rows[0]) {
+        const error = new Error("Notification not found");
+        error.status = 404;
+        throw error;
+      }
+      await audit(req, user, "notification_marked_delivered", "notification", id, {}, "info");
+      return { notification: result.rows[0] };
     }
 
     if (req.method === 'POST' && url.pathname === '/api/notifications/process') {
