@@ -211,6 +211,8 @@ function createProductionApi(pool) {
     return (await query(
       `UPDATE subscriptions
        SET used_leads_year = 0,
+           used_leads_month = 0,
+           lead_top_ups = 0,
            current_period_start = date_trunc('year', now()),
            current_period_end = date_trunc('year', now()) + interval '1 year',
            updated_at = now()
