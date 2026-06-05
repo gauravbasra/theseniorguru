@@ -2154,6 +2154,28 @@ function createProductionApi(pool) {
         ...(location ? { location: `${location.lat},${location.lng}`, radius: String(radiusMeters), strictbounds: "true" } : {}),
         ...(payload.sessionToken ? { sessiontoken: payload.sessionToken } : {})
       };
+      if (location) {
+        const nearby = await googleMapsGet("place/textsearch/json", {
+          query: input,
+          location: `${location.lat},${location.lng}`,
+          radius: String(radiusMeters)
+        });
+        const nearbyPredictions = (nearby.results || []).slice(0, 6).map(item => ({
+          placeId: item.place_id,
+          description: item.formatted_address ? `${item.name}, ${item.formatted_address}` : item.name,
+          primaryText: item.name || item.formatted_address || input,
+          secondaryText: item.formatted_address || item.vicinity || "",
+          lat: item.geometry?.location?.lat || null,
+          lng: item.geometry?.location?.lng || null,
+          rating: item.rating || null,
+          userRatingsTotal: item.user_ratings_total || 0,
+          source: "google_places_text_search_nearby"
+        }));
+        if (nearbyPredictions.length) {
+          await audit(req, user, "google_places_autocomplete_requested", "place", null, { inputLength: input.length, results: nearbyPredictions.length, locationBiased: true, radiusMeters, globalSearch: !payload.components, source: "text_search_nearby" }, "info");
+          return { provider: "google_places_text_search_nearby", predictions: nearbyPredictions, locationBias: location, radiusMeters, globalSearch: !payload.components };
+        }
+      }
       const data = await googleMapsGet("place/autocomplete/json", params);
       const predictions = (data.predictions || []).slice(0, 6).map(item => ({
         placeId: item.place_id,
