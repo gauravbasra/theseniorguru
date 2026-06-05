@@ -17,6 +17,7 @@ type Screen =
   | "residentFeed"
   | "residentServices"
   | "residentSafety"
+  | "residentSettings"
   | "notifications"
   | "sosEvents"
   | "businessOnboarding"
@@ -24,16 +25,18 @@ type Screen =
   | "businessLeads"
   | "businessServices"
   | "businessPackage"
+  | "businessSettings"
   | "circleInvite"
   | "circleSafety"
   | "circleAssist"
   | "circlePermissions"
+  | "circleSettings"
   | "superadminHome"
   | "superadminAudit";
 
-const residentTabs: [Screen, string][] = [["residentHome", "Today"], ["residentHelp", "Help"], ["residentPeople", "Companion"], ["residentFeed", "Feed"], ["residentServices", "More"]];
-const businessTabs: [Screen, string][] = [["businessHome", "Dashboard"], ["businessLeads", "Leads"], ["businessServices", "Services"], ["businessPackage", "Package"]];
-const circleTabs: [Screen, string][] = [["circleSafety", "Safety"], ["circleAssist", "Assist"], ["circlePermissions", "Access"]];
+const residentTabs: [Screen, string][] = [["residentHome", "Today"], ["residentHelp", "Help"], ["residentPeople", "Companion"], ["residentServices", "More"], ["residentSettings", "Settings"]];
+const businessTabs: [Screen, string][] = [["businessHome", "Dashboard"], ["businessLeads", "Leads"], ["businessServices", "Services"], ["businessPackage", "Package"], ["businessSettings", "Settings"]];
+const circleTabs: [Screen, string][] = [["circleSafety", "Safety"], ["circleAssist", "Assist"], ["circlePermissions", "Access"], ["circleSettings", "Settings"]];
 const superadminTabs: [Screen, string][] = [["superadminHome", "Approvals"], ["superadminAudit", "Audit"]];
 
 const devEmails: Record<AppRole, string> = {
@@ -105,7 +108,7 @@ export default function App() {
       try {
         await initLocalDb();
         setUnitSystem(await loadUnitSystem());
-        savedRole = null;
+        savedRole = await loadRole();
         if (savedRole) await ensureDevSession(savedRole);
         nextState = await refresh();
       } catch {
@@ -177,6 +180,7 @@ export default function App() {
             {screen === "residentFeed" && <ResidentFeed />}
             {screen === "residentServices" && <ResidentServices state={state} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "residentSafety" && <ResidentSafety state={state} onRefresh={refresh} unitSystem={unitSystem} />}
+            {screen === "residentSettings" && <ResidentSettings state={state} unitSystem={unitSystem} onUnitChange={async next => { setUnitSystem(next); await saveUnitSystem(next); }} onDone={async () => { await refresh(); setScreen("residentHome"); }} />}
             {screen === "notifications" && <NotificationsPage state={state} circleState={circleState} onRefresh={refresh} />}
             {screen === "sosEvents" && <SosEventsPage state={state} circleState={circleState} circlePersonId={circlePersonId} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "businessOnboarding" && <BusinessOnboarding state={state} onDone={async () => { await refresh(); setScreen("businessHome"); }} />}
@@ -184,14 +188,14 @@ export default function App() {
             {screen === "businessLeads" && <BusinessLeads state={state} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "businessServices" && <BusinessServices state={state} onRefresh={refresh} />}
             {screen === "businessPackage" && <BusinessPackage state={state} onRefresh={refresh} />}
+            {screen === "businessSettings" && <BusinessSettings state={state} unitSystem={unitSystem} onUnitChange={async next => { setUnitSystem(next); await saveUnitSystem(next); }} onDone={async () => { await refresh(); setScreen("businessHome"); }} />}
             {screen === "circleInvite" && <CircleInvite onAccepted={async personId => { await saveCirclePerson(personId); setCirclePersonId(personId); await refresh(); setScreen("circleSafety"); }} />}
             {screen === "circleSafety" && <CircleSafety circleState={circleState} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "circleAssist" && <CircleAssist circleState={circleState} personId={circlePersonId} onRefresh={refresh} />}
             {screen === "circlePermissions" && <CirclePermissions state={state} circlePersonId={circlePersonId} onPick={async personId => { await saveCirclePerson(personId); setCirclePersonId(personId); await refresh(); }} />}
+            {screen === "circleSettings" && <CircleSettings state={state} circleState={circleState} circlePersonId={circlePersonId} unitSystem={unitSystem} onUnitChange={async next => { setUnitSystem(next); await saveUnitSystem(next); }} onPick={async personId => { await saveCirclePerson(personId); setCirclePersonId(personId); await refresh(); }} />}
             {screen === "superadminHome" && <SuperadminHome />}
             {screen === "superadminAudit" && <SuperadminAudit />}
-            {role && <SettingsCard unitSystem={unitSystem} onChange={async next => { setUnitSystem(next); await saveUnitSystem(next); }} />}
-            {role && <Pressable style={styles.secondaryButton} onPress={() => setScreen("role")}><Text style={styles.secondaryText}>Change role</Text></Pressable>}
           </ScrollView>
           {activeTabs && <Tabs tabs={activeTabs} active={screen} onChange={setScreen} />}
         </View>
@@ -232,6 +236,7 @@ function navIcon(label: string) {
   if (label === "Safety") return "🛡";
   if (label === "Leads") return "☷";
   if (label === "Package") return "$";
+  if (label === "Settings") return "⚙";
   return "•";
 }
 
@@ -253,7 +258,8 @@ function RoleCard({ title, body, onPress }: { title: string; body: string; onPre
   return <Pressable style={styles.roleCard} onPress={onPress}><View style={styles.roleIcon}><Text style={styles.roleIconText}>{title.includes("senior") ? "☀" : title.includes("business") ? "▣" : title.includes("trusted") ? "♡" : "★"}</Text></View><View style={styles.roleCopy}><Text style={styles.h2}>{title}</Text><Text style={styles.copy}>{body}</Text></View><Text style={styles.chevron}>›</Text></Pressable>;
 }
 
-function ResidentOnboarding({ state, onDone }: { state: any; onDone: () => void }) {
+function ResidentOnboarding({ state, onDone, mode = "onboarding" }: { state: any; onDone: () => void; mode?: "onboarding" | "settings" }) {
+  const isSettings = mode === "settings";
   const [name, setName] = useState(state.resident.name);
   const [age, setAge] = useState(String(state.resident.age));
   const [community, setCommunity] = useState(state.resident.community);
@@ -350,19 +356,19 @@ function ResidentOnboarding({ state, onDone }: { state: any; onDone: () => void 
         pharmacy
       }]
     });
-    await post("/api/resident/complete");
+    if (!isSettings) await post("/api/resident/complete");
     await onDone();
   }
 
   return <View>
-    <Text style={styles.flowLabel}>Flow 1 · Onboarding</Text>
-    <Card title="Welcome to TheSeniorGuru">
+    <Text style={styles.flowLabel}>{isSettings ? "Settings · Senior profile" : "Flow 1 · Onboarding"}</Text>
+    {!isSettings ? <Card title="Welcome to TheSeniorGuru">
       <RemoteImage uri="https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=520&h=360&fit=crop&crop=faces" style={styles.onboardingHeroImage} />
       <Text style={styles.copy}>Support, companionship and care, all in one place.</Text>
       <PrimaryButton label="Create Account" onPress={() => Alert.alert("Onboarding", "Continue to profile details below.")} />
       <Text style={styles.centerLink}>Sign In</Text>
-    </Card>
-    <Card title="Tell us about you">
+    </Card> : <LockedIdentityCard roleLabel="Senior app" primaryId={state.user?.email || "Primary account email"} />}
+    <Card title={isSettings ? "Personal details" : "Tell us about you"}>
       <Text style={styles.copy}>So we can personalize your experience.</Text>
       <Field label="Full name" value={name} onChangeText={setName} />
       <Field label="Age" value={age} onChangeText={setAge} keyboardType="number-pad" />
@@ -380,7 +386,7 @@ function ResidentOnboarding({ state, onDone }: { state: any; onDone: () => void 
       <CompactRow title="Preferred Hospital" subtitle={preferredHospital} action="›" />
     </Card>
     <Card title="Health profile" icon="♡" tint="peach"><Text style={styles.copy}>We ask these gently so support can feel personal, safe, and respectful.</Text><Field label="Current status" value={conditionStatus} onChangeText={setConditionStatus} /><Field label="Severity / support level" value={conditionSeverity} onChangeText={setConditionSeverity} /><Field label="When was this diagnosed?" value={diagnosedWhen} onChangeText={setDiagnosedWhen} /><Field label="Symptoms trusted people should watch for" value={symptomsToWatch} onChangeText={setSymptomsToWatch} multiline /><Field label="How should caregivers respond?" value={careTeamNotes} onChangeText={setCareTeamNotes} multiline /><SectionTitle title="Allergies and reactions" /><Field label="Allergen" value={allergen} onChangeText={setAllergen} /><Field label="Reaction" value={allergyReaction} onChangeText={setAllergyReaction} /><Field label="Severity" value={allergySeverity} onChangeText={setAllergySeverity} /><Field label="Emergency allergy instructions" value={allergyInstructions} onChangeText={setAllergyInstructions} multiline /><SectionTitle title="Mobility and memory support" /><Field label="Assistive device" value={assistiveDevice} onChangeText={setAssistiveDevice} /><Field label="Recent fall history" value={fallHistory} onChangeText={setFallHistory} /><Field label="Standing, sitting, transfer support" value={transferSupport} onChangeText={setTransferSupport} /><Field label="Wandering risk" value={wanderingRisk} onChangeText={setWanderingRisk} /><Field label="Best reassurance style" value={reassuranceStyle} onChangeText={setReassuranceStyle} multiline /><Field label="When should we escalate immediately?" value={emergencyInstructions} onChangeText={setEmergencyInstructions} multiline /></Card>
-    <Card title="Medication inventory" icon="💊" tint="orange"><Text style={styles.copy}>Add at least one medication with dose, timing, quantity, and refill threshold before reminders start.</Text><Field label="Medication name" value={medName} onChangeText={setMedName} /><Field label="Used for / condition" value={medCondition} onChangeText={setMedCondition} /><Field label="Strength / power" value={medStrength} onChangeText={setMedStrength} /><Field label="Dose quantity" value={doseQuantity} onChangeText={setDoseQuantity} keyboardType="number-pad" /><Field label="Time to take" value={medTime} onChangeText={setMedTime} /><Field label="Frequency" value={frequency} onChangeText={setFrequency} /><Field label="Pills/tablets remaining" value={remaining} onChangeText={setRemaining} keyboardType="number-pad" /><Field label="Refill alert when remaining reaches" value={refillThreshold} onChangeText={setRefillThreshold} keyboardType="number-pad" /><Field label="Prescribing doctor" value={prescriber} onChangeText={setPrescriber} /><Field label="Preferred pharmacy" value={pharmacy} onChangeText={setPharmacy} /><PrimaryButton label="Finish setup" onPress={complete} /></Card>
+    <Card title="Medication inventory" icon="💊" tint="orange"><Text style={styles.copy}>Add at least one medication with dose, timing, quantity, and refill threshold before reminders start.</Text><Field label="Medication name" value={medName} onChangeText={setMedName} /><Field label="Used for / condition" value={medCondition} onChangeText={setMedCondition} /><Field label="Strength / power" value={medStrength} onChangeText={setMedStrength} /><Field label="Dose quantity" value={doseQuantity} onChangeText={setDoseQuantity} keyboardType="number-pad" /><Field label="Time to take" value={medTime} onChangeText={setMedTime} /><Field label="Frequency" value={frequency} onChangeText={setFrequency} /><Field label="Pills/tablets remaining" value={remaining} onChangeText={setRemaining} keyboardType="number-pad" /><Field label="Refill alert when remaining reaches" value={refillThreshold} onChangeText={setRefillThreshold} keyboardType="number-pad" /><Field label="Prescribing doctor" value={prescriber} onChangeText={setPrescriber} /><Field label="Preferred pharmacy" value={pharmacy} onChangeText={setPharmacy} /><PrimaryButton label={isSettings ? "Save senior profile" : "Finish setup"} onPress={complete} /></Card>
   </View>;
 }
 
@@ -1032,7 +1038,8 @@ function ResidentSafety({ state, onRefresh, unitSystem }: { state: any; onRefres
   );
 }
 
-function BusinessOnboarding({ state, onDone }: { state: any; onDone: () => void }) {
+function BusinessOnboarding({ state, onDone, mode = "onboarding" }: { state: any; onDone: () => void; mode?: "onboarding" | "settings" }) {
+  const isSettings = mode === "settings";
   const biz = state.business;
   const [name, setName] = useState(biz.name);
   const [contactPerson, setContactPerson] = useState(biz.contactPerson);
@@ -1040,6 +1047,7 @@ function BusinessOnboarding({ state, onDone }: { state: any; onDone: () => void 
   const [phone, setPhone] = useState(biz.phone);
   const [website, setWebsite] = useState(biz.website);
   const [googleBusinessProfile, setGoogleBusinessProfile] = useState(biz.googleBusinessProfile);
+  const [description, setDescription] = useState(biz.description || "Reliable support services for seniors and families.");
   const [serviceAreas, setServiceAreas] = useState(biz.serviceAreas.join(", "));
   const [demographics, setDemographics] = useState(biz.demographics.join(", "));
 
@@ -1047,17 +1055,38 @@ function BusinessOnboarding({ state, onDone }: { state: any; onDone: () => void 
     await post("/api/business/onboarding", {
       name,
       contactPerson,
-      email,
+      email: biz.email || email,
       phone,
       website,
       googleBusinessProfile,
+      description,
       serviceAreas: serviceAreas.split(",").map(item => item.trim()).filter(Boolean),
       demographics: demographics.split(",").map(item => item.trim()).filter(Boolean)
     });
     await onDone();
   }
 
-  return <Card title="Business onboarding"><Field label="Business name" value={name} onChangeText={setName} /><Field label="Contact person" value={contactPerson} onChangeText={setContactPerson} /><Field label="Email" value={email} onChangeText={setEmail} /><Field label="Phone" value={phone} onChangeText={setPhone} /><Field label="Website" value={website} onChangeText={setWebsite} /><Field label="Google Business Profile" value={googleBusinessProfile} onChangeText={setGoogleBusinessProfile} /><Field label="Demographics served" value={demographics} onChangeText={setDemographics} /><Field label="Areas served" value={serviceAreas} onChangeText={setServiceAreas} /><PrimaryButton label="Complete business onboarding" onPress={complete} /></Card>;
+  return <View>
+    <Text style={styles.flowLabel}>{isSettings ? "Settings · Business profile" : "Business onboarding"}</Text>
+    {isSettings ? <LockedIdentityCard roleLabel="Business app" primaryId={biz.email || state.user?.email || "Primary business email"} /> : null}
+    <Card title={isSettings ? "Business details" : "Tell us about your business"}>
+      <Text style={styles.copy}>This powers recommendations, service matching, approval review, and lead routing.</Text>
+      <Field label="Business name" value={name} onChangeText={setName} />
+      <Field label="Contact person" value={contactPerson} onChangeText={setContactPerson} />
+      {isSettings ? <LockedField label="Primary email" value={biz.email || email} /> : <Field label="Email" value={email} onChangeText={setEmail} />}
+      <Field label="Phone" value={phone} onChangeText={setPhone} />
+      <Field label="Website" value={website} onChangeText={setWebsite} />
+      <Field label="Google Business Profile" value={googleBusinessProfile} onChangeText={setGoogleBusinessProfile} />
+      <Field label="Business description" value={description} onChangeText={setDescription} multiline />
+      <Field label="Demographics served" value={demographics} onChangeText={setDemographics} multiline />
+      <Field label="Areas served" value={serviceAreas} onChangeText={setServiceAreas} multiline />
+      <Card title="Package rules" tint="peach">
+        <CompactRow title="Free package" subtitle="1 service and 5 leads per year" action="✓" />
+        <CompactRow title="$100/month Growth" subtitle="More than 1 service and 5 leads per month, with top-ups available" action="$" />
+      </Card>
+      <PrimaryButton label={isSettings ? "Save business profile" : "Complete business onboarding"} onPress={complete} />
+    </Card>
+  </View>;
 }
 
 function BusinessHome({ state }: { state: any }) {
@@ -1204,7 +1233,20 @@ function CircleInvite({ onAccepted }: { onAccepted: (personId: string) => void }
     const result: any = await post("/api/circle/accept-invite", { inviteCode });
     await onAccepted(result.person.id);
   }
-  return <Card title="Trusted person invite"><Text style={styles.copy}>Enter the invite code sent by the senior. Demo: RITA-ANITA, ARJUN-ANITA, DRMEHTA-ANITA, SUNITA-ANITA.</Text><Field label="Invite code" value={inviteCode} onChangeText={setInviteCode} /><PrimaryButton label="Accept invite" onPress={accept} /></Card>;
+  return <View>
+    <Text style={styles.flowLabel}>Trusted circle onboarding</Text>
+    <Card title="Accept your senior invite" icon="♡" tint="peach">
+      <Text style={styles.copy}>Trusted people join through a senior-controlled invite. You will only see the safety, health, medication, ride, and message access that the senior granted.</Text>
+      <Field label="Invite code" value={inviteCode} onChangeText={setInviteCode} />
+      <PrimaryButton label="Accept invite" onPress={accept} />
+    </Card>
+    <Card title="What you can do">
+      <CompactRow title="Local tracing" subtitle="View location, safe zones, movement, fall detection, and wearable proximity when granted." action="✓" />
+      <CompactRow title="Ping, chat, voice, video" subtitle="Check in without taking over the senior app." action="✓" />
+      <CompactRow title="Limited access only" subtitle="No full senior profile access unless the senior grants each permission." action="🔒" />
+      <CompactRow title="Emergency alerts" subtitle="Receive SOS and safety notifications when included in the invite." action="SOS" />
+    </Card>
+  </View>;
 }
 
 function CircleSafety({ circleState, onRefresh, unitSystem }: { circleState: any; onRefresh: () => void; unitSystem: UnitSystem }) {
@@ -1292,6 +1334,70 @@ function CirclePermissions({ state, circlePersonId, onPick }: { state: any; circ
   return <View><Text style={styles.h1}>Access</Text>{state.people.map((person: any) => <Pressable key={person.id} onPress={() => onPick(person.id)}><Card title={person.name}><Text style={styles.body}>{person.role} · {person.status}</Text><Text style={styles.muted}>{(person.permissions || []).join(", ")}</Text><Text style={circlePersonId === person.id ? styles.selected : styles.muted}>{circlePersonId === person.id ? "Current trusted-person view" : "Tap to view as this person"}</Text></Card></Pressable>)}</View>;
 }
 
+function ResidentSettings({ state, unitSystem, onUnitChange, onDone }: { state: any; unitSystem: UnitSystem; onUnitChange: (unitSystem: UnitSystem) => void; onDone: () => void }) {
+  return (
+    <View>
+      <Text style={styles.h1}>Settings</Text>
+      <Text style={styles.copy}>Update your care details whenever life changes. Your app role and primary account identity stay locked.</Text>
+      <SettingsCard unitSystem={unitSystem} onChange={onUnitChange} roleLabel="Senior app" primaryId={state.user?.email || "Primary account email"} />
+      <ResidentOnboarding state={state} mode="settings" onDone={onDone} />
+    </View>
+  );
+}
+
+function BusinessSettings({ state, unitSystem, onUnitChange, onDone }: { state: any; unitSystem: UnitSystem; onUnitChange: (unitSystem: UnitSystem) => void; onDone: () => void }) {
+  return (
+    <View>
+      <Text style={styles.h1}>Settings</Text>
+      <Text style={styles.copy}>Keep your service area, contact person, website, and Google profile current. Primary business email stays locked.</Text>
+      <SettingsCard unitSystem={unitSystem} onChange={onUnitChange} roleLabel="Business app" primaryId={state.business?.email || state.user?.email || "Primary business email"} />
+      <BusinessOnboarding state={state} mode="settings" onDone={onDone} />
+    </View>
+  );
+}
+
+function CircleSettings({ state, circleState, circlePersonId, unitSystem, onUnitChange, onPick }: { state: any; circleState: any; circlePersonId: string; unitSystem: UnitSystem; onUnitChange: (unitSystem: UnitSystem) => void; onPick: (personId: string) => void }) {
+  const person = circleState?.person || state.people?.find((item: any) => item.id === circlePersonId) || {};
+  return (
+    <View>
+      <Text style={styles.h1}>Settings</Text>
+      <Text style={styles.copy}>Trusted people can update notification and display preferences, but access is controlled by the senior invite and cannot become full senior access.</Text>
+      <SettingsCard unitSystem={unitSystem} onChange={onUnitChange} roleLabel="Trusted person app" primaryId={person.email || state.user?.email || "Trusted invite identity"} />
+      <Card title="Trusted connection" icon="♡">
+        <LockedField label="Connected senior" value={circleState?.resident?.name || "Senior connection"} />
+        <LockedField label="Invite / access identity" value={person.name || "Trusted person"} />
+        <Text style={styles.copy}>Permissions come from the senior’s invite. If access needs to change, the senior updates it from their People settings.</Text>
+        <SectionTitle title="Current permissions" />
+        {(circleState?.permissions || person.permissions || []).map((permission: string) => <CompactRow key={permission} title={permissionLabel(permission)} subtitle={permissionHelp(permission)} action="✓" />)}
+      </Card>
+      <Card title="Switch trusted-person view" icon="♙">
+        <Text style={styles.copy}>For testing, choose one approved trusted connection. In production this is locked to the signed-in invited person.</Text>
+        {state.people.map((item: any) => <Pressable key={item.id} onPress={() => onPick(item.id)}><CompactRow title={item.name} subtitle={(item.permissions || []).join(", ")} action={circlePersonId === item.id ? "✓" : "›"} /></Pressable>)}
+      </Card>
+    </View>
+  );
+}
+
+function permissionLabel(permission: string) {
+  if (permission === "sos") return "SOS alerts";
+  if (permission === "safety") return "Live safety tracing";
+  if (permission === "medications") return "Medication support";
+  if (permission === "rides") return "Ride support";
+  if (permission === "messages") return "Chat and check-ins";
+  if (permission === "wellness") return "Wellness summaries";
+  return permission;
+}
+
+function permissionHelp(permission: string) {
+  if (permission === "sos") return "Receives emergency notifications.";
+  if (permission === "safety") return "Can view location, safe zones, movement, fall, and wearable signals.";
+  if (permission === "medications") return "Can see medication reminders and refill support.";
+  if (permission === "rides") return "Can see ride requests and trip support status.";
+  if (permission === "messages") return "Can chat, ping, and request voice/video calls.";
+  if (permission === "wellness") return "Can see shared vitals and wellness trends.";
+  return "Senior-controlled access.";
+}
+
 function SuperadminHome() {
   const [queue, setQueue] = useState<any>({ businesses: [], services: [] });
   const [loaded, setLoaded] = useState(false);
@@ -1343,13 +1449,35 @@ function SuperadminAudit() {
   return <View><Text style={styles.h1}>Audit Logs</Text><Card title="Notification providers" icon="▣"><Text style={styles.muted}>Process queued push, SMS, and call records through provider adapters.</Text><PrimaryButton label="Process queued notifications" onPress={processNotifications} />{deliveryResult ? <View style={styles.eventRow}><Text style={styles.body}>Delivered {deliveryResult.delivered.length}</Text><Text style={styles.muted}>Remaining queued: {deliveryResult.remainingQueued}</Text>{deliveryResult.delivered.slice(0, 4).map((item: any) => <Text key={item.id} style={styles.muted}>{item.channel} · {item.provider} · {item.status}</Text>)}</View> : null}</Card>{logs.length ? logs.map(log => <Card key={log.id} title={log.action}><Text style={styles.body}>{log.entityType || log.entity_type} · {log.severity}</Text><Text style={styles.muted}>{log.details || "No details"}</Text><Text style={styles.muted}>{new Date(log.createdAt || log.created_at).toLocaleString()}</Text></Card>) : <Card title="Audit logs"><Text style={styles.muted}>No logs loaded yet.</Text></Card>}</View>;
 }
 
-function SettingsCard({ unitSystem, onChange }: { unitSystem: UnitSystem; onChange: (unitSystem: UnitSystem) => void }) {
+function SettingsCard({ unitSystem, onChange, roleLabel, primaryId }: { unitSystem: UnitSystem; onChange: (unitSystem: UnitSystem) => void; roleLabel?: string; primaryId?: string }) {
   return (
     <Card title="Settings" icon="⚙">
+      {roleLabel || primaryId ? <LockedIdentityCard roleLabel={roleLabel || "App role"} primaryId={primaryId || "Primary identity"} embedded /> : null}
       <Text style={styles.muted}>Distance and location accuracy units apply across rides, safety maps, trusted-circle tracking, and business leads.</Text>
       <ButtonRow labels={[["Imperial", "imperial"], ["Metric", "metric"]]} onPress={(value: UnitSystem) => onChange(value)} />
       <Text style={styles.safeText}>Active units: {unitSystem === "imperial" ? "Imperial (mi / ft)" : "Metric (km / m)"}</Text>
     </Card>
+  );
+}
+
+function LockedIdentityCard({ roleLabel, primaryId, embedded = false }: { roleLabel: string; primaryId: string; embedded?: boolean }) {
+  const content = (
+    <View>
+      <LockedField label="Locked app role" value={roleLabel} />
+      <LockedField label="Primary identity" value={primaryId} />
+      <Text style={styles.tinyMuted}>These fields are locked after onboarding to protect account ownership, permissions, billing, and safety access.</Text>
+    </View>
+  );
+  if (embedded) return content;
+  return <Card title="Locked identity" icon="🔒">{content}</Card>;
+}
+
+function LockedField({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.lockedInput}><Text style={styles.lockedInputText}>{value || "Locked"}</Text><Text style={styles.lockBadge}>Locked</Text></View>
+    </View>
   );
 }
 
@@ -1746,6 +1874,9 @@ const styles = StyleSheet.create({
   field: { gap: 7, marginBottom: 12, minWidth: 0 },
   label: { color: colors.muted, fontWeight: "800" },
   input: { backgroundColor: "#fffaf5", borderWidth: 1, borderColor: "rgba(68,43,78,0.12)", borderRadius: 12, padding: 11, color: colors.ink, minWidth: 0, fontSize: 13 },
+  lockedInput: { backgroundColor: "#f3edf5", borderWidth: 1, borderColor: "rgba(68,43,78,0.14)", borderRadius: 12, padding: 11, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  lockedInputText: { color: "#3b174c", fontWeight: "900", fontSize: 13, flex: 1 },
+  lockBadge: { color: "#6a3f7a", fontSize: 11, fontWeight: "900", backgroundColor: "#fffaf5", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, overflow: "hidden" },
   suggestionRow: { backgroundColor: "#fffaf5", borderWidth: 1, borderColor: "rgba(68,43,78,0.11)", borderRadius: 12, padding: 11, marginBottom: 8 },
   primaryButton: { backgroundColor: "#71447f", padding: 12, borderRadius: 13, alignItems: "center", marginTop: 8 },
   primaryButtonDisabled: { backgroundColor: "#b9a7bf" },
