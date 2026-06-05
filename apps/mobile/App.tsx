@@ -595,6 +595,17 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
     await onRefresh();
     Alert.alert("Ride request created", "Payment and provider dispatch are still required before a driver can be assigned.");
   }
+  async function requestRide() {
+    const rideService = [...(matches || []), ...(state.services || [])].find((service: any) => {
+      const text = `${service.name || ""} ${service.category || ""}`.toLowerCase();
+      return text.includes("ride") || text.includes("transport");
+    }) || (state.services || [])[0];
+    if (!rideService?.id) {
+      Alert.alert("Ride service unavailable", "No approved ride provider is available for this request yet.");
+      return;
+    }
+    await book(rideService.id);
+  }
   async function refreshRideStatus() {
     if (!rideBooking?.id) {
       Alert.alert("No ride request yet", "Create a ride request first.");
@@ -697,6 +708,7 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
         <Field label="Assistance notes" value={assistanceNotes} onChangeText={setAssistanceNotes} multiline />
         <Field label="Medical sensitivity notes shared only if consented" value={medicalSensitivityNotes} onChangeText={setMedicalSensitivityNotes} multiline />
         <PrimaryButton label="Preview route and price" onPress={previewRide} disabled={!pickupPoint || !dropoffPoint} />
+        <PrimaryButton label="Request ride" onPress={requestRide} disabled={!pickupPoint || !dropoffPoint} />
         {routePreview ? <Text style={styles.safeText}>Route: {formatDistanceMeters(routePreview.distanceMeters, unitSystem)} · {formatDuration(routePreview.durationSeconds)} · {routePreview.provider}</Text> : null}
         {rideQuote ? <Text style={styles.safeText}>Estimated charge: ${(rideQuote.totalChargeCents / 100).toFixed(2)} including platform margin</Text> : null}
       </Card>
