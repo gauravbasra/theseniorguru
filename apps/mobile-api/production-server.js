@@ -181,13 +181,43 @@ function createProductionApi(pool) {
   }
 
   async function ensureDefaultSubscription(businessId) {
-    return (await query(
+    const subscription = (await query(
       `INSERT INTO subscriptions (business_id, plan, current_period_start, current_period_end)
        VALUES ($1, 'free', date_trunc('year', now()), date_trunc('year', now()) + interval '1 year')
        ON CONFLICT (business_id) DO NOTHING
        RETURNING *`,
       [businessId]
     )).rows[0] || (await query(`SELECT * FROM subscriptions WHERE business_id = $1`, [businessId])).rows[0];
+    return refreshSubscriptionPeriod(subscription);
+  }
+
+  async function refreshSubscriptionPeriod(subscription) {
+    if (!subscription) return null;
+    const periodExpired = !subscription.current_period_end || new Date(subscription.current_period_end).getTime() <= Date.now();
+    if (!periodExpired) return subscription;
+    if (subscription.plan === "growth_100") {
+      return (await query(
+        `UPDATE subscriptions
+         SET used_leads_month = 0,
+             lead_top_ups = 0,
+             current_period_start = date_trunc('month', now()),
+             current_period_end = date_trunc('month', now()) + interval '1 month',
+             updated_at = now()
+         WHERE id = $1
+         RETURNING *`,
+        [subscription.id]
+      )).rows[0];
+    }
+    return (await query(
+      `UPDATE subscriptions
+       SET used_leads_year = 0,
+           current_period_start = date_trunc('year', now()),
+           current_period_end = date_trunc('year', now()) + interval '1 year',
+           updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [subscription.id]
+    )).rows[0];
   }
 
   function toBusinessState(business, subscription) {
@@ -468,7 +498,7 @@ function createProductionApi(pool) {
 
   async function getLeadEntitlement(businessId) {
     const result = await query(`SELECT * FROM subscriptions WHERE business_id = $1`, [businessId]);
-    const sub = result.rows[0];
+    const sub = await refreshSubscriptionPeriod(result.rows[0] || await ensureDefaultSubscription(businessId));
     if (!sub || sub.plan === "free") {
       return { plan: "free", serviceLimit: 1, allowed: FREE_YEARLY_LEADS, used: sub?.used_leads_year || 0 };
     }
