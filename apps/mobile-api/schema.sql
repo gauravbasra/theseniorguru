@@ -128,6 +128,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   business_id UUID NOT NULL UNIQUE REFERENCES businesses(id) ON DELETE CASCADE,
   plan subscription_plan NOT NULL DEFAULT 'free',
+  billing_status TEXT NOT NULL DEFAULT 'active',
+  lock_reason TEXT,
+  locked_at TIMESTAMPTZ,
   stripe_customer_id TEXT,
   stripe_subscription_id TEXT,
   lead_top_ups INT NOT NULL DEFAULT 0,
@@ -261,6 +264,9 @@ ALTER TABLE medications ADD COLUMN IF NOT EXISTS frequency TEXT NOT NULL DEFAULT
 ALTER TABLE medications ADD COLUMN IF NOT EXISTS refill_threshold INT NOT NULL DEFAULT 5;
 ALTER TABLE medications ADD COLUMN IF NOT EXISTS prescriber TEXT;
 ALTER TABLE medications ADD COLUMN IF NOT EXISTS pharmacy TEXT;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS lock_reason TEXT;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS safety_telemetry (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -182,8 +182,8 @@ function createProductionApi(pool) {
 
   async function ensureDefaultSubscription(businessId) {
     const subscription = (await query(
-      `INSERT INTO subscriptions (business_id, plan, current_period_start, current_period_end)
-       VALUES ($1, 'free', date_trunc('year', now()), date_trunc('year', now()) + interval '1 year')
+      `INSERT INTO subscriptions (business_id, plan, billing_status, current_period_start, current_period_end)
+       VALUES ($1, 'free', 'active', date_trunc('year', now()), date_trunc('year', now()) + interval '1 year')
        ON CONFLICT (business_id) DO NOTHING
        RETURNING *`,
       [businessId]
@@ -239,6 +239,8 @@ function createProductionApi(pool) {
       status: business.status,
       onboardingComplete: business.onboarding_complete === true,
       plan,
+      billingStatus: subscription?.billing_status || "active",
+      lockReason: subscription?.lock_reason || null,
       leadQuota: {
         freePerYear: FREE_YEARLY_LEADS,
         paidPerMonth: PAID_MONTHLY_LEADS,
@@ -501,10 +503,39 @@ function createProductionApi(pool) {
   async function getLeadEntitlement(businessId) {
     const result = await query(`SELECT * FROM subscriptions WHERE business_id = $1`, [businessId]);
     const sub = await refreshSubscriptionPeriod(result.rows[0] || await ensureDefaultSubscription(businessId));
-    if (!sub || sub.plan === "free") {
-      return { plan: "free", serviceLimit: 1, allowed: FREE_YEARLY_LEADS, used: sub?.used_leads_year || 0 };
+    if (sub?.plan === "growth_100" && sub?.billing_status && sub.billing_status !== "active") {
+      return { plan: "growth_100", billingStatus: sub.billing_status, locked: true, lockReason: sub.lock_reason || "billing_not_active", serviceLimit: Infinity, allowed: 0, used: sub.used_leads_month || 0 };
     }
-    return { plan: "growth_100", priceCents: PAID_PLAN_PRICE_CENTS, serviceLimit: Infinity, allowed: PAID_MONTHLY_LEADS + (sub.lead_top_ups || 0), used: sub.used_leads_month || 0 };
+    if (!sub || sub.plan === "free") {
+      return { plan: "free", billingStatus: sub?.billing_status || "active", serviceLimit: 1, allowed: FREE_YEARLY_LEADS, used: sub?.used_leads_year || 0 };
+    }
+    return { plan: "growth_100", billingStatus: sub.billing_status || "active", priceCents: PAID_PLAN_PRICE_CENTS, serviceLimit: Infinity, allowed: PAID_MONTHLY_LEADS + (sub.lead_top_ups || 0), used: sub.used_leads_month || 0 };
+  }
+
+  async function businessIdFromStripeObject(object) {
+    if (object?.metadata?.businessId) return object.metadata.businessId;
+    if (object?.subscription) {
+      const bySubscription = (await query(
+        `SELECT business_id FROM subscriptions WHERE stripe_subscription_id = $1`,
+        [object.subscription]
+      )).rows[0];
+      if (bySubscription?.business_id) return bySubscription.business_id;
+    }
+    if (object?.id) {
+      const byDeletedSubscription = (await query(
+        `SELECT business_id FROM subscriptions WHERE stripe_subscription_id = $1`,
+        [object.id]
+      )).rows[0];
+      if (byDeletedSubscription?.business_id) return byDeletedSubscription.business_id;
+    }
+    if (object?.customer) {
+      const byCustomer = (await query(
+        `SELECT business_id FROM subscriptions WHERE stripe_customer_id = $1`,
+        [object.customer]
+      )).rows[0];
+      if (byCustomer?.business_id) return byCustomer.business_id;
+    }
+    return null;
   }
 
   async function route(req, payload, url) {
@@ -537,6 +568,9 @@ function createProductionApi(pool) {
           await query(
             `UPDATE subscriptions
              SET plan = 'growth_100',
+                 billing_status = 'active',
+                 lock_reason = null,
+                 locked_at = null,
                  stripe_customer_id = $1,
                  stripe_subscription_id = $2,
                  used_leads_month = 0,
@@ -555,11 +589,20 @@ function createProductionApi(pool) {
       }
       if (event.type === "customer.subscription.deleted") {
         const subscription = event.data?.object || {};
-        const businessId = subscription.metadata?.businessId;
+        const businessId = await businessIdFromStripeObject(subscription);
         if (businessId) {
           await query(
             `UPDATE subscriptions
-             SET plan = 'free', stripe_subscription_id = $1, updated_at = now()
+             SET plan = 'free',
+                 billing_status = 'cancelled',
+                 lock_reason = 'subscription_cancelled',
+                 locked_at = now(),
+                 stripe_subscription_id = $1,
+                 used_leads_month = 0,
+                 lead_top_ups = 0,
+                 current_period_start = date_trunc('year', now()),
+                 current_period_end = date_trunc('year', now()) + interval '1 year',
+                 updated_at = now()
              WHERE business_id = $2`,
             [subscription.id || null, businessId]
           );
@@ -567,6 +610,51 @@ function createProductionApi(pool) {
             `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
              VALUES ('subscription', $1, 'stripe_subscription_cancelled', 'warning', $2)`,
             [businessId, JSON.stringify({ stripeSubscriptionId: subscription.id })]
+          );
+        }
+      }
+      if (event.type === "invoice.payment_failed") {
+        const invoice = event.data?.object || {};
+        const businessId = await businessIdFromStripeObject(invoice);
+        if (businessId) {
+          await query(
+            `UPDATE subscriptions
+             SET billing_status = 'payment_failed',
+                 lock_reason = 'invoice_payment_failed',
+                 locked_at = now(),
+                 updated_at = now()
+             WHERE business_id = $1`,
+            [businessId]
+          );
+          await query(
+            `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
+             VALUES ('subscription', $1, 'stripe_payment_failed', 'warning', $2)`,
+            [businessId, JSON.stringify({ stripeInvoiceId: invoice.id, stripeCustomerId: invoice.customer, stripeSubscriptionId: invoice.subscription })]
+          );
+        }
+      }
+      if (event.type === "invoice.paid") {
+        const invoice = event.data?.object || {};
+        const businessId = await businessIdFromStripeObject(invoice);
+        if (businessId) {
+          await query(
+            `UPDATE subscriptions
+             SET plan = 'growth_100',
+                 billing_status = 'active',
+                 lock_reason = null,
+                 locked_at = null,
+                 stripe_customer_id = coalesce($2, stripe_customer_id),
+                 stripe_subscription_id = coalesce($3, stripe_subscription_id),
+                 current_period_start = date_trunc('month', now()),
+                 current_period_end = date_trunc('month', now()) + interval '1 month',
+                 updated_at = now()
+             WHERE business_id = $1`,
+            [businessId, invoice.customer || null, invoice.subscription || null]
+          );
+          await query(
+            `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
+             VALUES ('subscription', $1, 'stripe_invoice_paid', 'info', $2)`,
+            [businessId, JSON.stringify({ stripeInvoiceId: invoice.id, stripeCustomerId: invoice.customer, stripeSubscriptionId: invoice.subscription })]
           );
         }
       }
