@@ -12,6 +12,7 @@ const root = __dirname;
 const publicDir = path.join(root, "public");
 const dataFile = path.join(root, "data", "state.json");
 const port = Number(process.env.PORT || 4187);
+let runtimeState = null;
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -21,10 +22,18 @@ const contentTypes = {
 };
 
 function readState() {
+  if (process.env.VERCEL) {
+    if (!runtimeState) runtimeState = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+    return runtimeState;
+  }
   return JSON.parse(fs.readFileSync(dataFile, "utf8"));
 }
 
 function writeState(state) {
+  if (process.env.VERCEL) {
+    runtimeState = state;
+    return;
+  }
   fs.writeFileSync(dataFile, JSON.stringify(state, null, 2));
 }
 
@@ -1132,7 +1141,7 @@ function serveStatic(req, res) {
   });
 }
 
-http.createServer((req, res) => {
+function appHandler(req, res) {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -1144,6 +1153,13 @@ http.createServer((req, res) => {
   }
   if (req.url.startsWith("/api/")) return routeApi(req, res);
   serveStatic(req, res);
-}).listen(port, () => {
-  console.log(`TheSeniorguru app running at http://localhost:${port}`);
-});
+}
+
+if (require.main === module) {
+  http.createServer(appHandler).listen(port, () => {
+    console.log(`TheSeniorguru app running at http://localhost:${port}`);
+  });
+}
+
+module.exports = appHandler;
+module.exports.appHandler = appHandler;

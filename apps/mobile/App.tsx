@@ -4,6 +4,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { api, AppRole, patch, post, saveAuthToken } from "./src/services/api";
 import { initLocalDb, loadCirclePerson, loadRole, saveCirclePerson, saveRole } from "./src/services/localStore";
 import { requestSafetyPermissions, getNativeHealthDiagnostics, setHealthConsent, simulateSafetyEvent, startSafetyMonitoring, syncHealthVitals, syncNativeHealthVitals, syncWearableTelemetry, triggerVoiceSos } from "./src/services/safety";
+import seedState from "./src/seedState";
 import { colors, radius } from "./src/theme/tokens";
 
 type Screen =
@@ -39,6 +40,34 @@ const devEmails: Record<AppRole, string> = {
   superadmin: "admin@theseniorguru.local"
 };
 
+function cloneSeedState() {
+  return JSON.parse(JSON.stringify(seedState));
+}
+
+function fallbackCircleView(appState: any, personId: string) {
+  const person = appState.people?.find((item: any) => item.id === personId) || appState.people?.[0] || { id: "rita", name: "Rita Sharma", permissions: ["safety", "sos", "medications", "rides", "messages", "wellness"] };
+  const permissions = new Set(person.permissions || []);
+  return {
+    person,
+    resident: {
+      name: appState.resident?.name || "Anita Sharma",
+      community: appState.resident?.community || "Park View Community",
+      mood: permissions.has("wellness") ? appState.resident?.mood || "Okay" : "Hidden"
+    },
+    permissions: person.permissions || [],
+    medications: permissions.has("medications") ? appState.medications || [] : [],
+    bookings: permissions.has("rides") ? appState.bookings || [] : [],
+    requests: permissions.has("rides") ? appState.requests || [] : [],
+    messages: permissions.has("messages") ? (appState.messages || []).slice(0, 5) : [],
+    sosContacts: permissions.has("sos") ? appState.resident?.sosContacts || [] : [],
+    safety: permissions.has("safety") || permissions.has("sos") ? appState.safety : null,
+    healthVitals: permissions.has("wellness") || permissions.has("safety") ? appState.healthVitals : null,
+    wearables: permissions.has("safety") || permissions.has("sos") ? appState.wearables : null,
+    notifications: permissions.has("sos") || permissions.has("safety") ? (appState.notificationQueue || []).filter((item: any) => item.personId === person.id).slice(0, 20) : [],
+    tasks: (appState.circleTasks || []).filter((task: any) => task.assignedTo === person.id)
+  };
+}
+
 export default function App() {
   const [role, setRole] = useState<AppRole | null>(null);
   const [screen, setScreen] = useState<Screen>("role");
@@ -48,28 +77,44 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   async function refresh() {
-    const nextState = await api<any>("/api/state");
-    setState(nextState);
     const personId = (await loadCirclePerson()) || circlePersonId;
-    setCirclePersonId(personId);
-    setCircleState(await api(`/api/circle?personId=${personId}`));
-    return nextState;
+    try {
+      const nextState = await api<any>("/api/state");
+      setState(nextState);
+      setCirclePersonId(personId);
+      setCircleState(await api(`/api/circle?personId=${personId}`));
+      return nextState;
+    } catch {
+      const fallbackState = state || cloneSeedState();
+      setState(fallbackState);
+      setCirclePersonId(personId);
+      setCircleState(fallbackCircleView(fallbackState, personId));
+      return fallbackState;
+    }
   }
 
   useEffect(() => {
     let stopSafety: undefined | (() => void);
     async function boot() {
-      await initLocalDb();
-      const savedRole = await loadRole();
-      if (savedRole) await ensureDevSession(savedRole);
-      const nextState = await refresh();
-      setRole(savedRole);
-      if (!savedRole) setScreen("role");
-      if (savedRole === "resident") setScreen(nextState.resident.onboardingComplete ? "residentHome" : "residentOnboarding");
-      if (savedRole === "business") setScreen(nextState.business.onboardingComplete ? "businessHome" : "businessOnboarding");
-      if (savedRole === "circle") setScreen((await loadCirclePerson()) ? "circleSafety" : "circleInvite");
-      if (savedRole === "superadmin") setScreen("superadminHome");
-      setLoading(false);
+      let savedRole: AppRole | null = null;
+      let nextState = cloneSeedState();
+      try {
+        await initLocalDb();
+        savedRole = null;
+        if (savedRole) await ensureDevSession(savedRole);
+        nextState = await refresh();
+      } catch {
+        setState(nextState);
+        setCircleState(fallbackCircleView(nextState, circlePersonId));
+      } finally {
+        setRole(savedRole);
+        if (!savedRole) setScreen("role");
+        if (savedRole === "resident") setScreen(nextState.resident.onboardingComplete ? "residentHome" : "residentOnboarding");
+        if (savedRole === "business") setScreen(nextState.business.onboardingComplete ? "businessHome" : "businessOnboarding");
+        if (savedRole === "circle") setScreen((await loadCirclePerson()) ? "circleSafety" : "circleInvite");
+        if (savedRole === "superadmin") setScreen("superadminHome");
+        setLoading(false);
+      }
       try {
         await requestSafetyPermissions();
         stopSafety = await startSafetyMonitoring();
@@ -84,9 +129,11 @@ export default function App() {
   async function chooseRole(nextRole: AppRole) {
     await ensureDevSession(nextRole);
     await saveRole(nextRole);
+    const currentState = state || cloneSeedState();
+    if (!state) setState(currentState);
     setRole(nextRole);
-    if (nextRole === "resident") setScreen(state.resident.onboardingComplete ? "residentHome" : "residentOnboarding");
-    if (nextRole === "business") setScreen(state.business.onboardingComplete ? "businessHome" : "businessOnboarding");
+    if (nextRole === "resident") setScreen(currentState.resident.onboardingComplete ? "residentHome" : "residentOnboarding");
+    if (nextRole === "business") setScreen(currentState.business.onboardingComplete ? "businessHome" : "businessOnboarding");
     if (nextRole === "circle") setScreen("circleInvite");
     if (nextRole === "superadmin") setScreen("superadminHome");
   }
