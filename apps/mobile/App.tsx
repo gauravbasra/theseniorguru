@@ -421,7 +421,7 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
         <RingMetric label="Meals" value="1,640 cal" percent={82} color="#3f8c55" />
       </View>
       <SectionTitle title="Medication" />
-      <MedicationMiniFlow medication={due} onConfirm={confirmMed} allTaken={allTaken} />
+      <MedicationMiniFlow medication={due} refillRequests={state.refillRequests || []} onConfirm={confirmMed} onRefresh={onRefresh} allTaken={allTaken} />
       <Pressable style={styles.sosButton}><Text style={styles.sosBig}>SOS</Text><Text style={styles.sosText}>Emergency help</Text></Pressable>
     </View>
   );
@@ -737,7 +737,12 @@ function BusinessLeads({ state, onRefresh }: { state: any; onRefresh: () => void
     await onRefresh();
     Alert.alert("TheSeniorguru", "Lead accepted and booking created.");
   }
-  return <View><Text style={styles.h1}>Leads</Text>{state.requests.map((request: any) => <Card key={request.id} title={request.type}><Text style={styles.body}>{request.resident} · {request.time}</Text><Text style={styles.muted}>{request.distance} · {request.status}</Text><PrimaryButton label="Accept lead" onPress={() => acceptLead(request)} /></Card>)}</View>;
+  async function updateRefill(request: any, status: string) {
+    await patch(`/api/business/refill-requests/${request.id}`, { status });
+    await onRefresh();
+    Alert.alert("Refill updated", `Marked as ${status}.`);
+  }
+  return <View><Text style={styles.h1}>Leads</Text>{state.requests.map((request: any) => <Card key={request.id} title={request.type}><Text style={styles.body}>{request.resident} · {request.time}</Text><Text style={styles.muted}>{request.distance} · {request.status}</Text><PrimaryButton label="Accept lead" onPress={() => acceptLead(request)} /></Card>)}<SectionTitle title="Medication refill requests" />{(state.refillRequests || []).length ? state.refillRequests.map((request: any) => <Card key={request.id} title={request.medication_name || "Medication refill"} icon="💊"><Text style={styles.body}>{request.resident_name} · {request.strength || ""}</Text><Text style={styles.muted}>Remaining: {request.remaining_count} · Status: {request.status}</Text><ButtonRow labels={[["Accept", "accepted"], ["Ready", "ready"], ["Completed", "completed"]]} onPress={(status: string) => updateRefill(request, status)} /></Card>) : <Card title="Medication refill requests"><Text style={styles.muted}>No refill requests yet.</Text></Card>}</View>;
 }
 
 function BusinessServices({ state, onRefresh }: { state: any; onRefresh: () => void }) {
@@ -1170,7 +1175,17 @@ function CompactRow({ title, subtitle, action }: { title: string; subtitle?: str
   );
 }
 
-function MedicationMiniFlow({ medication, onConfirm, allTaken }: { medication: any; onConfirm: () => void; allTaken: boolean }) {
+function MedicationMiniFlow({ medication, refillRequests, onConfirm, onRefresh, allTaken }: { medication: any; refillRequests: any[]; onConfirm: () => void; onRefresh: () => void; allTaken: boolean }) {
+  const activeRefill = (refillRequests || []).find(request => request.medication_id === medication.id && !["completed", "rejected"].includes(request.status));
+  async function requestRefill() {
+    try {
+      await post("/api/medications/refill-request", { medicationId: medication.id, notes: `Refill requested from mobile app for ${medication.name}` });
+      await onRefresh();
+      Alert.alert("Refill requested", "We created the refill request and notified the care provider when available.");
+    } catch (error: any) {
+      Alert.alert("Refill request", error.message || "Could not create refill request.");
+    }
+  }
   return (
     <View>
       <Card title="Medications">
@@ -1191,7 +1206,7 @@ function MedicationMiniFlow({ medication, onConfirm, allTaken }: { medication: a
         <RemoteImage uri="https://images.unsplash.com/photo-1588776814546-1ffcf47267a6?w=420&h=260&fit=crop" style={styles.medBottleImage} />
         <Text style={styles.body}>{medication.name || "Lisinopril"} {medication.strength || "10mg"}</Text>
         <Text style={styles.muted}>{medication.remaining || 5} pills remaining</Text>
-        <PrimaryButton label="Request Refill" onPress={() => Alert.alert("Refill", "Request sent to preferred pharmacy.")} />
+        {activeRefill ? <Text style={styles.selected}>Refill status: {activeRefill.status}</Text> : <PrimaryButton label="Request Refill" onPress={requestRefill} />}
         <Text style={styles.centerLink}>Set low stock reminder</Text>
       </Card>
     </View>

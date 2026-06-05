@@ -253,6 +253,22 @@ CREATE TABLE IF NOT EXISTS medication_inventory_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS medication_refill_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  medication_id UUID NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
+  resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  business_id UUID REFERENCES businesses(id) ON DELETE SET NULL,
+  requested_by UUID REFERENCES users(id),
+  acted_by UUID REFERENCES users(id),
+  pharmacy_name TEXT,
+  status TEXT NOT NULL DEFAULT 'requested',
+  notes TEXT,
+  response_notes TEXT,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  acted_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS health_conditions TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS allergies TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS mobility_notes TEXT;
@@ -410,6 +426,8 @@ CREATE INDEX IF NOT EXISTS idx_medications_resident_status ON medications(reside
 CREATE INDEX IF NOT EXISTS idx_resident_diagnoses_resident ON resident_diagnoses(resident_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_resident_allergies_resident ON resident_allergies(resident_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_medication_inventory_events_medication ON medication_inventory_events(medication_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_medication_refill_requests_resident ON medication_refill_requests(resident_id, status, requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_medication_refill_requests_business ON medication_refill_requests(business_id, status, requested_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_health_vitals_resident_created ON health_vitals(resident_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wearable_telemetry_resident_created ON wearable_telemetry(resident_id, created_at DESC);

@@ -802,12 +802,23 @@ function createProductionApi(pool) {
            WHERE b.business_id = $1 ORDER BY b.created_at DESC`,
           [business.id]
         )).rows : [];
+        const refillRequests = business ? (await query(
+          `SELECT rr.*, m.name AS medication_name, m.strength, m.remaining_count, m.refill_threshold, r_user.display_name AS resident_name
+           FROM medication_refill_requests rr
+           JOIN medications m ON m.id = rr.medication_id
+           JOIN residents r ON r.id = rr.resident_id
+           JOIN users r_user ON r_user.id = r.user_id
+           WHERE rr.business_id = $1
+           ORDER BY rr.requested_at DESC`,
+          [business.id]
+        )).rows : [];
         return {
           user,
           business: toBusinessState(business, subscription),
           services: services.map(service => toServiceState(service, business)),
           requests: requests.map(lead => toLeadState(lead, services.find(service => service.id === lead.service_id), business)),
           bookings: bookings.map(booking => toBookingState(booking, business)),
+          refillRequests,
           subscription
         };
       }
@@ -842,6 +853,15 @@ function createProductionApi(pool) {
            ORDER BY CASE WHEN status = 'taken' THEN 1 ELSE 0 END, dose_time, created_at`,
           [resident.id]
         )).rows : [];
+        const refillRequests = resident ? (await query(
+          `SELECT rr.*, m.name AS medication_name, m.strength, b.name AS business_name
+           FROM medication_refill_requests rr
+           JOIN medications m ON m.id = rr.medication_id
+           LEFT JOIN businesses b ON b.id = rr.business_id
+           WHERE rr.resident_id = $1
+           ORDER BY rr.requested_at DESC`,
+          [resident.id]
+        )).rows : [];
         const residentProfile = resident ? {
           ...resident,
           healthProfile: resident.health_profile && Object.keys(resident.health_profile).length ? resident.health_profile : {
@@ -852,7 +872,7 @@ function createProductionApi(pool) {
             carePreferences: { preferredHospital: "", emergencyInstructions: "" }
           }
         } : null;
-        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, safety: { latestTelemetry: telemetry, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
+        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, refillRequests, safety: { latestTelemetry: telemetry, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
       }
       if (user.role === "trusted_person") {
         const connections = await query(
@@ -1130,6 +1150,90 @@ function createProductionApi(pool) {
       }
       await audit(req, user, "medication_confirmed", "medication", updated.id, { name: updated.name, remainingCount: updated.remaining_count });
       return { medication: updated, alreadyTaken: false };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/medications/refill-request") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const medication = (await query(
+        `SELECT * FROM medications WHERE id = $1 AND resident_id = $2`,
+        [required(payload.medicationId, "medicationId"), resident.id]
+      )).rows[0];
+      if (!medication) {
+        const error = new Error("Medication not found");
+        error.status = 404;
+        throw error;
+      }
+      const business = (await query(
+        `SELECT b.*
+         FROM businesses b
+         JOIN services s ON s.business_id = b.id
+         WHERE b.status = 'approved'
+           AND s.status = 'approved'
+           AND (lower(s.category) LIKE '%med%' OR lower(s.name) LIKE '%pharmacy%' OR lower(s.name) LIKE '%med%')
+         ORDER BY s.created_at DESC
+         LIMIT 1`
+      )).rows[0];
+      const refill = (await query(
+        `INSERT INTO medication_refill_requests (medication_id, resident_id, business_id, requested_by, pharmacy_name, status, notes)
+         VALUES ($1,$2,$3,$4,$5,'requested',$6)
+         RETURNING *`,
+        [medication.id, resident.id, business?.id || null, user.id, medication.pharmacy || null, payload.notes || null]
+      )).rows[0];
+      if (business?.owner_user_id) {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','Medication refill request',$2,'queued')`,
+          [business.owner_user_id, `${user.display_name} requested a refill for ${medication.name} ${medication.strength || ""}. Remaining count: ${medication.remaining_count}.`.trim()]
+        );
+      }
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1,'push','Refill request created',$2,'queued')`,
+        [user.id, `${medication.name} refill request was created${business ? ` for ${business.name}` : ""}.`.trim()]
+      );
+      await audit(req, user, "medication_refill_requested", "medication_refill_request", refill.id, { medicationId: medication.id, businessId: business?.id || null, remainingCount: medication.remaining_count }, "info");
+      return { refillRequest: refill };
+    }
+
+    if (req.method === "PATCH" && url.pathname.startsWith("/api/business/refill-requests/")) {
+      requireRole(user, ["business"]);
+      const business = await getBusinessForUser(user);
+      if (!business || business.status !== "approved") {
+        const error = new Error("Business must be approved before managing refill requests");
+        error.status = 403;
+        throw error;
+      }
+      const id = url.pathname.split("/")[4];
+      const status = ["accepted", "ready", "completed", "rejected"].includes(payload.status) ? payload.status : "accepted";
+      const refill = (await query(
+        `UPDATE medication_refill_requests
+         SET status = $1, response_notes = $2, acted_by = $3, acted_at = now(), updated_at = now()
+         WHERE id = $4 AND business_id = $5
+         RETURNING *`,
+        [status, payload.responseNotes || null, user.id, id, business.id]
+      )).rows[0];
+      if (!refill) {
+        const error = new Error("Refill request not found for this business");
+        error.status = 404;
+        throw error;
+      }
+      const seniorUser = (await query(`SELECT u.id, u.display_name FROM residents r JOIN users u ON u.id = r.user_id WHERE r.id = $1`, [refill.resident_id])).rows[0];
+      const medication = (await query(`SELECT name, strength FROM medications WHERE id = $1`, [refill.medication_id])).rows[0];
+      if (seniorUser) {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','Refill request updated',$2,'queued')`,
+          [seniorUser.id, `${business.name} marked ${medication?.name || "medication"} refill as ${status}.`.trim()]
+        );
+      }
+      await audit(req, user, "medication_refill_status_updated", "medication_refill_request", refill.id, { status, medicationId: refill.medication_id }, "info");
+      return { refillRequest: refill };
     }
 
     if (req.method === "POST" && url.pathname === "/api/business/onboarding") {
