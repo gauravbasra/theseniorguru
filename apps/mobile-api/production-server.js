@@ -69,6 +69,45 @@ function createProductionApi(pool) {
     return json;
   }
 
+  function googleMapsKey() {
+    const key = process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY || "";
+    if (!key) {
+      const error = new Error("Google Maps is not configured.");
+      error.status = 503;
+      throw error;
+    }
+    return key;
+  }
+
+  async function googleMapsGet(path, params) {
+    const search = new URLSearchParams({ ...params, key: googleMapsKey() });
+    const response = await fetch(`https://maps.googleapis.com/maps/api/${path}?${search.toString()}`);
+    const data = await response.json();
+    if (!response.ok || !["OK", "ZERO_RESULTS"].includes(data.status)) {
+      const error = new Error(data.error_message || data.status || "Google Maps request failed");
+      error.status = response.ok ? 502 : response.status;
+      error.details = data;
+      throw error;
+    }
+    return data;
+  }
+
+  async function googleMapsPost(url, body) {
+    const response = await fetch(`${url}?key=${encodeURIComponent(googleMapsKey())}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.error?.message || "Google Maps request failed");
+      error.status = response.status;
+      error.details = data;
+      throw error;
+    }
+    return data;
+  }
+
   async function createGrowthCheckoutSession(user, business, subscription) {
     const successUrl = process.env.STRIPE_SUCCESS_URL || "https://mobile-api-nine.vercel.app/api/billing/success?session_id={CHECKOUT_SESSION_ID}";
     const cancelUrl = process.env.STRIPE_CANCEL_URL || "https://mobile-api-nine.vercel.app/api/billing/cancelled";
@@ -1802,6 +1841,66 @@ function createProductionApi(pool) {
       const route = await estimateRoute(pickup, dropoff);
       await audit(req, user, "route_estimate_requested", "route", null, { provider: route.provider, distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds });
       return { pickup, dropoff, route };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/places/autocomplete") {
+      requireRole(user, ["senior", "business", "trusted_person"]);
+      const input = String(required(payload.input, "input")).trim();
+      const data = await googleMapsGet("place/autocomplete/json", {
+        input,
+        types: "geocode",
+        components: payload.components || "country:us|country:ca",
+        ...(payload.sessionToken ? { sessiontoken: payload.sessionToken } : {})
+      });
+      const predictions = (data.predictions || []).slice(0, 6).map(item => ({
+        placeId: item.place_id,
+        description: item.description,
+        primaryText: item.structured_formatting?.main_text || item.description,
+        secondaryText: item.structured_formatting?.secondary_text || ""
+      }));
+      await audit(req, user, "google_places_autocomplete_requested", "place", null, { inputLength: input.length, results: predictions.length }, "info");
+      return { provider: "google_places_autocomplete", predictions };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/places/details") {
+      requireRole(user, ["senior", "business", "trusted_person"]);
+      const placeId = String(required(payload.placeId, "placeId")).trim();
+      const data = await googleMapsGet("place/details/json", {
+        place_id: placeId,
+        fields: "place_id,name,formatted_address,geometry,types,url,address_components"
+      });
+      const result = data.result || {};
+      const place = {
+        placeId: result.place_id,
+        name: result.name || "",
+        formattedAddress: result.formatted_address || "",
+        lat: result.geometry?.location?.lat || null,
+        lng: result.geometry?.location?.lng || null,
+        types: result.types || [],
+        url: result.url || null,
+        addressComponents: result.address_components || []
+      };
+      await audit(req, user, "google_place_details_requested", "place", placeId, { hasGeometry: Boolean(place.lat && place.lng) }, "info");
+      return { provider: "google_place_details", place };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/address/validate") {
+      requireRole(user, ["senior", "business", "trusted_person"]);
+      const address = String(required(payload.address, "address")).trim();
+      const data = await googleMapsPost("https://addressvalidation.googleapis.com/v1:validateAddress", {
+        address: { addressLines: [address] },
+        enableUspsCass: true
+      });
+      const verdict = data.result?.verdict || {};
+      const validatedAddress = data.result?.address || {};
+      await audit(req, user, "google_address_validation_requested", "address", null, { hasUnconfirmedComponents: Boolean(verdict.hasUnconfirmedComponents), validationGranularity: verdict.validationGranularity || null }, "info");
+      return {
+        provider: "google_address_validation",
+        verdict,
+        formattedAddress: validatedAddress.formattedAddress || "",
+        addressComplete: Boolean(!verdict.hasUnconfirmedComponents && validatedAddress.formattedAddress),
+        result: data.result || {}
+      };
     }
 
     if (req.method === "POST" && url.pathname === "/api/rides/fulfillment-options") {

@@ -447,6 +447,11 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
   const [need, setNeed] = useState("I need a ride to my doctor tomorrow.");
   const [pickup, setPickup] = useState("Park View Community");
   const [dropoff, setDropoff] = useState("City Care Hospital");
+  const [pickupPoint, setPickupPoint] = useState<any>({ label: "Park View Community", lat: 43.1001, lng: -79.1001 });
+  const [dropoffPoint, setDropoffPoint] = useState<any>({ label: "City Care Hospital", lat: 43.1189, lng: -79.1252 });
+  const [pickupSuggestions, setPickupSuggestions] = useState<any[]>([]);
+  const [dropoffSuggestions, setDropoffSuggestions] = useState<any[]>([]);
+  const [validationSummary, setValidationSummary] = useState("");
   const [fulfillmentMode, setFulfillmentMode] = useState("uber_health");
   const [matches, setMatches] = useState<any[]>([]);
   async function findMatches() {
@@ -459,11 +464,34 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
       label: need,
       time: "Tomorrow, 10:00 AM",
       fulfillmentMode,
-      pickup: { label: pickup, lat: 43.1001, lng: -79.1001 },
-      dropoff: { label: dropoff, lat: 43.1189, lng: -79.1252 }
+      pickup: pickupPoint,
+      dropoff: dropoffPoint
     });
     await onRefresh();
     Alert.alert("TheSeniorguru", "Request sent and booking created.");
+  }
+  async function searchPlaces(kind: "pickup" | "dropoff", input: string) {
+    const result: any = await post("/api/places/autocomplete", { input });
+    if (kind === "pickup") setPickupSuggestions(result.predictions || []);
+    else setDropoffSuggestions(result.predictions || []);
+  }
+  async function choosePlace(kind: "pickup" | "dropoff", prediction: any) {
+    const result: any = await post("/api/places/details", { placeId: prediction.placeId });
+    const point = { label: result.place.formattedAddress || prediction.description, lat: result.place.lat, lng: result.place.lng, placeId: prediction.placeId };
+    if (kind === "pickup") {
+      setPickup(point.label);
+      setPickupPoint(point);
+      setPickupSuggestions([]);
+    } else {
+      setDropoff(point.label);
+      setDropoffPoint(point);
+      setDropoffSuggestions([]);
+    }
+  }
+  async function validateAddresses() {
+    const pickupValidation: any = await post("/api/address/validate", { address: pickup });
+    const dropoffValidation: any = await post("/api/address/validate", { address: dropoff });
+    setValidationSummary(`Pickup ${pickupValidation.addressComplete ? "verified" : "needs review"} · Drop-off ${dropoffValidation.addressComplete ? "verified" : "needs review"}`);
   }
   const visible = matches.length ? matches : state.services.slice(0, 3);
   return (
@@ -472,9 +500,15 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
       <Text style={styles.h1}>How can we help you today?</Text>
       <View style={styles.searchPill}><TextInput value={need} onChangeText={setNeed} style={styles.searchInput} placeholder="What do you need today?" /><Text style={styles.mic}>🎙</Text></View>
       <Card title="Ride details" icon="🚙" tint="peach">
-        <Field label="Pickup" value={pickup} onChangeText={setPickup} />
-        <Field label="Drop-off" value={dropoff} onChangeText={setDropoff} />
-        <Text style={styles.muted}>Address autocomplete and live route preview will use Google Maps when the API key is configured.</Text>
+        <Field label="Pickup" value={pickup} onChangeText={(value: string) => { setPickup(value); setPickupPoint({ label: value, lat: pickupPoint.lat, lng: pickupPoint.lng }); }} />
+        <PrimaryButton label="Search pickup address" onPress={() => searchPlaces("pickup", pickup)} />
+        {pickupSuggestions.map(item => <Pressable key={item.placeId} style={styles.suggestionRow} onPress={() => choosePlace("pickup", item)}><Text style={styles.body}>{item.primaryText}</Text><Text style={styles.muted}>{item.secondaryText}</Text></Pressable>)}
+        <Field label="Drop-off" value={dropoff} onChangeText={(value: string) => { setDropoff(value); setDropoffPoint({ label: value, lat: dropoffPoint.lat, lng: dropoffPoint.lng }); }} />
+        <PrimaryButton label="Search drop-off address" onPress={() => searchPlaces("dropoff", dropoff)} />
+        {dropoffSuggestions.map(item => <Pressable key={item.placeId} style={styles.suggestionRow} onPress={() => choosePlace("dropoff", item)}><Text style={styles.body}>{item.primaryText}</Text><Text style={styles.muted}>{item.secondaryText}</Text></Pressable>)}
+        <PrimaryButton label="Validate ride addresses" onPress={validateAddresses} />
+        {validationSummary ? <Text style={styles.safeText}>{validationSummary}</Text> : null}
+        <Text style={styles.muted}>Google Places powers suggestions; Google Address Validation checks whether pickup/drop-off need review.</Text>
       </Card>
       <Card title="Ride fulfillment" icon="🧭">
         <Text style={styles.muted}>TheSeniorguru coordinates rides. Uber Health is preferred when configured; local senior transport is fallback.</Text>
@@ -1417,6 +1451,7 @@ const styles = StyleSheet.create({
   field: { gap: 7, marginBottom: 12, minWidth: 0 },
   label: { color: colors.muted, fontWeight: "800" },
   input: { backgroundColor: "#fffaf5", borderWidth: 1, borderColor: "rgba(68,43,78,0.12)", borderRadius: 12, padding: 11, color: colors.ink, minWidth: 0, fontSize: 13 },
+  suggestionRow: { backgroundColor: "#fffaf5", borderWidth: 1, borderColor: "rgba(68,43,78,0.11)", borderRadius: 12, padding: 11, marginBottom: 8 },
   primaryButton: { backgroundColor: "#71447f", padding: 12, borderRadius: 13, alignItems: "center", marginTop: 8 },
   primaryButtonDisabled: { backgroundColor: "#b9a7bf" },
   primaryText: { color: "white", fontWeight: "900", textAlign: "center" },
