@@ -4,6 +4,7 @@ const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
 const PAID_PLAN_PRICE_CENTS = 10000;
 const STRIPE_API_VERSION = "2026-02-25.clover";
+const RIDE_PLATFORM_MARGIN_BPS = 2000;
 
 function required(value, name) {
   if (value === undefined || value === null || value === "") {
@@ -323,7 +324,14 @@ function createProductionApi(pool) {
       fulfillmentProvider: lead.fulfillment_provider || null,
       externalTripId: lead.external_trip_id || null,
       paymentResponsibility: lead.payment_responsibility || "senior",
-      paymentStatus: lead.payment_status || "payment_required"
+      paymentStatus: lead.payment_status || "payment_required",
+      pricing: lead.total_charge_cents ? {
+        providerBillCents: lead.provider_bill_cents,
+        taxCents: lead.tax_cents,
+        refundReserveCents: lead.refund_reserve_cents,
+        platformMarginCents: lead.platform_margin_cents,
+        totalChargeCents: lead.total_charge_cents
+      } : null
     };
   }
 
@@ -346,7 +354,14 @@ function createProductionApi(pool) {
       fulfillmentProvider: booking.fulfillment_provider || null,
       externalTripId: booking.external_trip_id || null,
       paymentResponsibility: booking.payment_responsibility || "senior",
-      paymentStatus: booking.payment_status || "payment_required"
+      paymentStatus: booking.payment_status || "payment_required",
+      pricing: booking.total_charge_cents ? {
+        providerBillCents: booking.provider_bill_cents,
+        taxCents: booking.tax_cents,
+        refundReserveCents: booking.refund_reserve_cents,
+        platformMarginCents: booking.platform_margin_cents,
+        totalChargeCents: booking.total_charge_cents
+      } : null
     };
   }
 
@@ -657,6 +672,48 @@ function createProductionApi(pool) {
         reason: "Fallback for wheelchair support, caregiver handoff, or regions without automated ride fulfillment."
       }
     ].map(option => ({ ...option, distanceMeters: route?.distanceMeters || null, durationSeconds: route?.durationSeconds || null }));
+  }
+
+  function ridePricingConfig() {
+    return {
+      marginBps: Number(process.env.RIDE_PLATFORM_MARGIN_BPS || RIDE_PLATFORM_MARGIN_BPS),
+      taxBps: Number(process.env.RIDE_TAX_RATE_BPS || 0),
+      refundReserveBps: Number(process.env.RIDE_REFUND_RESERVE_BPS || 0),
+      baseFareCents: Number(process.env.RIDE_ESTIMATE_BASE_CENTS || 750),
+      perKmCents: Number(process.env.RIDE_ESTIMATE_PER_KM_CENTS || 225),
+      perMinuteCents: Number(process.env.RIDE_ESTIMATE_PER_MINUTE_CENTS || 35)
+    };
+  }
+
+  function estimateProviderBillCents(route = {}, config = ridePricingConfig()) {
+    const km = Number(route.distanceMeters || 0) / 1000;
+    const minutes = Number(route.durationSeconds || 0) / 60;
+    return Math.max(config.baseFareCents, Math.ceil(config.baseFareCents + (km * config.perKmCents) + (minutes * config.perMinuteCents)));
+  }
+
+  function calculateRidePricing({ providerBillCents, route = null, provider = "unknown", source = "provider_estimate" }) {
+    const config = ridePricingConfig();
+    const bill = Math.max(0, Math.ceil(Number(providerBillCents || estimateProviderBillCents(route, config))));
+    const refundReserveCents = Math.ceil((bill * config.refundReserveBps) / 10000);
+    const platformMarginCents = Math.ceil((bill * config.marginBps) / 10000);
+    const taxableAmountCents = bill + refundReserveCents + platformMarginCents;
+    const taxCents = Math.ceil((taxableAmountCents * config.taxBps) / 10000);
+    const totalChargeCents = bill + refundReserveCents + platformMarginCents + taxCents;
+    return {
+      currency: "usd",
+      provider,
+      source,
+      providerBillCents: bill,
+      taxCents,
+      refundReserveCents,
+      platformMarginCents,
+      totalChargeCents,
+      marginBps: config.marginBps,
+      taxBps: config.taxBps,
+      refundReserveBps: config.refundReserveBps,
+      seniorPays: true,
+      rule: "total = provider bill + tax + refund reserve + 20% platform margin"
+    };
   }
 
   async function evaluateResidentSafeZone(residentId, location = {}, fallbackStatus = null) {
@@ -2041,6 +2098,21 @@ function createProductionApi(pool) {
       return { pickup, dropoff, route, options, recommendedMode: options.find(option => option.recommended && option.available)?.mode || "local_partner" };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/rides/pricing-quote") {
+      requireRole(user, ["senior", "trusted_person", "business"]);
+      const pickup = payload.pickup ? parseRoutePoint(payload.pickup || {}, "pickup") : null;
+      const dropoff = payload.dropoff ? parseRoutePoint(payload.dropoff || {}, "dropoff") : null;
+      const route = pickup && dropoff ? await estimateRoute(pickup, dropoff) : null;
+      const pricing = calculateRidePricing({
+        providerBillCents: payload.providerBillCents || null,
+        route,
+        provider: payload.provider || payload.fulfillmentMode || "ride_provider",
+        source: payload.providerBillCents ? "provider_bill" : "route_estimate"
+      });
+      await audit(req, user, "ride_pricing_quote_requested", "ride_pricing_quote", null, { provider: pricing.provider, providerBillCents: pricing.providerBillCents, platformMarginCents: pricing.platformMarginCents, taxCents: pricing.taxCents, totalChargeCents: pricing.totalChargeCents }, "info");
+      return { pickup, dropoff, route, pricing };
+    }
+
     if (req.method === "GET" && url.pathname === "/api/superadmin/ride-providers") {
       requireRole(user, ["superadmin"]);
       const providers = await ensureRideProviderConfigs();
@@ -2114,6 +2186,12 @@ function createProductionApi(pool) {
         const lifecycleStatus = ["uber_health", "lyft_healthcare"].includes(fulfillmentMode) && !selectedFulfillment.available ? "credential_required" : "payment_required";
         const paymentResponsibility = payload.paymentResponsibility || "senior";
         const paymentStatus = payload.paymentStatus || "payment_required";
+        const pricing = calculateRidePricing({
+          providerBillCents: payload.providerBillCents || null,
+          route,
+          provider: fulfillmentMode,
+          source: payload.providerBillCents ? "provider_bill" : "route_estimate"
+        });
         const result = await transaction(async tx => {
           const lead = (await tx(
             `INSERT INTO leads (
@@ -2121,16 +2199,18 @@ function createProductionApi(pool) {
               pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
               distance_meters, duration_seconds, route_provider, route_metadata,
               fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata,
-              payment_responsibility, payment_status, payer_user_id, payment_metadata
+              payment_responsibility, payment_status, payer_user_id, payment_metadata,
+              provider_bill_cents, tax_cents, refund_reserve_cents, platform_margin_cents, total_charge_cents, pricing_metadata
              )
-             VALUES ($1,$2,$3,$4,$5,'matched',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
+             VALUES ($1,$2,$3,$4,$5,'matched',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
             [
               resident.id, service.id, service.business_id, payload.label || service.name, payload.time || null,
               pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
               dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
               route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {}),
               fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions }),
-              paymentResponsibility, paymentStatus, payload.payerUserId || user.id, JSON.stringify({ payerRole: payload.payerRole || "senior", requiredBeforeDispatch: true })
+              paymentResponsibility, paymentStatus, payload.payerUserId || user.id, JSON.stringify({ payerRole: payload.payerRole || "senior", requiredBeforeDispatch: true }),
+              pricing.providerBillCents, pricing.taxCents, pricing.refundReserveCents, pricing.platformMarginCents, pricing.totalChargeCents, JSON.stringify(pricing)
             ]
           )).rows[0];
           const booking = (await tx(
@@ -2139,22 +2219,24 @@ function createProductionApi(pool) {
               pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
               distance_meters, duration_seconds, route_provider, route_metadata,
               fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata,
-              payment_responsibility, payment_status, payer_user_id, payment_metadata
+              payment_responsibility, payment_status, payer_user_id, payment_metadata,
+              provider_bill_cents, tax_cents, refund_reserve_cents, platform_margin_cents, total_charge_cents, pricing_metadata
              )
-             VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
+             VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
             [
               lead.id, resident.id, service.business_id, service.id, payload.label || service.name,
               pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
               dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
               route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {}),
               fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions }),
-              paymentResponsibility, paymentStatus, payload.payerUserId || user.id, JSON.stringify({ payerRole: payload.payerRole || "senior", requiredBeforeDispatch: true })
+              paymentResponsibility, paymentStatus, payload.payerUserId || user.id, JSON.stringify({ payerRole: payload.payerRole || "senior", requiredBeforeDispatch: true }),
+              pricing.providerBillCents, pricing.taxCents, pricing.refundReserveCents, pricing.platformMarginCents, pricing.totalChargeCents, JSON.stringify(pricing)
             ]
           )).rows[0];
           return { lead, booking };
         });
-        await audit(req, user, "resident_booking_requested", "booking", result.booking.id, { leadId: result.lead.id, serviceId: service.id, routeProvider: route?.provider || null, distanceMeters: route?.distanceMeters || null, fulfillmentMode, lifecycleStatus });
-        return { ok: true, lead: result.lead, booking: result.booking, fulfillment: selectedFulfillment };
+        await audit(req, user, "resident_booking_requested", "booking", result.booking.id, { leadId: result.lead.id, serviceId: service.id, routeProvider: route?.provider || null, distanceMeters: route?.distanceMeters || null, fulfillmentMode, lifecycleStatus, totalChargeCents: pricing.totalChargeCents });
+        return { ok: true, lead: result.lead, booking: result.booking, fulfillment: selectedFulfillment, pricing };
       }
 
       if (user.role === "business") {
