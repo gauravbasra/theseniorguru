@@ -515,6 +515,21 @@ function createProductionApi(pool) {
         throw error;
       }
       const event = JSON.parse(req.rawBody || "{}");
+      if (!event.id) {
+        const error = new Error("Stripe webhook event id is required");
+        error.status = 400;
+        throw error;
+      }
+      const ledger = (await query(
+        `INSERT INTO stripe_webhook_events (id, type, metadata)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (id) DO NOTHING
+         RETURNING id`,
+        [event.id, event.type || "unknown", JSON.stringify({ livemode: event.livemode === true })]
+      )).rows[0];
+      if (!ledger) {
+        return { received: true, duplicate: true };
+      }
       if (event.type === "checkout.session.completed") {
         const session = event.data?.object || {};
         const businessId = session.metadata?.businessId || session.client_reference_id;
