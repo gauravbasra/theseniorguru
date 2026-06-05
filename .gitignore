@@ -13,3 +13,14 @@ yarn-error.log*
 pnpm-debug.log*
 .vercel/
 .vercel
+
+# Mobile app generated artifacts
+apps/mobile/node_modules/
+apps/mobile/.expo/
+apps/mobile/android/.gradle/
+apps/mobile/android/app/build/
+apps/mobile/android/build/
+apps/mobile/ios/Pods/
+apps/mobile/*.apk
+apps/mobile-api/node_modules/
+apps/mobile-api/data/state.json

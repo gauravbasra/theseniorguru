@@ -1,0 +1,809 @@
+const crypto = require("crypto");
+
+const FREE_YEARLY_LEADS = 5;
+const PAID_MONTHLY_LEADS = 5;
+const PAID_PLAN_PRICE_CENTS = 10000;
+
+function required(value, name) {
+  if (value === undefined || value === null || value === "") {
+    const error = new Error(`${name} is required`);
+    error.status = 400;
+    throw error;
+  }
+  return value;
+}
+
+function hashToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function createProductionApi(pool) {
+  async function query(sql, params = []) {
+    const result = await pool.query(sql, params);
+    return result;
+  }
+
+  async function audit(req, actor, action, entityType, entityId, metadata = {}, severity = "info") {
+    await query(
+      `INSERT INTO audit_logs (actor_user_id, entity_type, entity_id, action, severity, ip_address, user_agent, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        actor?.id || null,
+        entityType,
+        entityId || null,
+        action,
+        severity,
+        req.socket?.remoteAddress || null,
+        req.headers["user-agent"] || null,
+        JSON.stringify(metadata)
+      ]
+    );
+  }
+
+  async function currentUser(req) {
+    const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    if (!token) {
+      const error = new Error("Missing bearer token");
+      error.status = 401;
+      throw error;
+    }
+    const tokenHash = hashToken(token);
+    const result = await query(
+      `SELECT u.* FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = $1 AND s.expires_at > now()`,
+      [tokenHash]
+    );
+    if (!result.rows[0]) {
+      const error = new Error("Invalid or expired session");
+      error.status = 401;
+      throw error;
+    }
+    return result.rows[0];
+  }
+
+  function requireRole(user, roles) {
+    if (!roles.includes(user.role)) {
+      const error = new Error("Insufficient permissions");
+      error.status = 403;
+      throw error;
+    }
+  }
+
+  async function getResidentForUser(user) {
+    const result = await query(`SELECT * FROM residents WHERE user_id = $1`, [user.id]);
+    return result.rows[0];
+  }
+
+  async function getBusinessForUser(user) {
+    const result = await query(`SELECT * FROM businesses WHERE owner_user_id = $1`, [user.id]);
+    return result.rows[0];
+  }
+
+  function medicationParams(payload) {
+    return {
+      id: payload.id || null,
+      name: required(payload.name, "name"),
+      condition: required(payload.condition, "condition"),
+      strength: required(payload.strength, "strength"),
+      doseQuantity: Math.max(1, Number(payload.doseQuantity || 1)),
+      time: required(payload.time, "time"),
+      frequency: payload.frequency || "Once daily",
+      remaining: Math.max(0, Number(payload.remaining ?? 0)),
+      refillThreshold: Math.max(0, Number(payload.refillThreshold ?? 5)),
+      prescriber: payload.prescriber || null,
+      pharmacy: payload.pharmacy || null
+    };
+  }
+
+  function auditSeverity(value) {
+    if (value === 'critical') return 'critical';
+    if (value === 'high' || value === 'watch') return 'warning';
+    if (value === 'security') return 'security';
+    return 'info';
+  }
+
+  function average(values) {
+    const numeric = values.filter(value => Number.isFinite(Number(value))).map(Number);
+    if (!numeric.length) return null;
+    return Math.round(numeric.reduce((sum, value) => sum + value, 0) / numeric.length);
+  }
+
+  function evaluateHealthVitals(readings) {
+    const summary = {
+      heartRateAvg: average(readings.map(item => item.heart_rate ?? item.heartRate)),
+      oxygenAvg: average(readings.map(item => item.oxygen_saturation ?? item.oxygenSaturation)),
+      respiratoryRateAvg: average(readings.map(item => item.respiratory_rate ?? item.respiratoryRate)),
+      hrvAvg: average(readings.map(item => item.hrv)),
+      sleepMinutes: average(readings.map(item => item.sleep_minutes ?? item.sleepMinutes)),
+      caloriesToday: average(readings.map(item => item.calories_today ?? item.caloriesToday)),
+      stepsToday: average(readings.map(item => item.steps_today ?? item.stepsToday)),
+      riskLevel: 'low',
+      riskReasons: []
+    };
+    if (summary.oxygenAvg !== null && summary.oxygenAvg < 92) summary.riskReasons.push('oxygen-below-92');
+    if (summary.heartRateAvg !== null && (summary.heartRateAvg > 115 || summary.heartRateAvg < 45)) summary.riskReasons.push('heart-rate-out-of-range');
+    if (summary.respiratoryRateAvg !== null && (summary.respiratoryRateAvg > 24 || summary.respiratoryRateAvg < 9)) summary.riskReasons.push('respiratory-rate-out-of-range');
+    if (summary.sleepMinutes !== null && summary.sleepMinutes < 240) summary.riskReasons.push('low-sleep-duration');
+    if (summary.riskReasons.length >= 2) summary.riskLevel = 'high';
+    else if (summary.riskReasons.length === 1) summary.riskLevel = 'watch';
+    return summary;
+  }
+
+  function healthReadingDataTypes(reading) {
+    const types = [];
+    if (reading.heartRate !== undefined) types.push('heartRate');
+    if (reading.oxygenSaturation !== undefined) types.push('oxygenSaturation');
+    if (reading.respiratoryRate !== undefined) types.push('respiratoryRate');
+    if (reading.hrv !== undefined) types.push('hrv');
+    if (reading.sleepMinutes !== undefined) types.push('sleep');
+    if (reading.caloriesToday !== undefined) types.push('calories');
+    if (reading.stepsToday !== undefined) types.push('steps');
+    return types;
+  }
+
+  function evaluateWearables(devices, proximity) {
+    const summary = {
+      connectedCount: devices.filter(device => device.status === 'connected').length,
+      lowBatteryCount: devices.filter(device => Number(device.battery_percent ?? device.batteryPercent) <= 20).length,
+      sosPressed: devices.some(device => device.sos_pressed === true || device.sosPressed === true),
+      fallDetected: devices.some(device => Number((device.fall_confidence ?? device.fallConfidence) || 0) >= 0.82),
+      proximityRisk: proximity?.safe === false || Number(proximity?.distanceMeters || proximity?.distance_meters || 0) > 40 ? 'watch' : 'low',
+      riskLevel: 'low',
+      riskReasons: []
+    };
+    if (summary.lowBatteryCount) summary.riskReasons.push('wearable-low-battery');
+    if (summary.sosPressed) summary.riskReasons.push('wearable-sos-pressed');
+    if (summary.fallDetected) summary.riskReasons.push('wearable-fall-detected');
+    if (summary.proximityRisk === 'watch') summary.riskReasons.push('proximity-out-of-range');
+    if (summary.sosPressed || summary.fallDetected) summary.riskLevel = 'high';
+    else if (summary.riskReasons.length) summary.riskLevel = 'watch';
+    return summary;
+  }
+
+  function healthRiskContext(profile = {}) {
+    const text = JSON.stringify(profile || {}).toLowerCase();
+    return {
+      fallThreshold: text.includes("fall-risk") || text.includes("walker") || text.includes("standby assist") || text.includes("falls in last") ? 0.7 : 0.82,
+      stillnessThreshold: text.includes("transfer") || text.includes("standby assist") || text.includes("parkinson") ? 30 : 45,
+      wanderingSensitive: text.includes("wandering") && !text.includes("wandering risk\":\"low"),
+      fallContext: profile?.mobilityProfile?.transferSupport || profile?.mobilityProfile?.fallHistory || "",
+      memoryContext: profile?.memoryProfile?.reassuranceStyle || "",
+      emergencyContext: profile?.carePreferences?.emergencyInstructions || ""
+    };
+  }
+
+  async function trustedSafetyUserIds(residentId) {
+    return (await query(
+      `SELECT trusted_user_id FROM trusted_connections
+       WHERE resident_id = $1 AND status = 'approved' AND ('sos' = ANY(permissions) OR 'safety' = ANY(permissions))`,
+      [residentId]
+    )).rows.map(row => row.trusted_user_id);
+  }
+
+  function notificationChannels(severity) {
+    if (severity === 'critical') return ['push', 'sms', 'call'];
+    if (severity === 'high') return ['push', 'sms'];
+    return ['push'];
+  }
+
+  async function enqueueNotifications(residentId, event, notifiedUserIds) {
+    for (const userId of notifiedUserIds) {
+      for (const channel of notificationChannels(event.severity)) {
+        await query(
+          `INSERT INTO notifications (user_id, event_id, channel, title, body, status)
+           VALUES ($1, $2, $3, 'TheSeniorguru safety alert', $4, 'queued')`,
+          [userId, event.id, channel, event.body]
+        );
+      }
+    }
+  }
+
+  async function createSafetyEvent(req, actor, residentId, eventType, severity, body, metadata = {}) {
+    const notified = await trustedSafetyUserIds(residentId);
+    const event = (await query(
+      `INSERT INTO safety_events (resident_id, event_type, severity, body, notified_user_ids)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [residentId, eventType, severity, body, notified]
+    )).rows[0];
+    await enqueueNotifications(residentId, event, notified);
+    await audit(req, actor, 'sos_event_created', 'safety_event', event.id, { eventType, severity, ...metadata }, auditSeverity(severity));
+    return event;
+  }
+
+  function classifyVoiceSosCommand(command) {
+    const normalized = String(command || '').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (normalized.includes('call emergency') || normalized.includes('call 911') || normalized.includes('emergency now')) return { route: '911-and-trusted-circle', emergencyNumber: '911', type: 'voice-sos-911', severity: 'critical', label: 'Guru, call emergency' };
+    if (normalized.includes('ambulance') || normalized.includes('need medical help')) return { route: 'ambulance-and-trusted-circle', emergencyNumber: '911', type: 'voice-sos-ambulance', severity: 'critical', label: 'Guru, I need an ambulance' };
+    if (normalized.includes('call rita') || normalized.includes('call my daughter') || normalized.includes('call trusted')) return { route: 'trusted-circle-first', emergencyNumber: null, type: 'voice-sos-trusted-circle', severity: 'high', label: 'Guru, call Rita now' };
+    return null;
+  }
+
+  async function getLeadEntitlement(businessId) {
+    const result = await query(`SELECT * FROM subscriptions WHERE business_id = $1`, [businessId]);
+    const sub = result.rows[0];
+    if (!sub || sub.plan === "free") {
+      return { plan: "free", serviceLimit: 1, allowed: FREE_YEARLY_LEADS, used: sub?.used_leads_year || 0 };
+    }
+    return { plan: "growth_100", priceCents: PAID_PLAN_PRICE_CENTS, serviceLimit: Infinity, allowed: PAID_MONTHLY_LEADS + (sub.lead_top_ups || 0), used: sub.used_leads_month || 0 };
+  }
+
+  async function route(req, payload, url) {
+    if (req.method === "POST" && url.pathname === "/api/auth/dev-session") {
+      const email = required(payload.email, "email");
+      const user = (await query(`SELECT * FROM users WHERE email = $1`, [email])).rows[0];
+      if (!user) {
+        const error = new Error("User not found");
+        error.status = 404;
+        throw error;
+      }
+      const token = crypto.randomBytes(32).toString("hex");
+      await query(
+        `INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '30 days')`,
+        [user.id, hashToken(token)]
+      );
+      await audit(req, user, "dev_session_created", "session", null, { email });
+      return { token, user };
+    }
+
+    const user = await currentUser(req);
+
+    if (req.method === "GET" && url.pathname === "/api/me") {
+      return { user };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/state") {
+      if (user.role === "superadmin") {
+        const approvals = await query(
+          `SELECT
+            (SELECT count(*) FROM businesses WHERE status = 'pending_review')::int AS pending_businesses,
+            (SELECT count(*) FROM services WHERE status = 'pending_review')::int AS pending_services,
+            (SELECT count(*) FROM safety_events WHERE status = 'active')::int AS active_safety_events`
+        );
+        return { user, superadmin: approvals.rows[0] };
+      }
+      if (user.role === "business") {
+        const business = await getBusinessForUser(user);
+        const services = business ? (await query(`SELECT * FROM services WHERE business_id = $1 ORDER BY created_at DESC`, [business.id])).rows : [];
+        const requests = business ? (await query(`SELECT * FROM leads WHERE business_id = $1 ORDER BY created_at DESC`, [business.id])).rows : [];
+        const bookings = business ? (await query(`SELECT * FROM bookings WHERE business_id = $1 ORDER BY created_at DESC`, [business.id])).rows : [];
+        const subscription = business ? (await query(`SELECT * FROM subscriptions WHERE business_id = $1`, [business.id])).rows[0] : null;
+        return { user, business, services, requests, bookings, subscription };
+      }
+      if (user.role === "senior") {
+        const resident = await getResidentForUser(user);
+        const people = resident ? (await query(
+          `SELECT u.id, u.display_name AS name, u.role, tc.permissions, tc.status
+           FROM trusted_connections tc JOIN users u ON u.id = tc.trusted_user_id
+           WHERE tc.resident_id = $1`,
+          [resident.id]
+        )).rows : [];
+        const bookings = resident ? (await query(`SELECT * FROM bookings WHERE resident_id = $1 ORDER BY created_at DESC`, [resident.id])).rows : [];
+        const safetyEvents = resident ? (await query(`SELECT * FROM safety_events WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 25`, [resident.id])).rows : [];
+        const telemetry = resident ? (await query(`SELECT * FROM safety_telemetry WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 1`, [resident.id])).rows[0] : null;
+        const healthConsent = resident ? (await query(`SELECT * FROM health_consents WHERE resident_id = $1`, [resident.id])).rows[0] : null;
+        const healthRows = resident ? (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [resident.id])).rows : [];
+        const wearableDevices = resident ? (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [resident.id])).rows : [];
+        const wearableRows = resident ? (await query(`SELECT * FROM wearable_telemetry WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id])).rows : [];
+        const medications = resident ? (await query(
+          `SELECT id::text, name, condition, strength, dose_quantity AS "doseQuantity", dose_time AS time,
+             frequency, remaining_count AS remaining, refill_threshold AS "refillThreshold",
+             prescriber, pharmacy, status, last_confirmed_at AS "lastConfirmedAt"
+           FROM medications
+           WHERE resident_id = $1
+           ORDER BY CASE WHEN status = 'taken' THEN 1 ELSE 0 END, dose_time, created_at`,
+          [resident.id]
+        )).rows : [];
+        const residentProfile = resident ? {
+          ...resident,
+          healthProfile: resident.health_profile && Object.keys(resident.health_profile).length ? resident.health_profile : {
+            primaryCondition: { name: (resident.health_conditions || [])[0] || "", status: "", severity: "", diagnosedWhen: "", symptomsToWatch: [], careTeamNotes: "" },
+            allergyProfile: { allergen: (resident.allergies || [])[0] || "", reaction: "", severity: "", instructions: "" },
+            mobilityProfile: { assistiveDevice: "", fallHistory: "", transferSupport: resident.mobility_notes || "", walkingTolerance: "", homeRiskAreas: [] },
+            memoryProfile: { wanderingRisk: "", confusionTriggers: [], reassuranceStyle: resident.cognitive_support || "", routineAnchors: [] },
+            carePreferences: { preferredHospital: "", emergencyInstructions: "" }
+          }
+        } : null;
+        return { user, resident: residentProfile, people, bookings, medications, safety: { latestTelemetry: telemetry, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
+      }
+      if (user.role === "trusted_person") {
+        const connections = await query(
+          `SELECT tc.*, r.community, r.mood, u.display_name AS resident_name
+           FROM trusted_connections tc
+           JOIN residents r ON r.id = tc.resident_id
+           JOIN users u ON u.id = r.user_id
+           WHERE tc.trusted_user_id = $1`,
+          [user.id]
+        );
+        return { user, connections: connections.rows };
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/resident/onboarding") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      await query(
+        `UPDATE residents SET age = $1, community = $2, mood = $3, onboarding_complete = true, live_tracking_enabled = $4, memory_support_enabled = $5, updated_at = now()
+         WHERE id = $6`,
+        [payload.age, payload.community, payload.mood || null, Boolean(payload.liveTrackingEnabled), Boolean(payload.memorySupportEnabled), resident.id]
+      );
+      await audit(req, user, "resident_onboarding_completed", "resident", resident.id, payload);
+      return { ok: true };
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/resident") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const healthProfile = payload.healthProfile || {};
+      await query(
+        `UPDATE residents
+         SET age = COALESCE($1, age),
+             community = COALESCE($2, community),
+             health_conditions = $3,
+             allergies = $4,
+             mobility_notes = $5,
+             cognitive_support = $6,
+             health_profile = $7,
+             updated_at = now()
+         WHERE id = $8`,
+        [
+          payload.age ? Number(payload.age) : null,
+          payload.community || null,
+          healthProfile.primaryCondition?.name ? [healthProfile.primaryCondition.name] : (Array.isArray(healthProfile.conditions) ? healthProfile.conditions : resident.health_conditions || []),
+          healthProfile.allergyProfile?.allergen ? [healthProfile.allergyProfile.allergen] : (Array.isArray(healthProfile.allergies) ? healthProfile.allergies : resident.allergies || []),
+          (healthProfile.mobilityProfile?.transferSupport || healthProfile.mobilityNotes) ?? resident.mobility_notes,
+          (healthProfile.memoryProfile?.reassuranceStyle || healthProfile.cognitiveSupport) ?? resident.cognitive_support,
+          JSON.stringify({ ...(resident.health_profile || {}), ...healthProfile, updatedAt: new Date().toISOString() }),
+          resident.id
+        ]
+      );
+      await query(`UPDATE users SET display_name = COALESCE($1, display_name), updated_at = now() WHERE id = $2`, [payload.name || null, user.id]);
+      await audit(req, user, "resident_health_profile_updated", "resident", resident.id, payload);
+      return { ok: true };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/resident/complete") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const refreshed = (await query(`SELECT * FROM residents WHERE id = $1`, [resident.id])).rows[0];
+      const medCount = Number((await query(`SELECT count(*) FROM medications WHERE resident_id = $1`, [resident.id])).rows[0].count);
+      const missing = [];
+      if (!refreshed.age) missing.push("age");
+      if (!refreshed.community) missing.push("community");
+      const structuredProfile = refreshed.health_profile || {};
+      if (!structuredProfile.primaryCondition?.name) missing.push("healthProfile.primaryCondition");
+      if (!structuredProfile.mobilityProfile?.transferSupport) missing.push("healthProfile.mobilityProfile");
+      if (!structuredProfile.memoryProfile?.reassuranceStyle) missing.push("healthProfile.memoryProfile");
+      if (!medCount) missing.push("medications");
+      if (missing.length) {
+        const error = new Error(`Missing resident onboarding fields: ${missing.join(", ")}`);
+        error.status = 400;
+        throw error;
+      }
+      await query(`UPDATE residents SET onboarding_complete = true, updated_at = now() WHERE id = $1`, [resident.id]);
+      await audit(req, user, "resident_onboarding_completed", "resident", resident.id, { medicationCount: medCount });
+      return { ok: true };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/medications") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const med = medicationParams(payload);
+      let result;
+      if (med.id) {
+        result = await query(
+          `UPDATE medications
+           SET name = $1, condition = $2, strength = $3, dose_quantity = $4, dose_time = $5,
+               frequency = $6, remaining_count = $7, refill_threshold = $8, prescriber = $9,
+               pharmacy = $10, status = CASE WHEN status = 'taken' THEN 'pending' ELSE status END, updated_at = now()
+           WHERE id = $11 AND resident_id = $12
+           RETURNING *`,
+          [med.name, med.condition, med.strength, med.doseQuantity, med.time, med.frequency, med.remaining, med.refillThreshold, med.prescriber, med.pharmacy, med.id, resident.id]
+        );
+      }
+      if (!result?.rows?.[0]) {
+        result = await query(
+          `INSERT INTO medications (resident_id, name, condition, strength, dose_quantity, dose_time, frequency, remaining_count, refill_threshold, prescriber, pharmacy, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
+           RETURNING *`,
+          [resident.id, med.name, med.condition, med.strength, med.doseQuantity, med.time, med.frequency, med.remaining, med.refillThreshold, med.prescriber, med.pharmacy]
+        );
+      }
+      const saved = result.rows[0];
+      await audit(req, user, med.id ? "medication_inventory_updated" : "medication_inventory_created", "medication", saved.id, { name: saved.name, strength: saved.strength, remainingCount: saved.remaining_count, refillThreshold: saved.refill_threshold });
+      return { medication: saved };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/medications/confirm") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const medication = (await query(
+        `SELECT id, name, condition, strength, dose_quantity, dose_time, frequency, remaining_count, refill_threshold, prescriber, pharmacy, status, last_confirmed_at
+         FROM medications
+         WHERE id = $1 AND resident_id = $2`,
+        [required(payload.id, "id"), resident.id]
+      )).rows[0];
+      if (!medication) {
+        const error = new Error("Medication not found");
+        error.status = 404;
+        throw error;
+      }
+      if (medication.status === "taken") {
+        return { medication, alreadyTaken: true };
+      }
+      const updated = (await query(
+        `UPDATE medications
+         SET status = 'taken',
+             remaining_count = GREATEST(remaining_count - 1, 0),
+             last_confirmed_at = now(),
+             updated_at = now()
+         WHERE id = $1 AND resident_id = $2
+         RETURNING id, name, condition, strength, dose_quantity, dose_time, frequency, remaining_count, refill_threshold, prescriber, pharmacy, status, last_confirmed_at`,
+        [medication.id, resident.id]
+      )).rows[0];
+      await audit(req, user, "medication_confirmed", "medication", updated.id, { name: updated.name, remainingCount: updated.remaining_count });
+      return { medication: updated, alreadyTaken: false };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/business/onboarding") {
+      requireRole(user, ["business"]);
+      const business = await getBusinessForUser(user);
+      if (!business) {
+        const error = new Error("Business profile not found");
+        error.status = 404;
+        throw error;
+      }
+      await query(
+        `UPDATE businesses SET name = $1, contact_person = $2, email = $3, phone = $4, website = $5,
+          google_business_profile = $6, description = $7, demographics = $8, service_areas = $9,
+          onboarding_complete = true, status = 'pending_review', updated_at = now()
+         WHERE id = $10`,
+        [
+          required(payload.name, "name"),
+          required(payload.contactPerson, "contactPerson"),
+          required(payload.email, "email"),
+          required(payload.phone, "phone"),
+          payload.website || null,
+          payload.googleBusinessProfile || null,
+          payload.description || null,
+          payload.demographics || [],
+          payload.serviceAreas || [],
+          business.id
+        ]
+      );
+      await audit(req, user, "business_submitted_for_approval", "business", business.id, payload);
+      return { ok: true, status: "pending_review" };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/business/services") {
+      requireRole(user, ["business"]);
+      const business = await getBusinessForUser(user);
+      if (!business || business.status !== "approved") {
+        const error = new Error("Business must be approved before publishing services");
+        error.status = 403;
+        throw error;
+      }
+      const entitlement = await getLeadEntitlement(business.id);
+      const count = Number((await query(`SELECT count(*) FROM services WHERE business_id = $1 AND status != 'rejected'`, [business.id])).rows[0].count);
+      if (count >= entitlement.serviceLimit) {
+        const error = new Error("Free package allows 1 service. Upgrade to $100/month to add more.");
+        error.status = 402;
+        throw error;
+      }
+      const result = await query(
+        `INSERT INTO services (business_id, name, category, price_label, status)
+         VALUES ($1, $2, $3, $4, 'pending_review') RETURNING *`,
+        [business.id, required(payload.name, "name"), required(payload.category, "category"), payload.priceLabel || null]
+      );
+      await audit(req, user, "service_submitted_for_approval", "service", result.rows[0].id, payload);
+      return { service: result.rows[0] };
+    }
+
+    if (req.method === 'PATCH' && url.pathname === '/api/health/consent') {
+      requireRole(user, ['senior']);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error('Resident profile not found');
+        error.status = 404;
+        throw error;
+      }
+      const allowedTypes = ['heartRate', 'oxygenSaturation', 'respiratoryRate', 'hrv', 'sleep', 'calories', 'steps'];
+      const dataTypes = Array.isArray(payload.dataTypes) ? payload.dataTypes.filter(type => allowedTypes.includes(type)) : [];
+      const result = await query(
+        `INSERT INTO health_consents (resident_id, granted, source, data_types, updated_at)
+         VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (resident_id) DO UPDATE SET granted = EXCLUDED.granted, source = EXCLUDED.source, data_types = EXCLUDED.data_types, updated_at = now()
+         RETURNING *`,
+        [resident.id, payload.granted === true, payload.source || 'mobile-healthkit-health-connect-sync', dataTypes]
+      );
+      await audit(req, user, payload.granted === true ? 'health_consent_granted' : 'health_consent_revoked', 'health_consent', result.rows[0].id, { source: result.rows[0].source, dataTypes }, 'info');
+      return { healthConsent: result.rows[0] };
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/health/vitals') {
+      requireRole(user, ['senior']);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error('Resident profile not found');
+        error.status = 404;
+        throw error;
+      }
+      const consent = (await query(`SELECT * FROM health_consents WHERE resident_id = $1`, [resident.id])).rows[0];
+      const readings = Array.isArray(payload.readings) ? payload.readings : [payload];
+      const requestedTypes = [...new Set(readings.flatMap(healthReadingDataTypes))];
+      const missingTypes = requestedTypes.filter(type => !(consent?.data_types || []).includes(type));
+      if (!consent?.granted) {
+        const error = new Error('Health data sync requires resident consent');
+        error.status = 403;
+        throw error;
+      }
+      if (missingTypes.length) {
+        const error = new Error(`Missing health consent for: ${missingTypes.join(', ')}`);
+        error.status = 403;
+        throw error;
+      }
+      if (payload.source && consent.source && payload.source !== consent.source) {
+        const error = new Error(`Health data source mismatch. Expected ${consent.source}`);
+        error.status = 403;
+        throw error;
+      }
+      const inserted = [];
+      for (const reading of readings) {
+        inserted.push((await query(
+          `INSERT INTO health_vitals (resident_id, source, heart_rate, oxygen_saturation, respiratory_rate, hrv, sleep_minutes, calories_today, steps_today, captured_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          [resident.id, payload.source || consent.source, reading.heartRate ?? null, reading.oxygenSaturation ?? null, reading.respiratoryRate ?? null, reading.hrv ?? null, reading.sleepMinutes ?? null, reading.caloriesToday ?? null, reading.stepsToday ?? null, reading.capturedAt || new Date().toISOString()]
+        )).rows[0]);
+      }
+      const recent = (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [resident.id])).rows;
+      const latestSummary = evaluateHealthVitals(inserted);
+      if (latestSummary.riskLevel === 'high') {
+        await createSafetyEvent(req, user, resident.id, 'health-vitals-risk', 'high', `${user.display_name} has elevated health risk signals: ${latestSummary.riskReasons.join(', ')}. Trusted circle notification triggered.`, { source: payload.source });
+      }
+      await audit(req, user, 'health_vitals_synced', 'health_vitals', inserted[0]?.id || null, { readings: inserted.length, risk: latestSummary.riskLevel, reasons: latestSummary.riskReasons }, auditSeverity(latestSummary.riskLevel));
+      return { healthVitals: { readings: recent, summary: evaluateHealthVitals(recent), latestSummary } };
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/wearables/telemetry') {
+      requireRole(user, ['senior']);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error('Resident profile not found');
+        error.status = 404;
+        throw error;
+      }
+      const devices = Array.isArray(payload.devices) ? payload.devices : [];
+      for (const device of devices) {
+        await query(
+          `INSERT INTO wearable_devices (id, resident_id, device_type, name, status, battery_percent, signal, last_seen_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
+           ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, battery_percent = EXCLUDED.battery_percent, signal = EXCLUDED.signal, last_seen_at = EXCLUDED.last_seen_at, updated_at = now()`,
+          [String(device.id), resident.id, device.type || 'unknown', device.name || 'Wearable device', device.status || 'connected', device.batteryPercent ?? null, device.signal || null, device.lastSeenAt || new Date().toISOString()]
+        );
+        await query(
+          `INSERT INTO wearable_telemetry (resident_id, source, device_id, fall_confidence, sos_pressed, proximity_zone, proximity_distance_meters, proximity_safe)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [resident.id, payload.source || 'mobile-wearable-sync', String(device.id), device.fallConfidence || 0, Boolean(device.sosPressed), payload.proximity?.currentZone || null, payload.proximity?.distanceMeters || null, payload.proximity?.safe ?? null]
+        );
+      }
+      const storedDevices = (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [resident.id])).rows;
+      const summary = evaluateWearables(devices, payload.proximity || {});
+      if (summary.riskLevel === 'high') {
+        await createSafetyEvent(req, user, resident.id, summary.sosPressed ? 'wearable-sos-pressed' : 'wearable-fall-detected', 'critical', `${user.display_name} has a wearable safety alert: ${summary.riskReasons.join(', ')}. Trusted circle notification triggered.`, { source: payload.source });
+      }
+      await audit(req, user, 'wearable_telemetry_synced', 'wearable_telemetry', null, { devices: devices.length, risk: summary.riskLevel, reasons: summary.riskReasons }, auditSeverity(summary.riskLevel));
+      return { wearables: { devices: storedDevices, latestSummary: summary } };
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/safety/voice-sos') {
+      requireRole(user, ['senior']);
+      const resident = await getResidentForUser(user);
+      const detected = classifyVoiceSosCommand(payload.command || payload.phrase);
+      if (!detected) {
+        const error = new Error('Voice command is not configured as an SOS command');
+        error.status = 400;
+        throw error;
+      }
+      if (payload.confirmed !== true) {
+        const error = new Error('Voice SOS requires confirmation before escalation');
+        error.status = 409;
+        throw error;
+      }
+      const event = await createSafetyEvent(req, user, resident.id, detected.type, detected.severity, `${user.display_name} triggered Voice SOS: "${detected.label}". Route: ${detected.route}.`, { source: payload.source || 'mobile-voice-command', route: detected.route });
+      await audit(req, user, 'voice_sos_command_confirmed', 'voice_sos', event.id, { command: detected.label, route: detected.route }, auditSeverity(detected.severity));
+      return { sosEvent: { ...event, command: detected.label, route: detected.route, emergencyNumber: detected.emergencyNumber, nativeDialStatus: detected.emergencyNumber ? 'pending-native-confirmation' : 'not-required' } };
+    }
+
+    if (req.method === 'POST' && url.pathname.startsWith('/api/sos-events/') && url.pathname.endsWith('/ack')) {
+      requireRole(user, ['trusted_person', 'superadmin']);
+      const id = url.pathname.split('/')[3];
+      const event = (await query(`UPDATE safety_events SET status = 'acknowledged', resolved_at = now() WHERE id = $1 RETURNING *`, [id])).rows[0];
+      if (!event) {
+        const error = new Error('SOS event not found');
+        error.status = 404;
+        throw error;
+      }
+      await audit(req, user, 'sos_event_acknowledged', 'safety_event', event.id, { eventType: event.event_type }, 'info');
+      return { event };
+    }
+
+    if (req.method === 'POST' && url.pathname.startsWith('/api/sos-events/') && url.pathname.endsWith('/escalate')) {
+      requireRole(user, ['trusted_person', 'superadmin']);
+      const id = url.pathname.split('/')[3];
+      const event = (await query(`UPDATE safety_events SET status = 'escalated', severity = 'critical' WHERE id = $1 RETURNING *`, [id])).rows[0];
+      if (!event) {
+        const error = new Error('SOS event not found');
+        error.status = 404;
+        throw error;
+      }
+      await enqueueNotifications(event.resident_id, { ...event, severity: 'critical', body: `${user.display_name} escalated ${event.event_type}. Route: ${payload.route || 'call-emergency-and-circle'}.` }, event.notified_user_ids || []);
+      await audit(req, user, 'sos_event_escalated', 'safety_event', event.id, { route: payload.route || 'call-emergency-and-circle' }, 'critical');
+      return { event };
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/notifications') {
+      const personId = url.searchParams.get('personId');
+      const rows = personId
+        ? (await query(`SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [personId])).rows
+        : (await query(`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100`)).rows;
+      return { notifications: rows };
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/notifications/process') {
+      requireRole(user, ['superadmin']);
+      const limit = Math.max(1, Number(payload.limit || 10));
+      const queued = (await query(`SELECT * FROM notifications WHERE status = 'queued' ORDER BY created_at ASC LIMIT $1`, [limit])).rows;
+      const delivered = [];
+      for (const notification of queued) {
+        const provider = notification.channel === 'call' ? (process.env.CALL_PROVIDER || 'twilio-voice-simulator') : notification.channel === 'sms' ? (process.env.SMS_PROVIDER || 'twilio-sms-simulator') : (process.env.PUSH_PROVIDER || 'expo-push-simulator');
+        delivered.push((await query(`UPDATE notifications SET status = 'delivered', provider = $1, provider_message_id = $2, sent_at = now(), delivered_at = now() WHERE id = $3 RETURNING *`, [provider, `${provider}_${notification.id}_${Date.now()}`, notification.id])).rows[0]);
+      }
+      const remainingQueued = Number((await query(`SELECT count(*) FROM notifications WHERE status = 'queued'`)).rows[0].count);
+      await audit(req, user, 'notification_queue_processed', 'notification_queue', null, { delivered: delivered.length, remainingQueued }, 'info');
+      return { delivered, remainingQueued };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/safety/phone-analytics") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident || !resident.live_tracking_enabled) {
+        const error = new Error("Live tracking is not enabled for this resident");
+        error.status = 403;
+        throw error;
+      }
+      const telemetry = (await query(
+        `INSERT INTO safety_telemetry (
+          resident_id, lat, lng, accuracy_meters, location_label, movement_status, steps_last_hour,
+          still_minutes, last_known_speed_mph, phone_battery, fall_confidence, impact_detected, safe_zone_status
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+        [
+          resident.id,
+          payload.location?.lat || null,
+          payload.location?.lng || null,
+          payload.location?.accuracyMeters || null,
+          payload.location?.label || null,
+          payload.movementStatus || null,
+          payload.stepsLastHour || null,
+          payload.stillMinutes || null,
+          payload.lastKnownSpeedMph || null,
+          payload.phoneBattery || null,
+          payload.fallConfidence || 0,
+          Boolean(payload.impactDetected),
+          payload.safeZoneStatus || null
+        ]
+      )).rows[0];
+      const events = [];
+      const risk = healthRiskContext(resident.health_profile);
+      if (payload.impactDetected && Number(payload.fallConfidence || 0) >= risk.fallThreshold) {
+        events.push(["fall-detected", "critical", `Likely fall detected with ${Math.round(Number(payload.fallConfidence) * 100)}% confidence. Health profile notes: ${risk.fallContext || "fall-risk support should be reviewed"}.`]);
+      }
+      if (payload.safeZoneStatus === "outside") {
+        events.push(["safe-zone-exit", risk.wanderingSensitive ? "critical" : "high", `Resident appears outside the approved safe zone.${risk.wanderingSensitive ? ` Memory profile guidance: ${risk.memoryContext || "use calm redirection and notify trusted circle"}.` : ""}`]);
+      }
+      if (Number(payload.stillMinutes || 0) >= risk.stillnessThreshold) {
+        events.push(["unusual-stillness", "high", `Phone analytics show ${payload.stillMinutes} minutes of unusual stillness. Mobility profile threshold is ${risk.stillnessThreshold} minutes.`]);
+      }
+      const createdEvents = [];
+      for (const [eventType, severity, body] of events) {
+        const notified = (await query(
+          `SELECT trusted_user_id FROM trusted_connections
+           WHERE resident_id = $1 AND status = 'approved' AND ('sos' = ANY(permissions) OR 'safety' = ANY(permissions))`,
+          [resident.id]
+        )).rows.map(row => row.trusted_user_id);
+        const event = (await query(
+          `INSERT INTO safety_events (resident_id, telemetry_id, event_type, severity, body, notified_user_ids)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [resident.id, telemetry.id, eventType, severity, body, notified]
+        )).rows[0];
+        createdEvents.push(event);
+        for (const userId of notified) {
+          await query(
+            `INSERT INTO notifications (user_id, event_id, channel, title, body)
+             VALUES ($1, $2, 'push', 'TheSeniorguru safety alert', $3)`,
+            [userId, event.id, body]
+          );
+        }
+      }
+      await audit(req, user, "safety_telemetry_ingested", "resident", resident.id, { telemetryId: telemetry.id, eventCount: createdEvents.length }, createdEvents.length ? "critical" : "info");
+      return { telemetry, events: createdEvents };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/superadmin/approvals") {
+      requireRole(user, ["superadmin"]);
+      const businesses = await query(`SELECT * FROM businesses WHERE status = 'pending_review' ORDER BY updated_at DESC`);
+      const services = await query(`SELECT * FROM services WHERE status = 'pending_review' ORDER BY updated_at DESC`);
+      await audit(req, user, "superadmin_approvals_viewed", "approval_queue", null);
+      return { businesses: businesses.rows, services: services.rows };
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/superadmin/businesses/")) {
+      requireRole(user, ["superadmin"]);
+      const id = url.pathname.split("/").at(-2);
+      const action = url.pathname.split("/").at(-1);
+      const status = action === "approve" ? "approved" : action === "reject" ? "rejected" : action === "suspend" ? "suspended" : null;
+      if (!status) {
+        const error = new Error("Invalid approval action");
+        error.status = 400;
+        throw error;
+      }
+      await query(`UPDATE businesses SET status = $1, updated_at = now() WHERE id = $2`, [status, id]);
+      await query(`INSERT INTO business_approvals (business_id, reviewed_by, status, notes) VALUES ($1, $2, $3, $4)`, [id, user.id, status, payload.notes || null]);
+      await audit(req, user, `business_${status}`, "business", id, payload, status === "suspended" ? "security" : "info");
+      return { ok: true, status };
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/superadmin/services/")) {
+      requireRole(user, ["superadmin"]);
+      const id = url.pathname.split("/").at(-2);
+      const action = url.pathname.split("/").at(-1);
+      const status = action === "approve" ? "approved" : action === "reject" ? "rejected" : null;
+      if (!status) {
+        const error = new Error("Invalid service approval action");
+        error.status = 400;
+        throw error;
+      }
+      await query(`UPDATE services SET status = $1, updated_at = now() WHERE id = $2`, [status, id]);
+      await audit(req, user, `service_${status}`, "service", id, payload);
+      return { ok: true, status };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/superadmin/audit-logs") {
+      requireRole(user, ["superadmin"]);
+      const logs = await query(`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200`);
+      return { logs: logs.rows };
+    }
+
+    const error = new Error("Not found");
+    error.status = 404;
+    throw error;
+  }
+
+  return { route };
+}
+
+module.exports = { createProductionApi, hashToken };
