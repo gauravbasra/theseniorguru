@@ -70,6 +70,17 @@ async function main() {
     return result.json;
   });
 
+  await step("resident: help assistant chat widget", async () => {
+    const result = await request("/api/help/chat", {
+      method: "POST",
+      headers: auth(seniorToken),
+      body: JSON.stringify({ message: "I need a ride to my doctor tomorrow." })
+    });
+    if (!result.json.assistantMessage?.body) throw new Error("Assistant reply missing");
+    if (!Array.isArray(result.json.matches)) throw new Error("Assistant matches missing");
+    return result.json;
+  });
+
   const smokeMedication = await step("resident: add medication inventory", async () => {
     const result = await request("/api/medications", {
       method: "POST",

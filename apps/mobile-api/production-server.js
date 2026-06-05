@@ -2383,6 +2383,47 @@ function createProductionApi(pool) {
       return { matches };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/help/chat") {
+      requireRole(user, ["senior"]);
+      const message = String(payload.message || "").trim();
+      if (!message) throw new Error("Message is required");
+      const need = message.toLowerCase();
+      const rows = (await query(
+        `SELECT s.*, b.name AS provider_name
+         FROM services s
+         JOIN businesses b ON b.id = s.business_id
+         WHERE s.status = 'approved' AND b.status = 'approved'
+         ORDER BY s.created_at DESC`
+      )).rows;
+      const matches = rows
+        .map(service => {
+          const haystack = `${service.name} ${service.category}`.toLowerCase();
+          const score = (need.includes("ride") || need.includes("doctor") || need.includes("appointment") || need.includes("transport"))
+            && haystack.includes("transport") ? 96
+            : need.includes("med") && haystack.includes("med") ? 94
+              : need.includes("food") && (haystack.includes("food") || haystack.includes("meal")) ? 92
+                : 72;
+          return { ...toServiceState(service, { name: service.provider_name }), score };
+        })
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 5);
+      const reply = need.includes("ride") || need.includes("doctor") || need.includes("appointment")
+        ? "I can help with the ride. Please confirm pickup, drop-off, date, time, rider phone, assistance needs, and driver-sharing consent before requesting it."
+        : need.includes("med")
+          ? "I can help with medication support. Tell me whether you need a reminder, refill, dosage help, or a pharmacy/provider request."
+          : need.includes("food") || need.includes("meal") || need.includes("grocery")
+            ? "I can help find food or grocery support. Please tell me delivery address, dietary needs, timing, and whether someone should check in after delivery."
+            : need.includes("urgent") || need.includes("emergency") || need.includes("fall")
+              ? "If this is urgent, use SOS now. I can also notify your trusted circle and log the safety event."
+              : "I can help with that. Tell me what you need, when you need it, where it should happen, and whether a trusted person should be notified.";
+      await audit(req, user, "resident_help_chat_message", "help_chat", null, { message, reply, matches: matches.length }, need.includes("urgent") || need.includes("emergency") || need.includes("fall") ? "warning" : "info");
+      return {
+        userMessage: { from: user.display_name || "You", body: message, createdAt: new Date().toISOString() },
+        assistantMessage: { from: "Guru", body: reply, createdAt: new Date().toISOString() },
+        matches
+      };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/maps/route-estimate") {
       requireRole(user, ["senior", "business", "trusted_person"]);
       const pickup = parseRoutePoint(payload.pickup || {}, "pickup");

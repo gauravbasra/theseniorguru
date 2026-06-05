@@ -498,6 +498,11 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
   const [rideBooking, setRideBooking] = useState<any>(null);
   const [rideStatus, setRideStatus] = useState<any>(null);
   const [driverMessage, setDriverMessage] = useState("Please call or text when you arrive.");
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantInput, setAssistantInput] = useState("I need a ride tomorrow.");
+  const [assistantMessages, setAssistantMessages] = useState<any[]>([
+    { from: "Guru", body: "Tell me what you need. I can help collect details, find matches, and guide you to the right request." }
+  ]);
   const locationBias = pickupPoint && Number.isFinite(Number(pickupPoint.lat)) && Number.isFinite(Number(pickupPoint.lng))
     ? { lat: Number(pickupPoint.lat), lng: Number(pickupPoint.lng) }
     : null;
@@ -538,6 +543,18 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
   async function findMatches() {
     const result: any = await post("/api/help/match", { need });
     setMatches(result.matches);
+  }
+  async function sendAssistantMessage() {
+    const message = assistantInput.trim();
+    if (!message) {
+      Alert.alert("Guru", "Type what you need first.");
+      return;
+    }
+    setAssistantInput("");
+    setAssistantMessages(current => [...current, { from: "You", body: message }]);
+    const result: any = await post("/api/help/chat", { message });
+    setAssistantMessages(current => [...current, result.assistantMessage]);
+    if (result.matches?.length) setMatches(result.matches);
   }
   async function previewRide() {
     if (!pickupPoint || !dropoffPoint) {
@@ -668,6 +685,14 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
       <TopPhoneBar />
       <Text style={styles.h1}>How can we help you today?</Text>
       <View style={styles.searchPill}><TextInput value={need} onChangeText={setNeed} style={styles.searchInput} placeholder="What do you need today?" /><Text style={styles.mic}>🎙</Text></View>
+      <HelpAssistantWidget
+        open={assistantOpen}
+        onToggle={() => setAssistantOpen(current => !current)}
+        messages={assistantMessages}
+        input={assistantInput}
+        onChangeInput={setAssistantInput}
+        onSend={sendAssistantMessage}
+      />
       <Card title="Ride details" icon="🚙" tint="peach">
         <Field label="Pickup" value={pickup} onChangeText={(value: string) => { setPickup(value); setPickupPoint(null); }} />
         <PrimaryButton label="Use my current location for pickup" onPress={useCurrentPickup} />
@@ -720,13 +745,6 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
       </Card>
       <SectionTitle title="Popular requests" />
       {["I need a ride", "I need medication help", "I need food", "I need cleaning", "I need diapers", "Feeling lonely"].map(item => <ActionCard key={item} icon={item.includes("ride") ? "🚙" : item.includes("med") ? "💊" : item.includes("food") ? "🍽" : item.includes("lonely") ? "♡" : "▣"} title={item} subtitle="" button="›" onPress={() => setNeed(item)} />)}
-      <Card title="Help Assistant" icon="🤖">
-        <ChatBubble align="right" text="I need a ride tomorrow." meta="You · 10:30 AM" />
-        <ChatBubble text="Sure, I can help with that. Where would you like to go?" meta="Guru · 10:30 AM" />
-        <ChatBubble align="right" text="Doctor appointment." meta="You · 10:31 AM" />
-        <ChatBubble text="Great. I found 3 transportation options for you." meta="Guru · 10:31 AM" />
-        <PrimaryButton label="Find matches" onPress={findMatches} />
-      </Card>
       <SectionTitle title="Matched for you" />
       {visible.map((service: any) => <ServiceCard key={service.id} service={service} onPress={() => book(service.id)} />)}
       <Card title="Ride request tracking" icon="🚙">
@@ -1824,6 +1842,35 @@ async function openPhoneDialer(phone: string | null | undefined, label: string, 
   return true;
 }
 
+function HelpAssistantWidget({ open, onToggle, messages, input, onChangeInput, onSend }: { open: boolean; onToggle: () => void; messages: any[]; input: string; onChangeInput: (value: string) => void; onSend: () => void }) {
+  return (
+    <View style={styles.assistantWidget}>
+      <Pressable style={styles.assistantLauncher} onPress={onToggle}>
+        <View style={styles.assistantOrb}><Text style={styles.assistantOrbText}>G</Text></View>
+        <View style={styles.actionText}>
+          <Text style={styles.assistantTitle}>Guru help assistant</Text>
+          <Text style={styles.assistantSubtitle}>{open ? "Hide chat" : "Open chat widget"}</Text>
+        </View>
+        <Text style={styles.chevron}>{open ? "×" : "›"}</Text>
+      </Pressable>
+      {open ? (
+        <View style={styles.assistantPanel}>
+          <View style={styles.assistantMessages}>
+            {messages.slice(-6).map((message, index) => (
+              <ChatBubble key={`${message.from}-${index}-${message.body}`} align={message.from === "You" ? "right" : undefined} text={message.body} meta={`${message.from} · now`} />
+            ))}
+          </View>
+          <View style={styles.assistantInputRow}>
+            <TextInput value={input} onChangeText={onChangeInput} style={styles.assistantInput} placeholder="Ask Guru for help..." placeholderTextColor={colors.muted} />
+            <Pressable style={styles.assistantSendButton} onPress={onSend}><Text style={styles.primaryText}>Send</Text></Pressable>
+          </View>
+          <Text style={styles.tinyMuted}>Guru can guide requests and find approved matches. Use SOS for emergencies.</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function ChatBubble({ text, meta, align }: { text: string; meta: string; align?: "right" }) {
   return (
     <View style={[styles.chatBubble, align === "right" && styles.chatBubbleRight]}>
@@ -1988,6 +2035,17 @@ const styles = StyleSheet.create({
   callIcon: { color: "#6a3f7a", fontSize: 20, fontWeight: "900" },
   companionHero: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
   robotImage: { width: 106, height: 92, borderRadius: 22, backgroundColor: "#f1e6f3" },
+  assistantWidget: { marginBottom: 12 },
+  assistantLauncher: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#2f1739", borderRadius: 19, padding: 14, shadowColor: "#2f1739", shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 9 } },
+  assistantOrb: { width: 44, height: 44, borderRadius: 16, backgroundColor: "#f4a657", alignItems: "center", justifyContent: "center" },
+  assistantOrbText: { color: "#2f1739", fontSize: 20, fontWeight: "900" },
+  assistantTitle: { color: "white", fontSize: 15, fontWeight: "900", lineHeight: 19 },
+  assistantSubtitle: { color: "#f4dfc8", fontSize: 12, fontWeight: "800", marginTop: 2 },
+  assistantPanel: { backgroundColor: "#fffdf9", borderRadius: 19, padding: 13, borderWidth: 1, borderColor: "rgba(68,43,78,0.13)", marginTop: 8 },
+  assistantMessages: { maxHeight: 320 },
+  assistantInputRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
+  assistantInput: { flex: 1, minHeight: 44, backgroundColor: "#fffaf5", borderWidth: 1, borderColor: "rgba(68,43,78,0.12)", borderRadius: 13, paddingHorizontal: 12, color: "#12091f", fontSize: 13 },
+  assistantSendButton: { backgroundColor: "#71447f", paddingHorizontal: 15, paddingVertical: 13, borderRadius: 13, alignItems: "center" },
   chatBubble: { alignSelf: "flex-start", maxWidth: "82%", backgroundColor: "#fff6eb", borderRadius: 16, padding: 12, marginBottom: 9, borderWidth: 1, borderColor: "rgba(68,43,78,0.08)" },
   chatBubbleRight: { alignSelf: "flex-end", backgroundColor: "#efe5f3" },
   chatText: { color: "#12091f", fontSize: 14, fontWeight: "800", lineHeight: 20 },
