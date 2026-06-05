@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { api, AppRole, patch, post, saveAuthToken } from "./src/services/api";
 import { initLocalDb, loadCirclePerson, loadRole, saveCirclePerson, saveRole } from "./src/services/localStore";
@@ -756,8 +756,13 @@ function BusinessServices({ state, onRefresh }: { state: any; onRefresh: () => v
 function BusinessPackage({ state, onRefresh }: { state: any; onRefresh: () => void }) {
   async function setPlan(plan: "free" | "paid") {
     try {
-      await patch("/api/business/plan", { plan });
+      const result: any = await patch("/api/business/plan", { plan });
       await onRefresh();
+      if (result.checkoutUrl) {
+        await Linking.openURL(result.checkoutUrl);
+        Alert.alert("Stripe Checkout opened", "Complete payment in Stripe. The Growth package activates after Stripe confirms the subscription.");
+        return;
+      }
       Alert.alert("TheSeniorguru", plan === "paid" ? "Growth package activated." : "Free package selected.");
     } catch (error: any) {
       Alert.alert("Package action needed", error.message || "Package change could not be completed.");

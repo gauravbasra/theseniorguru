@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
 const PAID_PLAN_PRICE_CENTS = 10000;
+const STRIPE_API_VERSION = "2026-02-25.clover";
 
 function required(value, name) {
   if (value === undefined || value === null || value === "") {
@@ -17,10 +18,78 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+function verifyStripeSignature(rawBody, signatureHeader, webhookSecret) {
+  if (!rawBody || !signatureHeader || !webhookSecret) return false;
+  const parts = String(signatureHeader).split(",").reduce((acc, part) => {
+    const [key, value] = part.split("=");
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(value);
+    return acc;
+  }, {});
+  const timestamp = parts.t?.[0];
+  const signatures = parts.v1 || [];
+  if (!timestamp || !signatures.length) return false;
+  const signedPayload = `${timestamp}.${rawBody}`;
+  const expected = crypto.createHmac("sha256", webhookSecret).update(signedPayload).digest("hex");
+  return signatures.some(signature => {
+    const left = Buffer.from(signature, "hex");
+    const right = Buffer.from(expected, "hex");
+    return left.length === right.length && crypto.timingSafeEqual(left, right);
+  });
+}
+
 function createProductionApi(pool) {
   async function query(sql, params = []) {
     const result = await pool.query(sql, params);
     return result;
+  }
+
+  async function stripeRequest(path, body) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      const error = new Error("Stripe billing is not configured.");
+      error.status = 402;
+      throw error;
+    }
+    const response = await fetch(`https://api.stripe.com${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Stripe-Version": STRIPE_API_VERSION
+      },
+      body: new URLSearchParams(body)
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      const error = new Error(json.error?.message || "Stripe request failed");
+      error.status = 402;
+      error.details = json.error || {};
+      throw error;
+    }
+    return json;
+  }
+
+  async function createGrowthCheckoutSession(user, business, subscription) {
+    const successUrl = process.env.STRIPE_SUCCESS_URL || "https://mobile-api-nine.vercel.app/api/billing/success?session_id={CHECKOUT_SESSION_ID}";
+    const cancelUrl = process.env.STRIPE_CANCEL_URL || "https://mobile-api-nine.vercel.app/api/billing/cancelled";
+    const params = {
+      mode: "subscription",
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      customer_email: business.email || user.email,
+      client_reference_id: business.id,
+      "line_items[0][quantity]": "1",
+      "line_items[0][price_data][currency]": "usd",
+      "line_items[0][price_data][unit_amount]": String(PAID_PLAN_PRICE_CENTS),
+      "line_items[0][price_data][recurring][interval]": "month",
+      "line_items[0][price_data][product_data][name]": "TheSeniorguru Growth Package",
+      "line_items[0][price_data][product_data][description]": "More than one service and 5 leads per month for approved senior support businesses.",
+      "metadata[businessId]": business.id,
+      "metadata[subscriptionRowId]": subscription.id,
+      "subscription_data[metadata][businessId]": business.id,
+      "subscription_data[metadata][subscriptionRowId]": subscription.id
+    };
+    return stripeRequest("/v1/checkout/sessions", params);
   }
 
   async function transaction(callback) {
@@ -362,6 +431,56 @@ function createProductionApi(pool) {
   }
 
   async function route(req, payload, url) {
+    if (req.method === "POST" && url.pathname === "/api/stripe/webhook") {
+      if (!verifyStripeSignature(req.rawBody, req.headers["stripe-signature"], process.env.STRIPE_WEBHOOK_SECRET)) {
+        const error = new Error("Invalid Stripe webhook signature");
+        error.status = 400;
+        throw error;
+      }
+      const event = JSON.parse(req.rawBody || "{}");
+      if (event.type === "checkout.session.completed") {
+        const session = event.data?.object || {};
+        const businessId = session.metadata?.businessId || session.client_reference_id;
+        if (businessId && session.mode === "subscription") {
+          await query(
+            `UPDATE subscriptions
+             SET plan = 'growth_100',
+                 stripe_customer_id = $1,
+                 stripe_subscription_id = $2,
+                 used_leads_month = 0,
+                 current_period_start = date_trunc('month', now()),
+                 current_period_end = date_trunc('month', now()) + interval '1 month',
+                 updated_at = now()
+             WHERE business_id = $3`,
+            [session.customer || null, session.subscription || null, businessId]
+          );
+          await query(
+            `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
+             VALUES ('subscription', $1, 'stripe_checkout_completed', 'info', $2)`,
+            [businessId, JSON.stringify({ stripeSessionId: session.id, stripeCustomerId: session.customer, stripeSubscriptionId: session.subscription })]
+          );
+        }
+      }
+      if (event.type === "customer.subscription.deleted") {
+        const subscription = event.data?.object || {};
+        const businessId = subscription.metadata?.businessId;
+        if (businessId) {
+          await query(
+            `UPDATE subscriptions
+             SET plan = 'free', stripe_subscription_id = $1, updated_at = now()
+             WHERE business_id = $2`,
+            [subscription.id || null, businessId]
+          );
+          await query(
+            `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
+             VALUES ('subscription', $1, 'stripe_subscription_cancelled', 'warning', $2)`,
+            [businessId, JSON.stringify({ stripeSubscriptionId: subscription.id })]
+          );
+        }
+      }
+      return { received: true };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/dev-session") {
       const email = required(payload.email, "email");
       let user = (await query(`SELECT * FROM users WHERE email = $1`, [email])).rows[0];
@@ -800,12 +919,16 @@ function createProductionApi(pool) {
       }
       const requestedPlan = payload.plan === "paid" || payload.plan === "growth_100" ? "growth_100" : "free";
       const current = await ensureDefaultSubscription(business.id);
-      if (requestedPlan === "growth_100" && !process.env.STRIPE_SECRET_KEY) {
-        await audit(req, user, "business_paid_plan_requested_without_billing", "subscription", current.id, { requestedPlan, priceCents: PAID_PLAN_PRICE_CENTS }, "warning");
-        const error = new Error("$100/month package requires Stripe billing to be configured before activation.");
-        error.status = 402;
-        error.details = { paymentRequired: true, priceCents: PAID_PLAN_PRICE_CENTS, plan: "growth_100" };
-        throw error;
+      if (requestedPlan === "growth_100") {
+        const checkout = await createGrowthCheckoutSession(user, business, current);
+        await audit(req, user, "business_growth_checkout_created", "subscription", current.id, { checkoutSessionId: checkout.id, priceCents: PAID_PLAN_PRICE_CENTS });
+        return {
+          paymentRequired: true,
+          checkoutSessionId: checkout.id,
+          checkoutUrl: checkout.url,
+          priceCents: PAID_PLAN_PRICE_CENTS,
+          plan: "growth_100"
+        };
       }
       const subscription = (await query(
         `UPDATE subscriptions

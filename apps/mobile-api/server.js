@@ -82,6 +82,7 @@ function body(req) {
     let raw = "";
     req.on("data", chunk => raw += chunk);
     req.on("end", () => {
+      req.rawBody = raw;
       try { resolve(raw ? JSON.parse(raw) : {}); }
       catch (error) { reject(error); }
     });
