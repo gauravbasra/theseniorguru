@@ -550,6 +550,28 @@ function createProductionApi(pool) {
     return null;
   }
 
+  async function enqueueBillingNotifications(businessId, title, body, metadata = {}) {
+    const recipients = (await query(
+      `SELECT owner_user_id AS user_id FROM businesses WHERE id = $1
+       UNION
+       SELECT id AS user_id FROM users WHERE role = 'superadmin' AND status = 'approved'`,
+      [businessId]
+    )).rows.map(row => row.user_id).filter(Boolean);
+    for (const userId of recipients) {
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1, 'push', $2, $3, 'queued')`,
+        [userId, title, body]
+      );
+    }
+    await query(
+      `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
+       VALUES ('subscription', $1, 'billing_notifications_queued', 'info', $2)`,
+      [businessId, JSON.stringify({ recipients: recipients.length, title, ...metadata })]
+    );
+    return recipients.length;
+  }
+
   async function route(req, payload, url) {
     if (req.method === "POST" && url.pathname === "/api/stripe/webhook") {
       if (!verifyStripeSignature(req.rawBody, req.headers["stripe-signature"], process.env.STRIPE_WEBHOOK_SECRET)) {
@@ -623,6 +645,12 @@ function createProductionApi(pool) {
              VALUES ('subscription', $1, 'stripe_subscription_cancelled', 'warning', $2)`,
             [businessId, JSON.stringify({ stripeSubscriptionId: subscription.id })]
           );
+          await enqueueBillingNotifications(
+            businessId,
+            "Billing subscription cancelled",
+            "Your Growth package was cancelled and your account has been moved to the Free package. Paid lead actions are disabled until billing is restored.",
+            { stripeSubscriptionId: subscription.id, source: "customer.subscription.deleted" }
+          );
         }
       }
       if (event.type === "invoice.payment_failed") {
@@ -642,6 +670,12 @@ function createProductionApi(pool) {
             `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
              VALUES ('subscription', $1, 'stripe_payment_failed', 'warning', $2)`,
             [businessId, JSON.stringify({ stripeInvoiceId: invoice.id, stripeCustomerId: invoice.customer, stripeSubscriptionId: invoice.subscription })]
+          );
+          await enqueueBillingNotifications(
+            businessId,
+            "Billing payment failed",
+            "We could not process your Growth package payment. Service creation, lead top-ups, and lead acceptance are paused until billing is restored.",
+            { stripeInvoiceId: invoice.id, stripeCustomerId: invoice.customer, stripeSubscriptionId: invoice.subscription, source: "invoice.payment_failed" }
           );
         }
       }
@@ -667,6 +701,12 @@ function createProductionApi(pool) {
             `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
              VALUES ('subscription', $1, 'stripe_invoice_paid', 'info', $2)`,
             [businessId, JSON.stringify({ stripeInvoiceId: invoice.id, stripeCustomerId: invoice.customer, stripeSubscriptionId: invoice.subscription })]
+          );
+          await enqueueBillingNotifications(
+            businessId,
+            "Billing restored",
+            "Your Growth package billing is active again. Service creation, lead top-ups, and lead acceptance are available.",
+            { stripeInvoiceId: invoice.id, stripeCustomerId: invoice.customer, stripeSubscriptionId: invoice.subscription, source: "invoice.paid" }
           );
         }
       }
