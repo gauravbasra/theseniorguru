@@ -1233,18 +1233,23 @@ function createProductionApi(pool) {
           error.status = 403;
           throw error;
         }
-        const entitlement = await getLeadEntitlement(business.id);
-        if (entitlement.used >= entitlement.allowed) {
-          const error = new Error(`Lead limit reached for the ${entitlement.plan === "free" ? "free" : "$100/month Growth"} package.`);
-          error.status = 402;
-          throw error;
-        }
         const lead = payload.leadId
           ? (await query(`SELECT * FROM leads WHERE id = $1 AND business_id = $2`, [payload.leadId, business.id])).rows[0]
           : (await query(`SELECT * FROM leads WHERE service_id = $1 AND business_id = $2 ORDER BY created_at DESC LIMIT 1`, [required(payload.serviceId, "serviceId"), business.id])).rows[0];
         if (!lead) {
           const error = new Error("Lead not found for this business");
           error.status = 404;
+          throw error;
+        }
+        if (["accepted", "booked", "closed"].includes(lead.status)) {
+          const booking = (await query(`SELECT * FROM bookings WHERE lead_id = $1 ORDER BY updated_at DESC LIMIT 1`, [lead.id])).rows[0];
+          await audit(req, user, "business_lead_acceptance_idempotent", "lead", lead.id, { bookingId: booking?.id || null, status: lead.status }, "info");
+          return { ok: true, idempotent: true, lead, booking };
+        }
+        const entitlement = await getLeadEntitlement(business.id);
+        if (entitlement.used >= entitlement.allowed) {
+          const error = new Error(`Lead limit reached for the ${entitlement.plan === "free" ? "free" : "$100/month Growth"} package.`);
+          error.status = 402;
           throw error;
         }
         const result = await transaction(async tx => {
