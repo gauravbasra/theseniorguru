@@ -596,6 +596,11 @@ function ResidentFeed() {
 }
 
 function ResidentServices({ state, onRefresh }: { state: any; onRefresh: () => void }) {
+  const [outdoorActivity, setOutdoorActivity] = useState("easy walking trail");
+  const [outdoorRecommendations, setOutdoorRecommendations] = useState<any[]>([]);
+  const [outdoorQuote, setOutdoorQuote] = useState<any>(null);
+  const [selectedOutdoorPlace, setSelectedOutdoorPlace] = useState<any>(null);
+
   async function book(serviceId: string, name: string) {
     await post("/api/bookings", {
       serviceId,
@@ -607,6 +612,48 @@ function ResidentServices({ state, onRefresh }: { state: any; onRefresh: () => v
     await onRefresh();
     Alert.alert("TheSeniorguru", "Service booked.");
   }
+
+  async function findOutdoorTrails() {
+    const result: any = await post("/api/outdoor/recommendations", {
+      location: { label: state.resident?.community || "Park View Community", lat: 43.1001, lng: -79.1001 },
+      activity: outdoorActivity,
+      radiusMeters: 8000
+    });
+    setOutdoorRecommendations(result.recommendations || []);
+    setSelectedOutdoorPlace((result.recommendations || [])[0] || null);
+    setOutdoorQuote(null);
+    Alert.alert("Outdoor options found", `${result.recommendationCount || 0} Google Places result(s). AllTrails is partner-gated until approved.`);
+  }
+
+  async function quoteOutdoorSupport(place: any) {
+    setSelectedOutdoorPlace(place);
+    const result: any = await post("/api/orders/pricing-quote", {
+      category: "outdoor",
+      provider: "google_places",
+      providerBillCents: 3500
+    });
+    setOutdoorQuote(result.pricing);
+    Alert.alert("Outdoor support quote", `$${(result.pricing.totalChargeCents / 100).toFixed(2)} including TheSeniorguru coordination margin.`);
+  }
+
+  async function createOutdoorOrder() {
+    const place = selectedOutdoorPlace || outdoorRecommendations[0];
+    if (!place) {
+      Alert.alert("Choose an outdoor place", "Find trails first, then select an outdoor option.");
+      return;
+    }
+    const result: any = await post("/api/orders", {
+      category: "outdoor",
+      provider: "google_places",
+      label: `Outdoor support planning: ${place.name}`,
+      providerBillCents: 3500,
+      delivery: { label: place.name, lat: place.lat, lng: place.lng },
+      items: [{ type: "outdoor_activity", activity: outdoorActivity, placeId: place.placeId }]
+    });
+    await onRefresh();
+    Alert.alert("Outdoor order created", `${result.order.lifecycle_status}. Payment is required before dispatch.`);
+  }
+
   return (
     <View>
       <TopPhoneBar />
@@ -615,7 +662,34 @@ function ResidentServices({ state, onRefresh }: { state: any; onRefresh: () => v
       <SectionTitle title="AI matched for you" />
       {state.services.slice(0, 3).map((service: any) => <ServiceCard key={service.id} service={service} onPress={() => book(service.id, service.name)} />)}
       <SectionTitle title="Browse categories" />
-      <View style={styles.categoryGrid}>{["Transport", "Medications", "Food", "Home Care", "Essentials", "More"].map(cat => <View key={cat} style={styles.category}><Text style={styles.categoryIcon}>{cat === "Transport" ? "🚙" : cat === "Medications" ? "💊" : cat === "Food" ? "🍽" : "▣"}</Text><Text style={styles.categoryText}>{cat}</Text></View>)}</View>
+      <View style={styles.categoryGrid}>{["Transport", "Medications", "Food", "Outdoor", "Home Care", "Essentials"].map(cat => <View key={cat} style={styles.category}><Text style={styles.categoryIcon}>{cat === "Transport" ? "🚙" : cat === "Medications" ? "💊" : cat === "Food" ? "🍽" : cat === "Outdoor" ? "🌿" : "▣"}</Text><Text style={styles.categoryText}>{cat}</Text></View>)}</View>
+      <SectionTitle title="Trails & Outdoor Adventure" />
+      <Card title="Find senior-friendly outdoor options" icon="🌿" tint="peach">
+        <Text style={styles.muted}>Google Maps finds nearby trails, parks, gardens, and walking spots. TheSeniorguru still marks public results as unvetted until accessibility, supervision, bathrooms, benches, weather, and transport are checked.</Text>
+        <Field label="Activity" value={outdoorActivity} onChangeText={setOutdoorActivity} />
+        <PrimaryButton label="Find trails near Anita" onPress={findOutdoorTrails} />
+        {outdoorQuote ? <Text style={styles.safeText}>Quote: ${(outdoorQuote.totalChargeCents / 100).toFixed(2)} · includes ${(outdoorQuote.platformMarginCents / 100).toFixed(2)} coordination margin</Text> : null}
+        {outdoorRecommendations.map(place => (
+          <View key={place.placeId} style={styles.suggestionRow}>
+            <Text style={styles.body}>{place.name}</Text>
+            <Text style={styles.muted}>{place.address}</Text>
+            <Text style={place.vettingStatus === "approved_partner" ? styles.safeText : styles.alertText}>{place.vettingStatus === "approved_partner" ? "Approved partner" : "Google result - needs care review"}</Text>
+            <Text style={styles.muted}>★ {place.rating || "New"} · {place.seniorSuitability?.level || "needs_review"}</Text>
+            <Text style={styles.muted}>{place.careNote}</Text>
+            <ButtonRow labels={[["Quote", place.placeId], ["Select", `select:${place.placeId}`]]} onPress={(value: string) => {
+              const target = outdoorRecommendations.find(item => item.placeId === value.replace("select:", ""));
+              if (!target) return;
+              if (value.startsWith("select:")) {
+                setSelectedOutdoorPlace(target);
+                Alert.alert("Outdoor place selected", target.name);
+              } else {
+                quoteOutdoorSupport(target);
+              }
+            }} />
+          </View>
+        ))}
+        <PrimaryButton label="Create outdoor support order" onPress={createOutdoorOrder} disabled={!outdoorRecommendations.length} />
+      </Card>
       <SectionTitle title="Events & Activities" />
       <View style={styles.segment}><Text style={styles.segmentActive}>Upcoming</Text><Text style={styles.segmentText}>My Events</Text></View>
       <EventCard title="Chair Yoga" host="with Meena" time="Today, 10:30 AM" image="https://images.unsplash.com/photo-1599901860904-17e6ed7083a0?w=300&h=260&fit=crop" />
