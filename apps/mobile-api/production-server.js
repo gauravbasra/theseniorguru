@@ -1536,7 +1536,7 @@ function createProductionApi(pool) {
         error.status = 404;
         throw error;
       }
-      const id = url.pathname.split("/")[3];
+      const id = url.pathname.split("/")[4];
       const status = payload.status === "declined" ? "declined" : "accepted";
       const callRequest = (await query(
         `UPDATE circle_call_requests
