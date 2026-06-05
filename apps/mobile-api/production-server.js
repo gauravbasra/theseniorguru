@@ -400,6 +400,34 @@ function createProductionApi(pool) {
     )).rows.map(row => row.trusted_user_id);
   }
 
+  async function authorizeSafetyEventAccess(user, eventId) {
+    if (user.role === "superadmin") {
+      const event = (await query(`SELECT * FROM safety_events WHERE id = $1`, [eventId])).rows[0];
+      if (!event) {
+        const error = new Error("SOS event not found");
+        error.status = 404;
+        throw error;
+      }
+      return event;
+    }
+    const event = (await query(
+      `SELECT se.*
+       FROM safety_events se
+       JOIN trusted_connections tc ON tc.resident_id = se.resident_id
+       WHERE se.id = $1
+         AND tc.trusted_user_id = $2
+         AND tc.status = 'approved'
+         AND ('sos' = ANY(tc.permissions) OR 'safety' = ANY(tc.permissions))`,
+      [eventId, user.id]
+    )).rows[0];
+    if (!event) {
+      const error = new Error("SOS event is not accessible for this trusted person");
+      error.status = 403;
+      throw error;
+    }
+    return event;
+  }
+
   function notificationChannels(severity) {
     if (severity === 'critical') return ['push', 'sms', 'call'];
     if (severity === 'high') return ['push', 'sms'];
@@ -1357,6 +1385,7 @@ function createProductionApi(pool) {
     if (req.method === 'POST' && url.pathname.startsWith('/api/sos-events/') && url.pathname.endsWith('/ack')) {
       requireRole(user, ['trusted_person', 'superadmin']);
       const id = url.pathname.split('/')[3];
+      await authorizeSafetyEventAccess(user, id);
       const event = (await query(`UPDATE safety_events SET status = 'acknowledged', resolved_at = now() WHERE id = $1 RETURNING *`, [id])).rows[0];
       if (!event) {
         const error = new Error('SOS event not found');
@@ -1370,6 +1399,7 @@ function createProductionApi(pool) {
     if (req.method === 'POST' && url.pathname.startsWith('/api/sos-events/') && url.pathname.endsWith('/escalate')) {
       requireRole(user, ['trusted_person', 'superadmin']);
       const id = url.pathname.split('/')[3];
+      await authorizeSafetyEventAccess(user, id);
       const event = (await query(`UPDATE safety_events SET status = 'escalated', severity = 'critical' WHERE id = $1 RETURNING *`, [id])).rows[0];
       if (!event) {
         const error = new Error('SOS event not found');
