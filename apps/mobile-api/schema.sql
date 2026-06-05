@@ -176,6 +176,23 @@ CREATE TABLE IF NOT EXISTS services (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS ride_provider_configs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'credential_required',
+  supports_guest_rides BOOLEAN NOT NULL DEFAULT TRUE,
+  supports_healthcare BOOLEAN NOT NULL DEFAULT TRUE,
+  supported_regions TEXT[] NOT NULL DEFAULT '{}',
+  credential_source TEXT,
+  credential_status TEXT NOT NULL DEFAULT 'missing',
+  payment_model TEXT NOT NULL DEFAULT 'senior_paid_platform_dispatch',
+  notes TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS leads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
@@ -339,6 +356,14 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEF
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fulfillment_provider TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS external_trip_id TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fulfillment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS payment_responsibility TEXT NOT NULL DEFAULT 'senior';
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'payment_required';
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS payer_user_id UUID REFERENCES users(id);
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS payment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_responsibility TEXT NOT NULL DEFAULT 'senior';
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'payment_required';
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payer_user_id UUID REFERENCES users(id);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS safety_telemetry (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

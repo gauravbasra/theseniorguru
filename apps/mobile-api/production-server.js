@@ -321,7 +321,9 @@ function createProductionApi(pool) {
       fulfillmentMode: lead.fulfillment_mode || null,
       lifecycleStatus: lead.lifecycle_status || "requested",
       fulfillmentProvider: lead.fulfillment_provider || null,
-      externalTripId: lead.external_trip_id || null
+      externalTripId: lead.external_trip_id || null,
+      paymentResponsibility: lead.payment_responsibility || "senior",
+      paymentStatus: lead.payment_status || "payment_required"
     };
   }
 
@@ -342,7 +344,9 @@ function createProductionApi(pool) {
       fulfillmentMode: booking.fulfillment_mode || null,
       lifecycleStatus: booking.lifecycle_status || "requested",
       fulfillmentProvider: booking.fulfillment_provider || null,
-      externalTripId: booking.external_trip_id || null
+      externalTripId: booking.external_trip_id || null,
+      paymentResponsibility: booking.payment_responsibility || "senior",
+      paymentStatus: booking.payment_status || "payment_required"
     };
   }
 
@@ -547,6 +551,70 @@ function createProductionApi(pool) {
     return Boolean(process.env.UBER_HEALTH_CLIENT_ID && process.env.UBER_HEALTH_CLIENT_SECRET);
   }
 
+  function lyftHealthcareConfigured() {
+    return Boolean(process.env.LYFT_HEALTHCARE_CLIENT_ID && process.env.LYFT_HEALTHCARE_CLIENT_SECRET);
+  }
+
+  async function ensureRideProviderConfigs() {
+    const defaults = [
+      {
+        provider: "uber_health",
+        displayName: "Uber Health",
+        configured: uberHealthConfigured(),
+        credentialSource: "UBER_HEALTH_CLIENT_ID/UBER_HEALTH_CLIENT_SECRET",
+        notes: "Healthcare/guest ride dispatch. Provider may bill the organization account; TheSeniorguru should collect senior/trusted-payer payment before dispatch."
+      },
+      {
+        provider: "lyft_healthcare",
+        displayName: "Lyft Healthcare",
+        configured: lyftHealthcareConfigured(),
+        credentialSource: "LYFT_HEALTHCARE_CLIENT_ID/LYFT_HEALTHCARE_CLIENT_SECRET",
+        notes: "Healthcare ride option for Lyft programs. Dispatch requires provider onboarding and credentials."
+      },
+      {
+        provider: "local_partner",
+        displayName: "Approved local partner",
+        configured: true,
+        credentialSource: "approved_business_network",
+        notes: "Fallback for approved senior-transport businesses and assisted rides."
+      },
+      {
+        provider: "manual_coordination",
+        displayName: "Manual coordination",
+        configured: true,
+        credentialSource: "care_team_operations",
+        notes: "Fallback when automated provider dispatch is not available."
+      }
+    ];
+    for (const item of defaults) {
+      await query(
+        `INSERT INTO ride_provider_configs (provider, display_name, status, credential_source, credential_status, notes, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (provider) DO UPDATE
+         SET display_name = EXCLUDED.display_name,
+             status = CASE
+               WHEN ride_provider_configs.status IN ('enabled','disabled') THEN ride_provider_configs.status
+               ELSE EXCLUDED.status
+             END,
+             credential_source = EXCLUDED.credential_source,
+             credential_status = EXCLUDED.credential_status,
+             notes = EXCLUDED.notes,
+             metadata = ride_provider_configs.metadata || EXCLUDED.metadata,
+             updated_at = now()`,
+        [
+          item.provider,
+          item.displayName,
+          item.configured ? "enabled" : "credential_required",
+          item.credentialSource,
+          item.configured ? "configured" : "missing",
+          item.notes,
+          JSON.stringify({ envConfigured: item.configured })
+        ]
+      );
+    }
+    return (await query(`SELECT * FROM ride_provider_configs ORDER BY provider`)).rows;
+  }
+
   function normalizeFulfillmentMode(mode, service = {}) {
     const requested = String(mode || "").trim();
     if (["uber_health", "local_partner", "trusted_circle", "manual_coordination"].includes(requested)) return requested;
@@ -563,6 +631,14 @@ function createProductionApi(pool) {
         provider: "uber_health",
         lifecycleStatus: uberReady ? "ready_to_dispatch" : "credential_required",
         reason: uberReady ? "Uber Health can be used for guest ride dispatch." : "Uber Health credentials are not configured yet."
+      },
+      {
+        mode: "lyft_healthcare",
+        recommended: false,
+        available: lyftHealthcareConfigured(),
+        provider: "lyft_healthcare",
+        lifecycleStatus: lyftHealthcareConfigured() ? "ready_to_dispatch" : "credential_required",
+        reason: lyftHealthcareConfigured() ? "Lyft Healthcare can be used for healthcare ride dispatch." : "Lyft Healthcare credentials are not configured yet."
       },
       {
         mode: "local_partner",
@@ -1947,6 +2023,7 @@ function createProductionApi(pool) {
 
     if (req.method === "POST" && url.pathname === "/api/rides/fulfillment-options") {
       requireRole(user, ["senior", "business", "trusted_person"]);
+      await ensureRideProviderConfigs();
       const pickup = parseRoutePoint(payload.pickup || {}, "pickup");
       const dropoff = parseRoutePoint(payload.dropoff || {}, "dropoff");
       const route = await estimateRoute(pickup, dropoff);
@@ -1962,6 +2039,49 @@ function createProductionApi(pool) {
       const options = buildFulfillmentOptions(route, service);
       await audit(req, user, "ride_fulfillment_options_requested", "ride", null, { routeProvider: route.provider, options: options.map(option => ({ mode: option.mode, available: option.available, lifecycleStatus: option.lifecycleStatus })) });
       return { pickup, dropoff, route, options, recommendedMode: options.find(option => option.recommended && option.available)?.mode || "local_partner" };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/superadmin/ride-providers") {
+      requireRole(user, ["superadmin"]);
+      const providers = await ensureRideProviderConfigs();
+      await audit(req, user, "ride_provider_configs_viewed", "ride_provider_config", null, { providers: providers.length }, "info");
+      return { providers };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/superadmin/ride-providers") {
+      requireRole(user, ["superadmin"]);
+      const provider = String(required(payload.provider, "provider")).trim();
+      const allowedProviders = ["uber_health", "lyft_healthcare", "local_partner", "manual_coordination"];
+      if (!allowedProviders.includes(provider)) {
+        const error = new Error("Unsupported ride provider");
+        error.status = 400;
+        throw error;
+      }
+      const status = ["enabled", "disabled", "credential_required"].includes(payload.status) ? payload.status : "credential_required";
+      const updated = (await query(
+        `INSERT INTO ride_provider_configs (provider, display_name, status, credential_status, supported_regions, notes, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (provider) DO UPDATE
+         SET display_name = EXCLUDED.display_name,
+             status = EXCLUDED.status,
+             credential_status = EXCLUDED.credential_status,
+             supported_regions = EXCLUDED.supported_regions,
+             notes = EXCLUDED.notes,
+             metadata = ride_provider_configs.metadata || EXCLUDED.metadata,
+             updated_at = now()
+         RETURNING *`,
+        [
+          provider,
+          payload.displayName || provider,
+          status,
+          payload.credentialStatus || (status === "enabled" ? "configured" : "missing"),
+          Array.isArray(payload.supportedRegions) ? payload.supportedRegions : [],
+          payload.notes || null,
+          JSON.stringify({ manuallyConfigured: true, lastUpdatedBy: user.id })
+        ]
+      )).rows[0];
+      await audit(req, user, "ride_provider_config_updated", "ride_provider_config", updated.id, { provider, status: updated.status, credentialStatus: updated.credential_status }, "warning");
+      return { provider: updated };
     }
 
     if (req.method === "POST" && url.pathname === "/api/bookings") {
@@ -1991,22 +2111,26 @@ function createProductionApi(pool) {
         const fulfillmentMode = normalizeFulfillmentMode(payload.fulfillmentMode, service);
         const fulfillmentOptions = route ? buildFulfillmentOptions(route, service) : [];
         const selectedFulfillment = fulfillmentOptions.find(option => option.mode === fulfillmentMode) || { mode: fulfillmentMode, provider: fulfillmentMode, lifecycleStatus: "requested", available: true, reason: "No ride route supplied." };
-        const lifecycleStatus = fulfillmentMode === "uber_health" && !selectedFulfillment.available ? "credential_required" : "requested";
+        const lifecycleStatus = ["uber_health", "lyft_healthcare"].includes(fulfillmentMode) && !selectedFulfillment.available ? "credential_required" : "payment_required";
+        const paymentResponsibility = payload.paymentResponsibility || "senior";
+        const paymentStatus = payload.paymentStatus || "payment_required";
         const result = await transaction(async tx => {
           const lead = (await tx(
             `INSERT INTO leads (
               resident_id, service_id, business_id, request_type, requested_time, status,
               pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
               distance_meters, duration_seconds, route_provider, route_metadata,
-              fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata
+              fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata,
+              payment_responsibility, payment_status, payer_user_id, payment_metadata
              )
-             VALUES ($1,$2,$3,$4,$5,'matched',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+             VALUES ($1,$2,$3,$4,$5,'matched',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
             [
               resident.id, service.id, service.business_id, payload.label || service.name, payload.time || null,
               pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
               dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
               route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {}),
-              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions })
+              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions }),
+              paymentResponsibility, paymentStatus, payload.payerUserId || user.id, JSON.stringify({ payerRole: payload.payerRole || "senior", requiredBeforeDispatch: true })
             ]
           )).rows[0];
           const booking = (await tx(
@@ -2014,15 +2138,17 @@ function createProductionApi(pool) {
               lead_id, resident_id, business_id, service_id, label, status,
               pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
               distance_meters, duration_seconds, route_provider, route_metadata,
-              fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata
+              fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata,
+              payment_responsibility, payment_status, payer_user_id, payment_metadata
              )
-             VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+             VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
             [
               lead.id, resident.id, service.business_id, service.id, payload.label || service.name,
               pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
               dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
               route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {}),
-              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions })
+              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions }),
+              paymentResponsibility, paymentStatus, payload.payerUserId || user.id, JSON.stringify({ payerRole: payload.payerRole || "senior", requiredBeforeDispatch: true })
             ]
           )).rows[0];
           return { lead, booking };
