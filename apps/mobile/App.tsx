@@ -459,9 +459,38 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
   const [validationSummary, setValidationSummary] = useState("");
   const [fulfillmentMode, setFulfillmentMode] = useState("uber_health");
   const [matches, setMatches] = useState<any[]>([]);
+  const [rideDate, setRideDate] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+  const [rideTime, setRideTime] = useState("10:00");
+  const [riderName, setRiderName] = useState(state.resident?.name || "Anita Sharma");
+  const [riderPhone, setRiderPhone] = useState("");
+  const [contactPreference, setContactPreference] = useState("text");
+  const [mobilityAid, setMobilityAid] = useState("none");
+  const [accessibilityNeeds, setAccessibilityNeeds] = useState<string[]>([]);
+  const [needsDoorToDoor, setNeedsDoorToDoor] = useState(false);
+  const [caregiverRidingAlong, setCaregiverRidingAlong] = useState(false);
+  const [pickupInstructions, setPickupInstructions] = useState("");
+  const [dropoffInstructions, setDropoffInstructions] = useState("");
+  const [assistanceNotes, setAssistanceNotes] = useState("");
+  const [medicalSensitivityNotes, setMedicalSensitivityNotes] = useState("");
+  const [okToShareWithDriver, setOkToShareWithDriver] = useState(false);
+  const [routePreview, setRoutePreview] = useState<any>(null);
+  const [rideQuote, setRideQuote] = useState<any>(null);
+  const [rideBooking, setRideBooking] = useState<any>(null);
+  const [rideStatus, setRideStatus] = useState<any>(null);
+  const [driverMessage, setDriverMessage] = useState("Please call or text when you arrive.");
   const locationBias = pickupPoint && Number.isFinite(Number(pickupPoint.lat)) && Number.isFinite(Number(pickupPoint.lng))
     ? { lat: Number(pickupPoint.lat), lng: Number(pickupPoint.lng) }
     : null;
+
+  function toggleAccessibility(value: string) {
+    setAccessibilityNeeds(current => current.includes(value) ? current.filter(item => item !== value) : [...current, value]);
+  }
+
+  function scheduledForIso() {
+    const value = new Date(`${rideDate}T${rideTime}:00`);
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toISOString();
+  }
 
   async function useCurrentPickup() {
     try {
@@ -490,21 +519,78 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
     const result: any = await post("/api/help/match", { need });
     setMatches(result.matches);
   }
+  async function previewRide() {
+    if (!pickupPoint || !dropoffPoint) {
+      Alert.alert("Ride location missing", "Set current pickup and choose a drop-off first.");
+      return;
+    }
+    const routeResult: any = await post("/api/maps/route-estimate", { pickup: pickupPoint, dropoff: dropoffPoint });
+    const quoteResult: any = await post("/api/rides/pricing-quote", { pickup: pickupPoint, dropoff: dropoffPoint, provider: fulfillmentMode });
+    setRoutePreview(routeResult.route);
+    setRideQuote(quoteResult.pricing);
+    Alert.alert("Ride preview ready", `${formatDistanceMeters(routeResult.route.distanceMeters, unitSystem)} · ${formatDuration(routeResult.route.durationSeconds)} · $${(quoteResult.pricing.totalChargeCents / 100).toFixed(2)}`);
+  }
   async function book(serviceId: string) {
     if (!pickupPoint || !dropoffPoint) {
       Alert.alert("Ride location missing", "Please set your current pickup and choose a drop-off suggestion before booking.");
       return;
     }
-    await post("/api/bookings", {
+    if (!scheduledForIso()) {
+      Alert.alert("Ride time missing", "Please enter date as YYYY-MM-DD and time as HH:mm.");
+      return;
+    }
+    if (!riderPhone.trim()) {
+      Alert.alert("Rider phone required", "Uber Health, Lyft, or a partner driver needs a call/text number.");
+      return;
+    }
+    if (!okToShareWithDriver) {
+      Alert.alert("Driver sharing consent required", "Please confirm what ride details may be shared with the driver/provider.");
+      return;
+    }
+    const result: any = await post("/api/bookings", {
       serviceId,
       label: need,
-      time: "Tomorrow, 10:00 AM",
+      time: `${rideDate} ${rideTime}`,
+      scheduledFor: scheduledForIso(),
       fulfillmentMode,
       pickup: pickupPoint,
-      dropoff: dropoffPoint
+      dropoff: dropoffPoint,
+      rideIntake: {
+        riderName,
+        riderPhone,
+        contactPreference,
+        accessibilityNeeds,
+        mobilityAid,
+        needsDoorToDoor,
+        caregiverRidingAlong,
+        pickupInstructions,
+        dropoffInstructions,
+        assistanceNotes,
+        medicalSensitivityNotes,
+        okToShareWithDriver
+      }
     });
+    setRideBooking(result.booking);
+    setRideStatus({ booking: result.booking, rideIntake: result.booking.fulfillment_metadata?.rideIntake || {}, timeline: result.booking.fulfillment_metadata?.timeline || [], communications: [] });
     await onRefresh();
-    Alert.alert("TheSeniorguru", "Request sent and booking created.");
+    Alert.alert("Ride request created", "Payment and provider dispatch are still required before a driver can be assigned.");
+  }
+  async function refreshRideStatus() {
+    if (!rideBooking?.id) {
+      Alert.alert("No ride request yet", "Create a ride request first.");
+      return;
+    }
+    const result: any = await api(`/api/rides/bookings/${rideBooking.id}/status`);
+    setRideStatus(result);
+  }
+  async function sendDriverMessage() {
+    if (!rideBooking?.id) {
+      Alert.alert("No ride request yet", "Create a ride request before messaging the provider/driver.");
+      return;
+    }
+    const result: any = await post(`/api/rides/bookings/${rideBooking.id}/messages`, { channel: contactPreference, body: driverMessage });
+    setRideStatus((current: any) => ({ ...(current || {}), communications: result.communications }));
+    Alert.alert("Message saved", result.message.providerDeliveryStatus);
   }
   async function searchPlaces(kind: "pickup" | "dropoff", input: string) {
     const result: any = await post("/api/places/autocomplete", {
@@ -565,8 +651,34 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
       </Card>
       <Card title="Ride fulfillment" icon="🧭">
         <Text style={styles.muted}>TheSeniorguru coordinates rides. Uber Health is preferred when configured; local senior transport is fallback.</Text>
-        <ButtonRow labels={[["Uber Health", "uber_health"], ["Local partner", "local_partner"], ["Manual", "manual_coordination"]]} onPress={setFulfillmentMode} />
+        <ButtonRow labels={[["Uber Health", "uber_health"], ["Lyft", "lyft_healthcare"], ["Local partner", "local_partner"], ["Manual", "manual_coordination"]]} onPress={setFulfillmentMode} />
         <Text style={styles.safeText}>Selected: {fulfillmentMode.replace("_", " ")}</Text>
+      </Card>
+      <Card title="Healthcare ride intake" icon="♿">
+        <Field label="Ride date (YYYY-MM-DD)" value={rideDate} onChangeText={setRideDate} />
+        <Field label="Pickup time (HH:mm)" value={rideTime} onChangeText={setRideTime} />
+        <Field label="Rider name" value={riderName} onChangeText={setRiderName} />
+        <Field label="Phone for driver call/text" value={riderPhone} onChangeText={setRiderPhone} keyboardType="phone-pad" />
+        <Text style={styles.muted}>Driver communication preference</Text>
+        <ButtonRow labels={[["Text", "text"], ["Call", "call"], ["Both", "call_and_text"]]} onPress={setContactPreference} />
+        <Text style={styles.safeText}>Preference: {contactPreference.replace(/_/g, " ")}</Text>
+        <Text style={styles.muted}>Accessibility and assistance needs</Text>
+        <ButtonRow labels={[["Walker", "walker"], ["Wheelchair", "wheelchair"], ["Oxygen", "oxygen"], ["Vision", "vision_support"]]} onPress={toggleAccessibility} />
+        <Text style={styles.safeText}>Selected needs: {accessibilityNeeds.length ? accessibilityNeeds.join(", ") : "none"}</Text>
+        <Text style={styles.muted}>Mobility aid</Text>
+        <ButtonRow labels={[["None", "none"], ["Cane", "cane"], ["Walker", "walker"], ["Wheelchair", "wheelchair"]]} onPress={setMobilityAid} />
+        <ButtonRow labels={[[needsDoorToDoor ? "Door-to-door: yes" : "Door-to-door: no", "door"], [caregiverRidingAlong ? "Caregiver riding: yes" : "Caregiver riding: no", "caregiver"], [okToShareWithDriver ? "Share details: yes" : "Share details: no", "share"]]} onPress={(value: string) => {
+          if (value === "door") setNeedsDoorToDoor(current => !current);
+          if (value === "caregiver") setCaregiverRidingAlong(current => !current);
+          if (value === "share") setOkToShareWithDriver(current => !current);
+        }} />
+        <Field label="Pickup instructions" value={pickupInstructions} onChangeText={setPickupInstructions} multiline />
+        <Field label="Drop-off / handoff instructions" value={dropoffInstructions} onChangeText={setDropoffInstructions} multiline />
+        <Field label="Assistance notes" value={assistanceNotes} onChangeText={setAssistanceNotes} multiline />
+        <Field label="Medical sensitivity notes shared only if consented" value={medicalSensitivityNotes} onChangeText={setMedicalSensitivityNotes} multiline />
+        <PrimaryButton label="Preview route and price" onPress={previewRide} disabled={!pickupPoint || !dropoffPoint} />
+        {routePreview ? <Text style={styles.safeText}>Route: {formatDistanceMeters(routePreview.distanceMeters, unitSystem)} · {formatDuration(routePreview.durationSeconds)} · {routePreview.provider}</Text> : null}
+        {rideQuote ? <Text style={styles.safeText}>Estimated charge: ${(rideQuote.totalChargeCents / 100).toFixed(2)} including platform margin</Text> : null}
       </Card>
       <Card title="Nearby support recommendations" icon="⌕">
         <Text style={styles.muted}>Google can discover nearby businesses, but only approved partners should be treated as care-ready.</Text>
@@ -585,10 +697,14 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
       </Card>
       <SectionTitle title="Matched for you" />
       {visible.map((service: any) => <ServiceCard key={service.id} service={service} onPress={() => book(service.id)} />)}
-      <Card title="Request status" icon="🚙">
-        <Text style={styles.body}>Ride requested</Text>
-        <Text style={styles.muted}>Tomorrow, May 25 · 10:00 AM</Text>
-        {["Request received", "Driver assigned", "Driver arriving", "Completed"].map((item, index) => <WellnessRow key={item} label={item} value={index < 2 ? "✓" : "○"} status={index === 0 ? "10:31 AM" : index === 1 ? "10:32 AM" : index === 2 ? "9:45 AM" : "Pending"} />)}
+      <Card title="Ride request tracking" icon="🚙">
+        {rideBooking ? <Text style={styles.body}>Booking #{String(rideBooking.id).slice(0, 8)} · {rideBooking.lifecycle_status}</Text> : <Text style={styles.muted}>No active ride request in this session yet.</Text>}
+        {rideBooking ? <PrimaryButton label="Refresh ride status" onPress={refreshRideStatus} /> : null}
+        {(rideStatus?.timeline || []).map((item: any) => <WellnessRow key={item.label} label={item.label} value={item.status === "complete" ? "✓" : item.status === "current" ? "●" : "○"} status={item.at ? new Date(item.at).toLocaleString() : "Pending"} />)}
+        {rideStatus?.tracking ? <Text style={styles.muted}>Realtime driver tracking becomes available after provider dispatch returns an external trip ID. Current provider status: {rideStatus.tracking.lifecycleStatus}.</Text> : null}
+        <Field label="Message for driver/provider" value={driverMessage} onChangeText={setDriverMessage} multiline />
+        <PrimaryButton label="Save/send ride message" onPress={sendDriverMessage} disabled={!rideBooking} />
+        {(rideStatus?.communications || []).slice(0, 4).map((message: any) => <View key={message.id} style={styles.eventRow}><Text style={styles.body}>{message.channel} · {message.providerDeliveryStatus}</Text><Text style={styles.muted}>{message.body}</Text></View>)}
       </Card>
     </View>
   );
@@ -1252,6 +1368,15 @@ function formatDistanceMeters(meters: number, unitSystem: UnitSystem) {
   const feet = value * 3.28084;
   if (feet < 1000) return `${Math.max(1, Math.round(feet))} ft`;
   return `${(value / 1609.344).toFixed(value < 16093 ? 1 : 0)} mi`;
+}
+
+function formatDuration(seconds: number) {
+  const value = Math.max(0, Number(seconds || 0));
+  const minutes = Math.round(value / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remaining = minutes % 60;
+  return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
 }
 
 function formatRequestDistance(request: any, unitSystem: UnitSystem) {

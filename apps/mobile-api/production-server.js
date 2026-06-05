@@ -735,7 +735,7 @@ function createProductionApi(pool) {
 
   function normalizeFulfillmentMode(mode, service = {}) {
     const requested = String(mode || "").trim();
-    if (["uber_health", "local_partner", "trusted_circle", "manual_coordination"].includes(requested)) return requested;
+    if (["uber_health", "lyft_healthcare", "local_partner", "trusted_circle", "manual_coordination"].includes(requested)) return requested;
     return isTransportationService(service) ? "uber_health" : "local_partner";
   }
 
@@ -2616,6 +2616,91 @@ function createProductionApi(pool) {
       return { booking: updated, providerConfig, dispatch: { status: lifecycleStatus, externalTripId: updated.external_trip_id || null } };
     }
 
+    if (req.method === "GET" && url.pathname.startsWith("/api/rides/bookings/") && url.pathname.endsWith("/status")) {
+      requireRole(user, ["senior", "trusted_person", "business"]);
+      const id = url.pathname.split("/")[4];
+      const booking = (await query(
+        `SELECT b.*, r.user_id AS resident_user_id
+         FROM bookings b
+         JOIN residents r ON r.id = b.resident_id
+         WHERE b.id = $1`,
+        [id]
+      )).rows[0];
+      if (!booking || (user.role === "senior" && booking.resident_user_id !== user.id)) {
+        const error = new Error("Ride booking not found");
+        error.status = 404;
+        throw error;
+      }
+      const metadata = booking.fulfillment_metadata || {};
+      const route = {
+        pickup: booking.pickup_label ? { label: booking.pickup_label, lat: booking.pickup_lat, lng: booking.pickup_lng } : null,
+        dropoff: booking.dropoff_label ? { label: booking.dropoff_label, lat: booking.dropoff_lat, lng: booking.dropoff_lng } : null,
+        distanceMeters: booking.distance_meters || null,
+        durationSeconds: booking.duration_seconds || null,
+        provider: booking.route_provider || null
+      };
+      const timeline = metadata.timeline || [
+        { label: "Ride request created", status: "complete", at: booking.created_at },
+        { label: "Payment required before dispatch", status: booking.payment_status === "paid" ? "complete" : "current", at: null },
+        { label: "Provider dispatch", status: booking.lifecycle_status === "dispatch_requested" ? "current" : "waiting", at: null },
+        { label: "Driver assigned", status: booking.external_trip_id ? "complete" : "waiting", at: null },
+        { label: "Pickup, ride, drop-off", status: "waiting", at: null }
+      ];
+      await audit(req, user, "ride_status_viewed", "booking", booking.id, { lifecycleStatus: booking.lifecycle_status, paymentStatus: booking.payment_status }, "info");
+      return {
+        booking,
+        route,
+        rideIntake: metadata.rideIntake || {},
+        communications: metadata.communications || [],
+        timeline,
+        tracking: {
+          provider: booking.fulfillment_mode || booking.fulfillment_provider,
+          lifecycleStatus: booking.lifecycle_status,
+          paymentStatus: booking.payment_status,
+          externalTripId: booking.external_trip_id || null,
+          realtimeTrackingAvailable: Boolean(booking.external_trip_id),
+          driver: metadata.driver || null
+        }
+      };
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/rides/bookings/") && url.pathname.endsWith("/messages")) {
+      requireRole(user, ["senior", "trusted_person", "business"]);
+      const id = url.pathname.split("/")[4];
+      const booking = (await query(
+        `SELECT b.*, r.user_id AS resident_user_id
+         FROM bookings b
+         JOIN residents r ON r.id = b.resident_id
+         WHERE b.id = $1`,
+        [id]
+      )).rows[0];
+      if (!booking || (user.role === "senior" && booking.resident_user_id !== user.id)) {
+        const error = new Error("Ride booking not found");
+        error.status = 404;
+        throw error;
+      }
+      const metadata = booking.fulfillment_metadata || {};
+      const message = {
+        id: crypto.randomUUID(),
+        from: user.role,
+        channel: payload.channel || "text",
+        body: String(required(payload.body, "body")).trim(),
+        createdAt: new Date().toISOString(),
+        providerDeliveryStatus: booking.external_trip_id ? "queued_for_provider" : "stored_until_provider_dispatch"
+      };
+      const communications = [message, ...(metadata.communications || [])].slice(0, 30);
+      const updatedMetadata = { ...metadata, communications };
+      const updated = (await query(
+        `UPDATE bookings
+         SET fulfillment_metadata = $1::jsonb,
+             updated_at = now()
+         WHERE id = $2 RETURNING *`,
+        [JSON.stringify(updatedMetadata), booking.id]
+      )).rows[0];
+      await audit(req, user, "ride_message_added", "booking", booking.id, { channel: message.channel, providerDeliveryStatus: message.providerDeliveryStatus }, "info");
+      return { booking: updated, message, communications };
+    }
+
     if (req.method === "GET" && url.pathname === "/api/superadmin/ride-providers") {
       requireRole(user, ["superadmin"]);
       const providers = await ensureRideProviderConfigs();
@@ -2689,6 +2774,35 @@ function createProductionApi(pool) {
         const lifecycleStatus = ["uber_health", "lyft_healthcare"].includes(fulfillmentMode) && !selectedFulfillment.available ? "credential_required" : "payment_required";
         const paymentResponsibility = payload.paymentResponsibility || "senior";
         const paymentStatus = payload.paymentStatus || "payment_required";
+        const scheduledFor = payload.scheduledFor ? new Date(payload.scheduledFor) : null;
+        const rideIntake = {
+          scheduledFor: scheduledFor && !Number.isNaN(scheduledFor.getTime()) ? scheduledFor.toISOString() : null,
+          riderName: payload.rideIntake?.riderName || user.display_name,
+          riderPhone: payload.rideIntake?.riderPhone || null,
+          contactPreference: payload.rideIntake?.contactPreference || "text",
+          accessibilityNeeds: payload.rideIntake?.accessibilityNeeds || [],
+          mobilityAid: payload.rideIntake?.mobilityAid || "none",
+          needsDoorToDoor: Boolean(payload.rideIntake?.needsDoorToDoor),
+          caregiverRidingAlong: Boolean(payload.rideIntake?.caregiverRidingAlong),
+          assistanceNotes: payload.rideIntake?.assistanceNotes || "",
+          pickupInstructions: payload.rideIntake?.pickupInstructions || "",
+          dropoffInstructions: payload.rideIntake?.dropoffInstructions || "",
+          medicalSensitivityNotes: payload.rideIntake?.medicalSensitivityNotes || "",
+          okToShareWithDriver: Boolean(payload.rideIntake?.okToShareWithDriver)
+        };
+        const fulfillmentMetadata = {
+          selectedFulfillment,
+          options: fulfillmentOptions,
+          rideIntake,
+          communications: [],
+          timeline: [
+            { label: "Ride request created", status: "complete", at: new Date().toISOString() },
+            { label: "Payment required before dispatch", status: paymentStatus === "paid" ? "complete" : "current", at: null },
+            { label: `${fulfillmentMode.replace(/_/g, " ")} dispatch`, status: lifecycleStatus === "payment_required" ? "waiting" : "current", at: null },
+            { label: "Driver assigned", status: "waiting", at: null },
+            { label: "Pickup, ride, drop-off", status: "waiting", at: null }
+          ]
+        };
         const pricing = calculateRidePricing({
           providerBillCents: payload.providerBillCents || null,
           route,
@@ -2707,31 +2821,31 @@ function createProductionApi(pool) {
              )
              VALUES ($1,$2,$3,$4,$5,'matched',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
             [
-              resident.id, service.id, service.business_id, payload.label || service.name, payload.time || null,
+              resident.id, service.id, service.business_id, payload.label || service.name, rideIntake.scheduledFor || payload.time || null,
               pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
               dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
               route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {}),
-              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions }),
+              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify(fulfillmentMetadata),
               paymentResponsibility, paymentStatus, payload.payerUserId || user.id, JSON.stringify({ payerRole: payload.payerRole || "senior", requiredBeforeDispatch: true }),
               pricing.providerBillCents, pricing.taxCents, pricing.refundReserveCents, pricing.platformMarginCents, pricing.totalChargeCents, JSON.stringify(pricing)
             ]
           )).rows[0];
           const booking = (await tx(
             `INSERT INTO bookings (
-              lead_id, resident_id, business_id, service_id, label, status,
+              lead_id, resident_id, business_id, service_id, scheduled_for, label, status,
               pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
               distance_meters, duration_seconds, route_provider, route_metadata,
               fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata,
               payment_responsibility, payment_status, payer_user_id, payment_metadata,
               provider_bill_cents, tax_cents, refund_reserve_cents, platform_margin_cents, total_charge_cents, pricing_metadata
              )
-             VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
+             VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30) RETURNING *`,
             [
-              lead.id, resident.id, service.business_id, service.id, payload.label || service.name,
+              lead.id, resident.id, service.business_id, service.id, rideIntake.scheduledFor, payload.label || service.name,
               pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
               dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
               route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {}),
-              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions }),
+              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify(fulfillmentMetadata),
               paymentResponsibility, paymentStatus, payload.payerUserId || user.id, JSON.stringify({ payerRole: payload.payerRole || "senior", requiredBeforeDispatch: true }),
               pricing.providerBillCents, pricing.taxCents, pricing.refundReserveCents, pricing.platformMarginCents, pricing.totalChargeCents, JSON.stringify(pricing)
             ]
