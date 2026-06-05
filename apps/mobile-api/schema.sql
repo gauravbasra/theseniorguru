@@ -97,6 +97,29 @@ CREATE TABLE IF NOT EXISTS trusted_invites (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS circle_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  trusted_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  sender_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'sent',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  read_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS circle_call_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  trusted_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requested_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'requested',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  responded_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS businesses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -433,3 +456,5 @@ CREATE INDEX IF NOT EXISTS idx_health_vitals_resident_created ON health_vitals(r
 CREATE INDEX IF NOT EXISTS idx_wearable_telemetry_resident_created ON wearable_telemetry(resident_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_status_created ON notifications(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempts_notification ON notification_delivery_attempts(notification_id, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_circle_messages_resident_created ON circle_messages(resident_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_circle_call_requests_resident_status ON circle_call_requests(resident_id, status, created_at DESC);

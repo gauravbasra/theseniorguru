@@ -887,6 +887,17 @@ function CircleSafety({ circleState, onRefresh }: { circleState: any; onRefresh:
     await onRefresh();
     Alert.alert("Ping sent", "Anita has been pinged and the care log was updated.");
   }
+  async function contactSenior(channel: string) {
+    if (channel === "chat") {
+      await post("/api/circle/help-message", { body: "Rita started a chat check-in from trusted circle." });
+      await onRefresh();
+      Alert.alert("Chat sent", "Anita received your chat check-in.");
+      return;
+    }
+    await post("/api/circle/call-request", { channel, message: `Rita requested a ${channel} call.` });
+    await onRefresh();
+    Alert.alert("Call request sent", `${channel.charAt(0).toUpperCase()}${channel.slice(1)} request sent to Anita.`);
+  }
 
   return (
     <View>
@@ -901,7 +912,8 @@ function CircleSafety({ circleState, onRefresh }: { circleState: any; onRefresh:
       </Card>
       <Card title="Reach Anita" icon="♡">
         <Text style={styles.copy}>Use soft contact actions first unless there is an active SOS event.</Text>
-        <ButtonRow labels={[["Ping", "ping"], ["Chat", "chat"], ["Voice", "voice"], ["Video", "video"]]} onPress={(value: string) => value === "ping" ? pingSenior() : Alert.alert("Trusted circle", `${value.charAt(0).toUpperCase()}${value.slice(1)} request started for Anita.`)} />
+        <ButtonRow labels={[["Ping", "ping"], ["Chat", "chat"], ["Voice", "voice"], ["Video", "video"]]} onPress={(value: string) => value === "ping" ? pingSenior() : contactSenior(value)} />
+        {(circleState?.callRequests || []).slice(0, 2).map((request: any) => <Text key={request.id} style={styles.muted}>{request.channel} call · {request.status}</Text>)}
       </Card>
       <SectionTitle title="Connected devices" />
       <WearableDeviceCard name="Apple Watch" status="Connected" battery="82%" signal="Fall detection, heart rate, SOS" lastSeen="Live" accent="#6a3f7a" />
@@ -938,7 +950,7 @@ function CircleAssist({ circleState, personId, onRefresh }: { circleState: any; 
     await post("/api/circle/tasks/ack", { id });
     await onRefresh();
   }
-  return <View><Text style={styles.h1}>Assist Anita</Text><Card title="Send check-in"><Field label="Message" value={message} onChangeText={setMessage} multiline /><PrimaryButton label="Send message" onPress={sendMessage} /></Card>{(circleState?.tasks || []).map((task: any) => <Card key={task.id} title={task.type}><Text style={styles.body}>{task.body}</Text><Text style={styles.muted}>Status: {task.status}</Text><PrimaryButton label="Acknowledge" onPress={() => ack(task.id)} /></Card>)}</View>;
+  return <View><Text style={styles.h1}>Assist Anita</Text><Card title="Send check-in"><Field label="Message" value={message} onChangeText={setMessage} multiline /><PrimaryButton label="Send message" onPress={sendMessage} /></Card><Card title="Recent messages">{(circleState?.messages || []).length ? circleState.messages.slice(0, 5).map((item: any) => <Text key={item.id} style={styles.muted}>{item.body} · {item.status}</Text>) : <Text style={styles.muted}>No messages yet.</Text>}</Card><Card title="Call requests">{(circleState?.callRequests || []).length ? circleState.callRequests.slice(0, 5).map((item: any) => <Text key={item.id} style={styles.muted}>{item.channel} · {item.status}</Text>) : <Text style={styles.muted}>No call requests yet.</Text>}</Card>{(circleState?.tasks || []).map((task: any) => <Card key={task.id} title={task.type}><Text style={styles.body}>{task.body}</Text><Text style={styles.muted}>Status: {task.status}</Text><PrimaryButton label="Acknowledge" onPress={() => ack(task.id)} /></Card>)}</View>;
 }
 
 function CirclePermissions({ state, circlePersonId, onPick }: { state: any; circlePersonId: string; onPick: (personId: string) => void }) {

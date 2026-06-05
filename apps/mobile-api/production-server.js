@@ -1416,6 +1416,12 @@ function createProductionApi(pool) {
         ? (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [connection.resident_id])).rows
         : [];
       const notifications = (await query(`SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [user.id])).rows;
+      const messages = permissions.includes("messages")
+        ? (await query(`SELECT * FROM circle_messages WHERE resident_id = $1 AND trusted_user_id = $2 ORDER BY created_at DESC LIMIT 25`, [connection.resident_id, user.id])).rows
+        : [];
+      const callRequests = permissions.includes("messages") || permissions.includes("sos") || permissions.includes("safety")
+        ? (await query(`SELECT * FROM circle_call_requests WHERE resident_id = $1 AND trusted_user_id = $2 ORDER BY created_at DESC LIMIT 25`, [connection.resident_id, user.id])).rows
+        : [];
       return {
         person: { id: user.id, name: user.display_name, role: "Trusted person", permissions, status: connection.status },
         resident: { id: connection.resident_id, name: connection.resident_name, community: connection.community, mood: connection.mood },
@@ -1429,6 +1435,8 @@ function createProductionApi(pool) {
         healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) },
         wearables: { devices: wearableDevices, readings: [], latestSummary: evaluateWearables(wearableDevices, {}) },
         notifications,
+        messages,
+        callRequests,
         tasks: []
       };
     }
@@ -1459,8 +1467,49 @@ function createProductionApi(pool) {
          VALUES ($1,'push',$2,$3,'queued') RETURNING *`,
         [connection.senior_user_id, `${user.display_name} checked in`, required(payload.body, "body")]
       )).rows[0];
-      await audit(req, user, "trusted_person_help_message_sent", "notification", notification.id, { resident: connection.resident_name }, "info");
-      return { notification };
+      const message = (await query(
+        `INSERT INTO circle_messages (resident_id, trusted_user_id, sender_user_id, body, status)
+         VALUES ($1,$2,$3,$4,'sent') RETURNING *`,
+        [connection.resident_id, user.id, user.id, required(payload.body, "body")]
+      )).rows[0];
+      await audit(req, user, "trusted_person_help_message_sent", "circle_message", message.id, { resident: connection.resident_name, notificationId: notification.id }, "info");
+      return { notification, message };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/circle/call-request") {
+      requireRole(user, ["trusted_person"]);
+      const connection = (await query(
+        `SELECT tc.*, r.user_id AS senior_user_id, senior.display_name AS resident_name
+         FROM trusted_connections tc
+         JOIN residents r ON r.id = tc.resident_id
+         JOIN users senior ON senior.id = r.user_id
+         WHERE tc.trusted_user_id = $1 AND tc.status = 'approved'
+         ORDER BY tc.updated_at DESC LIMIT 1`,
+        [user.id]
+      )).rows[0];
+      if (!connection) {
+        const error = new Error("Trusted circle invite has not been accepted");
+        error.status = 404;
+        throw error;
+      }
+      if (!(connection.permissions || []).includes("messages") && !(connection.permissions || []).includes("safety")) {
+        const error = new Error("This trusted person does not have contact access");
+        error.status = 403;
+        throw error;
+      }
+      const channel = ["voice", "video"].includes(payload.channel) ? payload.channel : "voice";
+      const callRequest = (await query(
+        `INSERT INTO circle_call_requests (resident_id, trusted_user_id, requested_by, channel, message, status)
+         VALUES ($1,$2,$3,$4,$5,'requested') RETURNING *`,
+        [connection.resident_id, user.id, user.id, channel, payload.message || null]
+      )).rows[0];
+      const notification = (await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1,'push',$2,$3,'queued') RETURNING *`,
+        [connection.senior_user_id, `${user.display_name} requested a ${channel} call`, payload.message || `${user.display_name} wants to connect with you.`]
+      )).rows[0];
+      await audit(req, user, "trusted_person_call_requested", "circle_call_request", callRequest.id, { resident: connection.resident_name, channel, notificationId: notification.id }, "info");
+      return { callRequest, notification };
     }
 
     if (req.method === "POST" && url.pathname === "/api/circle/tasks/ack") {
