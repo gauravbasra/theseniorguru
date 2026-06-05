@@ -34,7 +34,7 @@ type Screen =
   | "superadminHome"
   | "superadminAudit";
 
-const residentTabs: [Screen, string][] = [["residentHome", "Today"], ["residentHelp", "Help"], ["residentPeople", "Companion"], ["residentServices", "More"], ["residentSettings", "Settings"]];
+const residentTabs: [Screen, string][] = [["residentHome", "Today"], ["residentHelp", "Help"], ["residentPeople", "Companion"], ["residentFeed", "Feed"], ["residentServices", "Services"], ["residentSafety", "Safety"], ["residentSettings", "Settings"]];
 const businessTabs: [Screen, string][] = [["businessHome", "Dashboard"], ["businessLeads", "Leads"], ["businessServices", "Services"], ["businessPackage", "Package"], ["businessSettings", "Settings"]];
 const circleTabs: [Screen, string][] = [["circleSafety", "Safety"], ["circleAssist", "Assist"], ["circlePermissions", "Access"], ["circleSettings", "Settings"]];
 const superadminTabs: [Screen, string][] = [["superadminHome", "Approvals"], ["superadminAudit", "Audit"]];
@@ -365,8 +365,7 @@ function ResidentOnboarding({ state, onDone, mode = "onboarding" }: { state: any
     {!isSettings ? <Card title="Welcome to TheSeniorGuru">
       <RemoteImage uri="https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=520&h=360&fit=crop&crop=faces" style={styles.onboardingHeroImage} />
       <Text style={styles.copy}>Support, companionship and care, all in one place.</Text>
-      <PrimaryButton label="Create Account" onPress={() => Alert.alert("Onboarding", "Continue to profile details below.")} />
-      <Text style={styles.centerLink}>Sign In</Text>
+      <Text style={styles.centerLink}>Complete the profile, safety, health, and medication sections below to create the account.</Text>
     </Card> : <LockedIdentityCard roleLabel="Senior app" primaryId={state.user?.email || "Primary account email"} />}
     <Card title={isSettings ? "Personal details" : "Tell us about you"}>
       <Text style={styles.copy}>So we can personalize your experience.</Text>
@@ -747,7 +746,7 @@ function ResidentPeople({ state }: { state: any }) {
         "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=220&h=220&fit=crop&crop=faces",
         "https://images.unsplash.com/photo-1544723795-3fb6469f5b39?w=220&h=220&fit=crop&crop=faces"
       ][index % 4]} />)}
-      <PrimaryButton label="+ Add to your circle" onPress={() => Alert.alert("Circle", "Opening add person flow")} />
+      <Text style={styles.tinyMuted}>New trusted people are added through senior settings after invite verification, consent, and access permissions are saved.</Text>
       <Card title="Companion" tint="peach">
         <View style={styles.companionHero}>
           <View>
@@ -774,11 +773,11 @@ function ResidentFeed() {
       <Text style={styles.h1}>Community Feed</Text>
       <View style={styles.segment}><Text style={styles.segmentActive}>For You</Text><Text style={styles.segmentText}>Following</Text><Text style={styles.segmentText}>Local</Text></View>
       <FeedPost name="Meena Sharma" time="2h ago" text="Lovely morning walk with the group 🌿" image="https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=520&h=340&fit=crop" />
-      <FeedPost name="Park View Community" time="5h ago" text="Join us for a Bhajan Evening this Saturday at 6 PM." image="https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=520&h=340&fit=crop" cta="Interested" />
+      <FeedPost name="Park View Community" time="5h ago" text="Join us for a Bhajan Evening this Saturday at 6 PM." image="https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=520&h=340&fit=crop" />
       <Card title="Create Post">
         <View style={styles.postInput}><Text style={styles.muted}>What’s on your mind?</Text></View>
         {["Photo / Video", "Ask a question", "Share update", "Inspire others"].map(item => <WellnessRow key={item} label={item} value="›" status="Anyone in community" />)}
-        <PrimaryButton label="Post" onPress={() => Alert.alert("Community", "Creating post")} />
+        <Text style={styles.tinyMuted}>Posting is intentionally closed until moderation, abuse reporting, and community approval workflows are connected.</Text>
       </Card>
     </View>
   );
@@ -1829,7 +1828,7 @@ function FeedPost({ name, time, text, image, cta }: { name: string; time: string
       <Text style={styles.body}>{text}</Text>
       <RemoteImage uri={image} style={styles.feedImage} />
       <View style={styles.feedMeta}><Text style={styles.muted}>♥ 24</Text><Text style={styles.muted}>○ 6</Text><Text style={styles.chevron}>{cta || "›"}</Text></View>
-      {cta ? <PrimaryButton label={cta} onPress={() => Alert.alert("Event", cta)} /> : null}
+      {cta ? <Text style={styles.tinyMuted}>{cta} requires an approved event-booking workflow before it can be shown as an action.</Text> : null}
     </Card>
   );
 }
@@ -1837,7 +1836,7 @@ function FeedPost({ name, time, text, image, cta }: { name: string; time: string
 function EventCard({ title, host, time, image }: { title: string; host: string; time: string; image: string }) {
   return (
     <View style={styles.eventCard}>
-      <View style={styles.actionText}><Text style={styles.actionTitle}>{title}</Text><Text style={styles.muted}>{host}</Text><Text style={styles.muted}>{time}</Text><View style={styles.smallPrimary}><Text style={styles.primaryText}>Join</Text></View></View>
+      <View style={styles.actionText}><Text style={styles.actionTitle}>{title}</Text><Text style={styles.muted}>{host}</Text><Text style={styles.muted}>{time}</Text><Text style={styles.tinyMuted}>Event booking opens after event approval and capacity rules are connected.</Text></View>
       <RemoteImage uri={image} style={styles.eventImage} />
     </View>
   );
