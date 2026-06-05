@@ -645,6 +645,9 @@ function createProductionApi(pool) {
   }
 
   function supportProviderEnvConfigured(provider) {
+    if (String(provider || "").toLowerCase() === "google_places") {
+      return Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY);
+    }
     const key = String(provider || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_");
     return Boolean(process.env[`${key}_CLIENT_ID`] && process.env[`${key}_CLIENT_SECRET`]);
   }
@@ -658,6 +661,9 @@ function createProductionApi(pool) {
       ["grocery", "walmart", "Walmart", "WALMART_CLIENT_ID/WALMART_CLIENT_SECRET", "Partner/API access required for grocery ordering."],
       ["pharmacy", "local_pharmacy", "Local pharmacy", "approved_business_network", "Approved pharmacy partner fallback."],
       ["errand", "local_partner", "Approved local partner", "approved_business_network", "Approved local support business fallback."],
+      ["outdoor", "google_places", "Google Places Outdoor Discovery", "GOOGLE_MAPS_API_KEY", "Nearby parks, trails, gardens, and outdoor destinations. Results are discovery data and need senior-suitability review before referral."],
+      ["outdoor", "alltrails_partner", "AllTrails Partner", "ALLTRAILS_CLIENT_ID/ALLTRAILS_CLIENT_SECRET", "Partner/API access required. Keep credential-gated until AllTrails approves access."],
+      ["outdoor", "local_partner", "Approved local outdoor partner", "approved_business_network", "Approved senior-friendly outdoor activity partner fallback."],
       ["all", "manual_coordination", "Manual coordination", "care_team_operations", "Manual fallback when partner API credentials are unavailable."]
     ];
     for (const [category, provider, displayName, credentialSource, notes] of defaults) {
@@ -693,12 +699,38 @@ function createProductionApi(pool) {
 
   function allowedSupportCategory(category) {
     const value = String(category || "").trim().toLowerCase();
-    if (!["ride", "food", "grocery", "pharmacy", "errand"].includes(value)) {
+    if (!["ride", "food", "grocery", "pharmacy", "errand", "outdoor"].includes(value)) {
       const error = new Error("Unsupported support order category");
       error.status = 400;
       throw error;
     }
     return value;
+  }
+
+  function outdoorKeywordForActivity(activity) {
+    const value = String(activity || "").trim().toLowerCase();
+    if (value.includes("trail") || value.includes("hike") || value.includes("walking")) return "easy walking trail park";
+    if (value.includes("garden")) return "garden park accessible walking";
+    if (value.includes("bird") || value.includes("nature")) return "nature preserve walking trail";
+    if (value.includes("water") || value.includes("lake") || value.includes("waterfall")) return "waterfront park walking trail";
+    if (value.includes("picnic")) return "picnic park accessible";
+    return "park walking trail outdoor recreation";
+  }
+
+  function seniorSuitabilityForOutdoorPlace(place) {
+    const types = Array.isArray(place.types) ? place.types : [];
+    const notes = [
+      "Confirm path accessibility, benches, bathrooms, weather, supervision needs, and transport before booking."
+    ];
+    const careRiskFlags = [];
+    if (types.includes("tourist_attraction")) careRiskFlags.push("crowd_or_distance_review");
+    if (types.includes("amusement_park")) careRiskFlags.push("stimulation_and_fatigue_review");
+    if (!place.rating || Number(place.user_ratings_total || 0) < 10) careRiskFlags.push("limited_public_review_data");
+    return {
+      level: careRiskFlags.length ? "needs_review" : "candidate",
+      notes,
+      careRiskFlags
+    };
   }
 
   function normalizeFulfillmentMode(mode, service = {}) {
@@ -2209,6 +2241,74 @@ function createProductionApi(pool) {
       });
       await audit(req, user, "nearby_recommendations_requested", "place", null, { keyword, radiusMeters, results: recommendations.length, approvedMatches: recommendations.filter(item => item.vettingStatus === "approved_partner").length }, "info");
       return { provider: "google_nearby_search", location, keyword, radiusMeters, recommendations };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/outdoor/recommendations") {
+      requireRole(user, ["senior", "business", "trusted_person"]);
+      const location = parseRoutePoint(payload.location || {}, "location");
+      const activity = String(payload.activity || "easy walking trail").trim();
+      const keyword = outdoorKeywordForActivity(activity);
+      const radiusMeters = Math.max(500, Math.min(25000, Number(payload.radiusMeters || 8000)));
+      const data = await googleMapsGet("place/nearbysearch/json", {
+        location: `${location.lat},${location.lng}`,
+        radius: String(radiusMeters),
+        keyword
+      });
+      const approvedPartners = (await query(
+        `SELECT b.id AS business_id, b.name AS business_name, s.id AS service_id, s.name AS service_name, s.category
+         FROM businesses b
+         LEFT JOIN services s ON s.business_id = b.id
+         WHERE b.status = 'approved'
+           AND (LOWER(b.name) LIKE LOWER($1) OR LOWER(COALESCE(s.name,'')) LIKE LOWER($1) OR LOWER(COALESCE(s.category,'')) LIKE LOWER($1))`,
+        [`%outdoor%`]
+      )).rows;
+      const recommendations = (data.results || []).slice(0, 8).map(place => {
+        const approved = approvedPartners.find(partner =>
+          String(place.name || "").toLowerCase().includes(String(partner.business_name || "").toLowerCase()) ||
+          String(partner.business_name || "").toLowerCase().includes(String(place.name || "").toLowerCase())
+        );
+        const suitability = seniorSuitabilityForOutdoorPlace(place);
+        return {
+          placeId: place.place_id,
+          name: place.name,
+          address: place.vicinity || "",
+          lat: place.geometry?.location?.lat || null,
+          lng: place.geometry?.location?.lng || null,
+          rating: place.rating || null,
+          userRatingsTotal: place.user_ratings_total || 0,
+          businessStatus: place.business_status || "UNKNOWN",
+          types: place.types || [],
+          source: "google_places",
+          activity,
+          vettingStatus: approved ? "approved_partner" : "google_unverified",
+          approvedPartner: approved || null,
+          seniorSuitability: suitability,
+          careNote: approved
+            ? "Approved TheSeniorguru outdoor partner."
+            : "Google outdoor discovery result. Confirm accessibility, supervision, and care needs before booking."
+        };
+      });
+      await ensureSupportOrderProviderConfigs();
+      await audit(req, user, "outdoor_recommendations_requested", "outdoor_place", null, {
+        activity,
+        keyword,
+        radiusMeters,
+        results: recommendations.length,
+        approvedMatches: recommendations.filter(item => item.vettingStatus === "approved_partner").length
+      }, "info");
+      return {
+        provider: "google_places_outdoor",
+        location,
+        activity,
+        keyword,
+        radiusMeters,
+        recommendationCount: recommendations.length,
+        recommendations,
+        allTrails: {
+          status: "partner_api_required",
+          note: "AllTrails is kept credential-gated until partner/API access is approved and configured."
+        }
+      };
     }
 
     if (req.method === "POST" && url.pathname === "/api/rides/fulfillment-options") {
