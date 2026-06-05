@@ -329,6 +329,16 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS distance_meters INT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS duration_seconds INT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS route_provider TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS route_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS fulfillment_mode TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'requested';
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS fulfillment_provider TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS external_trip_id TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS fulfillment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fulfillment_mode TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'requested';
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fulfillment_provider TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS external_trip_id TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fulfillment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS safety_telemetry (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

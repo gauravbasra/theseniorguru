@@ -447,6 +447,7 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
   const [need, setNeed] = useState("I need a ride to my doctor tomorrow.");
   const [pickup, setPickup] = useState("Park View Community");
   const [dropoff, setDropoff] = useState("City Care Hospital");
+  const [fulfillmentMode, setFulfillmentMode] = useState("uber_health");
   const [matches, setMatches] = useState<any[]>([]);
   async function findMatches() {
     const result: any = await post("/api/help/match", { need });
@@ -457,6 +458,7 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
       serviceId,
       label: need,
       time: "Tomorrow, 10:00 AM",
+      fulfillmentMode,
       pickup: { label: pickup, lat: 43.1001, lng: -79.1001 },
       dropoff: { label: dropoff, lat: 43.1189, lng: -79.1252 }
     });
@@ -473,6 +475,11 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
         <Field label="Pickup" value={pickup} onChangeText={setPickup} />
         <Field label="Drop-off" value={dropoff} onChangeText={setDropoff} />
         <Text style={styles.muted}>Address autocomplete and live route preview will use Google Maps when the API key is configured.</Text>
+      </Card>
+      <Card title="Ride fulfillment" icon="🧭">
+        <Text style={styles.muted}>TheSeniorguru coordinates rides. Uber Health is preferred when configured; local senior transport is fallback.</Text>
+        <ButtonRow labels={[["Uber Health", "uber_health"], ["Local partner", "local_partner"], ["Manual", "manual_coordination"]]} onPress={setFulfillmentMode} />
+        <Text style={styles.safeText}>Selected: {fulfillmentMode.replace("_", " ")}</Text>
       </Card>
       <SectionTitle title="Popular requests" />
       {["I need a ride", "I need medication help", "I need food", "I need cleaning", "I need diapers", "Feeling lonely"].map(item => <ActionCard key={item} icon={item.includes("ride") ? "🚙" : item.includes("med") ? "💊" : item.includes("food") ? "🍽" : item.includes("lonely") ? "♡" : "▣"} title={item} subtitle="" button="›" onPress={() => setNeed(item)} />)}

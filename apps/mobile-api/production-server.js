@@ -278,7 +278,11 @@ function createProductionApi(pool) {
       serviceId: lead.service_id,
       pickup: lead.pickup_label ? { label: lead.pickup_label, lat: lead.pickup_lat, lng: lead.pickup_lng } : null,
       dropoff: lead.dropoff_label ? { label: lead.dropoff_label, lat: lead.dropoff_lat, lng: lead.dropoff_lng } : null,
-      routeProvider: lead.route_provider || null
+      routeProvider: lead.route_provider || null,
+      fulfillmentMode: lead.fulfillment_mode || null,
+      lifecycleStatus: lead.lifecycle_status || "requested",
+      fulfillmentProvider: lead.fulfillment_provider || null,
+      externalTripId: lead.external_trip_id || null
     };
   }
 
@@ -295,7 +299,11 @@ function createProductionApi(pool) {
       dropoff: booking.dropoff_label ? { label: booking.dropoff_label, lat: booking.dropoff_lat, lng: booking.dropoff_lng } : null,
       distance: booking.distance_meters ? `${(Number(booking.distance_meters) / 1000).toFixed(1)} km` : "",
       duration: booking.duration_seconds ? `${Math.max(1, Math.round(Number(booking.duration_seconds) / 60))} min` : "",
-      routeProvider: booking.route_provider || null
+      routeProvider: booking.route_provider || null,
+      fulfillmentMode: booking.fulfillment_mode || null,
+      lifecycleStatus: booking.lifecycle_status || "requested",
+      fulfillmentProvider: booking.fulfillment_provider || null,
+      externalTripId: booking.external_trip_id || null
     };
   }
 
@@ -489,6 +497,51 @@ function createProductionApi(pool) {
       provider: "haversine_estimate",
       metadata: { directDistanceMeters: Math.round(directDistance), roadAdjustmentFactor: 1.28 }
     };
+  }
+
+  function isTransportationService(service = {}) {
+    const text = `${service.name || ""} ${service.category || ""}`.toLowerCase();
+    return text.includes("ride") || text.includes("transport") || text.includes("cab") || text.includes("driver");
+  }
+
+  function uberHealthConfigured() {
+    return Boolean(process.env.UBER_HEALTH_CLIENT_ID && process.env.UBER_HEALTH_CLIENT_SECRET);
+  }
+
+  function normalizeFulfillmentMode(mode, service = {}) {
+    const requested = String(mode || "").trim();
+    if (["uber_health", "local_partner", "trusted_circle", "manual_coordination"].includes(requested)) return requested;
+    return isTransportationService(service) ? "uber_health" : "local_partner";
+  }
+
+  function buildFulfillmentOptions(route = null, service = {}) {
+    const uberReady = uberHealthConfigured();
+    return [
+      {
+        mode: "uber_health",
+        recommended: isTransportationService(service),
+        available: uberReady,
+        provider: "uber_health",
+        lifecycleStatus: uberReady ? "ready_to_dispatch" : "credential_required",
+        reason: uberReady ? "Uber Health can be used for guest ride dispatch." : "Uber Health credentials are not configured yet."
+      },
+      {
+        mode: "local_partner",
+        recommended: !uberReady,
+        available: Boolean(service?.business_id || service?.businessId || service?.id),
+        provider: service?.provider_name || service?.provider || "approved_local_partner",
+        lifecycleStatus: "partner_match_required",
+        reason: "Use approved local senior-transport businesses only where Uber Health is unavailable or unsuitable."
+      },
+      {
+        mode: "manual_coordination",
+        recommended: false,
+        available: true,
+        provider: "care_team",
+        lifecycleStatus: "manual_coordination_required",
+        reason: "Fallback for wheelchair support, caregiver handoff, or regions without automated ride fulfillment."
+      }
+    ].map(option => ({ ...option, distanceMeters: route?.distanceMeters || null, durationSeconds: route?.durationSeconds || null }));
   }
 
   async function evaluateResidentSafeZone(residentId, location = {}, fallbackStatus = null) {
@@ -1751,6 +1804,25 @@ function createProductionApi(pool) {
       return { pickup, dropoff, route };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/rides/fulfillment-options") {
+      requireRole(user, ["senior", "business", "trusted_person"]);
+      const pickup = parseRoutePoint(payload.pickup || {}, "pickup");
+      const dropoff = parseRoutePoint(payload.dropoff || {}, "dropoff");
+      const route = await estimateRoute(pickup, dropoff);
+      const service = payload.serviceId
+        ? (await query(
+          `SELECT s.*, b.name AS provider_name
+           FROM services s
+           JOIN businesses b ON b.id = s.business_id
+           WHERE s.id = $1`,
+          [payload.serviceId]
+        )).rows[0] || {}
+        : { name: "Ride", category: "Transportation" };
+      const options = buildFulfillmentOptions(route, service);
+      await audit(req, user, "ride_fulfillment_options_requested", "ride", null, { routeProvider: route.provider, options: options.map(option => ({ mode: option.mode, available: option.available, lifecycleStatus: option.lifecycleStatus })) });
+      return { pickup, dropoff, route, options, recommendedMode: options.find(option => option.recommended && option.available)?.mode || "local_partner" };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/bookings") {
       if (user.role === "senior") {
         const resident = await getResidentForUser(user);
@@ -1775,39 +1847,47 @@ function createProductionApi(pool) {
         const pickup = hasRideLocations ? parseRoutePoint(payload.pickup || {}, "pickup") : null;
         const dropoff = hasRideLocations ? parseRoutePoint(payload.dropoff || {}, "dropoff") : null;
         const route = pickup && dropoff ? await estimateRoute(pickup, dropoff) : null;
+        const fulfillmentMode = normalizeFulfillmentMode(payload.fulfillmentMode, service);
+        const fulfillmentOptions = route ? buildFulfillmentOptions(route, service) : [];
+        const selectedFulfillment = fulfillmentOptions.find(option => option.mode === fulfillmentMode) || { mode: fulfillmentMode, provider: fulfillmentMode, lifecycleStatus: "requested", available: true, reason: "No ride route supplied." };
+        const lifecycleStatus = fulfillmentMode === "uber_health" && !selectedFulfillment.available ? "credential_required" : "requested";
         const result = await transaction(async tx => {
           const lead = (await tx(
             `INSERT INTO leads (
               resident_id, service_id, business_id, request_type, requested_time, status,
               pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
-              distance_meters, duration_seconds, route_provider, route_metadata
+              distance_meters, duration_seconds, route_provider, route_metadata,
+              fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata
              )
-             VALUES ($1,$2,$3,$4,$5,'matched',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+             VALUES ($1,$2,$3,$4,$5,'matched',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
             [
               resident.id, service.id, service.business_id, payload.label || service.name, payload.time || null,
               pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
               dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
-              route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {})
+              route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {}),
+              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions })
             ]
           )).rows[0];
           const booking = (await tx(
             `INSERT INTO bookings (
               lead_id, resident_id, business_id, service_id, label, status,
               pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
-              distance_meters, duration_seconds, route_provider, route_metadata
+              distance_meters, duration_seconds, route_provider, route_metadata,
+              fulfillment_mode, lifecycle_status, fulfillment_provider, fulfillment_metadata
              )
-             VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+             VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
             [
               lead.id, resident.id, service.business_id, service.id, payload.label || service.name,
               pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
               dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
-              route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {})
+              route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {}),
+              fulfillmentMode, lifecycleStatus, selectedFulfillment.provider || fulfillmentMode, JSON.stringify({ selectedFulfillment, options: fulfillmentOptions })
             ]
           )).rows[0];
           return { lead, booking };
         });
-        await audit(req, user, "resident_booking_requested", "booking", result.booking.id, { leadId: result.lead.id, serviceId: service.id, routeProvider: route?.provider || null, distanceMeters: route?.distanceMeters || null });
-        return { ok: true, lead: result.lead, booking: result.booking };
+        await audit(req, user, "resident_booking_requested", "booking", result.booking.id, { leadId: result.lead.id, serviceId: service.id, routeProvider: route?.provider || null, distanceMeters: route?.distanceMeters || null, fulfillmentMode, lifecycleStatus });
+        return { ok: true, lead: result.lead, booking: result.booking, fulfillment: selectedFulfillment };
       }
 
       if (user.role === "business") {
