@@ -1586,10 +1586,18 @@ function createProductionApi(pool) {
         error.status = 400;
         throw error;
       }
-      await query(`UPDATE businesses SET status = $1, updated_at = now() WHERE id = $2`, [status, id]);
+      const business = (await query(`UPDATE businesses SET status = $1, updated_at = now() WHERE id = $2 RETURNING *`, [status, id])).rows[0];
+      if (!business) {
+        const error = new Error("Business approval record not found");
+        error.status = 404;
+        throw error;
+      }
+      if (status === "approved") {
+        await ensureDefaultSubscription(id);
+      }
       await query(`INSERT INTO business_approvals (business_id, reviewed_by, status, notes) VALUES ($1, $2, $3, $4)`, [id, user.id, status, payload.notes || null]);
       await audit(req, user, `business_${status}`, "business", id, payload, status === "suspended" ? "security" : "info");
-      return { ok: true, status };
+      return { ok: true, status, business };
     }
 
     if (req.method === "POST" && url.pathname.startsWith("/api/superadmin/services/")) {
@@ -1602,9 +1610,26 @@ function createProductionApi(pool) {
         error.status = 400;
         throw error;
       }
-      await query(`UPDATE services SET status = $1, updated_at = now() WHERE id = $2`, [status, id]);
+      const existing = (await query(
+        `SELECT s.*, b.status AS business_status
+         FROM services s
+         JOIN businesses b ON b.id = s.business_id
+         WHERE s.id = $1`,
+        [id]
+      )).rows[0];
+      if (!existing) {
+        const error = new Error("Service approval record not found");
+        error.status = 404;
+        throw error;
+      }
+      if (status === "approved" && existing.business_status !== "approved") {
+        const error = new Error("Business must be approved before service approval");
+        error.status = 403;
+        throw error;
+      }
+      const service = (await query(`UPDATE services SET status = $1, updated_at = now() WHERE id = $2 RETURNING *`, [status, id])).rows[0];
       await audit(req, user, `service_${status}`, "service", id, payload);
-      return { ok: true, status };
+      return { ok: true, status, service };
     }
 
     if (req.method === "GET" && url.pathname === "/api/superadmin/audit-logs") {
