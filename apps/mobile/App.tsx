@@ -16,6 +16,8 @@ type Screen =
   | "residentFeed"
   | "residentServices"
   | "residentSafety"
+  | "notifications"
+  | "sosEvents"
   | "businessOnboarding"
   | "businessHome"
   | "businessLeads"
@@ -163,7 +165,7 @@ export default function App() {
       <SafeAreaView style={styles.safe}>
         <View style={styles.appShell}>
           <ScrollView key={screen} contentContainerStyle={[styles.page, activeTabs && styles.pageWithBottomNav]}>
-            <Header role={role} />
+            <Header role={role} onOpenNotifications={() => setScreen("notifications")} onOpenSos={() => setScreen("sosEvents")} />
             {screen === "role" && <RoleScreen onChoose={chooseRole} />}
             {screen === "residentOnboarding" && <ResidentOnboarding state={state} onDone={async () => { await refresh(); setScreen("residentHome"); }} />}
             {screen === "residentHome" && <ResidentHome state={state} onRefresh={refresh} />}
@@ -172,6 +174,8 @@ export default function App() {
             {screen === "residentFeed" && <ResidentFeed />}
             {screen === "residentServices" && <ResidentServices state={state} onRefresh={refresh} />}
             {screen === "residentSafety" && <ResidentSafety state={state} onRefresh={refresh} />}
+            {screen === "notifications" && <NotificationsPage state={state} circleState={circleState} onRefresh={refresh} />}
+            {screen === "sosEvents" && <SosEventsPage state={state} circleState={circleState} circlePersonId={circlePersonId} onRefresh={refresh} />}
             {screen === "businessOnboarding" && <BusinessOnboarding state={state} onDone={async () => { await refresh(); setScreen("businessHome"); }} />}
             {screen === "businessHome" && <BusinessHome state={state} />}
             {screen === "businessLeads" && <BusinessLeads state={state} onRefresh={refresh} />}
@@ -192,7 +196,8 @@ export default function App() {
   );
 }
 
-function Header({ role }: { role: AppRole | null }) {
+function Header({ role, onOpenNotifications, onOpenSos }: { role: AppRole | null; onOpenNotifications: () => void; onOpenSos: () => void }) {
+  const showActions = role === "resident" || role === "circle";
   return (
     <View style={styles.header}>
       <View style={styles.logoMark}><Text style={styles.logoHeart}>♡</Text><Text style={styles.logoDotOne}>●</Text><Text style={styles.logoDotTwo}>●</Text></View>
@@ -200,6 +205,10 @@ function Header({ role }: { role: AppRole | null }) {
         <Text style={styles.brand}>TheSeniorguru</Text>
         <Text style={styles.brandSub}>Your day. Your people. Your support.</Text>
       </View>
+      {showActions ? <View style={styles.headerActions}>
+        <Pressable hitSlop={10} style={styles.topIconButton} onPress={onOpenNotifications}><Text style={styles.topIconText}>🔔</Text></Pressable>
+        <Pressable hitSlop={10} style={[styles.topIconButton, styles.sosIconButton]} onPress={onOpenSos}><Text style={styles.topIconText}>SOS</Text></Pressable>
+      </View> : null}
     </View>
   );
 }
@@ -748,6 +757,70 @@ function BusinessPackage({ state, onRefresh }: { state: any; onRefresh: () => vo
   return <View><Text style={styles.h1}>Package</Text><Card title="Free"><Text style={styles.body}>1 service · 5 leads per year</Text><PrimaryButton label="Use free package" onPress={() => setPlan("free")} /></Card><Card title="$100/month Growth"><Text style={styles.body}>More than 1 service · 5 leads per month · top-ups after limit</Text><PrimaryButton label="Upgrade to paid" onPress={() => setPlan("paid")} /></Card><Card title="Lead usage"><Text style={styles.muted}>Year: {quota.usedThisYear}/{quota.freePerYear}</Text><Text style={styles.muted}>Month: {quota.usedThisMonth}/{quota.paidPerMonth + quota.topUps}</Text><PrimaryButton label="Add 5 lead top-up" onPress={topUp} /></Card></View>;
 }
 
+function NotificationsPage({ state, circleState, onRefresh }: { state: any; circleState: any; onRefresh: () => void }) {
+  const residentNotifications = state.notificationQueue || [];
+  const circleNotifications = circleState?.notifications || [];
+  const notifications = circleNotifications.length ? circleNotifications : residentNotifications;
+
+  async function markDelivered(id: string) {
+    await post(`/api/notifications/${id}/mark-delivered`, {});
+    await onRefresh();
+    Alert.alert("Notification", "Marked as delivered.");
+  }
+
+  return (
+    <View>
+      <TopPhoneBar />
+      <Text style={styles.h1}>Notifications</Text>
+      <Text style={styles.copy}>Important care updates, delivery alerts, and safety messages in one place.</Text>
+      <Card title="Notification center" icon="🔔" tint="peach">
+        {notifications.length ? notifications.slice(0, 20).map((item: any) => (
+          <View key={item.id} style={styles.eventRow}>
+            <Text style={styles.body}>{String(item.channel || "push").toUpperCase()} · {item.status || "queued"}</Text>
+            <Text style={styles.muted}>{item.eventType || item.type || "care-update"} · {item.personName || state.resident?.name || "Anita Sharma"}</Text>
+            <Text style={styles.muted}>{item.body || "Care notification received."}</Text>
+            {item.status === "queued" ? <Pressable style={styles.smallPrimary} onPress={() => markDelivered(item.id)}><Text style={styles.primaryText}>Mark delivered</Text></Pressable> : <Text style={styles.selected}>Delivered by {item.provider || "notification provider"}</Text>}
+          </View>
+        )) : <Text style={styles.muted}>No notifications yet.</Text>}
+      </Card>
+    </View>
+  );
+}
+
+function SosEventsPage({ state, circleState, circlePersonId, onRefresh }: { state: any; circleState: any; circlePersonId: string; onRefresh: () => void }) {
+  const safety = circleState?.safety || state.safety || { sosEvents: [], location: { label: "Park View Community", accuracyMeters: 18 }, safeZones: [{ status: "inside" }], movement: { status: "steady", stillMinutes: 0, phoneBattery: 80 }, fallDetection: { confidence: 0, status: "clear" } };
+  const events = safety.sosEvents || [];
+
+  async function ackSos(id: string) {
+    await post(`/api/sos-events/${id}/ack`, { personId: circlePersonId });
+    await onRefresh();
+  }
+
+  async function escalateSos(id: string) {
+    await post(`/api/sos-events/${id}/escalate`, { personId: circlePersonId });
+    await onRefresh();
+  }
+
+  return (
+    <View>
+      <TopPhoneBar />
+      <Text style={styles.h1}>SOS Events</Text>
+      <Text style={styles.copy}>Separate emergency event history, current alerts, and acknowledgement actions.</Text>
+      <MiniMap safety={safety} />
+      <Card title="Active and recent SOS" icon="🚨" tint="orange">
+        {events.length ? events.slice(0, 20).map((event: any) => (
+          <View key={event.id} style={styles.eventRow}>
+            <Text style={styles.body}>{event.type} · {event.severity} · {event.status}</Text>
+            <Text style={styles.muted}>{event.body}</Text>
+            <Text style={styles.muted}>Notified: {(event.notified || []).join(", ") || "Trusted circle"}</Text>
+            {event.status === "active" ? <ButtonRow labels={[["Acknowledge", event.id], ["Escalate", `escalate:${event.id}`]]} onPress={(value: string) => value.startsWith("escalate:") ? escalateSos(value.replace("escalate:", "")) : ackSos(value)} /> : <Text style={styles.selected}>{event.acknowledgedBy ? `Acknowledged by ${event.acknowledgedBy}` : event.escalatedBy ? `Escalated by ${event.escalatedBy}` : "Resolved action recorded"}</Text>}
+          </View>
+        )) : <Text style={styles.muted}>No active SOS events.</Text>}
+      </Card>
+    </View>
+  );
+}
+
 function CircleInvite({ onAccepted }: { onAccepted: (personId: string) => void }) {
   const [inviteCode, setInviteCode] = useState("RITA-ANITA");
   async function accept() {
@@ -758,31 +831,59 @@ function CircleInvite({ onAccepted }: { onAccepted: (personId: string) => void }
 }
 
 function CircleSafety({ circleState, onRefresh }: { circleState: any; onRefresh: () => void }) {
-  const safety = circleState?.safety;
+  const safety = circleState?.safety || { location: { label: "Park View Community", accuracyMeters: 18 }, safeZones: [{ status: "inside" }], movement: { status: "steady", stillMinutes: 0, phoneBattery: 80 }, fallDetection: { confidence: 0, status: "clear" }, sosEvents: [] };
   const health = circleState?.healthVitals?.summary || {};
   const latestHealth = circleState?.healthVitals?.latestSummary || health;
-  const personId = circleState?.person?.id || "rita";
-  async function simulate(kind: "normal" | "wandering" | "fall" | "stillness") {
-    await simulateSafetyEvent(kind);
+
+  async function simulate(kind: string) {
+    await simulateSafetyEvent(kind as any);
     await onRefresh();
   }
-  async function ackSos(id: string) {
-    await post(`/api/sos-events/${id}/ack`, { personId });
+
+  async function pingSenior() {
+    await post("/api/circle/help-message", { personId: circleState?.person?.id || "rita", body: "Rita checked in and pinged Anita from trusted circle." });
     await onRefresh();
-    Alert.alert("SOS acknowledged", "The trusted circle has been updated.");
+    Alert.alert("Ping sent", "Anita has been pinged and the care log was updated.");
   }
-  async function escalateSos(id: string) {
-    await post(`/api/sos-events/${id}/escalate`, { personId, route: "call-emergency-and-circle" });
-    await onRefresh();
-    Alert.alert("SOS escalated", "Emergency escalation was recorded.");
-  }
-  async function markDelivered(id: string) {
-    await post(`/api/notifications/${id}/mark-delivered`, { status: "delivered", provider: "mobile-test-delivery" });
-    await onRefresh();
-    Alert.alert("Notification delivered", "Delivery status was updated.");
-  }
-  if (!safety) return <Card title="Limited access"><Text style={styles.copy}>This trusted person does not have live safety permission.</Text></Card>;
-  return <View><TopPhoneBar /><Text style={styles.h1}>Live Safety</Text><MiniMap safety={safety} /><SectionTitle title="Connected devices" /><WearableDeviceCard name="Apple Watch" status="Connected" battery="82%" signal="Fall detection, heart rate, SOS" lastSeen="Live" accent="#6a3f7a" /><WearableDeviceCard name="Home proximity tag" status="Near Anita" battery="64%" signal="Room proximity, night exit alerts" lastSeen="18 sec ago" accent="#e28a20" /><Card title="Caregiver alert path" icon="🚨" tint="peach"><WellnessRow label="If fall detected" value="Rita first" status="Immediate push" /><WellnessRow label="If no response" value="Arjun + SOS" status="2 min escalation" /><WellnessRow label="If severe vitals" value="Emergency" status="Auto-create SOS" /><WellnessRow label="Voice SOS" value="Trusted circle + 911" status="Phrase detected" /></Card><VoiceSosCard compact /><SectionTitle title="Shared health signals" /><View style={styles.vitalsGrid}><VitalTile label="Heart rate" value={metricText(health.heartRateAvg)} unit="bpm" status="Shared average" color="#d95f4f" /><VitalTile label="Oxygen" value={metricText(health.oxygenAvg)} unit="%" status="Shared SpO2" color="#3f8c55" /><VitalTile label="Breathing" value={metricText(health.respiratoryRateAvg)} unit="/min" status="Shared rhythm" color="#6a3f7a" /><VitalTile label="Sleep" value={sleepText(health.sleepMinutes)} unit="" status={`Risk: ${latestHealth.riskLevel || "unknown"}`} color="#e28a20" /></View><View style={styles.analyticsGrid}><RingMetric label="Fall risk" value={`${Math.round(safety.fallDetection.confidence * 100)}%`} percent={Math.round(safety.fallDetection.confidence * 100)} color="#d95f4f" /><RingMetric label="Movement" value={safety.movement.status} percent={68} color="#6a3f7a" /></View><Card title="Movement trend" icon="⌁"><TrendChart values={[12, 20, 18, 28, 46, 40, 34, 52, 49, 58]} color="#6a3f7a" /><Text style={styles.muted}>Use this to spot wandering, stillness, or sudden activity shifts.</Text></Card><Card title="Phone and wearable simulation"><ButtonRow labels={[["Normal", "normal"], ["Wandering", "wandering"], ["Likely fall", "fall"], ["Stillness", "stillness"]]} onPress={simulate} /></Card><Card title="SOS events">{safety.sosEvents.length ? safety.sosEvents.slice(0, 4).map((event: any) => <View key={event.id} style={styles.eventRow}><Text style={styles.body}>{event.type} · {event.severity} · {event.status}</Text><Text style={styles.muted}>{event.body}</Text><Text style={styles.muted}>Notified: {event.notified.join(", ")}</Text>{event.status === "active" ? <ButtonRow labels={[["Acknowledge", event.id], ["Escalate", `escalate:${event.id}`]]} onPress={(value: string) => value.startsWith("escalate:") ? escalateSos(value.replace("escalate:", "")) : ackSos(value)} /> : <Text style={styles.selected}>{event.acknowledgedBy ? `Acknowledged by ${event.acknowledgedBy}` : event.escalatedBy ? `Escalated by ${event.escalatedBy}` : "Resolved action recorded"}</Text>}</View>) : <Text style={styles.muted}>No active SOS events.</Text>}</Card><Card title="Notification delivery">{(circleState?.notifications || []).length ? circleState.notifications.slice(0, 8).map((item: any) => <View key={item.id} style={styles.eventRow}><Text style={styles.body}>{item.channel.toUpperCase()} · {item.status}</Text><Text style={styles.muted}>{item.eventType} · {item.personName}</Text><Text style={styles.muted}>{item.body}</Text>{item.status === "queued" ? <PrimaryButton label="Mark delivered" onPress={() => markDelivered(item.id)} /> : <Text style={styles.selected}>Delivered by {item.provider || "delivery provider"}</Text>}</View>) : <Text style={styles.muted}>No notifications queued.</Text>}</Card></View>;
+
+  return (
+    <View>
+      <TopPhoneBar />
+      <Text style={styles.h1}>Live Safety</Text>
+      <Text style={styles.copy}>Trusted circle view for location tracing and quick contact. Voice SOS commands stay with the senior app.</Text>
+      <MiniMap safety={safety} />
+      <Card title="Local tracing" icon="📍" tint="peach">
+        <WellnessRow label="Current zone" value={safety.location?.label || "Park View Community"} status={safety.safeZones?.[0]?.status || "inside"} />
+        <WellnessRow label="Movement" value={safety.movement?.status || "steady"} status={`${safety.movement?.stillMinutes ?? 0} min stillness`} />
+        <WellnessRow label="Accuracy" value={`${safety.location?.accuracyMeters ?? 18}m`} status="Live phone + wearable trace" />
+      </Card>
+      <Card title="Reach Anita" icon="♡">
+        <Text style={styles.copy}>Use soft contact actions first unless there is an active SOS event.</Text>
+        <ButtonRow labels={[["Ping", "ping"], ["Chat", "chat"], ["Voice", "voice"], ["Video", "video"]]} onPress={(value: string) => value === "ping" ? pingSenior() : Alert.alert("Trusted circle", `${value.charAt(0).toUpperCase()}${value.slice(1)} request started for Anita.`)} />
+      </Card>
+      <SectionTitle title="Connected devices" />
+      <WearableDeviceCard name="Apple Watch" status="Connected" battery="82%" signal="Fall detection, heart rate, SOS" lastSeen="Live" accent="#6a3f7a" />
+      <WearableDeviceCard name="Home proximity tag" status="Near Anita" battery="64%" signal="Room proximity, night exit alerts" lastSeen="18 sec ago" accent="#e28a20" />
+      <Card title="Escalation path" icon="🚨" tint="peach">
+        <WellnessRow label="If fall detected" value="Rita first" status="Immediate push" />
+        <WellnessRow label="If no response" value="Arjun + SOS" status="2 min escalation" />
+        <WellnessRow label="If severe vitals" value="Emergency" status="Auto-create SOS" />
+      </Card>
+      <SectionTitle title="Shared health signals" />
+      <View style={styles.vitalsGrid}>
+        <VitalTile label="Heart rate" value={metricText(health.heartRateAvg)} unit="bpm" status="Shared average" color="#d95f4f" />
+        <VitalTile label="Oxygen" value={metricText(health.oxygenAvg)} unit="%" status="Shared SpO2" color="#3f8c55" />
+        <VitalTile label="Breathing" value={metricText(health.respiratoryRateAvg)} unit="/min" status="Shared rhythm" color="#6a3f7a" />
+        <VitalTile label="Sleep" value={sleepText(health.sleepMinutes)} unit="" status={`Risk: ${latestHealth.riskLevel || "unknown"}`} color="#e28a20" />
+      </View>
+      <View style={styles.analyticsGrid}>
+        <RingMetric label="Fall risk" value={`${Math.round((safety.fallDetection?.confidence || 0) * 100)}%`} percent={Math.round((safety.fallDetection?.confidence || 0) * 100)} color="#d95f4f" />
+        <RingMetric label="Movement" value={safety.movement?.status || "steady"} percent={68} color="#6a3f7a" />
+      </View>
+      <Card title="Movement trend" icon="⌁"><TrendChart values={[12, 20, 18, 28, 46, 40, 34, 52, 49, 58]} color="#6a3f7a" /><Text style={styles.muted}>Use this to spot wandering, stillness, or sudden activity shifts.</Text></Card>
+      <Card title="Phone and wearable simulation"><ButtonRow labels={[["Normal", "normal"], ["Wandering", "wandering"], ["Likely fall", "fall"], ["Stillness", "stillness"]]} onPress={simulate} /></Card>
+    </View>
+  );
 }
 
 function CircleAssist({ circleState, personId, onRefresh }: { circleState: any; personId: string; onRefresh: () => void }) {
@@ -1148,6 +1249,10 @@ const styles = StyleSheet.create({
   pageWithBottomNav: { paddingBottom: 104 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 4, minWidth: 0 },
   headerText: { flex: 1, minWidth: 0 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8, zIndex: 20, elevation: 4 },
+  topIconButton: { width: 54, height: 54, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: "#fffaf5", alignItems: "center", justifyContent: "center" },
+  sosIconButton: { backgroundColor: "#fff0ef", borderColor: "#f1c2bd" },
+  topIconText: { color: colors.purple, fontWeight: "900", fontSize: 13 },
   mark: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.purple, alignItems: "center", justifyContent: "center" },
   markText: { color: "white", fontWeight: "900" },
   logoMark: { width: 34, height: 34, borderRadius: 12, backgroundColor: "#fff0d9", borderWidth: 1, borderColor: "#efd7bd", alignItems: "center", justifyContent: "center", position: "relative" },
