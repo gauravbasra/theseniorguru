@@ -267,6 +267,9 @@ ALTER TABLE medications ADD COLUMN IF NOT EXISTS pharmacy TEXT;
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_status TEXT NOT NULL DEFAULT 'active';
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS lock_reason TEXT;
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS last_error TEXT;
 
 CREATE TABLE IF NOT EXISTS safety_telemetry (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -360,7 +363,10 @@ CREATE TABLE IF NOT EXISTS notifications (
   provider TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   sent_at TIMESTAMPTZ,
-  delivered_at TIMESTAMPTZ
+  delivered_at TIMESTAMPTZ,
+  retry_count INT NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ,
+  last_error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS notification_delivery_attempts (

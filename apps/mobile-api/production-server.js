@@ -1679,12 +1679,39 @@ function createProductionApi(pool) {
     if (req.method === 'POST' && url.pathname === '/api/notifications/process') {
       requireRole(user, ['superadmin']);
       const limit = Math.max(1, Number(payload.limit || 10));
-      const queued = (await query(`SELECT * FROM notifications WHERE status = 'queued' ORDER BY created_at ASC LIMIT $1`, [limit])).rows;
+      const failChannels = new Set(Array.isArray(payload.failChannels) ? payload.failChannels.map(channel => String(channel).toLowerCase()) : []);
+      const queued = (await query(
+        `SELECT * FROM notifications
+         WHERE status IN ('queued', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= now())
+         ORDER BY created_at ASC LIMIT $1`,
+        [limit]
+      )).rows;
       const delivered = [];
+      const failed = [];
       for (const notification of queued) {
         const provider = notification.channel === 'call' ? (process.env.CALL_PROVIDER || 'twilio-voice-simulator') : notification.channel === 'sms' ? (process.env.SMS_PROVIDER || 'twilio-sms-simulator') : (process.env.PUSH_PROVIDER || 'expo-push-simulator');
         const providerMessageId = `${provider}_${notification.id}_${Date.now()}`;
-        const updated = (await query(`UPDATE notifications SET status = 'delivered', provider = $1, provider_message_id = $2, sent_at = now(), delivered_at = now() WHERE id = $3 RETURNING *`, [provider, providerMessageId, notification.id])).rows[0];
+        if (failChannels.has(String(notification.channel).toLowerCase())) {
+          const errorMessage = `${provider} simulated delivery failure for ${notification.channel}`;
+          const updated = (await query(
+            `UPDATE notifications
+             SET status = 'failed',
+                 provider = $1,
+                 retry_count = retry_count + 1,
+                 next_retry_at = now() + interval '5 minutes',
+                 last_error = $2
+             WHERE id = $3 RETURNING *`,
+            [provider, errorMessage, notification.id]
+          )).rows[0];
+          await query(
+            `INSERT INTO notification_delivery_attempts (notification_id, provider, channel, status, provider_message_id, error)
+             VALUES ($1,$2,$3,'failed',$4,$5)`,
+            [notification.id, provider, notification.channel, providerMessageId, errorMessage]
+          );
+          failed.push(updated);
+          continue;
+        }
+        const updated = (await query(`UPDATE notifications SET status = 'delivered', provider = $1, provider_message_id = $2, sent_at = now(), delivered_at = now(), last_error = null WHERE id = $3 RETURNING *`, [provider, providerMessageId, notification.id])).rows[0];
         await query(
           `INSERT INTO notification_delivery_attempts (notification_id, provider, channel, status, provider_message_id)
            VALUES ($1,$2,$3,'delivered',$4)`,
@@ -1692,9 +1719,9 @@ function createProductionApi(pool) {
         );
         delivered.push(updated);
       }
-      const remainingQueued = Number((await query(`SELECT count(*) FROM notifications WHERE status = 'queued'`)).rows[0].count);
-      await audit(req, user, 'notification_queue_processed', 'notification_queue', null, { delivered: delivered.length, remainingQueued }, 'info');
-      return { delivered, remainingQueued };
+      const remainingQueued = Number((await query(`SELECT count(*) FROM notifications WHERE status IN ('queued', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= now())`)).rows[0].count);
+      await audit(req, user, 'notification_queue_processed', 'notification_queue', null, { delivered: delivered.length, failed: failed.length, remainingQueued }, failed.length ? 'warning' : 'info');
+      return { delivered, failed, remainingQueued };
     }
 
     if (req.method === "POST" && url.pathname === "/api/safety/phone-analytics") {
