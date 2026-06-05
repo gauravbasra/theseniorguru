@@ -534,6 +534,9 @@ function createProductionApi(pool) {
           "anita@theseniorguru.local": { role: "senior", name: "Anita Sharma" },
           "rohit@careride.local": { role: "business", name: "Rohit Mehta" },
           "rita@theseniorguru.local": { role: "trusted_person", name: "Rita Sharma" },
+          "arjun@theseniorguru.local": { role: "trusted_person", name: "Arjun Sharma" },
+          "drmehta@theseniorguru.local": { role: "trusted_person", name: "Dr. Mehta" },
+          "sunita@theseniorguru.local": { role: "trusted_person", name: "Sunita Patel" },
           "admin@theseniorguru.local": { role: "superadmin", name: "TheSeniorguru Admin" }
         };
         const bootstrap = bootstrapUsers[email];
