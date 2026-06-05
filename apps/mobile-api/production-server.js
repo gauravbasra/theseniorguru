@@ -1825,6 +1825,71 @@ function createProductionApi(pool) {
       return { medication: updated, alreadyTaken: false };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/medications/remind-later") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const minutes = Math.max(5, Math.min(240, Number(payload.minutes || 30)));
+      const medication = (await query(
+        `SELECT id, name, strength, dose_time, remaining_count
+         FROM medications
+         WHERE id = $1 AND resident_id = $2`,
+        [required(payload.id, "id"), resident.id]
+      )).rows[0];
+      if (!medication) {
+        const error = new Error("Medication not found");
+        error.status = 404;
+        throw error;
+      }
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status, next_retry_at)
+         VALUES ($1,'push','Medication reminder snoozed',$2,'queued', now() + ($3 || ' minutes')::interval)`,
+        [user.id, `${medication.name} ${medication.strength || ""} reminder snoozed for ${minutes} minutes.`.trim(), String(minutes)]
+      );
+      await audit(req, user, "medication_reminder_snoozed", "medication", medication.id, { name: medication.name, minutes }, "info");
+      return { medication, reminder: { status: "queued", minutes } };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/medications/skip-dose") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const medication = (await query(
+        `UPDATE medications
+         SET status = 'skipped',
+             last_confirmed_at = now(),
+             updated_at = now()
+         WHERE id = $1 AND resident_id = $2
+         RETURNING id, name, condition, strength, dose_quantity, dose_time, frequency, remaining_count, refill_threshold, prescriber, pharmacy, status, last_confirmed_at`,
+        [required(payload.id, "id"), resident.id]
+      )).rows[0];
+      if (!medication) {
+        const error = new Error("Medication not found");
+        error.status = 404;
+        throw error;
+      }
+      await query(
+        `INSERT INTO medication_inventory_events (medication_id, resident_id, event_type, quantity_delta, remaining_after, reason)
+         VALUES ($1,$2,'dose_skipped',0,$3,$4)`,
+        [medication.id, resident.id, Number(medication.remaining_count), payload.reason || "Resident skipped dose"]
+      );
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1,'push','Medication dose skipped',$2,'queued')`,
+        [user.id, `${medication.name} ${medication.strength || ""} was logged as skipped. Inventory was not changed.`.trim()]
+      );
+      await audit(req, user, "medication_dose_skipped", "medication", medication.id, { name: medication.name, remainingCount: medication.remaining_count }, "warning");
+      return { medication, skipped: true };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/medications/refill-request") {
       requireRole(user, ["senior"]);
       const resident = await getResidentForUser(user);
@@ -1981,9 +2046,9 @@ function createProductionApi(pool) {
       }
       const subscription = (await query(
         `UPDATE subscriptions
-         SET plan = $1,
-             current_period_start = CASE WHEN $1 = 'growth_100' THEN date_trunc('month', now()) ELSE date_trunc('year', now()) END,
-             current_period_end = CASE WHEN $1 = 'growth_100' THEN date_trunc('month', now()) + interval '1 month' ELSE date_trunc('year', now()) + interval '1 year' END,
+         SET plan = $1::subscription_plan,
+             current_period_start = CASE WHEN $1::text = 'growth_100' THEN date_trunc('month', now()) ELSE date_trunc('year', now()) END,
+             current_period_end = CASE WHEN $1::text = 'growth_100' THEN date_trunc('month', now()) + interval '1 month' ELSE date_trunc('year', now()) + interval '1 year' END,
              updated_at = now()
          WHERE business_id = $2
          RETURNING *`,
@@ -2531,7 +2596,12 @@ function createProductionApi(pool) {
       requireRole(user, ["senior", "trusted_person", "business"]);
       const pickup = payload.pickup ? parseRoutePoint(payload.pickup || {}, "pickup") : null;
       const dropoff = payload.dropoff ? parseRoutePoint(payload.dropoff || {}, "dropoff") : null;
-      const route = pickup && dropoff ? await estimateRoute(pickup, dropoff) : null;
+      const route = payload.route || (pickup && dropoff ? await estimateRoute(pickup, dropoff) : null);
+      if (!route && !payload.providerBillCents) {
+        const error = new Error("Route or providerBillCents is required for ride pricing.");
+        error.status = 400;
+        throw error;
+      }
       const pricing = calculateRidePricing({
         providerBillCents: payload.providerBillCents || null,
         route,

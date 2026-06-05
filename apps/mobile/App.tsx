@@ -174,7 +174,7 @@ export default function App() {
             <Header role={role} onOpenNotifications={() => setScreen("notifications")} onOpenSos={() => setScreen("sosEvents")} />
             {screen === "role" && <RoleScreen onChoose={chooseRole} />}
             {screen === "residentOnboarding" && <ResidentOnboarding state={state} onDone={async () => { await refresh(); setScreen("residentHome"); }} />}
-            {screen === "residentHome" && <ResidentHome state={state} onRefresh={refresh} />}
+            {screen === "residentHome" && <ResidentHome state={state} onRefresh={refresh} onOpenHelp={() => setScreen("residentHelp")} />}
             {screen === "residentHelp" && <ResidentHelp state={state} onRefresh={refresh} unitSystem={unitSystem} />}
             {screen === "residentPeople" && <ResidentPeople state={state} />}
             {screen === "residentFeed" && <ResidentFeed />}
@@ -390,8 +390,8 @@ function ResidentOnboarding({ state, onDone, mode = "onboarding" }: { state: any
   </View>;
 }
 
-function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void }) {
-  const pendingMedication = state.medications.find((med: any) => med.status !== "taken");
+function ResidentHome({ state, onRefresh, onOpenHelp }: { state: any; onRefresh: () => void; onOpenHelp: () => void }) {
+  const pendingMedication = state.medications.find((med: any) => !["taken", "skipped"].includes(med.status));
   const due = pendingMedication || state.medications[0];
   const allTaken = !pendingMedication;
   async function confirmMed() {
@@ -408,6 +408,21 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
     await post("/api/resident/circle-message", { trustedUserId: message.trusted_user_id, body: "Thank you, I am okay." });
     await onRefresh();
     Alert.alert("Trusted circle", "Reply sent.");
+  }
+  async function callRita() {
+    const rita = (state.people || []).find((person: any) => String(person.name || "").toLowerCase().includes("rita")) || (state.people || [])[0];
+    if (!rita?.id) {
+      Alert.alert("Trusted circle", "No trusted person is connected yet.");
+      return;
+    }
+    await post("/api/resident/circle-message", { trustedUserId: rita.id, body: "Anita requested a call from the Today screen." });
+    await onRefresh();
+    Alert.alert("Trusted circle", `Call request message sent to ${rita.name}.`);
+  }
+  async function emergencySos() {
+    const result: any = await triggerVoiceSos("Guru, call emergency");
+    await onRefresh();
+    Alert.alert("SOS triggered", result.sosEvent?.route || "Emergency alert created and trusted circle notified.");
   }
   const latestTrustedMessage = (state.circleMessages || [])[0];
   const pendingCall = (state.circleCallRequests || []).find((request: any) => request.status === "requested");
@@ -431,9 +446,9 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
       </Pressable>
       <PrimaryButton label={allTaken ? "I've taken it" : "I've taken it"} onPress={confirmMed} disabled={allTaken} />
       <SectionTitle title="Next up" />
-      <ImageActionCard image="https://images.unsplash.com/photo-1549924231-f129b911e442?w=300&h=220&fit=crop" title="Ride to Cardiology Appointment" subtitle="Tomorrow, 10:00 AM" button="Open" onPress={() => Alert.alert("Ride", "Opening ride details")} />
+      <ImageActionCard image="https://images.unsplash.com/photo-1549924231-f129b911e442?w=300&h=220&fit=crop" title="Ride to Cardiology Appointment" subtitle="Tomorrow, 10:00 AM" button="Open" onPress={onOpenHelp} />
       <SectionTitle title="A little connection" />
-      <ImageActionCard image="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=220&h=220&fit=crop&crop=faces" title="Message from Rita" subtitle="Good morning Anita ☀" button="Call" onPress={() => Alert.alert("Call", "Calling Rita")} />
+      <ImageActionCard image="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=220&h=220&fit=crop&crop=faces" title="Message from Rita" subtitle="Good morning Anita ☀" button="Call" onPress={callRita} />
       <Card title="Trusted circle requests" icon="♡">
         {pendingCall ? <View style={styles.eventRow}><Text style={styles.body}>{pendingCall.trusted_name || "Trusted person"} requested a {pendingCall.channel} call</Text><Text style={styles.muted}>{pendingCall.message || "Would like to connect."}</Text><ButtonRow labels={[["Accept", "accepted"], ["Decline", "declined"]]} onPress={(value: "accepted" | "declined") => respondToCall(pendingCall, value)} /></View> : <Text style={styles.muted}>No pending call requests.</Text>}
         {latestTrustedMessage ? <View style={styles.eventRow}><Text style={styles.body}>Latest message from {latestTrustedMessage.trusted_name || "trusted circle"}</Text><Text style={styles.muted}>{latestTrustedMessage.body}</Text><PrimaryButton label="Reply I'm okay" onPress={() => replyToTrusted(latestTrustedMessage)} /></View> : null}
@@ -448,7 +463,7 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
       </View>
       <SectionTitle title="Medication" />
       <MedicationMiniFlow medication={due} refillRequests={state.refillRequests || []} onConfirm={confirmMed} onRefresh={onRefresh} allTaken={allTaken} />
-      <Pressable style={styles.sosButton}><Text style={styles.sosBig}>SOS</Text><Text style={styles.sosText}>Emergency help</Text></Pressable>
+      <Pressable style={styles.sosButton} onPress={emergencySos}><Text style={styles.sosBig}>SOS</Text><Text style={styles.sosText}>Emergency help</Text></Pressable>
     </View>
   );
 }
@@ -1698,6 +1713,16 @@ function CompactRow({ title, subtitle, action }: { title: string; subtitle?: str
 
 function MedicationMiniFlow({ medication, refillRequests, onConfirm, onRefresh, allTaken }: { medication: any; refillRequests: any[]; onConfirm: () => void; onRefresh: () => void; allTaken: boolean }) {
   const activeRefill = (refillRequests || []).find(request => request.medication_id === medication.id && !["completed", "rejected"].includes(request.status));
+  async function remindLater() {
+    await post("/api/medications/remind-later", { id: medication.id, minutes: 30 });
+    await onRefresh();
+    Alert.alert("Reminder saved", "We will remind you again in 30 minutes.");
+  }
+  async function skipDose() {
+    await post("/api/medications/skip-dose", { id: medication.id, reason: "Skipped from mobile confirmation screen." });
+    await onRefresh();
+    Alert.alert("Dose skipped", "This dose was logged as skipped and kept in the medication history.");
+  }
   async function requestRefill() {
     try {
       await post("/api/medications/refill-request", { medicationId: medication.id, notes: `Refill requested from mobile app for ${medication.name}` });
@@ -1720,8 +1745,8 @@ function MedicationMiniFlow({ medication, refillRequests, onConfirm, onRefresh, 
       <Card title="Confirm medication" icon="💊">
         <Text style={styles.centerQuestion}>Did you take your medication?</Text>
         <PrimaryButton label={allTaken ? "Yes, I took it" : "Yes, I took it"} onPress={onConfirm} disabled={allTaken} />
-        <Pressable style={styles.outlineButton}><Text style={styles.outlineText}>Remind me later</Text></Pressable>
-        <Pressable style={styles.outlineButton}><Text style={styles.outlineText}>Skip this dose</Text></Pressable>
+        <Pressable style={styles.outlineButton} onPress={remindLater}><Text style={styles.outlineText}>Remind me later</Text></Pressable>
+        <Pressable style={styles.outlineButton} onPress={skipDose}><Text style={styles.outlineText}>Skip this dose</Text></Pressable>
       </Card>
       <Card title="Refill needed" tint="peach">
         <RemoteImage uri="https://images.unsplash.com/photo-1588776814546-1ffcf47267a6?w=420&h=260&fit=crop" style={styles.medBottleImage} />
