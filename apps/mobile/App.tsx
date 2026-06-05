@@ -445,13 +445,21 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
 
 function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void }) {
   const [need, setNeed] = useState("I need a ride to my doctor tomorrow.");
+  const [pickup, setPickup] = useState("Park View Community");
+  const [dropoff, setDropoff] = useState("City Care Hospital");
   const [matches, setMatches] = useState<any[]>([]);
   async function findMatches() {
     const result: any = await post("/api/help/match", { need });
     setMatches(result.matches);
   }
   async function book(serviceId: string) {
-    await post("/api/bookings", { serviceId, label: need, time: "Tomorrow, 10:00 AM" });
+    await post("/api/bookings", {
+      serviceId,
+      label: need,
+      time: "Tomorrow, 10:00 AM",
+      pickup: { label: pickup, lat: 43.1001, lng: -79.1001 },
+      dropoff: { label: dropoff, lat: 43.1189, lng: -79.1252 }
+    });
     await onRefresh();
     Alert.alert("TheSeniorguru", "Request sent and booking created.");
   }
@@ -461,6 +469,11 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
       <TopPhoneBar />
       <Text style={styles.h1}>How can we help you today?</Text>
       <View style={styles.searchPill}><TextInput value={need} onChangeText={setNeed} style={styles.searchInput} placeholder="What do you need today?" /><Text style={styles.mic}>🎙</Text></View>
+      <Card title="Ride details" icon="🚙" tint="peach">
+        <Field label="Pickup" value={pickup} onChangeText={setPickup} />
+        <Field label="Drop-off" value={dropoff} onChangeText={setDropoff} />
+        <Text style={styles.muted}>Address autocomplete and live route preview will use Google Maps when the API key is configured.</Text>
+      </Card>
       <SectionTitle title="Popular requests" />
       {["I need a ride", "I need medication help", "I need food", "I need cleaning", "I need diapers", "Feeling lonely"].map(item => <ActionCard key={item} icon={item.includes("ride") ? "🚙" : item.includes("med") ? "💊" : item.includes("food") ? "🍽" : item.includes("lonely") ? "♡" : "▣"} title={item} subtitle="" button="›" onPress={() => setNeed(item)} />)}
       <Card title="Help Assistant" icon="🤖">
@@ -532,7 +545,13 @@ function ResidentFeed() {
 
 function ResidentServices({ state, onRefresh }: { state: any; onRefresh: () => void }) {
   async function book(serviceId: string, name: string) {
-    await post("/api/bookings", { serviceId, label: name, time: "Tomorrow, 10:00 AM" });
+    await post("/api/bookings", {
+      serviceId,
+      label: name,
+      time: "Tomorrow, 10:00 AM",
+      pickup: { label: "Park View Community", lat: 43.1001, lng: -79.1001 },
+      dropoff: { label: "City Care Hospital", lat: 43.1189, lng: -79.1252 }
+    });
     await onRefresh();
     Alert.alert("TheSeniorguru", "Service booked.");
   }
@@ -768,7 +787,7 @@ function BusinessLeads({ state, onRefresh }: { state: any; onRefresh: () => void
     await onRefresh();
     Alert.alert("Refill updated", `Marked as ${status}.`);
   }
-  return <View><Text style={styles.h1}>Leads</Text>{state.requests.map((request: any) => <Card key={request.id} title={request.type}><Text style={styles.body}>{request.resident} · {request.time}</Text><Text style={styles.muted}>{request.distance} · {request.status}</Text><PrimaryButton label="Accept lead" onPress={() => acceptLead(request)} /></Card>)}<SectionTitle title="Medication refill requests" />{(state.refillRequests || []).length ? state.refillRequests.map((request: any) => <Card key={request.id} title={request.medication_name || "Medication refill"} icon="💊"><Text style={styles.body}>{request.resident_name} · {request.strength || ""}</Text><Text style={styles.muted}>Remaining: {request.remaining_count} · Status: {request.status}</Text><ButtonRow labels={[["Accept", "accepted"], ["Ready", "ready"], ["Completed", "completed"]]} onPress={(status: string) => updateRefill(request, status)} /></Card>) : <Card title="Medication refill requests"><Text style={styles.muted}>No refill requests yet.</Text></Card>}</View>;
+  return <View><Text style={styles.h1}>Leads</Text>{state.requests.map((request: any) => <Card key={request.id} title={request.type}><Text style={styles.body}>{request.resident} · {request.time}</Text><Text style={styles.muted}>{request.pickup?.label || "Pickup pending"} → {request.dropoff?.label || "Drop-off pending"}</Text><Text style={styles.muted}>{request.distance} · {request.duration || "ETA pending"} · {request.status}</Text><PrimaryButton label="Accept lead" onPress={() => acceptLead(request)} /></Card>)}<SectionTitle title="Medication refill requests" />{(state.refillRequests || []).length ? state.refillRequests.map((request: any) => <Card key={request.id} title={request.medication_name || "Medication refill"} icon="💊"><Text style={styles.body}>{request.resident_name} · {request.strength || ""}</Text><Text style={styles.muted}>Remaining: {request.remaining_count} · Status: {request.status}</Text><ButtonRow labels={[["Accept", "accepted"], ["Ready", "ready"], ["Completed", "completed"]]} onPress={(status: string) => updateRefill(request, status)} /></Card>) : <Card title="Medication refill requests"><Text style={styles.muted}>No refill requests yet.</Text></Card>}</View>;
 }
 
 function BusinessServices({ state, onRefresh }: { state: any; onRefresh: () => void }) {

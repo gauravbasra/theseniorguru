@@ -271,10 +271,14 @@ function createProductionApi(pool) {
       resident: lead.resident_name || "Resident",
       type: lead.request_type,
       time: lead.requested_time || "Requested time pending",
-      distance: service?.price_label || "",
+      distance: lead.distance_meters ? `${(Number(lead.distance_meters) / 1000).toFixed(1)} km` : service?.price_label || "",
+      duration: lead.duration_seconds ? `${Math.max(1, Math.round(Number(lead.duration_seconds) / 60))} min` : "",
       status: lead.status,
       provider: business?.name || "",
-      serviceId: lead.service_id
+      serviceId: lead.service_id,
+      pickup: lead.pickup_label ? { label: lead.pickup_label, lat: lead.pickup_lat, lng: lead.pickup_lng } : null,
+      dropoff: lead.dropoff_label ? { label: lead.dropoff_label, lat: lead.dropoff_lat, lng: lead.dropoff_lng } : null,
+      routeProvider: lead.route_provider || null
     };
   }
 
@@ -286,7 +290,12 @@ function createProductionApi(pool) {
       service: booking.label,
       time: booking.scheduled_for ? new Date(booking.scheduled_for).toLocaleString() : "Time pending",
       status: booking.status,
-      provider: business?.name || ""
+      provider: business?.name || "",
+      pickup: booking.pickup_label ? { label: booking.pickup_label, lat: booking.pickup_lat, lng: booking.pickup_lng } : null,
+      dropoff: booking.dropoff_label ? { label: booking.dropoff_label, lat: booking.dropoff_lat, lng: booking.dropoff_lng } : null,
+      distance: booking.distance_meters ? `${(Number(booking.distance_meters) / 1000).toFixed(1)} km` : "",
+      duration: booking.duration_seconds ? `${Math.max(1, Math.round(Number(booking.duration_seconds) / 60))} min` : "",
+      routeProvider: booking.route_provider || null
     };
   }
 
@@ -436,6 +445,50 @@ function createProductionApi(pool) {
       Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
       Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function parseRoutePoint(point = {}, name) {
+    const label = String(point.label || "").trim();
+    const lat = Number(point.lat);
+    const lng = Number(point.lng);
+    if (!label || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      const error = new Error(`${name} label, latitude, and longitude are required`);
+      error.status = 400;
+      throw error;
+    }
+    return { label, lat, lng };
+  }
+
+  async function estimateRoute(pickup, dropoff) {
+    const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY || "";
+    if (googleKey) {
+      const params = new URLSearchParams({
+        origins: `${pickup.lat},${pickup.lng}`,
+        destinations: `${dropoff.lat},${dropoff.lng}`,
+        units: "metric",
+        key: googleKey
+      });
+      const response = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`);
+      const data = await response.json();
+      const element = data.rows?.[0]?.elements?.[0];
+      if (data.status === "OK" && element?.status === "OK") {
+        return {
+          distanceMeters: Number(element.distance.value),
+          durationSeconds: Number(element.duration.value),
+          provider: "google_distance_matrix",
+          metadata: { status: data.status, elementStatus: element.status, distanceText: element.distance.text, durationText: element.duration.text }
+        };
+      }
+    }
+    const directDistance = distanceMeters(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
+    const roadAdjustedDistance = Math.round(directDistance * 1.28);
+    const averageSeniorTransportMetersPerSecond = 8.1;
+    return {
+      distanceMeters: roadAdjustedDistance,
+      durationSeconds: Math.max(300, Math.round(roadAdjustedDistance / averageSeniorTransportMetersPerSecond)),
+      provider: "haversine_estimate",
+      metadata: { directDistanceMeters: Math.round(directDistance), roadAdjustmentFactor: 1.28 }
+    };
   }
 
   async function evaluateResidentSafeZone(residentId, location = {}, fallbackStatus = null) {
@@ -1689,6 +1742,15 @@ function createProductionApi(pool) {
       return { matches };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/maps/route-estimate") {
+      requireRole(user, ["senior", "business", "trusted_person"]);
+      const pickup = parseRoutePoint(payload.pickup || {}, "pickup");
+      const dropoff = parseRoutePoint(payload.dropoff || {}, "dropoff");
+      const route = await estimateRoute(pickup, dropoff);
+      await audit(req, user, "route_estimate_requested", "route", null, { provider: route.provider, distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds });
+      return { pickup, dropoff, route };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/bookings") {
       if (user.role === "senior") {
         const resident = await getResidentForUser(user);
@@ -1709,20 +1771,42 @@ function createProductionApi(pool) {
           error.status = 403;
           throw error;
         }
+        const hasRideLocations = payload.pickup || payload.dropoff;
+        const pickup = hasRideLocations ? parseRoutePoint(payload.pickup || {}, "pickup") : null;
+        const dropoff = hasRideLocations ? parseRoutePoint(payload.dropoff || {}, "dropoff") : null;
+        const route = pickup && dropoff ? await estimateRoute(pickup, dropoff) : null;
         const result = await transaction(async tx => {
           const lead = (await tx(
-            `INSERT INTO leads (resident_id, service_id, business_id, request_type, requested_time, status)
-             VALUES ($1,$2,$3,$4,$5,'matched') RETURNING *`,
-            [resident.id, service.id, service.business_id, payload.label || service.name, payload.time || null]
+            `INSERT INTO leads (
+              resident_id, service_id, business_id, request_type, requested_time, status,
+              pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
+              distance_meters, duration_seconds, route_provider, route_metadata
+             )
+             VALUES ($1,$2,$3,$4,$5,'matched',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+            [
+              resident.id, service.id, service.business_id, payload.label || service.name, payload.time || null,
+              pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
+              dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
+              route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {})
+            ]
           )).rows[0];
           const booking = (await tx(
-            `INSERT INTO bookings (lead_id, resident_id, business_id, service_id, label, status)
-             VALUES ($1,$2,$3,$4,$5,'pending') RETURNING *`,
-            [lead.id, resident.id, service.business_id, service.id, payload.label || service.name]
+            `INSERT INTO bookings (
+              lead_id, resident_id, business_id, service_id, label, status,
+              pickup_label, pickup_lat, pickup_lng, dropoff_label, dropoff_lat, dropoff_lng,
+              distance_meters, duration_seconds, route_provider, route_metadata
+             )
+             VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+            [
+              lead.id, resident.id, service.business_id, service.id, payload.label || service.name,
+              pickup?.label || null, pickup?.lat || null, pickup?.lng || null,
+              dropoff?.label || null, dropoff?.lat || null, dropoff?.lng || null,
+              route?.distanceMeters || null, route?.durationSeconds || null, route?.provider || null, JSON.stringify(route?.metadata || {})
+            ]
           )).rows[0];
           return { lead, booking };
         });
-        await audit(req, user, "resident_booking_requested", "booking", result.booking.id, { leadId: result.lead.id, serviceId: service.id });
+        await audit(req, user, "resident_booking_requested", "booking", result.booking.id, { leadId: result.lead.id, serviceId: service.id, routeProvider: route?.provider || null, distanceMeters: route?.distanceMeters || null });
         return { ok: true, lead: result.lead, booking: result.booking };
       }
 
