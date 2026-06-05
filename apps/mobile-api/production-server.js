@@ -231,6 +231,7 @@ function createProductionApi(pool) {
   function toBookingState(booking, business) {
     return {
       id: booking.id,
+      leadId: booking.lead_id,
       resident: booking.resident_name || "Resident",
       service: booking.label,
       time: booking.scheduled_for ? new Date(booking.scheduled_for).toLocaleString() : "Time pending",
@@ -578,6 +579,13 @@ function createProductionApi(pool) {
       }
       if (user.role === "senior") {
         const resident = await getResidentForUser(user);
+        const services = (await query(
+          `SELECT s.*, b.name AS provider_name
+           FROM services s
+           JOIN businesses b ON b.id = s.business_id
+           WHERE s.status = 'approved' AND b.status = 'approved'
+           ORDER BY s.created_at DESC`
+        )).rows;
         const people = resident ? (await query(
           `SELECT u.id, u.display_name AS name, u.role, tc.permissions, tc.status
            FROM trusted_connections tc JOIN users u ON u.id = tc.trusted_user_id
@@ -610,7 +618,7 @@ function createProductionApi(pool) {
             carePreferences: { preferredHospital: "", emergencyInstructions: "" }
           }
         } : null;
-        return { user, resident: residentProfile, people, bookings, medications, safety: { latestTelemetry: telemetry, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
+        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, safety: { latestTelemetry: telemetry, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
       }
       if (user.role === "trusted_person") {
         const connections = await query(
@@ -997,6 +1005,112 @@ function createProductionApi(pool) {
       );
       await audit(req, user, "service_submitted_for_approval", "service", result.rows[0].id, payload);
       return { service: result.rows[0] };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/help/match") {
+      requireRole(user, ["senior"]);
+      const need = String(payload.need || "").toLowerCase();
+      const rows = (await query(
+        `SELECT s.*, b.name AS provider_name
+         FROM services s
+         JOIN businesses b ON b.id = s.business_id
+         WHERE s.status = 'approved' AND b.status = 'approved'
+         ORDER BY s.created_at DESC`
+      )).rows;
+      const matches = rows
+        .map(service => {
+          const haystack = `${service.name} ${service.category}`.toLowerCase();
+          const score = (need.includes("ride") || need.includes("doctor") || need.includes("appointment") || need.includes("transport"))
+            && haystack.includes("transport") ? 96
+            : need.includes("med") && haystack.includes("med") ? 94
+              : 72;
+          return { ...toServiceState(service, { name: service.provider_name }), score };
+        })
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 5);
+      await audit(req, user, "resident_service_matches_requested", "service_match", null, { need: payload.need, matches: matches.length });
+      return { matches };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/bookings") {
+      if (user.role === "senior") {
+        const resident = await getResidentForUser(user);
+        if (!resident) {
+          const error = new Error("Resident profile not found");
+          error.status = 404;
+          throw error;
+        }
+        const service = (await query(
+          `SELECT s.*, b.status AS business_status
+           FROM services s
+           JOIN businesses b ON b.id = s.business_id
+           WHERE s.id = $1`,
+          [required(payload.serviceId, "serviceId")]
+        )).rows[0];
+        if (!service || service.status !== "approved" || service.business_status !== "approved") {
+          const error = new Error("Service is not approved for booking");
+          error.status = 403;
+          throw error;
+        }
+        const result = await transaction(async tx => {
+          const lead = (await tx(
+            `INSERT INTO leads (resident_id, service_id, business_id, request_type, requested_time, status)
+             VALUES ($1,$2,$3,$4,$5,'matched') RETURNING *`,
+            [resident.id, service.id, service.business_id, payload.label || service.name, payload.time || null]
+          )).rows[0];
+          const booking = (await tx(
+            `INSERT INTO bookings (lead_id, resident_id, business_id, service_id, label, status)
+             VALUES ($1,$2,$3,$4,$5,'pending') RETURNING *`,
+            [lead.id, resident.id, service.business_id, service.id, payload.label || service.name]
+          )).rows[0];
+          return { lead, booking };
+        });
+        await audit(req, user, "resident_booking_requested", "booking", result.booking.id, { leadId: result.lead.id, serviceId: service.id });
+        return { ok: true, lead: result.lead, booking: result.booking };
+      }
+
+      if (user.role === "business") {
+        const business = await getBusinessForUser(user);
+        if (!business || business.status !== "approved") {
+          const error = new Error("Business must be approved before accepting leads");
+          error.status = 403;
+          throw error;
+        }
+        const entitlement = await getLeadEntitlement(business.id);
+        if (entitlement.used >= entitlement.allowed) {
+          const error = new Error(`Lead limit reached for the ${entitlement.plan === "free" ? "free" : "$100/month Growth"} package.`);
+          error.status = 402;
+          throw error;
+        }
+        const lead = payload.leadId
+          ? (await query(`SELECT * FROM leads WHERE id = $1 AND business_id = $2`, [payload.leadId, business.id])).rows[0]
+          : (await query(`SELECT * FROM leads WHERE service_id = $1 AND business_id = $2 ORDER BY created_at DESC LIMIT 1`, [required(payload.serviceId, "serviceId"), business.id])).rows[0];
+        if (!lead) {
+          const error = new Error("Lead not found for this business");
+          error.status = 404;
+          throw error;
+        }
+        const result = await transaction(async tx => {
+          const subscriptionColumn = entitlement.plan === "free" ? "used_leads_year" : "used_leads_month";
+          await tx(`UPDATE subscriptions SET ${subscriptionColumn} = ${subscriptionColumn} + 1, updated_at = now() WHERE business_id = $1`, [business.id]);
+          const updatedLead = (await tx(`UPDATE leads SET status = 'accepted', updated_at = now() WHERE id = $1 RETURNING *`, [lead.id])).rows[0];
+          let booking = (await tx(`UPDATE bookings SET status = 'confirmed', updated_at = now() WHERE lead_id = $1 RETURNING *`, [lead.id])).rows[0];
+          if (!booking) {
+            booking = (await tx(
+              `INSERT INTO bookings (lead_id, resident_id, business_id, service_id, label, status)
+               VALUES ($1,$2,$3,$4,$5,'confirmed') RETURNING *`,
+              [lead.id, lead.resident_id, business.id, lead.service_id, payload.label || lead.request_type]
+            )).rows[0];
+          }
+          return { lead: updatedLead, booking };
+        });
+        await audit(req, user, "business_lead_accepted", "lead", result.lead.id, { bookingId: result.booking.id, plan: entitlement.plan });
+        return { ok: true, lead: result.lead, booking: result.booking };
+      }
+
+      const error = new Error("Insufficient permissions");
+      error.status = 403;
+      throw error;
     }
 
     if (req.method === 'PATCH' && url.pathname === '/api/health/consent') {

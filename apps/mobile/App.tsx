@@ -732,7 +732,7 @@ function BusinessHome({ state }: { state: any }) {
 function BusinessLeads({ state, onRefresh }: { state: any; onRefresh: () => void }) {
   const service = state.services.find((item: any) => item.provider === state.business.name) || state.services[0];
   async function acceptLead(request: any) {
-    await post("/api/bookings", { serviceId: service.id, label: request.type, time: request.time, consumeLead: true });
+    await post("/api/bookings", { leadId: request.id, serviceId: request.serviceId || service.id, label: request.type, time: request.time, consumeLead: true });
     await onRefresh();
     Alert.alert("TheSeniorguru", "Lead accepted and booking created.");
   }
