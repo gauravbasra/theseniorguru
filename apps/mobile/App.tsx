@@ -451,6 +451,7 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
   const [dropoffPoint, setDropoffPoint] = useState<any>({ label: "City Care Hospital", lat: 43.1189, lng: -79.1252 });
   const [pickupSuggestions, setPickupSuggestions] = useState<any[]>([]);
   const [dropoffSuggestions, setDropoffSuggestions] = useState<any[]>([]);
+  const [nearbyRecommendations, setNearbyRecommendations] = useState<any[]>([]);
   const [validationSummary, setValidationSummary] = useState("");
   const [fulfillmentMode, setFulfillmentMode] = useState("uber_health");
   const [matches, setMatches] = useState<any[]>([]);
@@ -493,6 +494,11 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
     const dropoffValidation: any = await post("/api/address/validate", { address: dropoff });
     setValidationSummary(`Pickup ${pickupValidation.addressComplete ? "verified" : "needs review"} · Drop-off ${dropoffValidation.addressComplete ? "verified" : "needs review"}`);
   }
+  async function findNearbySupport() {
+    const keyword = need.toLowerCase().includes("med") ? "pharmacy" : need.toLowerCase().includes("food") ? "meal delivery" : need.toLowerCase().includes("ride") ? "senior transportation" : "senior services";
+    const result: any = await post("/api/places/nearby-recommendations", { location: pickupPoint, keyword, radiusMeters: 5000 });
+    setNearbyRecommendations(result.recommendations || []);
+  }
   const visible = matches.length ? matches : state.services.slice(0, 3);
   return (
     <View>
@@ -514,6 +520,11 @@ function ResidentHelp({ state, onRefresh }: { state: any; onRefresh: () => void 
         <Text style={styles.muted}>TheSeniorguru coordinates rides. Uber Health is preferred when configured; local senior transport is fallback.</Text>
         <ButtonRow labels={[["Uber Health", "uber_health"], ["Local partner", "local_partner"], ["Manual", "manual_coordination"]]} onPress={setFulfillmentMode} />
         <Text style={styles.safeText}>Selected: {fulfillmentMode.replace("_", " ")}</Text>
+      </Card>
+      <Card title="Nearby support recommendations" icon="⌕">
+        <Text style={styles.muted}>Google can discover nearby businesses, but only approved partners should be treated as care-ready.</Text>
+        <PrimaryButton label="Find nearby support" onPress={findNearbySupport} />
+        {nearbyRecommendations.map(item => <View key={item.placeId} style={styles.suggestionRow}><Text style={styles.body}>{item.name}</Text><Text style={styles.muted}>{item.address}</Text><Text style={item.vettingStatus === "approved_partner" ? styles.safeText : styles.alertText}>{item.vettingStatus === "approved_partner" ? "Approved partner" : "Google result - not vetted yet"}</Text><Text style={styles.muted}>★ {item.rating || "New"} · {item.careNote}</Text></View>)}
       </Card>
       <SectionTitle title="Popular requests" />
       {["I need a ride", "I need medication help", "I need food", "I need cleaning", "I need diapers", "Feeling lonely"].map(item => <ActionCard key={item} icon={item.includes("ride") ? "🚙" : item.includes("med") ? "💊" : item.includes("food") ? "🍽" : item.includes("lonely") ? "♡" : "▣"} title={item} subtitle="" button="›" onPress={() => setNeed(item)} />)}

@@ -1903,6 +1903,48 @@ function createProductionApi(pool) {
       };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/places/nearby-recommendations") {
+      requireRole(user, ["senior", "business", "trusted_person"]);
+      const location = parseRoutePoint(payload.location || {}, "location");
+      const keyword = String(payload.keyword || "senior services").trim();
+      const radiusMeters = Math.max(250, Math.min(15000, Number(payload.radiusMeters || 3000)));
+      const data = await googleMapsGet("place/nearbysearch/json", {
+        location: `${location.lat},${location.lng}`,
+        radius: String(radiusMeters),
+        keyword
+      });
+      const approvedPartners = (await query(
+        `SELECT b.id AS business_id, b.name AS business_name, s.id AS service_id, s.name AS service_name, s.category
+         FROM businesses b
+         LEFT JOIN services s ON s.business_id = b.id
+         WHERE b.status = 'approved'
+           AND (LOWER(b.name) LIKE LOWER($1) OR LOWER(COALESCE(s.name,'')) LIKE LOWER($1) OR LOWER(COALESCE(s.category,'')) LIKE LOWER($1))`,
+        [`%${keyword}%`]
+      )).rows;
+      const recommendations = (data.results || []).slice(0, 8).map(place => {
+        const approved = approvedPartners.find(partner =>
+          String(place.name || "").toLowerCase().includes(String(partner.business_name || "").toLowerCase()) ||
+          String(partner.business_name || "").toLowerCase().includes(String(place.name || "").toLowerCase())
+        );
+        return {
+          placeId: place.place_id,
+          name: place.name,
+          address: place.vicinity || "",
+          lat: place.geometry?.location?.lat || null,
+          lng: place.geometry?.location?.lng || null,
+          rating: place.rating || null,
+          userRatingsTotal: place.user_ratings_total || 0,
+          businessStatus: place.business_status || "UNKNOWN",
+          types: place.types || [],
+          vettingStatus: approved ? "approved_partner" : "google_unverified",
+          approvedPartner: approved || null,
+          careNote: approved ? "Approved TheSeniorguru partner." : "Google discovery result. Needs approval before care referral."
+        };
+      });
+      await audit(req, user, "nearby_recommendations_requested", "place", null, { keyword, radiusMeters, results: recommendations.length, approvedMatches: recommendations.filter(item => item.vettingStatus === "approved_partner").length }, "info");
+      return { provider: "google_nearby_search", location, keyword, radiusMeters, recommendations };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/rides/fulfillment-options") {
       requireRole(user, ["senior", "business", "trusted_person"]);
       const pickup = parseRoutePoint(payload.pickup || {}, "pickup");
