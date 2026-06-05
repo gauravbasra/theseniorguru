@@ -2399,6 +2399,96 @@ function createProductionApi(pool) {
       return { order: updated, paymentIntent: { id: paymentIntent.id, clientSecret: paymentIntent.client_secret, status: paymentIntent.status, amount: paymentIntent.amount, currency: paymentIntent.currency } };
     }
 
+    if (req.method === "POST" && url.pathname.startsWith("/api/orders/") && url.pathname.endsWith("/dispatch")) {
+      requireRole(user, ["senior"]);
+      const id = url.pathname.split("/")[3];
+      const order = (await query(
+        `SELECT so.*, r.user_id AS resident_user_id
+         FROM support_orders so
+         JOIN residents r ON r.id = so.resident_id
+         WHERE so.id = $1`,
+        [id]
+      )).rows[0];
+      if (!order || order.resident_user_id !== user.id) {
+        const error = new Error("Support order not found");
+        error.status = 404;
+        throw error;
+      }
+      if (order.payment_status !== "paid") {
+        const error = new Error("Payment must be completed before dispatch");
+        error.status = 402;
+        throw error;
+      }
+      const configs = await ensureSupportOrderProviderConfigs();
+      const providerConfig = configs.find(item => item.category === order.category && item.provider === order.provider) || configs.find(item => item.category === "all" && item.provider === order.provider) || null;
+      if (providerConfig?.status !== "enabled") {
+        const error = new Error("Provider credentials are required before dispatch");
+        error.status = 409;
+        error.details = { provider: order.provider, credentialStatus: providerConfig?.credential_status || "missing" };
+        throw error;
+      }
+      const lifecycleStatus = ["manual_coordination", "local_partner", "local_pharmacy"].includes(order.provider) ? "manual_coordination_required" : "dispatch_requested";
+      const updated = (await query(
+        `UPDATE support_orders
+         SET lifecycle_status = $1,
+             order_metadata = order_metadata || $2::jsonb,
+             updated_at = now()
+         WHERE id = $3 RETURNING *`,
+        [lifecycleStatus, JSON.stringify({ dispatchRequestedAt: new Date().toISOString(), providerConfig }), order.id]
+      )).rows[0];
+      await audit(req, user, "support_order_dispatch_requested", "support_order", order.id, { provider: order.provider, lifecycleStatus }, "info");
+      return { order: updated, providerConfig, dispatch: { status: lifecycleStatus, externalOrderId: updated.external_order_id || null } };
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/rides/bookings/") && url.pathname.endsWith("/dispatch")) {
+      requireRole(user, ["senior"]);
+      const id = url.pathname.split("/")[4];
+      const booking = (await query(
+        `SELECT b.*, r.user_id AS resident_user_id
+         FROM bookings b
+         JOIN residents r ON r.id = b.resident_id
+         WHERE b.id = $1`,
+        [id]
+      )).rows[0];
+      if (!booking || booking.resident_user_id !== user.id) {
+        const error = new Error("Ride booking not found");
+        error.status = 404;
+        throw error;
+      }
+      if (booking.payment_status !== "paid") {
+        const error = new Error("Payment must be completed before ride dispatch");
+        error.status = 402;
+        throw error;
+      }
+      const providers = await ensureRideProviderConfigs();
+      const providerConfig = providers.find(item => item.provider === (booking.fulfillment_mode || booking.fulfillment_provider)) || null;
+      if (providerConfig?.status !== "enabled") {
+        const error = new Error("Ride provider credentials are required before dispatch");
+        error.status = 409;
+        error.details = { provider: booking.fulfillment_mode || booking.fulfillment_provider, credentialStatus: providerConfig?.credential_status || "missing" };
+        throw error;
+      }
+      const lifecycleStatus = ["local_partner", "manual_coordination"].includes(booking.fulfillment_mode) ? "manual_coordination_required" : "dispatch_requested";
+      const updated = (await query(
+        `UPDATE bookings
+         SET lifecycle_status = $1,
+             fulfillment_metadata = fulfillment_metadata || $2::jsonb,
+             updated_at = now()
+         WHERE id = $3 RETURNING *`,
+        [lifecycleStatus, JSON.stringify({ dispatchRequestedAt: new Date().toISOString(), providerConfig }), booking.id]
+      )).rows[0];
+      await query(
+        `UPDATE leads
+         SET lifecycle_status = $1,
+             fulfillment_metadata = fulfillment_metadata || $2::jsonb,
+             updated_at = now()
+         WHERE id = $3`,
+        [lifecycleStatus, JSON.stringify({ dispatchRequestedAt: new Date().toISOString(), providerConfig }), booking.lead_id]
+      );
+      await audit(req, user, "ride_dispatch_requested", "booking", booking.id, { provider: booking.fulfillment_mode || booking.fulfillment_provider, lifecycleStatus }, "info");
+      return { booking: updated, providerConfig, dispatch: { status: lifecycleStatus, externalTripId: updated.external_trip_id || null } };
+    }
+
     if (req.method === "GET" && url.pathname === "/api/superadmin/ride-providers") {
       requireRole(user, ["superadmin"]);
       const providers = await ensureRideProviderConfigs();
