@@ -116,6 +116,10 @@ function createProductionApi(pool) {
     return String(value || "").split(",").map(item => item.trim()).filter(Boolean);
   }
 
+  function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+  }
+
   function validateHealthOnboarding(payload) {
     const profile = payload.healthProfile || {};
     const diagnosis = profile.primaryCondition || {};
@@ -460,7 +464,7 @@ function createProductionApi(pool) {
         for (const item of medications) {
           const med = medicationParams(item);
           let saved = null;
-          if (med.id) {
+          if (isUuid(med.id)) {
             saved = (await tx(
               `UPDATE medications
                SET name = $1, condition = $2, strength = $3, dose_quantity = $4, dose_time = $5, frequency = $6,
@@ -566,7 +570,7 @@ function createProductionApi(pool) {
       }
       const med = medicationParams(payload);
       let result;
-      if (med.id) {
+      if (isUuid(med.id)) {
         result = await query(
           `UPDATE medications
            SET name = $1, condition = $2, strength = $3, dose_quantity = $4, dose_time = $5,
@@ -586,7 +590,7 @@ function createProductionApi(pool) {
         );
       }
       const saved = result.rows[0];
-      await audit(req, user, med.id ? "medication_inventory_updated" : "medication_inventory_created", "medication", saved.id, { name: saved.name, strength: saved.strength, remainingCount: saved.remaining_count, refillThreshold: saved.refill_threshold });
+      await audit(req, user, isUuid(med.id) ? "medication_inventory_updated" : "medication_inventory_created", "medication", saved.id, { name: saved.name, strength: saved.strength, remainingCount: saved.remaining_count, refillThreshold: saved.refill_threshold });
       return { medication: saved };
     }
 
