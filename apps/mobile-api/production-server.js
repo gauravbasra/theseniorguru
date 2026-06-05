@@ -512,6 +512,18 @@ function createProductionApi(pool) {
     return { plan: "growth_100", billingStatus: sub.billing_status || "active", priceCents: PAID_PLAN_PRICE_CENTS, serviceLimit: Infinity, allowed: PAID_MONTHLY_LEADS + (sub.lead_top_ups || 0), used: sub.used_leads_month || 0 };
   }
 
+  function requireBillingAccess(entitlement, action) {
+    if (!entitlement?.locked) return;
+    const error = new Error(`Billing is ${entitlement.billingStatus || "not active"}. Restore billing before ${action}.`);
+    error.status = 402;
+    error.details = {
+      paymentRequired: true,
+      billingStatus: entitlement.billingStatus,
+      lockReason: entitlement.lockReason || "billing_not_active"
+    };
+    throw error;
+  }
+
   async function businessIdFromStripeObject(object) {
     if (object?.metadata?.businessId) return object.metadata.businessId;
     if (object?.subscription) {
@@ -1160,6 +1172,7 @@ function createProductionApi(pool) {
         error.status = 402;
         throw error;
       }
+      requireBillingAccess(await getLeadEntitlement(business.id), "buying lead top-ups");
       if (!process.env.STRIPE_SECRET_KEY) {
         await audit(req, user, "business_top_up_requested_without_billing", "subscription", current.id, { leads: payload.leads || 5 }, "warning");
         const error = new Error("Lead top-up requires Stripe billing to be configured before purchase.");
@@ -1186,6 +1199,7 @@ function createProductionApi(pool) {
         throw error;
       }
       const entitlement = await getLeadEntitlement(business.id);
+      requireBillingAccess(entitlement, "adding services");
       const count = Number((await query(`SELECT count(*) FROM services WHERE business_id = $1 AND status != 'rejected'`, [business.id])).rows[0].count);
       if (count >= entitlement.serviceLimit) {
         const error = new Error("Free package allows 1 service. Upgrade to $100/month to add more.");
@@ -1394,6 +1408,7 @@ function createProductionApi(pool) {
           return { ok: true, idempotent: true, lead, booking };
         }
         const entitlement = await getLeadEntitlement(business.id);
+        requireBillingAccess(entitlement, "accepting leads");
         if (entitlement.used >= entitlement.allowed) {
           const error = new Error(`Lead limit reached for the ${entitlement.plan === "free" ? "free" : "$100/month Growth"} package.`);
           error.status = 402;
