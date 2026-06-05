@@ -151,7 +151,7 @@ async function main() {
     body: JSON.stringify({ body: "Critical button smoke trusted check-in." })
   }));
 
-  await step("trusted: voice/video call request button", () => request("/api/circle/call-request", {
+  await step("trusted: standard phone call request button", () => request("/api/circle/call-request", {
     method: "POST",
     headers: auth(circleToken),
     body: JSON.stringify({ channel: "voice", message: "Critical button smoke call request." })

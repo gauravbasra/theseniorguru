@@ -2268,7 +2268,12 @@ function createProductionApi(pool) {
         error.status = 403;
         throw error;
       }
-      const channel = ["voice", "video"].includes(payload.channel) ? payload.channel : "voice";
+      const channel = payload.channel === "voice" ? "voice" : null;
+      if (!channel) {
+        const error = new Error("Only standard phone call requests are supported for trusted-circle calling.");
+        error.status = 400;
+        throw error;
+      }
       const callRequest = (await query(
         `INSERT INTO circle_call_requests (resident_id, trusted_user_id, requested_by, channel, message, status)
          VALUES ($1,$2,$3,$4,$5,'requested') RETURNING *`,

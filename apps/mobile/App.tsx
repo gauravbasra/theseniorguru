@@ -1261,7 +1261,7 @@ function CircleInvite({ onAccepted }: { onAccepted: (personId: string) => void }
     </Card>
     <Card title="What you can do">
       <CompactRow title="Local tracing" subtitle="View location, safe zones, movement, fall detection, and wearable proximity when granted." action="✓" />
-      <CompactRow title="Ping, chat, voice, video" subtitle="Check in without taking over the senior app." action="✓" />
+      <CompactRow title="Ping, chat, phone call" subtitle="Check in without taking over the senior app." action="✓" />
       <CompactRow title="Limited access only" subtitle="No full senior profile access unless the senior grants each permission." action="🔒" />
       <CompactRow title="Emergency alerts" subtitle="Receive SOS and safety notifications when included in the invite." action="SOS" />
     </Card>
@@ -1290,13 +1290,9 @@ function CircleSafety({ circleState, onRefresh, unitSystem }: { circleState: any
       Alert.alert("Chat sent", "Anita received your chat check-in.");
       return;
     }
-    await post("/api/circle/call-request", { channel, message: `Rita requested a ${channel} call.` });
+    await post("/api/circle/call-request", { channel: "voice", message: `Rita requested a phone call.` });
     await onRefresh();
-    if (channel === "voice") {
-      await openPhoneDialer(circleState?.resident?.phone, circleState?.resident?.name || "Anita", "In-app voice call request was sent. Add the senior's phone number to open native dial-out.");
-      return;
-    }
-    Alert.alert("App-to-app request sent", `${channel.charAt(0).toUpperCase()}${channel.slice(1)} request sent to Anita. Real-time ${channel} needs a WebRTC calling provider before launch.`);
+    await openPhoneDialer(circleState?.resident?.phone, circleState?.resident?.name || "Anita", "Phone call request was sent. Add the senior's phone number to open native dial-out.");
   }
 
   return (
@@ -1312,7 +1308,7 @@ function CircleSafety({ circleState, onRefresh, unitSystem }: { circleState: any
       </Card>
       <Card title="Reach Anita" icon="♡">
         <Text style={styles.copy}>Use soft contact actions first unless there is an active SOS event.</Text>
-        <ButtonRow labels={[["Ping", "ping"], ["Chat", "chat"], ["Voice", "voice"], ["Video", "video"]]} onPress={(value: string) => value === "ping" ? pingSenior() : contactSenior(value)} />
+        <ButtonRow labels={[["Ping", "ping"], ["Chat", "chat"], ["Phone call", "voice"]]} onPress={(value: string) => value === "ping" ? pingSenior() : contactSenior(value)} />
         {(circleState?.callRequests || []).slice(0, 2).map((request: any) => <Text key={request.id} style={styles.muted}>{request.channel} call · {request.status}</Text>)}
       </Card>
       <SectionTitle title="Connected devices" />
@@ -1416,7 +1412,7 @@ function permissionHelp(permission: string) {
   if (permission === "safety") return "Can view location, safe zones, movement, fall, and wearable signals.";
   if (permission === "medications") return "Can see medication reminders and refill support.";
   if (permission === "rides") return "Can see ride requests and trip support status.";
-  if (permission === "messages") return "Can chat, ping, and request voice/video calls.";
+  if (permission === "messages") return "Can chat, ping, and request standard phone calls.";
   if (permission === "wellness") return "Can see shared vitals and wellness trends.";
   return "Senior-controlled access.";
 }
