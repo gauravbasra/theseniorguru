@@ -193,6 +193,49 @@ CREATE TABLE IF NOT EXISTS ride_provider_configs (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS support_order_provider_configs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  category TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'credential_required',
+  supported_regions TEXT[] NOT NULL DEFAULT '{}',
+  credential_source TEXT,
+  credential_status TEXT NOT NULL DEFAULT 'missing',
+  payment_model TEXT NOT NULL DEFAULT 'senior_paid_platform_dispatch',
+  notes TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(category, provider)
+);
+
+CREATE TABLE IF NOT EXISTS support_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  category TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  fulfillment_mode TEXT NOT NULL,
+  lifecycle_status TEXT NOT NULL DEFAULT 'payment_required',
+  label TEXT NOT NULL,
+  delivery_label TEXT,
+  delivery_lat NUMERIC,
+  delivery_lng NUMERIC,
+  provider_bill_cents INT NOT NULL,
+  tax_cents INT NOT NULL DEFAULT 0,
+  refund_reserve_cents INT NOT NULL DEFAULT 0,
+  platform_margin_cents INT NOT NULL DEFAULT 0,
+  total_charge_cents INT NOT NULL,
+  payment_responsibility TEXT NOT NULL DEFAULT 'senior',
+  payment_status TEXT NOT NULL DEFAULT 'payment_required',
+  payer_user_id UUID REFERENCES users(id),
+  external_order_id TEXT,
+  order_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  pricing_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS leads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
@@ -540,3 +583,4 @@ CREATE INDEX IF NOT EXISTS idx_notifications_status_created ON notifications(sta
 CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempts_notification ON notification_delivery_attempts(notification_id, attempted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_circle_messages_resident_created ON circle_messages(resident_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_circle_call_requests_resident_status ON circle_call_requests(resident_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_support_orders_resident_category ON support_orders(resident_id, category, created_at DESC);

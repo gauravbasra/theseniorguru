@@ -630,6 +630,63 @@ function createProductionApi(pool) {
     return (await query(`SELECT * FROM ride_provider_configs ORDER BY provider`)).rows;
   }
 
+  function supportProviderEnvConfigured(provider) {
+    const key = String(provider || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    return Boolean(process.env[`${key}_CLIENT_ID`] && process.env[`${key}_CLIENT_SECRET`]);
+  }
+
+  async function ensureSupportOrderProviderConfigs() {
+    const defaults = [
+      ["food", "uber_eats", "Uber Eats", "UBER_EATS_CLIENT_ID/UBER_EATS_CLIENT_SECRET", "Partner/API access required. Use only after provider approval."],
+      ["food", "grubhub", "Grubhub", "GRUBHUB_CLIENT_ID/GRUBHUB_CLIENT_SECRET", "Partner/API access required; keep credential-gated until approved."],
+      ["food", "doordash_drive", "DoorDash Drive", "DOORDASH_DRIVE_CLIENT_ID/DOORDASH_DRIVE_CLIENT_SECRET", "Delivery fulfillment option when order ownership is through TheSeniorguru or partner merchant."],
+      ["grocery", "instacart", "Instacart", "INSTACART_CLIENT_ID/INSTACART_CLIENT_SECRET", "Grocery partner/API access required."],
+      ["grocery", "walmart", "Walmart", "WALMART_CLIENT_ID/WALMART_CLIENT_SECRET", "Partner/API access required for grocery ordering."],
+      ["pharmacy", "local_pharmacy", "Local pharmacy", "approved_business_network", "Approved pharmacy partner fallback."],
+      ["errand", "local_partner", "Approved local partner", "approved_business_network", "Approved local support business fallback."],
+      ["all", "manual_coordination", "Manual coordination", "care_team_operations", "Manual fallback when partner API credentials are unavailable."]
+    ];
+    for (const [category, provider, displayName, credentialSource, notes] of defaults) {
+      const configured = credentialSource === "approved_business_network" || credentialSource === "care_team_operations" || supportProviderEnvConfigured(provider);
+      await query(
+        `INSERT INTO support_order_provider_configs (category, provider, display_name, status, credential_source, credential_status, notes, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (category, provider) DO UPDATE
+         SET display_name = EXCLUDED.display_name,
+             status = CASE
+               WHEN support_order_provider_configs.status IN ('enabled','disabled') THEN support_order_provider_configs.status
+               ELSE EXCLUDED.status
+             END,
+             credential_source = EXCLUDED.credential_source,
+             credential_status = EXCLUDED.credential_status,
+             notes = EXCLUDED.notes,
+             metadata = support_order_provider_configs.metadata || EXCLUDED.metadata,
+             updated_at = now()`,
+        [
+          category,
+          provider,
+          displayName,
+          configured ? "enabled" : "credential_required",
+          credentialSource,
+          configured ? "configured" : "missing",
+          notes,
+          JSON.stringify({ envConfigured: configured })
+        ]
+      );
+    }
+    return (await query(`SELECT * FROM support_order_provider_configs ORDER BY category, provider`)).rows;
+  }
+
+  function allowedSupportCategory(category) {
+    const value = String(category || "").trim().toLowerCase();
+    if (!["ride", "food", "grocery", "pharmacy", "errand"].includes(value)) {
+      const error = new Error("Unsupported support order category");
+      error.status = 400;
+      throw error;
+    }
+    return value;
+  }
+
   function normalizeFulfillmentMode(mode, service = {}) {
     const requested = String(mode || "").trim();
     if (["uber_health", "local_partner", "trusted_circle", "manual_coordination"].includes(requested)) return requested;
@@ -714,6 +771,10 @@ function createProductionApi(pool) {
       seniorPays: true,
       rule: "total = provider bill + tax + refund reserve + 20% platform margin"
     };
+  }
+
+  function calculateSupportOrderPricing({ providerBillCents, provider = "unknown", category = "support_order", source = "provider_bill" }) {
+    return calculateRidePricing({ providerBillCents, provider: `${category}:${provider}`, source });
   }
 
   async function evaluateResidentSafeZone(residentId, location = {}, fallbackStatus = null) {
@@ -2111,6 +2172,75 @@ function createProductionApi(pool) {
       });
       await audit(req, user, "ride_pricing_quote_requested", "ride_pricing_quote", null, { provider: pricing.provider, providerBillCents: pricing.providerBillCents, platformMarginCents: pricing.platformMarginCents, taxCents: pricing.taxCents, totalChargeCents: pricing.totalChargeCents }, "info");
       return { pickup, dropoff, route, pricing };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/superadmin/order-providers") {
+      requireRole(user, ["superadmin"]);
+      const providers = await ensureSupportOrderProviderConfigs();
+      await audit(req, user, "support_order_provider_configs_viewed", "support_order_provider_config", null, { providers: providers.length }, "info");
+      return { providers };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/orders/pricing-quote") {
+      requireRole(user, ["senior", "trusted_person", "business"]);
+      const category = allowedSupportCategory(payload.category);
+      const provider = String(required(payload.provider, "provider")).trim().toLowerCase();
+      const providerBillCents = Math.max(1, Math.ceil(Number(required(payload.providerBillCents, "providerBillCents"))));
+      const configs = await ensureSupportOrderProviderConfigs();
+      const providerConfig = configs.find(item => item.category === category && item.provider === provider) || configs.find(item => item.category === "all" && item.provider === provider) || null;
+      const pricing = calculateSupportOrderPricing({ category, provider, providerBillCents, source: "provider_bill" });
+      await audit(req, user, "support_order_pricing_quote_requested", "support_order_quote", null, { category, provider, providerBillCents, totalChargeCents: pricing.totalChargeCents, providerStatus: providerConfig?.status || "unknown" }, "info");
+      return { category, provider, providerConfig, pricing };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/orders") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const category = allowedSupportCategory(payload.category);
+      const provider = String(required(payload.provider, "provider")).trim().toLowerCase();
+      const providerBillCents = Math.max(1, Math.ceil(Number(required(payload.providerBillCents, "providerBillCents"))));
+      const delivery = payload.delivery ? parseRoutePoint(payload.delivery, "delivery") : null;
+      const configs = await ensureSupportOrderProviderConfigs();
+      const providerConfig = configs.find(item => item.category === category && item.provider === provider) || configs.find(item => item.category === "all" && item.provider === provider) || null;
+      const pricing = calculateSupportOrderPricing({ category, provider, providerBillCents, source: "provider_bill" });
+      const fulfillmentMode = payload.fulfillmentMode || provider;
+      const lifecycleStatus = providerConfig?.status === "enabled" ? "payment_required" : "credential_required";
+      const order = (await query(
+        `INSERT INTO support_orders (
+          resident_id, category, provider, fulfillment_mode, lifecycle_status, label,
+          delivery_label, delivery_lat, delivery_lng,
+          provider_bill_cents, tax_cents, refund_reserve_cents, platform_margin_cents, total_charge_cents,
+          payment_responsibility, payment_status, payer_user_id, order_metadata, pricing_metadata
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'senior','payment_required',$15,$16,$17)
+         RETURNING *`,
+        [
+          resident.id,
+          category,
+          provider,
+          fulfillmentMode,
+          lifecycleStatus,
+          payload.label || `${category} order`,
+          delivery?.label || null,
+          delivery?.lat || null,
+          delivery?.lng || null,
+          pricing.providerBillCents,
+          pricing.taxCents,
+          pricing.refundReserveCents,
+          pricing.platformMarginCents,
+          pricing.totalChargeCents,
+          payload.payerUserId || user.id,
+          JSON.stringify({ providerConfig, items: payload.items || [], partnerApiCredentialRequired: providerConfig?.status !== "enabled" }),
+          JSON.stringify(pricing)
+        ]
+      )).rows[0];
+      await audit(req, user, "support_order_created", "support_order", order.id, { category, provider, lifecycleStatus, totalChargeCents: pricing.totalChargeCents }, "info");
+      return { order, providerConfig, pricing };
     }
 
     if (req.method === "GET" && url.pathname === "/api/superadmin/ride-providers") {
