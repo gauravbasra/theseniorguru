@@ -95,6 +95,81 @@ function createProductionApi(pool) {
     return result.rows[0];
   }
 
+  async function ensureDefaultSubscription(businessId) {
+    return (await query(
+      `INSERT INTO subscriptions (business_id, plan, current_period_start, current_period_end)
+       VALUES ($1, 'free', date_trunc('year', now()), date_trunc('year', now()) + interval '1 year')
+       ON CONFLICT (business_id) DO NOTHING
+       RETURNING *`,
+      [businessId]
+    )).rows[0] || (await query(`SELECT * FROM subscriptions WHERE business_id = $1`, [businessId])).rows[0];
+  }
+
+  function toBusinessState(business, subscription) {
+    if (!business) return null;
+    const plan = subscription?.plan === "growth_100" ? "paid" : "free";
+    return {
+      id: business.id,
+      name: business.name,
+      contactPerson: business.contact_person,
+      email: business.email,
+      phone: business.phone,
+      website: business.website || "",
+      googleBusinessProfile: business.google_business_profile || "",
+      description: business.description || "",
+      demographics: business.demographics || [],
+      serviceAreas: business.service_areas || [],
+      status: business.status,
+      onboardingComplete: business.onboarding_complete === true,
+      plan,
+      leadQuota: {
+        freePerYear: FREE_YEARLY_LEADS,
+        paidPerMonth: PAID_MONTHLY_LEADS,
+        topUps: Number(subscription?.lead_top_ups || 0),
+        usedThisYear: Number(subscription?.used_leads_year || 0),
+        usedThisMonth: Number(subscription?.used_leads_month || 0)
+      }
+    };
+  }
+
+  function toServiceState(service, business) {
+    return {
+      id: service.id,
+      name: service.name,
+      category: service.category,
+      price: service.price_label || "",
+      priceLabel: service.price_label || "",
+      status: service.status,
+      provider: business?.name || "",
+      rating: 0,
+      eta: "Available after approval"
+    };
+  }
+
+  function toLeadState(lead, service, business) {
+    return {
+      id: lead.id,
+      resident: lead.resident_name || "Resident",
+      type: lead.request_type,
+      time: lead.requested_time || "Requested time pending",
+      distance: service?.price_label || "",
+      status: lead.status,
+      provider: business?.name || "",
+      serviceId: lead.service_id
+    };
+  }
+
+  function toBookingState(booking, business) {
+    return {
+      id: booking.id,
+      resident: booking.resident_name || "Resident",
+      service: booking.label,
+      time: booking.scheduled_for ? new Date(booking.scheduled_for).toLocaleString() : "Time pending",
+      status: booking.status,
+      provider: business?.name || ""
+    };
+  }
+
   function medicationParams(payload) {
     return {
       id: payload.id || null,
@@ -289,11 +364,44 @@ function createProductionApi(pool) {
   async function route(req, payload, url) {
     if (req.method === "POST" && url.pathname === "/api/auth/dev-session") {
       const email = required(payload.email, "email");
-      const user = (await query(`SELECT * FROM users WHERE email = $1`, [email])).rows[0];
+      let user = (await query(`SELECT * FROM users WHERE email = $1`, [email])).rows[0];
       if (!user) {
-        const error = new Error("User not found");
-        error.status = 404;
-        throw error;
+        const bootstrapUsers = {
+          "anita@theseniorguru.local": { role: "senior", name: "Anita Sharma" },
+          "rohit@careride.local": { role: "business", name: "Rohit Mehta" },
+          "rita@theseniorguru.local": { role: "trusted_person", name: "Rita Sharma" },
+          "admin@theseniorguru.local": { role: "superadmin", name: "TheSeniorguru Admin" }
+        };
+        const bootstrap = bootstrapUsers[email];
+        if (!bootstrap) {
+          const error = new Error("User not found");
+          error.status = 404;
+          throw error;
+        }
+        user = (await query(
+          `INSERT INTO users (email, display_name, role, status)
+           VALUES ($1, $2, $3, 'approved')
+           RETURNING *`,
+          [email, bootstrap.name, bootstrap.role]
+        )).rows[0];
+        if (bootstrap.role === "senior") {
+          await query(
+            `INSERT INTO residents (user_id, age, community, onboarding_complete)
+             VALUES ($1, 68, 'Park View Community', false)
+             ON CONFLICT (user_id) DO NOTHING`,
+            [user.id]
+          );
+        }
+        if (bootstrap.role === "business") {
+          const business = (await query(
+            `INSERT INTO businesses (owner_user_id, name, contact_person, email, phone, website, google_business_profile, description, demographics, service_areas, status, onboarding_complete)
+             VALUES ($1, 'CareRide', 'Rohit Mehta', $2, '(555) 013-2234', '', '', 'Senior transportation and appointment support.', '{}', '{}', 'draft', false)
+             RETURNING *`,
+            [user.id, email]
+          )).rows[0];
+          await ensureDefaultSubscription(business.id);
+        }
+        await audit(req, user, "dev_user_bootstrapped", "user", user.id, { email, role: bootstrap.role }, "warning");
       }
       const token = crypto.randomBytes(32).toString("hex");
       await query(
@@ -322,11 +430,32 @@ function createProductionApi(pool) {
       }
       if (user.role === "business") {
         const business = await getBusinessForUser(user);
+        const subscription = business ? await ensureDefaultSubscription(business.id) : null;
         const services = business ? (await query(`SELECT * FROM services WHERE business_id = $1 ORDER BY created_at DESC`, [business.id])).rows : [];
-        const requests = business ? (await query(`SELECT * FROM leads WHERE business_id = $1 ORDER BY created_at DESC`, [business.id])).rows : [];
-        const bookings = business ? (await query(`SELECT * FROM bookings WHERE business_id = $1 ORDER BY created_at DESC`, [business.id])).rows : [];
-        const subscription = business ? (await query(`SELECT * FROM subscriptions WHERE business_id = $1`, [business.id])).rows[0] : null;
-        return { user, business, services, requests, bookings, subscription };
+        const requests = business ? (await query(
+          `SELECT l.*, r_user.display_name AS resident_name
+           FROM leads l
+           JOIN residents r ON r.id = l.resident_id
+           JOIN users r_user ON r_user.id = r.user_id
+           WHERE l.business_id = $1 ORDER BY l.created_at DESC`,
+          [business.id]
+        )).rows : [];
+        const bookings = business ? (await query(
+          `SELECT b.*, r_user.display_name AS resident_name
+           FROM bookings b
+           JOIN residents r ON r.id = b.resident_id
+           JOIN users r_user ON r_user.id = r.user_id
+           WHERE b.business_id = $1 ORDER BY b.created_at DESC`,
+          [business.id]
+        )).rows : [];
+        return {
+          user,
+          business: toBusinessState(business, subscription),
+          services: services.map(service => toServiceState(service, business)),
+          requests: requests.map(lead => toLeadState(lead, services.find(service => service.id === lead.service_id), business)),
+          bookings: bookings.map(booking => toBookingState(booking, business)),
+          subscription
+        };
       }
       if (user.role === "senior") {
         const resident = await getResidentForUser(user);
@@ -656,8 +785,71 @@ function createProductionApi(pool) {
           business.id
         ]
       );
+      await ensureDefaultSubscription(business.id);
       await audit(req, user, "business_submitted_for_approval", "business", business.id, payload);
       return { ok: true, status: "pending_review" };
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/business/plan") {
+      requireRole(user, ["business"]);
+      const business = await getBusinessForUser(user);
+      if (!business) {
+        const error = new Error("Business profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const requestedPlan = payload.plan === "paid" || payload.plan === "growth_100" ? "growth_100" : "free";
+      const current = await ensureDefaultSubscription(business.id);
+      if (requestedPlan === "growth_100" && !process.env.STRIPE_SECRET_KEY) {
+        await audit(req, user, "business_paid_plan_requested_without_billing", "subscription", current.id, { requestedPlan, priceCents: PAID_PLAN_PRICE_CENTS }, "warning");
+        const error = new Error("$100/month package requires Stripe billing to be configured before activation.");
+        error.status = 402;
+        error.details = { paymentRequired: true, priceCents: PAID_PLAN_PRICE_CENTS, plan: "growth_100" };
+        throw error;
+      }
+      const subscription = (await query(
+        `UPDATE subscriptions
+         SET plan = $1,
+             current_period_start = CASE WHEN $1 = 'growth_100' THEN date_trunc('month', now()) ELSE date_trunc('year', now()) END,
+             current_period_end = CASE WHEN $1 = 'growth_100' THEN date_trunc('month', now()) + interval '1 month' ELSE date_trunc('year', now()) + interval '1 year' END,
+             updated_at = now()
+         WHERE business_id = $2
+         RETURNING *`,
+        [requestedPlan, business.id]
+      )).rows[0];
+      await audit(req, user, "business_plan_updated", "subscription", subscription.id, { plan: requestedPlan });
+      return { subscription, business: toBusinessState(business, subscription) };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/business/top-up") {
+      requireRole(user, ["business"]);
+      const business = await getBusinessForUser(user);
+      if (!business) {
+        const error = new Error("Business profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const current = await ensureDefaultSubscription(business.id);
+      if (current.plan !== "growth_100") {
+        const error = new Error("Lead top-ups are only available on the $100/month Growth package.");
+        error.status = 402;
+        throw error;
+      }
+      if (!process.env.STRIPE_SECRET_KEY) {
+        await audit(req, user, "business_top_up_requested_without_billing", "subscription", current.id, { leads: payload.leads || 5 }, "warning");
+        const error = new Error("Lead top-up requires Stripe billing to be configured before purchase.");
+        error.status = 402;
+        error.details = { paymentRequired: true };
+        throw error;
+      }
+      const leads = Math.max(1, Number(payload.leads || 5));
+      const subscription = (await query(
+        `UPDATE subscriptions SET lead_top_ups = lead_top_ups + $1, updated_at = now()
+         WHERE business_id = $2 RETURNING *`,
+        [leads, business.id]
+      )).rows[0];
+      await audit(req, user, "business_lead_top_up_added", "subscription", subscription.id, { leads });
+      return { subscription, business: toBusinessState(business, subscription) };
     }
 
     if (req.method === "POST" && url.pathname === "/api/business/services") {
@@ -678,7 +870,7 @@ function createProductionApi(pool) {
       const result = await query(
         `INSERT INTO services (business_id, name, category, price_label, status)
          VALUES ($1, $2, $3, $4, 'pending_review') RETURNING *`,
-        [business.id, required(payload.name, "name"), required(payload.category, "category"), payload.priceLabel || null]
+        [business.id, required(payload.name, "name"), required(payload.category, "category"), payload.priceLabel || payload.price || null]
       );
       await audit(req, user, "service_submitted_for_approval", "service", result.rows[0].id, payload);
       return { service: result.rows[0] };

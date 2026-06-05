@@ -708,8 +708,16 @@ function BusinessOnboarding({ state, onDone }: { state: any; onDone: () => void 
   const [demographics, setDemographics] = useState(biz.demographics.join(", "));
 
   async function complete() {
-    await patch("/api/business", { name, contactPerson, email, phone, website, googleBusinessProfile, serviceAreas, demographics });
-    await post("/api/business/complete");
+    await post("/api/business/onboarding", {
+      name,
+      contactPerson,
+      email,
+      phone,
+      website,
+      googleBusinessProfile,
+      serviceAreas: serviceAreas.split(",").map(item => item.trim()).filter(Boolean),
+      demographics: demographics.split(",").map(item => item.trim()).filter(Boolean)
+    });
     await onDone();
   }
 
@@ -737,21 +745,32 @@ function BusinessServices({ state, onRefresh }: { state: any; onRefresh: () => v
   const [price, setPrice] = useState("$35 - $60");
   const services = state.services.filter((item: any) => item.provider === state.business.name);
   async function addService() {
-    await post("/api/business/services", { name, category, price });
+    await post("/api/business/services", { name, category, priceLabel: price });
     setName("");
     await onRefresh();
+    Alert.alert("TheSeniorguru", "Service submitted for superadmin approval.");
   }
   return <View><Text style={styles.h1}>Services</Text><Card title="Add service"><Text style={styles.muted}>Free package allows 1 service. More services require the $100/month plan.</Text><Field label="Service name" value={name} onChangeText={setName} /><Field label="Category" value={category} onChangeText={setCategory} /><Field label="Price" value={price} onChangeText={setPrice} /><PrimaryButton label="Add service" onPress={addService} /></Card>{services.map((service: any) => <Card key={service.id} title={service.name}><Text style={styles.body}>{service.category}</Text><Text style={styles.muted}>{service.price}</Text></Card>)}</View>;
 }
 
 function BusinessPackage({ state, onRefresh }: { state: any; onRefresh: () => void }) {
   async function setPlan(plan: "free" | "paid") {
-    await patch("/api/business/plan", { plan });
-    await onRefresh();
+    try {
+      await patch("/api/business/plan", { plan });
+      await onRefresh();
+      Alert.alert("TheSeniorguru", plan === "paid" ? "Growth package activated." : "Free package selected.");
+    } catch (error: any) {
+      Alert.alert("Package action needed", error.message || "Package change could not be completed.");
+    }
   }
   async function topUp() {
-    await post("/api/business/top-up", { leads: 5 });
-    await onRefresh();
+    try {
+      await post("/api/business/top-up", { leads: 5 });
+      await onRefresh();
+      Alert.alert("TheSeniorguru", "Lead top-up added.");
+    } catch (error: any) {
+      Alert.alert("Top-up action needed", error.message || "Top-up could not be completed.");
+    }
   }
   const quota = state.business.leadQuota;
   return <View><Text style={styles.h1}>Package</Text><Card title="Free"><Text style={styles.body}>1 service · 5 leads per year</Text><PrimaryButton label="Use free package" onPress={() => setPlan("free")} /></Card><Card title="$100/month Growth"><Text style={styles.body}>More than 1 service · 5 leads per month · top-ups after limit</Text><PrimaryButton label="Upgrade to paid" onPress={() => setPlan("paid")} /></Card><Card title="Lead usage"><Text style={styles.muted}>Year: {quota.usedThisYear}/{quota.freePerYear}</Text><Text style={styles.muted}>Month: {quota.usedThisMonth}/{quota.paidPerMonth + quota.topUps}</Text><PrimaryButton label="Add 5 lead top-up" onPress={topUp} /></Card></View>;
