@@ -1880,7 +1880,7 @@ function createProductionApi(pool) {
         url: result.url || null,
         addressComponents: result.address_components || []
       };
-      await audit(req, user, "google_place_details_requested", "place", placeId, { hasGeometry: Boolean(place.lat && place.lng) }, "info");
+      await audit(req, user, "google_place_details_requested", "place", null, { placeId, hasGeometry: Boolean(place.lat && place.lng) }, "info");
       return { provider: "google_place_details", place };
     }
 
