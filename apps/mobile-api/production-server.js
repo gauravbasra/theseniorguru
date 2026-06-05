@@ -1654,7 +1654,14 @@ function createProductionApi(pool) {
       const delivered = [];
       for (const notification of queued) {
         const provider = notification.channel === 'call' ? (process.env.CALL_PROVIDER || 'twilio-voice-simulator') : notification.channel === 'sms' ? (process.env.SMS_PROVIDER || 'twilio-sms-simulator') : (process.env.PUSH_PROVIDER || 'expo-push-simulator');
-        delivered.push((await query(`UPDATE notifications SET status = 'delivered', provider = $1, provider_message_id = $2, sent_at = now(), delivered_at = now() WHERE id = $3 RETURNING *`, [provider, `${provider}_${notification.id}_${Date.now()}`, notification.id])).rows[0]);
+        const providerMessageId = `${provider}_${notification.id}_${Date.now()}`;
+        const updated = (await query(`UPDATE notifications SET status = 'delivered', provider = $1, provider_message_id = $2, sent_at = now(), delivered_at = now() WHERE id = $3 RETURNING *`, [provider, providerMessageId, notification.id])).rows[0];
+        await query(
+          `INSERT INTO notification_delivery_attempts (notification_id, provider, channel, status, provider_message_id)
+           VALUES ($1,$2,$3,'delivered',$4)`,
+          [notification.id, provider, notification.channel, providerMessageId]
+        );
+        delivered.push(updated);
       }
       const remainingQueued = Number((await query(`SELECT count(*) FROM notifications WHERE status = 'queued'`)).rows[0].count);
       await audit(req, user, 'notification_queue_processed', 'notification_queue', null, { delivered: delivered.length, remainingQueued }, 'info');

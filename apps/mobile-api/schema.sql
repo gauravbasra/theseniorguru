@@ -363,6 +363,17 @@ CREATE TABLE IF NOT EXISTS notifications (
   delivered_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS notification_delivery_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  notification_id UUID NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  status TEXT NOT NULL,
+  provider_message_id TEXT,
+  error TEXT,
+  attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_user_id UUID REFERENCES users(id),
@@ -397,3 +408,4 @@ CREATE INDEX IF NOT EXISTS idx_medication_inventory_events_medication ON medicat
 CREATE INDEX IF NOT EXISTS idx_health_vitals_resident_created ON health_vitals(resident_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wearable_telemetry_resident_created ON wearable_telemetry(resident_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_status_created ON notifications(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempts_notification ON notification_delivery_attempts(notification_id, attempted_at DESC);

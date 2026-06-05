@@ -197,7 +197,8 @@ export default function App() {
 }
 
 function Header({ role, onOpenNotifications, onOpenSos }: { role: AppRole | null; onOpenNotifications: () => void; onOpenSos: () => void }) {
-  const showActions = role === "resident" || role === "circle";
+  const showNotifications = role === "resident" || role === "circle" || role === "business" || role === "superadmin";
+  const showSos = role === "resident" || role === "circle";
   return (
     <View style={styles.header}>
       <View style={styles.logoMark}><Text style={styles.logoHeart}>♡</Text><Text style={styles.logoDotOne}>●</Text><Text style={styles.logoDotTwo}>●</Text></View>
@@ -205,9 +206,9 @@ function Header({ role, onOpenNotifications, onOpenSos }: { role: AppRole | null
         <Text style={styles.brand}>TheSeniorguru</Text>
         <Text style={styles.brandSub}>Your day. Your people. Your support.</Text>
       </View>
-      {showActions ? <View style={styles.headerActions}>
+      {showNotifications ? <View style={styles.headerActions}>
         <Pressable hitSlop={10} style={styles.topIconButton} onPress={onOpenNotifications}><Text style={styles.topIconText}>🔔</Text></Pressable>
-        <Pressable hitSlop={10} style={[styles.topIconButton, styles.sosIconButton]} onPress={onOpenSos}><Text style={styles.topIconText}>SOS</Text></Pressable>
+        {showSos ? <Pressable hitSlop={10} style={[styles.topIconButton, styles.sosIconButton]} onPress={onOpenSos}><Text style={styles.topIconText}>SOS</Text></Pressable> : null}
       </View> : null}
     </View>
   );
@@ -782,12 +783,23 @@ function BusinessPackage({ state, onRefresh }: { state: any; onRefresh: () => vo
 }
 
 function NotificationsPage({ state, circleState, onRefresh }: { state: any; circleState: any; onRefresh: () => void }) {
+  const [liveNotifications, setLiveNotifications] = useState<any[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(true);
   const residentNotifications = state.notificationQueue || [];
   const circleNotifications = circleState?.notifications || [];
-  const notifications = circleNotifications.length ? circleNotifications : residentNotifications;
+  const notifications = liveNotifications.length ? liveNotifications : (circleNotifications.length ? circleNotifications : residentNotifications);
+
+  useEffect(() => {
+    api<any>("/api/notifications")
+      .then(result => setLiveNotifications(result.notifications || []))
+      .catch(() => setLiveNotifications(circleNotifications.length ? circleNotifications : residentNotifications))
+      .finally(() => setLoadingNotifications(false));
+  }, []);
 
   async function markDelivered(id: string) {
     await post(`/api/notifications/${id}/mark-delivered`, {});
+    const result: any = await api("/api/notifications");
+    setLiveNotifications(result.notifications || []);
     await onRefresh();
     Alert.alert("Notification", "Marked as delivered.");
   }
@@ -798,7 +810,7 @@ function NotificationsPage({ state, circleState, onRefresh }: { state: any; circ
       <Text style={styles.h1}>Notifications</Text>
       <Text style={styles.copy}>Important care updates, delivery alerts, and safety messages in one place.</Text>
       <Card title="Notification center" icon="🔔" tint="peach">
-        {notifications.length ? notifications.slice(0, 20).map((item: any) => (
+        {loadingNotifications ? <ActivityIndicator color={colors.purple} /> : notifications.length ? notifications.slice(0, 20).map((item: any) => (
           <View key={item.id} style={styles.eventRow}>
             <Text style={styles.body}>{String(item.channel || "push").toUpperCase()} · {item.status || "queued"}</Text>
             <Text style={styles.muted}>{item.eventType || item.type || "care-update"} · {item.personName || state.resident?.name || "Anita Sharma"}</Text>
