@@ -132,6 +132,20 @@ function createProductionApi(pool) {
     return stripeRequest("/v1/checkout/sessions", params);
   }
 
+  async function createStripePaymentIntent({ amountCents, description, metadata, receiptEmail }) {
+    const params = {
+      amount: String(Math.max(50, Math.ceil(Number(amountCents)))),
+      currency: "usd",
+      description,
+      "automatic_payment_methods[enabled]": "true",
+      ...(receiptEmail ? { receipt_email: receiptEmail } : {})
+    };
+    for (const [key, value] of Object.entries(metadata || {})) {
+      params[`metadata[${key}]`] = String(value ?? "");
+    }
+    return stripeRequest("/v1/payment_intents", params);
+  }
+
   async function transaction(callback) {
     const client = await pool.connect();
     try {
@@ -1091,6 +1105,64 @@ function createProductionApi(pool) {
             "Your Growth package billing is active again. Service creation, lead top-ups, and lead acceptance are available.",
             { stripeInvoiceId: invoice.id, stripeCustomerId: invoice.customer, stripeSubscriptionId: invoice.subscription, source: "invoice.paid" }
           );
+        }
+      }
+      if (event.type === "payment_intent.succeeded") {
+        const paymentIntent = event.data?.object || {};
+        const kind = paymentIntent.metadata?.kind;
+        const entityId = paymentIntent.metadata?.entityId;
+        if (kind === "ride_booking" && entityId) {
+          await query(
+            `UPDATE bookings
+             SET payment_status = 'paid',
+                 lifecycle_status = CASE WHEN lifecycle_status = 'credential_required' THEN lifecycle_status ELSE 'ready_to_dispatch' END,
+                 payment_metadata = payment_metadata || $1::jsonb,
+                 updated_at = now()
+             WHERE id = $2`,
+            [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripePaymentStatus: paymentIntent.status, paidAt: new Date().toISOString() }), entityId]
+          );
+          await query(
+            `UPDATE leads
+             SET payment_status = 'paid',
+                 lifecycle_status = CASE WHEN lifecycle_status = 'credential_required' THEN lifecycle_status ELSE 'ready_to_dispatch' END,
+                 payment_metadata = payment_metadata || $1::jsonb,
+                 updated_at = now()
+             WHERE id = (SELECT lead_id FROM bookings WHERE id = $2)`,
+            [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripePaymentStatus: paymentIntent.status, paidAt: new Date().toISOString() }), entityId]
+          );
+          await query(
+            `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
+             VALUES ('booking', $1, 'stripe_ride_payment_succeeded', 'info', $2)`,
+            [entityId, JSON.stringify({ stripePaymentIntentId: paymentIntent.id, amountReceived: paymentIntent.amount_received })]
+          );
+        }
+        if (kind === "support_order" && entityId) {
+          await query(
+            `UPDATE support_orders
+             SET payment_status = 'paid',
+                 lifecycle_status = CASE WHEN lifecycle_status = 'credential_required' THEN lifecycle_status ELSE 'ready_to_dispatch' END,
+                 payment_metadata = payment_metadata || $1::jsonb,
+                 updated_at = now()
+             WHERE id = $2`,
+            [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripePaymentStatus: paymentIntent.status, paidAt: new Date().toISOString() }), entityId]
+          );
+          await query(
+            `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
+             VALUES ('support_order', $1, 'stripe_order_payment_succeeded', 'info', $2)`,
+            [entityId, JSON.stringify({ stripePaymentIntentId: paymentIntent.id, amountReceived: paymentIntent.amount_received })]
+          );
+        }
+      }
+      if (event.type === "payment_intent.payment_failed") {
+        const paymentIntent = event.data?.object || {};
+        const kind = paymentIntent.metadata?.kind;
+        const entityId = paymentIntent.metadata?.entityId;
+        if (kind === "ride_booking" && entityId) {
+          await query(`UPDATE bookings SET payment_status = 'payment_failed', payment_metadata = payment_metadata || $1::jsonb, updated_at = now() WHERE id = $2`, [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripePaymentStatus: paymentIntent.status, failureMessage: paymentIntent.last_payment_error?.message || null }), entityId]);
+          await query(`UPDATE leads SET payment_status = 'payment_failed', payment_metadata = payment_metadata || $1::jsonb, updated_at = now() WHERE id = (SELECT lead_id FROM bookings WHERE id = $2)`, [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripePaymentStatus: paymentIntent.status }), entityId]);
+        }
+        if (kind === "support_order" && entityId) {
+          await query(`UPDATE support_orders SET payment_status = 'payment_failed', payment_metadata = payment_metadata || $1::jsonb, updated_at = now() WHERE id = $2`, [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripePaymentStatus: paymentIntent.status, failureMessage: paymentIntent.last_payment_error?.message || null }), entityId]);
         }
       }
       return { received: true };
@@ -2241,6 +2313,90 @@ function createProductionApi(pool) {
       )).rows[0];
       await audit(req, user, "support_order_created", "support_order", order.id, { category, provider, lifecycleStatus, totalChargeCents: pricing.totalChargeCents }, "info");
       return { order, providerConfig, pricing };
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/rides/bookings/") && url.pathname.endsWith("/payment-intent")) {
+      requireRole(user, ["senior"]);
+      const id = url.pathname.split("/")[4];
+      const booking = (await query(
+        `SELECT b.*, r.user_id AS resident_user_id
+         FROM bookings b
+         JOIN residents r ON r.id = b.resident_id
+         WHERE b.id = $1`,
+        [id]
+      )).rows[0];
+      if (!booking || booking.resident_user_id !== user.id) {
+        const error = new Error("Ride booking not found");
+        error.status = 404;
+        throw error;
+      }
+      if (!booking.total_charge_cents || booking.payment_status === "paid") {
+        const error = new Error(booking.payment_status === "paid" ? "Ride booking is already paid" : "Ride booking does not have a chargeable total");
+        error.status = 400;
+        throw error;
+      }
+      const paymentIntent = await createStripePaymentIntent({
+        amountCents: booking.total_charge_cents,
+        description: `TheSeniorguru ride payment: ${booking.label}`,
+        receiptEmail: user.email,
+        metadata: { kind: "ride_booking", entityId: booking.id, residentId: booking.resident_id, provider: booking.fulfillment_provider || booking.fulfillment_mode || "ride" }
+      });
+      const updated = (await query(
+        `UPDATE bookings
+         SET payment_status = 'payment_intent_created',
+             payment_metadata = payment_metadata || $1::jsonb,
+             updated_at = now()
+         WHERE id = $2 RETURNING *`,
+        [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripeClientSecret: paymentIntent.client_secret, stripePaymentStatus: paymentIntent.status }), booking.id]
+      )).rows[0];
+      await query(
+        `UPDATE leads
+         SET payment_status = 'payment_intent_created',
+             payment_metadata = payment_metadata || $1::jsonb,
+             updated_at = now()
+         WHERE id = $2`,
+        [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripePaymentStatus: paymentIntent.status }), booking.lead_id]
+      );
+      await audit(req, user, "ride_payment_intent_created", "booking", booking.id, { stripePaymentIntentId: paymentIntent.id, amount: paymentIntent.amount }, "info");
+      return { booking: updated, paymentIntent: { id: paymentIntent.id, clientSecret: paymentIntent.client_secret, status: paymentIntent.status, amount: paymentIntent.amount, currency: paymentIntent.currency } };
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/orders/") && url.pathname.endsWith("/payment-intent")) {
+      requireRole(user, ["senior"]);
+      const id = url.pathname.split("/")[3];
+      const order = (await query(
+        `SELECT so.*, r.user_id AS resident_user_id
+         FROM support_orders so
+         JOIN residents r ON r.id = so.resident_id
+         WHERE so.id = $1`,
+        [id]
+      )).rows[0];
+      if (!order || order.resident_user_id !== user.id) {
+        const error = new Error("Support order not found");
+        error.status = 404;
+        throw error;
+      }
+      if (!order.total_charge_cents || order.payment_status === "paid") {
+        const error = new Error(order.payment_status === "paid" ? "Support order is already paid" : "Support order does not have a chargeable total");
+        error.status = 400;
+        throw error;
+      }
+      const paymentIntent = await createStripePaymentIntent({
+        amountCents: order.total_charge_cents,
+        description: `TheSeniorguru ${order.category} payment: ${order.label}`,
+        receiptEmail: user.email,
+        metadata: { kind: "support_order", entityId: order.id, residentId: order.resident_id, category: order.category, provider: order.provider }
+      });
+      const updated = (await query(
+        `UPDATE support_orders
+         SET payment_status = 'payment_intent_created',
+             payment_metadata = payment_metadata || $1::jsonb,
+             updated_at = now()
+         WHERE id = $2 RETURNING *`,
+        [JSON.stringify({ stripePaymentIntentId: paymentIntent.id, stripeClientSecret: paymentIntent.client_secret, stripePaymentStatus: paymentIntent.status }), order.id]
+      )).rows[0];
+      await audit(req, user, "support_order_payment_intent_created", "support_order", order.id, { stripePaymentIntentId: paymentIntent.id, amount: paymentIntent.amount }, "info");
+      return { order: updated, paymentIntent: { id: paymentIntent.id, clientSecret: paymentIntent.client_secret, status: paymentIntent.status, amount: paymentIntent.amount, currency: paymentIntent.currency } };
     }
 
     if (req.method === "GET" && url.pathname === "/api/superadmin/ride-providers") {

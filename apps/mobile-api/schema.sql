@@ -229,6 +229,7 @@ CREATE TABLE IF NOT EXISTS support_orders (
   payment_responsibility TEXT NOT NULL DEFAULT 'senior',
   payment_status TEXT NOT NULL DEFAULT 'payment_required',
   payer_user_id UUID REFERENCES users(id),
+  payment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   external_order_id TEXT,
   order_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   pricing_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -419,6 +420,7 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_reserve_cents INT NOT NULL 
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS platform_margin_cents INT NOT NULL DEFAULT 0;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS total_charge_cents INT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pricing_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE support_orders ADD COLUMN IF NOT EXISTS payment_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS safety_telemetry (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
