@@ -929,6 +929,18 @@ function createProductionApi(pool) {
          RETURNING id, name, condition, strength, dose_quantity, dose_time, frequency, remaining_count, refill_threshold, prescriber, pharmacy, status, last_confirmed_at`,
         [medication.id, resident.id]
       )).rows[0];
+      await query(
+        `INSERT INTO medication_inventory_events (medication_id, resident_id, event_type, quantity_delta, remaining_after, reason)
+         VALUES ($1,$2,'dose_confirmed',-1,$3,'Resident confirmed medication dose')`,
+        [updated.id, resident.id, Number(updated.remaining_count)]
+      );
+      if (Number(updated.remaining_count) <= Number(updated.refill_threshold)) {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','Medication refill needed',$2,'queued')`,
+          [user.id, `${updated.name} ${updated.strength || ""} is at ${updated.remaining_count} remaining. Please request a refill or confirm pharmacy support.`.trim()]
+        );
+      }
       await audit(req, user, "medication_confirmed", "medication", updated.id, { name: updated.name, remainingCount: updated.remaining_count });
       return { medication: updated, alreadyTaken: false };
     }
