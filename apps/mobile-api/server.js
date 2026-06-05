@@ -604,6 +604,85 @@ function routeApi(req, res) {
       return send(res, 200, {service});
     }
 
+    if (req.method === "POST" && url.pathname === "/api/resident/health-onboarding") {
+      const profile = payload.healthProfile || {};
+      const primaryCondition = profile.primaryCondition || {};
+      const allergyProfile = profile.allergyProfile || {};
+      const mobilityProfile = profile.mobilityProfile || {};
+      const memoryProfile = profile.memoryProfile || {};
+      const carePreferences = profile.carePreferences || {};
+      const medications = Array.isArray(payload.medications) ? payload.medications : (payload.medication ? [payload.medication] : []);
+      const missing = [];
+      if (!payload.name) missing.push("name");
+      if (!payload.age) missing.push("age");
+      if (!payload.community) missing.push("community");
+      if (!primaryCondition.name) missing.push("healthProfile.primaryCondition.name");
+      if (!primaryCondition.status) missing.push("healthProfile.primaryCondition.status");
+      if (!primaryCondition.severity) missing.push("healthProfile.primaryCondition.severity");
+      if (!mobilityProfile.transferSupport) missing.push("healthProfile.mobilityProfile.transferSupport");
+      if (!memoryProfile.reassuranceStyle) missing.push("healthProfile.memoryProfile.reassuranceStyle");
+      if (!carePreferences.emergencyInstructions) missing.push("healthProfile.carePreferences.emergencyInstructions");
+      if (!medications.length) missing.push("medications");
+      for (const [index, med] of medications.entries()) {
+        if (!med.name) missing.push(`medications[${index}].name`);
+        if (!med.condition) missing.push(`medications[${index}].condition`);
+        if (!med.strength) missing.push(`medications[${index}].strength`);
+        if (!med.time) missing.push(`medications[${index}].time`);
+      }
+      if (missing.length) return send(res, 400, {error: `Missing health onboarding fields: ${missing.join(", ")}`});
+      state.resident = {
+        ...state.resident,
+        name: payload.name,
+        age: Number(payload.age),
+        community: payload.community,
+        sosContacts: Array.isArray(payload.sosContacts) ? payload.sosContacts : String(payload.sosContacts || state.resident.sosContacts.join(",")).split(",").map(item => item.trim()).filter(Boolean),
+        healthProfile: {
+          ...profile,
+          updatedAt: new Date().toISOString()
+        },
+        healthOnboardingStatus: {
+          complete: true,
+          diagnosisRecords: primaryCondition.name ? 1 : 0,
+          allergyRecords: allergyProfile.allergen ? 1 : 0,
+          mobilityProfileComplete: Boolean(mobilityProfile.transferSupport),
+          cognitiveProfileComplete: Boolean(memoryProfile.reassuranceStyle),
+          medicationRecords: medications.length,
+          savedAt: new Date().toISOString()
+        }
+      };
+      state.medications = state.medications || [];
+      const savedMedications = [];
+      for (const medPayload of medications) {
+        const existingIndex = state.medications.findIndex(item => item.id === medPayload.id);
+        const medication = normalizeMedication(medPayload, existingIndex >= 0 ? state.medications[existingIndex] : {});
+        if (medication.error) return send(res, 400, {error: medication.error});
+        medication.status = medication.status || "pending";
+        if (existingIndex >= 0) state.medications[existingIndex] = medication;
+        else state.medications.push(medication);
+        savedMedications.push(medication);
+        ensureAuditLogs(state).unshift({
+          id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          createdAt: new Date().toISOString(),
+          action: "medication_inventory_onboarding_set",
+          entityType: "medication",
+          entityId: medication.id,
+          severity: "info",
+          actor: state.resident.name,
+          details: `${medication.name} ${medication.strength}; ${medication.remaining} remaining; refill alert at ${medication.refillThreshold}.`
+        });
+      }
+      addAuditLog(state, {
+        action: "resident_health_onboarding_saved",
+        entityType: "resident",
+        entityId: state.resident.id,
+        severity: "info",
+        actor: state.resident.name,
+        details: `Health onboarding saved with ${savedMedications.length} medication record(s).`
+      });
+      writeState(state);
+      return send(res, 200, {ok: true, resident: state.resident, medications: savedMedications});
+    }
+
     if (req.method === "PATCH" && url.pathname === "/api/resident") {
       const healthProfile = payload.healthProfile ? {
         ...state.resident.healthProfile,

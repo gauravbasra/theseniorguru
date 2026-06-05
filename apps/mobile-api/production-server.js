@@ -23,6 +23,21 @@ function createProductionApi(pool) {
     return result;
   }
 
+  async function transaction(callback) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await callback((sql, params = []) => client.query(sql, params));
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async function audit(req, actor, action, entityType, entityId, metadata = {}, severity = "info") {
     await query(
       `INSERT INTO audit_logs (actor_user_id, entity_type, entity_id, action, severity, ip_address, user_agent, metadata)
@@ -94,6 +109,45 @@ function createProductionApi(pool) {
       prescriber: payload.prescriber || null,
       pharmacy: payload.pharmacy || null
     };
+  }
+
+  function list(value) {
+    if (Array.isArray(value)) return value.map(item => String(item).trim()).filter(Boolean);
+    return String(value || "").split(",").map(item => item.trim()).filter(Boolean);
+  }
+
+  function validateHealthOnboarding(payload) {
+    const profile = payload.healthProfile || {};
+    const diagnosis = profile.primaryCondition || {};
+    const allergy = profile.allergyProfile || {};
+    const mobility = profile.mobilityProfile || {};
+    const memory = profile.memoryProfile || {};
+    const care = profile.carePreferences || {};
+    const medications = Array.isArray(payload.medications) ? payload.medications : (payload.medication ? [payload.medication] : []);
+    const missing = [];
+    if (!payload.name) missing.push("name");
+    if (!payload.age) missing.push("age");
+    if (!payload.community) missing.push("community");
+    if (!diagnosis.name) missing.push("healthProfile.primaryCondition.name");
+    if (!diagnosis.status) missing.push("healthProfile.primaryCondition.status");
+    if (!diagnosis.severity) missing.push("healthProfile.primaryCondition.severity");
+    if (!mobility.transferSupport) missing.push("healthProfile.mobilityProfile.transferSupport");
+    if (!memory.reassuranceStyle) missing.push("healthProfile.memoryProfile.reassuranceStyle");
+    if (!care.emergencyInstructions) missing.push("healthProfile.carePreferences.emergencyInstructions");
+    if (!medications.length) missing.push("medications");
+    medications.forEach((med, index) => {
+      if (!med.name) missing.push(`medications[${index}].name`);
+      if (!med.condition) missing.push(`medications[${index}].condition`);
+      if (!med.strength) missing.push(`medications[${index}].strength`);
+      if (!med.time) missing.push(`medications[${index}].time`);
+      if (Number(med.remaining ?? -1) < 0) missing.push(`medications[${index}].remaining`);
+    });
+    if (missing.length) {
+      const error = new Error(`Missing health onboarding fields: ${missing.join(", ")}`);
+      error.status = 400;
+      throw error;
+    }
+    return { profile, diagnosis, allergy, mobility, memory, care, medications };
   }
 
   function auditSeverity(value) {
@@ -334,6 +388,108 @@ function createProductionApi(pool) {
       );
       await audit(req, user, "resident_onboarding_completed", "resident", resident.id, payload);
       return { ok: true };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/resident/health-onboarding") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const validated = validateHealthOnboarding(payload);
+      const { profile, diagnosis, allergy, mobility, memory, care, medications } = validated;
+      const result = await transaction(async tx => {
+        await tx(
+          `UPDATE users SET display_name = $1, updated_at = now() WHERE id = $2`,
+          [required(payload.name, "name"), user.id]
+        );
+        await tx(
+          `UPDATE residents
+           SET age = $1,
+               community = $2,
+               health_conditions = $3,
+               allergies = $4,
+               mobility_notes = $5,
+               cognitive_support = $6,
+               health_profile = $7,
+               updated_at = now()
+           WHERE id = $8`,
+          [
+            Number(payload.age),
+            required(payload.community, "community"),
+            [diagnosis.name],
+            allergy.allergen ? [allergy.allergen] : [],
+            mobility.transferSupport,
+            memory.reassuranceStyle,
+            JSON.stringify({ ...profile, updatedAt: new Date().toISOString() }),
+            resident.id
+          ]
+        );
+        await tx(`DELETE FROM resident_diagnoses WHERE resident_id = $1`, [resident.id]);
+        await tx(
+          `INSERT INTO resident_diagnoses (resident_id, condition_name, status, severity, diagnosed_when, symptoms_to_watch, care_team_notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [resident.id, diagnosis.name, diagnosis.status, diagnosis.severity, diagnosis.diagnosedWhen || null, list(diagnosis.symptomsToWatch), diagnosis.careTeamNotes || null]
+        );
+        await tx(`DELETE FROM resident_allergies WHERE resident_id = $1`, [resident.id]);
+        if (allergy.allergen) {
+          await tx(
+            `INSERT INTO resident_allergies (resident_id, allergen, reaction, severity, emergency_instructions)
+             VALUES ($1,$2,$3,$4,$5)`,
+            [resident.id, allergy.allergen, allergy.reaction || null, allergy.severity || "unknown", allergy.instructions || null]
+          );
+        }
+        await tx(
+          `INSERT INTO resident_mobility_profiles (resident_id, assistive_device, fall_history, transfer_support, walking_tolerance, home_risk_areas, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,now())
+           ON CONFLICT (resident_id) DO UPDATE SET assistive_device = EXCLUDED.assistive_device, fall_history = EXCLUDED.fall_history,
+             transfer_support = EXCLUDED.transfer_support, walking_tolerance = EXCLUDED.walking_tolerance, home_risk_areas = EXCLUDED.home_risk_areas, updated_at = now()`,
+          [resident.id, mobility.assistiveDevice || null, mobility.fallHistory || null, mobility.transferSupport, mobility.walkingTolerance || null, list(mobility.homeRiskAreas)]
+        );
+        await tx(
+          `INSERT INTO resident_cognitive_support_profiles (resident_id, wandering_risk, confusion_triggers, reassurance_style, routine_anchors, preferred_hospital, emergency_instructions, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+           ON CONFLICT (resident_id) DO UPDATE SET wandering_risk = EXCLUDED.wandering_risk, confusion_triggers = EXCLUDED.confusion_triggers,
+             reassurance_style = EXCLUDED.reassurance_style, routine_anchors = EXCLUDED.routine_anchors,
+             preferred_hospital = EXCLUDED.preferred_hospital, emergency_instructions = EXCLUDED.emergency_instructions, updated_at = now()`,
+          [resident.id, memory.wanderingRisk || null, list(memory.confusionTriggers), memory.reassuranceStyle, list(memory.routineAnchors), care.preferredHospital || null, care.emergencyInstructions]
+        );
+        const savedMedications = [];
+        for (const item of medications) {
+          const med = medicationParams(item);
+          let saved = null;
+          if (med.id) {
+            saved = (await tx(
+              `UPDATE medications
+               SET name = $1, condition = $2, strength = $3, dose_quantity = $4, dose_time = $5, frequency = $6,
+                   remaining_count = $7, refill_threshold = $8, prescriber = $9, pharmacy = $10,
+                   status = CASE WHEN status = 'taken' THEN 'pending' ELSE status END, updated_at = now()
+               WHERE id = $11 AND resident_id = $12
+               RETURNING *`,
+              [med.name, med.condition, med.strength, med.doseQuantity, med.time, med.frequency, med.remaining, med.refillThreshold, med.prescriber, med.pharmacy, med.id, resident.id]
+            )).rows[0];
+          }
+          if (!saved) {
+            saved = (await tx(
+              `INSERT INTO medications (resident_id, name, condition, strength, dose_quantity, dose_time, frequency, remaining_count, refill_threshold, prescriber, pharmacy, status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending')
+               RETURNING *`,
+              [resident.id, med.name, med.condition, med.strength, med.doseQuantity, med.time, med.frequency, med.remaining, med.refillThreshold, med.prescriber, med.pharmacy]
+            )).rows[0];
+          }
+          await tx(
+            `INSERT INTO medication_inventory_events (medication_id, resident_id, event_type, quantity_delta, remaining_after, reason)
+             VALUES ($1,$2,'onboarding_inventory_set',$3,$4,'Health onboarding medication inventory')`,
+            [saved.id, resident.id, Number(saved.remaining_count), Number(saved.remaining_count)]
+          );
+          savedMedications.push(saved);
+        }
+        return { medications: savedMedications };
+      });
+      await audit(req, user, "resident_health_onboarding_saved", "resident", resident.id, { medicationCount: result.medications.length, diagnosis: diagnosis.name }, "info");
+      return { ok: true, residentId: resident.id, medications: result.medications };
     }
 
     if (req.method === "PATCH" && url.pathname === "/api/resident") {

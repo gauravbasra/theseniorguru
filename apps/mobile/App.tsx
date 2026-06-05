@@ -293,7 +293,7 @@ function ResidentOnboarding({ state, onDone }: { state: any; onDone: () => void 
   const [pharmacy, setPharmacy] = useState(firstMed.pharmacy || "HealthPlus Pharmacy");
 
   async function complete() {
-    await patch("/api/resident", {
+    await post("/api/resident/health-onboarding", {
       name,
       age,
       community,
@@ -330,20 +330,20 @@ function ResidentOnboarding({ state, onDone }: { state: any; onDone: () => void 
           preferredHospital,
           emergencyInstructions
         }
-      }
-    });
-    await post("/api/medications", {
-      id: firstMed.id,
-      name: medName,
-      condition: medCondition,
-      strength: medStrength,
-      doseQuantity: Number(doseQuantity),
-      time: medTime,
-      frequency,
-      remaining: Number(remaining),
-      refillThreshold: Number(refillThreshold),
-      prescriber,
-      pharmacy
+      },
+      medications: [{
+        id: firstMed.id,
+        name: medName,
+        condition: medCondition,
+        strength: medStrength,
+        doseQuantity: Number(doseQuantity),
+        time: medTime,
+        frequency,
+        remaining: Number(remaining),
+        refillThreshold: Number(refillThreshold),
+        prescriber,
+        pharmacy
+      }]
     });
     await post("/api/resident/complete");
     await onDone();

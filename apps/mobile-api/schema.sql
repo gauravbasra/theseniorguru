@@ -194,6 +194,62 @@ CREATE TABLE IF NOT EXISTS medications (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS resident_diagnoses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  condition_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  diagnosed_when TEXT,
+  symptoms_to_watch TEXT[] NOT NULL DEFAULT '{}',
+  care_team_notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS resident_allergies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  allergen TEXT NOT NULL,
+  reaction TEXT,
+  severity TEXT NOT NULL DEFAULT 'unknown',
+  emergency_instructions TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS resident_mobility_profiles (
+  resident_id UUID PRIMARY KEY REFERENCES residents(id) ON DELETE CASCADE,
+  assistive_device TEXT,
+  fall_history TEXT,
+  transfer_support TEXT NOT NULL,
+  walking_tolerance TEXT,
+  home_risk_areas TEXT[] NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS resident_cognitive_support_profiles (
+  resident_id UUID PRIMARY KEY REFERENCES residents(id) ON DELETE CASCADE,
+  wandering_risk TEXT,
+  confusion_triggers TEXT[] NOT NULL DEFAULT '{}',
+  reassurance_style TEXT NOT NULL,
+  routine_anchors TEXT[] NOT NULL DEFAULT '{}',
+  preferred_hospital TEXT,
+  emergency_instructions TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS medication_inventory_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  medication_id UUID NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
+  resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  quantity_delta NUMERIC NOT NULL DEFAULT 0,
+  remaining_after NUMERIC NOT NULL,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS health_conditions TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS allergies TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS mobility_notes TEXT;
@@ -321,6 +377,9 @@ CREATE INDEX IF NOT EXISTS idx_safety_events_resident_status ON safety_events(re
 CREATE INDEX IF NOT EXISTS idx_leads_business_status ON leads(business_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_services_business_status ON services(business_id, status);
 CREATE INDEX IF NOT EXISTS idx_medications_resident_status ON medications(resident_id, status, dose_time);
+CREATE INDEX IF NOT EXISTS idx_resident_diagnoses_resident ON resident_diagnoses(resident_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_resident_allergies_resident ON resident_allergies(resident_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_medication_inventory_events_medication ON medication_inventory_events(medication_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_health_vitals_resident_created ON health_vitals(resident_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wearable_telemetry_resident_created ON wearable_telemetry(resident_id, created_at DESC);
