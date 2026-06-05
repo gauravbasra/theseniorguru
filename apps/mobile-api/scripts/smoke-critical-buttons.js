@@ -66,6 +66,7 @@ async function main() {
   const seniorState = await step("resident: load Today state", async () => {
     const result = await request("/api/state", { headers: auth(seniorToken) });
     if (!result.json.resident?.id && !result.json.resident?.name) throw new Error("Resident state missing");
+    if (!result.json.people?.some(person => person.phone)) throw new Error("Trusted-circle phone numbers missing from resident state");
     return result.json;
   });
 

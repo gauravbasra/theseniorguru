@@ -1374,13 +1374,13 @@ function createProductionApi(pool) {
       let user = (await query(`SELECT * FROM users WHERE email = $1`, [email])).rows[0];
       if (!user) {
         const bootstrapUsers = {
-          "anita@theseniorguru.local": { role: "senior", name: "Anita Sharma" },
-          "rohit@careride.local": { role: "business", name: "Rohit Mehta" },
-          "rita@theseniorguru.local": { role: "trusted_person", name: "Rita Sharma" },
-          "arjun@theseniorguru.local": { role: "trusted_person", name: "Arjun Sharma" },
-          "drmehta@theseniorguru.local": { role: "trusted_person", name: "Dr. Mehta" },
-          "sunita@theseniorguru.local": { role: "trusted_person", name: "Sunita Patel" },
-          "admin@theseniorguru.local": { role: "superadmin", name: "TheSeniorguru Admin" }
+          "anita@theseniorguru.local": { role: "senior", name: "Anita Sharma", phone: "+13035550101" },
+          "rohit@careride.local": { role: "business", name: "Rohit Mehta", phone: "+13035550104" },
+          "rita@theseniorguru.local": { role: "trusted_person", name: "Rita Sharma", phone: "+13035550102" },
+          "arjun@theseniorguru.local": { role: "trusted_person", name: "Arjun Sharma", phone: "+13035550103" },
+          "drmehta@theseniorguru.local": { role: "trusted_person", name: "Dr. Mehta", phone: "+13035550105" },
+          "sunita@theseniorguru.local": { role: "trusted_person", name: "Sunita Patel", phone: "+13035550106" },
+          "admin@theseniorguru.local": { role: "superadmin", name: "TheSeniorguru Admin", phone: "+13035550100" }
         };
         const bootstrap = bootstrapUsers[email];
         if (!bootstrap) {
@@ -1412,6 +1412,18 @@ function createProductionApi(pool) {
           await ensureDefaultSubscription(business.id);
         }
         await audit(req, user, "dev_user_bootstrapped", "user", user.id, { email, role: bootstrap.role }, "warning");
+      }
+      const bootstrapUsers = {
+        "anita@theseniorguru.local": "+13035550101",
+        "rohit@careride.local": "+13035550104",
+        "rita@theseniorguru.local": "+13035550102",
+        "arjun@theseniorguru.local": "+13035550103",
+        "drmehta@theseniorguru.local": "+13035550105",
+        "sunita@theseniorguru.local": "+13035550106",
+        "admin@theseniorguru.local": "+13035550100"
+      };
+      if (!user.phone && bootstrapUsers[email]) {
+        user = (await query(`UPDATE users SET phone = $1, updated_at = now() WHERE id = $2 RETURNING *`, [bootstrapUsers[email], user.id])).rows[0];
       }
       const token = crypto.randomBytes(32).toString("hex");
       await query(
@@ -1488,7 +1500,7 @@ function createProductionApi(pool) {
            ORDER BY s.created_at DESC`
         )).rows;
         const people = resident ? (await query(
-          `SELECT u.id, u.display_name AS name, u.role, tc.permissions, tc.status
+          `SELECT u.id, u.display_name AS name, u.role, u.phone, tc.permissions, tc.status
            FROM trusted_connections tc JOIN users u ON u.id = tc.trusted_user_id
            WHERE tc.resident_id = $1`,
           [resident.id]
@@ -2139,13 +2151,13 @@ function createProductionApi(pool) {
         [resident.id, user.id, permissions]
       )).rows[0];
       await audit(req, user, "trusted_invite_accepted", "trusted_connection", connection.id, { inviteCode, permissions }, "info");
-      return { person: { id: user.id, name: user.display_name, role: "Trusted person", permissions, status: "approved" }, connection };
+      return { person: { id: user.id, name: user.display_name, role: "Trusted person", phone: user.phone, permissions, status: "approved" }, connection };
     }
 
     if (req.method === "GET" && url.pathname === "/api/circle") {
       requireRole(user, ["trusted_person"]);
       const connection = (await query(
-        `SELECT tc.*, r.id AS resident_id, r.community, r.mood, r.health_profile, senior.display_name AS resident_name
+        `SELECT tc.*, r.id AS resident_id, r.community, r.mood, r.health_profile, senior.display_name AS resident_name, senior.phone AS resident_phone
          FROM trusted_connections tc
          JOIN residents r ON r.id = tc.resident_id
          JOIN users senior ON senior.id = r.user_id
@@ -2182,8 +2194,8 @@ function createProductionApi(pool) {
         ? (await query(`SELECT * FROM circle_call_requests WHERE resident_id = $1 AND trusted_user_id = $2 ORDER BY created_at DESC LIMIT 25`, [connection.resident_id, user.id])).rows
         : [];
       return {
-        person: { id: user.id, name: user.display_name, role: "Trusted person", permissions, status: connection.status },
-        resident: { id: connection.resident_id, name: connection.resident_name, community: connection.community, mood: connection.mood },
+        person: { id: user.id, name: user.display_name, role: "Trusted person", phone: user.phone, permissions, status: connection.status },
+        resident: { id: connection.resident_id, name: connection.resident_name, phone: connection.resident_phone, community: connection.community, mood: connection.mood },
         safety: {
           location: telemetry ? { label: connection.community || "Shared location", accuracyMeters: telemetry.accuracy_meters || 18 } : { label: connection.community || "Shared location", accuracyMeters: 18 },
           safeZones: safeZones.length ? safeZones.map(zone => ({ ...zone, status: telemetry?.safe_zone_status || "unknown" })) : [{ status: telemetry?.safe_zone_status || "unknown" }],

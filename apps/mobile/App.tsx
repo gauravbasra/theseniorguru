@@ -417,7 +417,7 @@ function ResidentHome({ state, onRefresh, onOpenHelp }: { state: any; onRefresh:
     }
     await post("/api/resident/circle-message", { trustedUserId: rita.id, body: "Anita requested a call from the Today screen." });
     await onRefresh();
-    Alert.alert("Trusted circle", `Call request message sent to ${rita.name}.`);
+    await openPhoneDialer(rita.phone, rita.name, "Call request was logged in the app. Add this trusted person's phone number to open the native dialer.");
   }
   async function emergencySos() {
     const result: any = await triggerVoiceSos("Guru, call emergency");
@@ -732,12 +732,16 @@ function ResidentHelp({ state, onRefresh, unitSystem }: { state: any; onRefresh:
 }
 
 function ResidentPeople({ state }: { state: any }) {
+  async function callPerson(person: any) {
+    await post("/api/resident/circle-message", { trustedUserId: person.id, body: `${state.resident.name} started a phone call request.` });
+    await openPhoneDialer(person.phone, person.name, "Call request was logged. Add a phone number for this trusted person to dial out.");
+  }
   return (
     <View>
       <TopPhoneBar />
       <Text style={styles.h1}>Your People</Text>
       <View style={styles.segment}><Text style={styles.segmentActive}>My Circle</Text><Text style={styles.segmentText}>Nearby</Text></View>
-      {state.people.map((person: any, index: number) => <PersonRow key={person.id} person={person} image={[
+      {state.people.map((person: any, index: number) => <PersonRow key={person.id} person={person} onCall={() => callPerson(person)} image={[
         "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=220&h=220&fit=crop&crop=faces",
         "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=220&h=220&fit=crop&crop=faces",
         "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=220&h=220&fit=crop&crop=faces",
@@ -1288,7 +1292,11 @@ function CircleSafety({ circleState, onRefresh, unitSystem }: { circleState: any
     }
     await post("/api/circle/call-request", { channel, message: `Rita requested a ${channel} call.` });
     await onRefresh();
-    Alert.alert("Call request sent", `${channel.charAt(0).toUpperCase()}${channel.slice(1)} request sent to Anita.`);
+    if (channel === "voice") {
+      await openPhoneDialer(circleState?.resident?.phone, circleState?.resident?.name || "Anita", "In-app voice call request was sent. Add the senior's phone number to open native dial-out.");
+      return;
+    }
+    Alert.alert("App-to-app request sent", `${channel.charAt(0).toUpperCase()}${channel.slice(1)} request sent to Anita. Real-time ${channel} needs a WebRTC calling provider before launch.`);
   }
 
   return (
@@ -1782,14 +1790,31 @@ function ImageFeatureCard({ image, title, subtitle }: { image: string; title: st
   );
 }
 
-function PersonRow({ person, image }: { person: any; image: string }) {
+function PersonRow({ person, image, onCall }: { person: any; image: string; onCall: () => void }) {
   return (
-    <Pressable style={styles.personRow} onPress={() => Alert.alert("Contact", person.name)}>
+    <Pressable style={styles.personRow} onPress={onCall}>
       <RemoteImage uri={image} style={styles.personPhoto} />
       <View style={styles.actionText}><Text style={styles.actionTitle}>{person.name}</Text><Text style={styles.muted}>{person.role} · {person.status}</Text></View>
       <Text style={styles.callIcon}>☎</Text>
     </Pressable>
   );
+}
+
+async function openPhoneDialer(phone: string | null | undefined, label: string, missingMessage: string) {
+  const cleaned = String(phone || "").replace(/[^\d+]/g, "");
+  if (!cleaned || cleaned.length < 7) {
+    Alert.alert("Phone number needed", missingMessage);
+    return false;
+  }
+  const url = `tel:${cleaned}`;
+  const supported = await Linking.canOpenURL(url);
+  if (!supported) {
+    Alert.alert("Dialer unavailable", "This device cannot open the native phone dialer.");
+    return false;
+  }
+  await Linking.openURL(url);
+  Alert.alert("Opening phone", `Dialing ${label}.`);
+  return true;
 }
 
 function ChatBubble({ text, meta, align }: { text: string; meta: string; align?: "right" }) {
