@@ -389,6 +389,18 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
     await post("/api/medications/confirm", { id: due.id });
     await onRefresh();
   }
+  async function respondToCall(request: any, status: "accepted" | "declined") {
+    await post(`/api/resident/call-requests/${request.id}/respond`, { status, message: status === "accepted" ? "I can talk now." : "Please message me instead." });
+    await onRefresh();
+    Alert.alert("Trusted circle", `Call request ${status}.`);
+  }
+  async function replyToTrusted(message: any) {
+    await post("/api/resident/circle-message", { trustedUserId: message.trusted_user_id, body: "Thank you, I am okay." });
+    await onRefresh();
+    Alert.alert("Trusted circle", "Reply sent.");
+  }
+  const latestTrustedMessage = (state.circleMessages || [])[0];
+  const pendingCall = (state.circleCallRequests || []).find((request: any) => request.status === "requested");
   return (
     <View>
       <TopPhoneBar />
@@ -412,6 +424,10 @@ function ResidentHome({ state, onRefresh }: { state: any; onRefresh: () => void 
       <ImageActionCard image="https://images.unsplash.com/photo-1549924231-f129b911e442?w=300&h=220&fit=crop" title="Ride to Cardiology Appointment" subtitle="Tomorrow, 10:00 AM" button="Open" onPress={() => Alert.alert("Ride", "Opening ride details")} />
       <SectionTitle title="A little connection" />
       <ImageActionCard image="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=220&h=220&fit=crop&crop=faces" title="Message from Rita" subtitle="Good morning Anita ☀" button="Call" onPress={() => Alert.alert("Call", "Calling Rita")} />
+      <Card title="Trusted circle requests" icon="♡">
+        {pendingCall ? <View style={styles.eventRow}><Text style={styles.body}>{pendingCall.trusted_name || "Trusted person"} requested a {pendingCall.channel} call</Text><Text style={styles.muted}>{pendingCall.message || "Would like to connect."}</Text><ButtonRow labels={[["Accept", "accepted"], ["Decline", "declined"]]} onPress={(value: "accepted" | "declined") => respondToCall(pendingCall, value)} /></View> : <Text style={styles.muted}>No pending call requests.</Text>}
+        {latestTrustedMessage ? <View style={styles.eventRow}><Text style={styles.body}>Latest message from {latestTrustedMessage.trusted_name || "trusted circle"}</Text><Text style={styles.muted}>{latestTrustedMessage.body}</Text><PrimaryButton label="Reply I'm okay" onPress={() => replyToTrusted(latestTrustedMessage)} /></View> : null}
+      </Card>
       <SectionTitle title="Today’s activity" />
       <ImageFeatureCard image="https://images.unsplash.com/photo-1599901860904-17e6ed7083a0?w=420&h=280&fit=crop" title="Morning Stretch with Meena" subtitle="10:30 AM · Clubhouse" />
       <SectionTitle title="Wellness snapshot" />

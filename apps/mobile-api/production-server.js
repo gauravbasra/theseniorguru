@@ -862,6 +862,22 @@ function createProductionApi(pool) {
            ORDER BY rr.requested_at DESC`,
           [resident.id]
         )).rows : [];
+        const circleMessages = resident ? (await query(
+          `SELECT cm.*, u.display_name AS trusted_name
+           FROM circle_messages cm
+           JOIN users u ON u.id = cm.trusted_user_id
+           WHERE cm.resident_id = $1
+           ORDER BY cm.created_at DESC LIMIT 25`,
+          [resident.id]
+        )).rows : [];
+        const circleCallRequests = resident ? (await query(
+          `SELECT cr.*, u.display_name AS trusted_name
+           FROM circle_call_requests cr
+           JOIN users u ON u.id = cr.trusted_user_id
+           WHERE cr.resident_id = $1
+           ORDER BY cr.created_at DESC LIMIT 25`,
+          [resident.id]
+        )).rows : [];
         const residentProfile = resident ? {
           ...resident,
           healthProfile: resident.health_profile && Object.keys(resident.health_profile).length ? resident.health_profile : {
@@ -872,7 +888,7 @@ function createProductionApi(pool) {
             carePreferences: { preferredHospital: "", emergencyInstructions: "" }
           }
         } : null;
-        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, refillRequests, safety: { latestTelemetry: telemetry, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
+        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, refillRequests, circleMessages, circleCallRequests, safety: { latestTelemetry: telemetry, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
       }
       if (user.role === "trusted_person") {
         const connections = await query(
@@ -1510,6 +1526,70 @@ function createProductionApi(pool) {
       )).rows[0];
       await audit(req, user, "trusted_person_call_requested", "circle_call_request", callRequest.id, { resident: connection.resident_name, channel, notificationId: notification.id }, "info");
       return { callRequest, notification };
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/resident/call-requests/") && url.pathname.endsWith("/respond")) {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const id = url.pathname.split("/")[3];
+      const status = payload.status === "declined" ? "declined" : "accepted";
+      const callRequest = (await query(
+        `UPDATE circle_call_requests
+         SET status = $1, message = COALESCE($2, message), responded_at = now()
+         WHERE id = $3 AND resident_id = $4
+         RETURNING *`,
+        [status, payload.message || null, id, resident.id]
+      )).rows[0];
+      if (!callRequest) {
+        const error = new Error("Call request not found");
+        error.status = 404;
+        throw error;
+      }
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1,'push',$2,$3,'queued')`,
+        [callRequest.trusted_user_id, `${user.display_name} ${status} your ${callRequest.channel} call`, payload.message || `${user.display_name} ${status} the call request.`]
+      );
+      await audit(req, user, "resident_call_request_responded", "circle_call_request", callRequest.id, { status, channel: callRequest.channel }, "info");
+      return { callRequest };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/resident/circle-message") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const trustedUserId = required(payload.trustedUserId, "trustedUserId");
+      const connection = (await query(
+        `SELECT * FROM trusted_connections
+         WHERE resident_id = $1 AND trusted_user_id = $2 AND status = 'approved' AND 'messages' = ANY(permissions)`,
+        [resident.id, trustedUserId]
+      )).rows[0];
+      if (!connection) {
+        const error = new Error("Trusted person does not have message access");
+        error.status = 403;
+        throw error;
+      }
+      const message = (await query(
+        `INSERT INTO circle_messages (resident_id, trusted_user_id, sender_user_id, body, status)
+         VALUES ($1,$2,$3,$4,'sent') RETURNING *`,
+        [resident.id, trustedUserId, user.id, required(payload.body, "body")]
+      )).rows[0];
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1,'push',$2,$3,'queued')`,
+        [trustedUserId, `${user.display_name} replied`, message.body]
+      );
+      await audit(req, user, "resident_circle_message_sent", "circle_message", message.id, { trustedUserId }, "info");
+      return { message };
     }
 
     if (req.method === "POST" && url.pathname === "/api/circle/tasks/ack") {
