@@ -754,7 +754,7 @@ function BusinessLeads({ state, onRefresh }: { state: any; onRefresh: () => void
     Alert.alert("TheSeniorguru", "Lead accepted and booking created.");
   }
   async function updateRefill(request: any, status: string) {
-    await patch(`/api/business/refill-requests/${request.id}`, { status });
+    await patch(`/api/business/refill-requests/${request.id}`, { status, dispensedQuantity: status === "completed" ? 30 : undefined });
     await onRefresh();
     Alert.alert("Refill updated", `Marked as ${status}.`);
   }

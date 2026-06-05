@@ -1240,15 +1240,33 @@ function createProductionApi(pool) {
         throw error;
       }
       const seniorUser = (await query(`SELECT u.id, u.display_name FROM residents r JOIN users u ON u.id = r.user_id WHERE r.id = $1`, [refill.resident_id])).rows[0];
-      const medication = (await query(`SELECT name, strength FROM medications WHERE id = $1`, [refill.medication_id])).rows[0];
+      let medication = (await query(`SELECT id, name, strength, remaining_count FROM medications WHERE id = $1`, [refill.medication_id])).rows[0];
+      let dispensedQuantity = 0;
+      if (status === "completed") {
+        dispensedQuantity = Math.max(1, Number(payload.dispensedQuantity || 30));
+        medication = (await query(
+          `UPDATE medications
+           SET remaining_count = remaining_count + $1,
+               status = CASE WHEN status = 'taken' THEN 'pending' ELSE status END,
+               updated_at = now()
+           WHERE id = $2
+           RETURNING id, name, strength, remaining_count`,
+          [dispensedQuantity, refill.medication_id]
+        )).rows[0];
+        await query(
+          `INSERT INTO medication_inventory_events (medication_id, resident_id, event_type, quantity_delta, remaining_after, reason)
+           VALUES ($1,$2,'refill_completed',$3,$4,$5)`,
+          [refill.medication_id, refill.resident_id, dispensedQuantity, Number(medication.remaining_count), `${business.name} completed refill request ${refill.id}`]
+        );
+      }
       if (seniorUser) {
         await query(
           `INSERT INTO notifications (user_id, channel, title, body, status)
            VALUES ($1,'push','Refill request updated',$2,'queued')`,
-          [seniorUser.id, `${business.name} marked ${medication?.name || "medication"} refill as ${status}.`.trim()]
+          [seniorUser.id, `${business.name} marked ${medication?.name || "medication"} refill as ${status}.${dispensedQuantity ? ` Inventory updated to ${medication.remaining_count} remaining.` : ""}`.trim()]
         );
       }
-      await audit(req, user, "medication_refill_status_updated", "medication_refill_request", refill.id, { status, medicationId: refill.medication_id }, "info");
+      await audit(req, user, "medication_refill_status_updated", "medication_refill_request", refill.id, { status, medicationId: refill.medication_id, dispensedQuantity, remainingCount: medication?.remaining_count }, "info");
       return { refillRequest: refill };
     }
 
