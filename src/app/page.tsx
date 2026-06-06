@@ -125,9 +125,64 @@ const faqs = [
   ]
 ];
 
+const structuredData = [
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "TheSeniorGuru",
+    url: "https://theseniorguru.com",
+    logo: "https://theseniorguru.com/icon-512.png",
+    founder: {
+      "@type": "Person",
+      name: "Gaurav Basra",
+      url: "https://basraconsultingservices.com/#gaurav-basra"
+    },
+    sameAs: ["https://basraconsultingservices.com"]
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "TheSeniorGuru",
+    applicationCategory: "LifestyleApplication",
+    operatingSystem: "iOS, Android",
+    url: "https://theseniorguru.com",
+    description:
+      "A mobile-first platform connecting seniors, families, communities, caregivers, and service providers in one simple experience.",
+    offers: {
+      "@type": "Offer",
+      availability: "https://schema.org/PreOrder",
+      price: "0",
+      priceCurrency: "USD"
+    },
+    featureList: needs
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "TheSeniorGuru",
+    url: "https://theseniorguru.com"
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map(([question, answer]) => ({
+      "@type": "Question",
+      name: question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: answer
+      }
+    }))
+  }
+];
+
 export default function HomePage() {
   return (
     <main className="site-shell">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
       <header className="site-header">
         <Link className="brand" href="/" aria-label="TheSeniorGuru home">
           <span>SG</span>
