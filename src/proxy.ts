@@ -23,6 +23,12 @@ function isPublicAssetPath(pathname: string) {
   return (
     pathname === "/" ||
     pathname === "/favicon.ico" ||
+    pathname === "/favicon.svg" ||
+    pathname === "/apple-touch-icon.png" ||
+    pathname === "/icon-192.png" ||
+    pathname === "/icon-512.png" ||
+    pathname === "/og-image.png" ||
+    pathname === "/site.webmanifest" ||
     pathname === "/robots.txt" ||
     pathname === "/sitemap.xml" ||
     pathname.startsWith("/_next/") ||
