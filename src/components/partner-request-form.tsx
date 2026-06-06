@@ -15,13 +15,34 @@ export function PartnerRequestForm() {
 
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const payload = Object.fromEntries(formData.entries());
+    const businessName = String(formData.get("businessName") ?? "");
+    const industry = String(formData.get("industry") ?? "");
+    const serviceArea = String(formData.get("serviceArea") ?? "");
+    const website = String(formData.get("website") ?? "");
+    const description = String(formData.get("description") ?? "");
 
     try {
-      const response = await fetch("/api/partner-request", {
+      const response = await fetch("/api/v1/operator/demo-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          organizationName: businessName,
+          contactName: String(formData.get("contactName") ?? ""),
+          contactEmail: String(formData.get("email") ?? ""),
+          contactPhone: String(formData.get("phone") ?? ""),
+          role: industry,
+          communityCount: serviceArea,
+          occupancyChallenge: [
+            `Partnership industry: ${industry}`,
+            `Service area: ${serviceArea}`,
+            website ? `Website: ${website}` : "",
+            description ? `Description: ${description}` : ""
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          requestedProduct: "full_platform",
+          consentToContact: formData.get("consentToContact") === "on"
+        })
       });
 
       if (!response.ok) {
@@ -29,17 +50,21 @@ export function PartnerRequestForm() {
       }
 
       setStatus("success");
-      setMessage("Thank you. We received your request and will follow up shortly.");
+      setMessage("Partnership request received. We will follow up with the right next step.");
       form.reset();
     } catch {
       setStatus("error");
-      setMessage("Something went wrong. Please email contact@theseniorguru.com directly.");
+      setMessage("Something went wrong. Please email gaurav@basraconsultingservices.com directly.");
     }
   }
 
   return (
-    <form className="partner-request-form" onSubmit={onSubmit}>
-      <div className="form-grid-two">
+    <form className="lead-form partner-request-form" onSubmit={onSubmit}>
+      <div>
+        <p className="eyebrow">Partnership request</p>
+        <h3>Tell us about your organization</h3>
+      </div>
+      <div className="form-grid two">
         <label>
           Business name
           <input name="businessName" required placeholder="Company or organization" />
@@ -60,7 +85,7 @@ export function PartnerRequestForm() {
           </select>
         </label>
       </div>
-      <div className="form-grid-two">
+      <div className="form-grid two">
         <label>
           Contact name
           <input name="contactName" required placeholder="Your name" />
@@ -70,7 +95,7 @@ export function PartnerRequestForm() {
           <input name="email" type="email" required placeholder="name@company.com" />
         </label>
       </div>
-      <div className="form-grid-two">
+      <div className="form-grid two">
         <label>
           Phone
           <input name="phone" placeholder="Best callback number" />
@@ -81,11 +106,19 @@ export function PartnerRequestForm() {
         </label>
       </div>
       <label>
-        How would you like to collaborate?
-        <textarea name="collaboration" required placeholder="Tell us about your service, pilot interest, integration idea, or partnership request." rows={4} />
+        Website
+        <input name="website" type="url" placeholder="https://company.com" />
       </label>
-      <button disabled={status === "loading"} type="submit">
-        {status === "loading" ? "Sending..." : "Send collaboration request"}
+      <label>
+        Description
+        <textarea name="description" required placeholder="Tell us about your service, pilot interest, integration idea, or partnership request." rows={4} />
+      </label>
+      <label className="check-row">
+        <input name="consentToContact" type="checkbox" required />
+        <span>I agree to be contacted about TheSeniorGuru partnership opportunities.</span>
+      </label>
+      <button className="button primary" disabled={status === "loading"} type="submit">
+        {status === "loading" ? "Submitting..." : "Submit partnership request"}
       </button>
       {message ? <p className={`form-status ${status}`}>{message}</p> : null}
     </form>

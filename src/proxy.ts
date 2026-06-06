@@ -19,15 +19,36 @@ function isApiPath(pathname: string) {
   return pathname.startsWith("/api/");
 }
 
+function isPublicAssetPath(pathname: string) {
+  return (
+    pathname === "/" ||
+    pathname === "/favicon.ico" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml" ||
+    pathname.startsWith("/_next/") ||
+    pathname.startsWith("/assets/")
+  );
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+
+  if (isPublicAssetPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  if (!isApiPath(pathname)) {
+    const homeUrl = request.nextUrl.clone();
+    homeUrl.pathname = "/";
+    homeUrl.search = "";
+    return NextResponse.redirect(homeUrl, 307);
+  }
 
   if (!isProtectedPath(pathname)) {
     return NextResponse.next();
   }
 
   const session = await getAdminSessionFromRequest(request);
-
   if (session) {
     return NextResponse.next();
   }
@@ -51,13 +72,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/admin/:path*",
-    "/provider/:path*",
-    "/workbench/:path*",
-    "/api/v1/admin/:path*",
-    "/api/v1/provider/:path*",
-    "/api/v1/system/:path*",
-    "/api/v1/openapi"
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|assets).*)"
   ]
 };
-

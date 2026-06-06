@@ -1,6 +1,12 @@
 import type { MetadataRoute } from "next";
-import { buildSitemap } from "@/lib/seo/site-discovery";
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  return buildSitemap();
+export default function sitemap(): MetadataRoute.Sitemap {
+  return [
+    {
+      url: "https://theseniorguru.com",
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 1
+    }
+  ];
 }
