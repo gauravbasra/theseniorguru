@@ -32,6 +32,14 @@ function isPublicAssetPath(pathname: string) {
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+  const hostname = request.nextUrl.hostname.toLowerCase();
+
+  if (hostname.endsWith(".vercel.app") || hostname === "www.theseniorguru.com") {
+    const canonicalUrl = request.nextUrl.clone();
+    canonicalUrl.hostname = "theseniorguru.com";
+    canonicalUrl.protocol = "https:";
+    return NextResponse.redirect(canonicalUrl, 308);
+  }
 
   if (isPublicAssetPath(pathname)) {
     return NextResponse.next();
