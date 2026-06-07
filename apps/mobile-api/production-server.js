@@ -267,6 +267,65 @@ function createProductionApi(pool) {
     }
   }
 
+  function normalizeTrustConnectionType(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (["friend", "friends"].includes(normalized)) return "friend";
+    if (["caregiver", "caregivers", "care partner", "care_partner"].includes(normalized)) return "caregiver";
+    return "family";
+  }
+
+  function trustPermissionsForType(connectionType, requested = []) {
+    const base = ["messages", "social", "events"];
+    const type = normalizeTrustConnectionType(connectionType);
+    if (type === "friend") return [...new Set([...base, "companionship"])];
+    const approvedHealth = requested.filter(permission => ["wellness", "medications", "health", "vitals", "trends"].includes(permission));
+    if (type === "caregiver") return [...new Set([...base, "safety", "sos", "location", "tasks", ...approvedHealth])];
+    return [...new Set([...base, "safety", "sos", "location", "family", ...approvedHealth])];
+  }
+
+  function trustRoleFromRelationship(relationship, roleType) {
+    const explicit = normalizeTrustConnectionType(roleType);
+    if (roleType) return explicit;
+    const normalized = String(relationship || "").trim().toLowerCase();
+    if (["friend", "neighbor", "companion"].some(term => normalized.includes(term))) return "friend";
+    if (["caregiver", "care partner", "nurse", "aide", "doctor", "clinician"].some(term => normalized.includes(term))) return "caregiver";
+    return "family";
+  }
+
+  function inviteMessageFor({ seniorName, inviterName, connectionType, channel }) {
+    const type = normalizeTrustConnectionType(connectionType);
+    const roleText = type === "friend" ? "friend circle" : type === "caregiver" ? "caregiver circle" : "family circle";
+    const privacyText = type === "friend"
+      ? "You can send messages, join community moments, and support them socially. Health data is not shared with friends."
+      : "Health details are shared only after the senior approves the access request inside TheSeniorGuru.";
+    const base = `Hi, it is ${inviterName}. I am inviting you to join ${seniorName}'s ${roleText} on TheSeniorGuru. ${privacyText} Join here:`;
+    if (channel === "whatsapp") return `${base} {{invite_link}}`;
+    if (channel === "sms") return `${base} {{invite_link}}`;
+    return `${base} {{invite_link}}`;
+  }
+
+  async function canViewSeniorHealth(user, residentId) {
+    if (user.role === "senior") {
+      const resident = await getResidentForUser(user);
+      return resident?.id === residentId;
+    }
+    if (user.role === "trusted_person") {
+      const row = (await query(
+        `SELECT tc.connection_type, tc.health_access_status, hp.status AS permission_status
+         FROM trusted_connections tc
+         LEFT JOIN health_sharing_permissions hp
+           ON hp.senior_id = tc.resident_id AND hp.grantee_user_id = tc.trusted_user_id AND hp.status = 'active'
+         WHERE tc.resident_id = $1 AND tc.trusted_user_id = $2 AND tc.status = 'approved'
+         LIMIT 1`,
+        [residentId, user.id]
+      )).rows[0];
+      if (!row) return false;
+      if (row.connection_type === "friend") return false;
+      return row.health_access_status === "approved" && row.permission_status === "active";
+    }
+    return user.role === "superadmin";
+  }
+
   async function getResidentForUser(user) {
     const result = await query(`SELECT * FROM residents WHERE user_id = $1`, [user.id]);
     return result.rows[0];
@@ -3733,30 +3792,45 @@ function createProductionApi(pool) {
       const result = await transaction(async tx => {
         const inviteCode = String(payload.inviteCode).trim().toUpperCase();
         const inviteMap = {
-          "RITA-ANITA": ["safety", "sos", "location", "messages", "wellness", "medications"],
-          "ARJUN-ANITA": ["safety", "sos", "location", "messages", "rides"],
-          "DRMEHTA-ANITA": ["wellness", "medications", "safety"],
-          "SUNITA-ANITA": ["messages", "wellness"]
+          "RITA-ANITA": { type: "family", permissions: ["safety", "sos", "location", "messages"] },
+          "ARJUN-ANITA": { type: "family", permissions: ["safety", "sos", "location", "messages", "rides"] },
+          "DRMEHTA-ANITA": { type: "caregiver", permissions: ["safety", "messages"] },
+          "SUNITA-ANITA": { type: "friend", permissions: ["messages", "social", "companionship"] }
         };
-        const permissions = inviteMap[inviteCode];
-        if (!permissions) {
+        const invite = inviteMap[inviteCode];
+        if (!invite) {
           const error = new Error("Invalid or expired invite code");
           error.status = 404;
           throw error;
         }
+        const connectionType = trustRoleFromRelationship(payload.relationship, payload.roleType || invite.type);
+        const requestedPermissions = Array.isArray(payload.visibility) || Array.isArray(payload.permissions)
+          ? (payload.visibility || payload.permissions)
+          : invite.permissions;
+        const permissions = trustPermissionsForType(connectionType, requestedPermissions);
+        const healthAccessStatus = connectionType === "friend"
+          ? "denied"
+          : requestedPermissions.some(permission => ["wellness", "medications", "health", "vitals", "trends"].includes(permission))
+            ? "pending_senior_approval"
+            : "not_requested";
         const resident = await ensureDemoResident();
         const session = (await tx(`INSERT INTO onboarding_sessions (role, account_id, status, current_step, payload, completed_at) VALUES ('trust_circle',$1,'complete','complete',$2,now()) RETURNING *`, [user.id, JSON.stringify(payload)])).rows[0];
         const member = (await tx(
-          `INSERT INTO trust_circle_onboarding (onboarding_session_id, member_account_id, full_name, relationship, phone, email, timezone, escalation_role)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-          [session.id, user.id, payload.name, payload.relationship, payload.phone, payload.email, payload.timezone || null, payload.escalationRole || null]
+          `INSERT INTO trust_circle_onboarding (onboarding_session_id, member_account_id, full_name, relationship, phone, email, timezone, role_type, escalation_role)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+          [session.id, user.id, payload.name, payload.relationship, payload.phone, payload.email, payload.timezone || null, connectionType, payload.escalationRole || null]
         )).rows[0];
         const connection = (await tx(
-          `INSERT INTO trusted_connections (resident_id, trusted_user_id, permissions, status, updated_at)
-           VALUES ($1,$2,$3,'approved',now())
-           ON CONFLICT (resident_id, trusted_user_id) DO UPDATE SET permissions = EXCLUDED.permissions, status = 'approved', updated_at = now()
+          `INSERT INTO trusted_connections (resident_id, trusted_user_id, permissions, connection_type, health_access_status, status, updated_at)
+           VALUES ($1,$2,$3,$4,$5,'approved',now())
+           ON CONFLICT (resident_id, trusted_user_id) DO UPDATE SET
+             permissions = EXCLUDED.permissions,
+             connection_type = EXCLUDED.connection_type,
+             health_access_status = EXCLUDED.health_access_status,
+             status = 'approved',
+             updated_at = now()
            RETURNING *`,
-          [resident.id, user.id, permissions]
+          [resident.id, user.id, permissions, connectionType, healthAccessStatus]
         )).rows[0];
         await tx(`INSERT INTO trust_circle_messaging_rules (trust_circle_member_id, routine_window, quiet_hours, emergency_override, alert_types, preferred_channels) VALUES ($1,$2,$3,$4,$5,$6)`, [member.id, payload.routineWindow || null, payload.quietHours || null, String(payload.emergencyOverride || "Yes").toLowerCase() !== "no", payload.alertTypes || [], ["app"]]);
         const capturedEvidenceIds = [payload.identityPhotoEvidenceId, payload.livenessEvidenceId].filter(isUuid);
@@ -3768,7 +3842,7 @@ function createProductionApi(pool) {
             [session.id, user.id, JSON.stringify({ linkedFrom: "trust_circle_onboarding", linkedAt: new Date().toISOString() }), capturedEvidenceIds]
           );
         }
-        await tx(`INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata) VALUES ($1,'trust_circle','alert_receipt_and_senior_approved_visibility','Trust circle onboarding consent captured in mobile app.',true,$2,$3,$4)`, [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ inviteCode, visibility: payload.visibility || [], alertTypes: payload.alertTypes || [], permissions })]);
+        await tx(`INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata) VALUES ($1,'trust_circle','alert_receipt_and_senior_approved_visibility','Trust circle onboarding consent captured in mobile app.',true,$2,$3,$4)`, [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ inviteCode, connectionType, healthAccessStatus, visibility: payload.visibility || [], alertTypes: payload.alertTypes || [], permissions })]);
         return { session, member, connection };
       });
       await audit(req, user, "role_onboarding_trust_circle_completed", "onboarding_session", result.session.id, { memberId: result.member.id, connectionId: result.connection.id });
@@ -4898,27 +4972,89 @@ function createProductionApi(pool) {
       requireRole(user, ["trusted_person"]);
       const inviteCode = String(required(payload.inviteCode, "inviteCode")).trim().toUpperCase();
       const inviteMap = {
-        "RITA-ANITA": ["safety", "sos", "location", "messages", "wellness", "medications"],
-        "ARJUN-ANITA": ["safety", "sos", "location", "messages", "rides"],
-        "DRMEHTA-ANITA": ["wellness", "medications", "safety"],
-        "SUNITA-ANITA": ["messages", "wellness"]
+        "RITA-ANITA": { type: "family", permissions: ["safety", "sos", "location", "messages"] },
+        "ARJUN-ANITA": { type: "family", permissions: ["safety", "sos", "location", "messages", "rides"] },
+        "DRMEHTA-ANITA": { type: "caregiver", permissions: ["safety", "messages"] },
+        "SUNITA-ANITA": { type: "friend", permissions: ["messages", "social", "companionship"] }
       };
-      const permissions = inviteMap[inviteCode];
-      if (!permissions) {
+      const invite = inviteMap[inviteCode];
+      if (!invite) {
         const error = new Error("Invalid or expired invite code");
         error.status = 404;
         throw error;
       }
+      const connectionType = normalizeTrustConnectionType(payload.connectionType || invite.type);
+      const permissions = trustPermissionsForType(connectionType, payload.permissions || invite.permissions);
+      const healthAccessStatus = connectionType === "friend" ? "denied" : "not_requested";
       const resident = await ensureDemoResident();
       const connection = (await query(
-        `INSERT INTO trusted_connections (resident_id, trusted_user_id, permissions, status, updated_at)
-         VALUES ($1,$2,$3,'approved',now())
-         ON CONFLICT (resident_id, trusted_user_id) DO UPDATE SET permissions = EXCLUDED.permissions, status = 'approved', updated_at = now()
+        `INSERT INTO trusted_connections (resident_id, trusted_user_id, permissions, connection_type, health_access_status, status, updated_at)
+         VALUES ($1,$2,$3,$4,$5,'approved',now())
+         ON CONFLICT (resident_id, trusted_user_id) DO UPDATE SET
+           permissions = EXCLUDED.permissions,
+           connection_type = EXCLUDED.connection_type,
+           health_access_status = EXCLUDED.health_access_status,
+           status = 'approved',
+           updated_at = now()
          RETURNING *`,
-        [resident.id, user.id, permissions]
+        [resident.id, user.id, permissions, connectionType, healthAccessStatus]
       )).rows[0];
-      await audit(req, user, "trusted_invite_accepted", "trusted_connection", connection.id, { inviteCode, permissions }, "info");
-      return { person: { id: user.id, name: user.display_name, role: "Trusted person", phone: user.phone, permissions, status: "approved" }, connection };
+      await audit(req, user, "trusted_invite_accepted", "trusted_connection", connection.id, { inviteCode, connectionType, permissions }, "info");
+      return { person: { id: user.id, name: user.display_name, role: connectionType, phone: user.phone, permissions, status: "approved" }, connection };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/circle/accept-token") {
+      requireRole(user, ["trusted_person"]);
+      const token = String(required(payload.token, "token")).trim();
+      const tokenHash = hashToken(token);
+      const invite = (await query(
+        `SELECT * FROM trusted_invites
+         WHERE invite_token_hash = $1
+           AND status = 'pending'
+           AND expires_at > now()
+         LIMIT 1`,
+        [tokenHash]
+      )).rows[0];
+      if (!invite) {
+        const error = new Error("Invalid or expired invite token");
+        error.status = 404;
+        throw error;
+      }
+      const connectionType = normalizeTrustConnectionType(invite.connection_type);
+      const permissions = trustPermissionsForType(connectionType, invite.permissions || []);
+      const healthAccessStatus = connectionType === "friend" ? "denied" : permissions.some(permission => ["health", "wellness", "medications", "vitals", "trends"].includes(permission)) ? "pending_senior_approval" : "not_requested";
+      const result = await transaction(async tx => {
+        const connection = (await tx(
+          `INSERT INTO trusted_connections (
+             resident_id, trusted_user_id, permissions, connection_type,
+             health_access_status, invited_by, invite_channel, invite_message, status, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'approved',now())
+           ON CONFLICT (resident_id, trusted_user_id) DO UPDATE SET
+             permissions = EXCLUDED.permissions,
+             connection_type = EXCLUDED.connection_type,
+             health_access_status = EXCLUDED.health_access_status,
+             invited_by = EXCLUDED.invited_by,
+             invite_channel = EXCLUDED.invite_channel,
+             invite_message = EXCLUDED.invite_message,
+             status = 'approved',
+             updated_at = now()
+           RETURNING *`,
+          [invite.resident_id, user.id, permissions, connectionType, healthAccessStatus, invite.created_by || null, invite.invite_channel, invite.invite_message]
+        )).rows[0];
+        await tx(
+          `UPDATE trusted_invites SET status = 'accepted', accepted_by = $2, accepted_at = now()
+           WHERE id = $1`,
+          [invite.id, user.id]
+        );
+        await tx(
+          `UPDATE social_invite_events SET status = 'accepted', invited_user_id = $2, accepted_at = now()
+           WHERE invite_token_hash = $1`,
+          [tokenHash, user.id]
+        );
+        return connection;
+      });
+      await audit(req, user, "trusted_invite_token_accepted", "trusted_connection", result.id, { connectionType, inviteId: invite.id }, "info");
+      return { connection: result, person: { id: user.id, name: user.display_name, role: connectionType, phone: user.phone, permissions, healthAccessStatus } };
     }
 
     if (req.method === "GET" && url.pathname === "/api/circle") {
@@ -4938,6 +5074,7 @@ function createProductionApi(pool) {
         throw error;
       }
       const permissions = connection.permissions || [];
+      const healthAllowed = await canViewSeniorHealth(user, connection.resident_id);
       const safetyEvents = permissions.includes("safety") || permissions.includes("sos")
         ? (await query(`SELECT * FROM safety_events WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 25`, [connection.resident_id])).rows
         : [];
@@ -4947,7 +5084,7 @@ function createProductionApi(pool) {
       const safeZones = permissions.includes("location") || permissions.includes("safety")
         ? (await query(`SELECT * FROM resident_safe_zones WHERE resident_id = $1 AND status = 'active' ORDER BY created_at DESC`, [connection.resident_id])).rows
         : [];
-      const healthRows = permissions.includes("wellness")
+      const healthRows = healthAllowed
         ? (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [connection.resident_id])).rows
         : [];
       const wearableDevices = permissions.includes("safety")
@@ -4961,7 +5098,7 @@ function createProductionApi(pool) {
         ? (await query(`SELECT * FROM circle_call_requests WHERE resident_id = $1 AND trusted_user_id = $2 ORDER BY created_at DESC LIMIT 25`, [connection.resident_id, user.id])).rows
         : [];
       return {
-        person: { id: user.id, name: user.display_name, role: "Trusted person", phone: user.phone, permissions, status: connection.status },
+        person: { id: user.id, name: user.display_name, role: connection.connection_type || "family", phone: user.phone, permissions, healthAccessStatus: connection.health_access_status, status: connection.status },
         resident: { id: connection.resident_id, name: connection.resident_name, phone: connection.resident_phone, community: connection.community, mood: connection.mood },
         safety: {
           location: telemetry ? { label: connection.community || "Shared location", accuracyMeters: telemetry.accuracy_meters || 18 } : { label: connection.community || "Shared location", accuracyMeters: 18 },
@@ -4970,7 +5107,9 @@ function createProductionApi(pool) {
           fallDetection: { confidence: Number(telemetry?.fall_confidence || 0), status: Number(telemetry?.fall_confidence || 0) > 0.7 ? "watch" : "clear" },
           sosEvents: safetyEvents
         },
-        healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) },
+        healthVitals: healthAllowed
+          ? { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)), access: "approved" }
+          : { readings: [], summary: {}, latestSummary: {}, access: connection.connection_type === "friend" ? "not_available_for_friends" : "requires_senior_approval" },
         wearables: { devices: wearableDevices, readings: [], latestSummary: evaluateWearables(wearableDevices, {}) },
         notifications,
         messages,
@@ -7216,8 +7355,275 @@ function createProductionApi(pool) {
       return { task };
     }
 
-    if (req.method === "POST" && url.pathname === "/api/posts") {
+    if (req.method === "POST" && url.pathname === "/api/contacts/import") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const contacts = Array.isArray(payload.contacts) ? payload.contacts.slice(0, 500) : [];
+      const saved = [];
+      for (const contact of contacts) {
+        const phone = String(contact.phone || "").trim();
+        const email = String(contact.email || "").trim().toLowerCase();
+        const displayName = String(contact.displayName || contact.name || "").trim();
+        if (!phone && !email) continue;
+        const contactHash = hashToken(`${user.id}:${phone}:${email}`).slice(0, 48);
+        const row = (await query(
+          `INSERT INTO imported_contacts (owner_user_id, contact_hash, display_name, phone, email, source, metadata)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (owner_user_id, contact_hash) DO UPDATE SET
+             display_name = COALESCE(EXCLUDED.display_name, imported_contacts.display_name),
+             phone = COALESCE(EXCLUDED.phone, imported_contacts.phone),
+             email = COALESCE(EXCLUDED.email, imported_contacts.email),
+             metadata = imported_contacts.metadata || EXCLUDED.metadata,
+             updated_at = now()
+           RETURNING id, display_name, phone, email, source, created_at, updated_at`,
+          [user.id, contactHash, displayName || null, phone || null, email || null, payload.source || "phone_contacts", JSON.stringify({ importedAt: new Date().toISOString(), source: payload.source || "phone_contacts" })]
+        )).rows[0];
+        saved.push(row);
+      }
+      await audit(req, user, "contacts_imported", "imported_contact", null, { count: saved.length, source: payload.source || "phone_contacts" }, "info");
+      return { contacts: saved, count: saved.length };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/members/search") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const q = String(url.searchParams.get("q") || "").trim();
+      if (q.length < 2) return { members: [] };
+      const pattern = `%${q.replace(/[%_]/g, "")}%`;
+      const users = (await query(
+        `SELECT id, display_name, phone, email, role, 'user' AS source
+         FROM users
+         WHERE display_name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1
+         ORDER BY display_name
+         LIMIT 25`,
+        [pattern]
+      )).rows;
+      const contacts = (await query(
+        `SELECT id, display_name, phone, email, 'contact' AS role, 'phone_contacts' AS source
+         FROM imported_contacts
+         WHERE owner_user_id = $1 AND (display_name ILIKE $2 OR phone ILIKE $2 OR email ILIKE $2)
+         ORDER BY display_name
+         LIMIT 25`,
+        [user.id, pattern]
+      )).rows;
+      return { members: [...users, ...contacts].slice(0, 40) };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/circle/invites") {
       requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const connectionType = normalizeTrustConnectionType(payload.connectionType);
+      const inviteChannel = String(payload.channel || payload.inviteChannel || "copy_link").trim().toLowerCase();
+      const invitedName = String(payload.name || payload.invitedName || "").trim();
+      const invitedPhone = String(payload.phone || "").trim();
+      const invitedEmail = String(payload.email || "").trim().toLowerCase();
+      if (!invitedPhone && !invitedEmail) {
+        const error = new Error("Invite requires phone or email");
+        error.status = 400;
+        throw error;
+      }
+      const token = crypto.randomBytes(18).toString("base64url").toUpperCase();
+      const inviteLink = `${process.env.PUBLIC_APP_URL || "https://mobile-api-nine.vercel.app"}/invite/${token}`;
+      const messageTemplate = inviteMessageFor({
+        seniorName: user.display_name || "your loved one",
+        inviterName: user.display_name || "TheSeniorGuru",
+        connectionType,
+        channel: inviteChannel
+      });
+      const inviteMessage = String(payload.message || messageTemplate).replace("{{invite_link}}", inviteLink);
+      const permissions = trustPermissionsForType(connectionType, payload.permissions || []);
+      const result = await transaction(async tx => {
+        const trustedInvite = (await tx(
+          `INSERT INTO trusted_invites (
+             resident_id, invite_token_hash, invited_email, invited_phone, invited_name,
+             permissions, connection_type, invite_channel, invite_message, created_by, expires_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now() + interval '30 days')
+           RETURNING id, invited_email, invited_phone, invited_name, permissions, connection_type, invite_channel, invite_message, status, expires_at, created_at`,
+          [resident.id, hashToken(token), invitedEmail || null, invitedPhone || null, invitedName || null, permissions, connectionType, inviteChannel, inviteMessage, user.id]
+        )).rows[0];
+        const event = (await tx(
+          `INSERT INTO social_invite_events (
+             inviter_user_id, resident_id, invited_name, invited_phone, invited_email,
+             connection_type, invite_channel, invite_message, invite_token_hash, metadata
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           RETURNING *`,
+          [user.id, resident.id, invitedName || null, invitedPhone || null, invitedEmail || null, connectionType, inviteChannel, inviteMessage, hashToken(token), JSON.stringify({ trustedInviteId: trustedInvite.id, inviteLink })]
+        )).rows[0];
+        return { trustedInvite, event };
+      });
+      await audit(req, user, "trust_circle_invite_created", "trusted_invite", result.trustedInvite.id, { connectionType, inviteChannel }, "info");
+      return { invite: result.trustedInvite, event: result.event, token, inviteLink, message: inviteMessage, shareTargets: ["whatsapp", "sms", "copy_link"] };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/circle/invite-message") {
+      requireRole(user, ["senior"]);
+      const connectionType = normalizeTrustConnectionType(payload.connectionType);
+      const channel = String(payload.channel || "whatsapp").trim().toLowerCase();
+      const message = inviteMessageFor({
+        seniorName: payload.seniorName || user.display_name || "your loved one",
+        inviterName: user.display_name || "TheSeniorGuru",
+        connectionType,
+        channel
+      });
+      return { connectionType, channel, message, shareTargets: ["whatsapp", "sms", "copy_link"] };
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/circle/health-permissions") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const trustedUserId = required(payload.trustedUserId, "trustedUserId");
+      const connection = (await query(
+        `SELECT * FROM trusted_connections WHERE resident_id = $1 AND trusted_user_id = $2 AND status = 'approved'`,
+        [resident.id, trustedUserId]
+      )).rows[0];
+      if (!connection) {
+        const error = new Error("Trusted connection not found");
+        error.status = 404;
+        throw error;
+      }
+      if (connection.connection_type === "friend") {
+        const updated = (await query(
+          `UPDATE trusted_connections SET health_access_status = 'denied', updated_at = now() WHERE id = $1 RETURNING *`,
+          [connection.id]
+        )).rows[0];
+        return { connection: updated, healthPermission: null, reason: "Friends cannot access health data." };
+      }
+      const approve = payload.approved === true || payload.status === "approved";
+      const status = approve ? "approved" : "denied";
+      const updated = await transaction(async tx => {
+        const updatedConnection = (await tx(
+          `UPDATE trusted_connections SET
+             health_access_status = $2,
+             permissions = CASE WHEN $2 = 'approved' THEN array(SELECT DISTINCT unnest(permissions || $3::text[])) ELSE permissions END,
+             updated_at = now()
+           WHERE id = $1
+           RETURNING *`,
+          [connection.id, status, ["health", "wellness", "medications", "vitals", "trends"]]
+        )).rows[0];
+        let permission = null;
+        if (approve) {
+          permission = (await tx(
+            `INSERT INTO health_sharing_permissions (
+               senior_id, grantee_user_id, visibility, can_view_trends, can_view_alerts,
+               can_view_medication_adherence, can_view_location_context, status, created_by, updated_at
+             ) VALUES ($1,$2,$3,true,true,true,$4,'active',$5,now())
+             ON CONFLICT (senior_id, grantee_user_id) DO UPDATE SET
+               visibility = EXCLUDED.visibility,
+               can_view_trends = true,
+               can_view_alerts = true,
+               can_view_medication_adherence = true,
+               can_view_location_context = EXCLUDED.can_view_location_context,
+               status = 'active',
+               created_by = EXCLUDED.created_by,
+               updated_at = now()
+             RETURNING *`,
+            [resident.id, trustedUserId, payload.visibility || ["summary", "vitals", "medications"], payload.canViewLocationContext === true, user.id]
+          )).rows[0];
+        } else {
+          await tx(
+            `UPDATE health_sharing_permissions SET status = 'revoked', updated_at = now()
+             WHERE senior_id = $1 AND grantee_user_id = $2`,
+            [resident.id, trustedUserId]
+          );
+        }
+        return { updatedConnection, permission };
+      });
+      await audit(req, user, "health_sharing_permission_updated", "trusted_connection", connection.id, { trustedUserId, status }, "security");
+      return { connection: updated.updatedConnection, healthPermission: updated.permission };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/groups") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const resident = user.role === "senior" ? await getResidentForUser(user) : null;
+      const name = String(required(payload.name, "name")).trim();
+      const groupType = ["family", "friends", "caregivers", "community", "activity"].includes(payload.groupType) ? payload.groupType : "community";
+      const group = await transaction(async tx => {
+        const row = (await tx(
+          `INSERT INTO social_groups (resident_id, owner_user_id, name, description, group_type, visibility, metadata)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           RETURNING *`,
+          [resident?.id || payload.residentId || null, user.id, name, payload.description || "", groupType, payload.visibility || "invite_only", JSON.stringify(payload.metadata || {})]
+        )).rows[0];
+        await tx(
+          `INSERT INTO social_group_members (group_id, user_id, member_role, source, status, added_by)
+           VALUES ($1,$2,'owner','owner','active',$2)
+           ON CONFLICT (group_id, user_id) DO UPDATE SET member_role = 'owner', status = 'active', updated_at = now()`,
+          [row.id, user.id]
+        );
+        return row;
+      });
+      await audit(req, user, "social_group_created", "social_group", group.id, { groupType }, "info");
+      return { group };
+    }
+
+    const groupMembersMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/members$/);
+    if (req.method === "POST" && groupMembersMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const groupId = groupMembersMatch[1];
+      const group = (await query(`SELECT * FROM social_groups WHERE id = $1 AND status = 'active'`, [groupId])).rows[0];
+      if (!group) {
+        const error = new Error("Group not found");
+        error.status = 404;
+        throw error;
+      }
+      const owner = group.owner_user_id === user.id;
+      const admin = owner || (await query(`SELECT 1 FROM social_group_members WHERE group_id = $1 AND user_id = $2 AND member_role IN ('owner','admin') AND status = 'active'`, [groupId, user.id])).rows[0];
+      if (!admin) {
+        const error = new Error("Only group owners and admins can add members");
+        error.status = 403;
+        throw error;
+      }
+      const userIds = Array.isArray(payload.userIds) ? payload.userIds : [payload.userId].filter(Boolean);
+      const members = [];
+      for (const memberUserId of userIds) {
+        const member = (await query(
+          `INSERT INTO social_group_members (group_id, user_id, member_role, source, status, added_by)
+           VALUES ($1,$2,$3,$4,'active',$5)
+           ON CONFLICT (group_id, user_id) DO UPDATE SET
+             member_role = EXCLUDED.member_role,
+             status = 'active',
+             added_by = EXCLUDED.added_by,
+             updated_at = now()
+           RETURNING *`,
+          [groupId, memberUserId, payload.memberRole || "member", payload.source || "manual", user.id]
+        )).rows[0];
+        members.push(member);
+      }
+      await audit(req, user, "social_group_members_added", "social_group", groupId, { count: members.length }, "info");
+      return { members };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/posts") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const rows = (await query(
+        `SELECT cp.*,
+                u.display_name AS author_name,
+                count(DISTINCT spr.id)::int AS reaction_count,
+                count(DISTINCT spc.id)::int AS comment_count,
+                bool_or(spr.user_id = $1)::boolean AS liked_by_me
+         FROM community_posts cp
+         LEFT JOIN users u ON u.id = cp.author_user_id
+         LEFT JOIN social_post_reactions spr ON spr.post_id = cp.id
+         LEFT JOIN social_post_comments spc ON spc.post_id = cp.id AND spc.status = 'published'
+         WHERE cp.status = 'published'
+         GROUP BY cp.id, u.display_name
+         ORDER BY cp.created_at DESC
+         LIMIT 50`,
+        [user.id]
+      )).rows;
+      return { posts: rows.map(row => ({ ...row, liked_by_me: row.liked_by_me === true })) };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/posts") {
+      requireRole(user, ["senior", "trusted_person"]);
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
       const body = String(payload.body || "").trim();
       if (!body) {
@@ -7230,8 +7636,58 @@ function createProductionApi(pool) {
          VALUES ($1,$2,$3,$4,'published',$5) RETURNING *`,
         [resident?.id || null, user.id, body, payload.audience || "community", JSON.stringify(payload.metadata || {})]
       )).rows[0];
+      await query(
+        `INSERT INTO social_feed_posts (community_post_id, group_id, resident_id, author_user_id, body, media_object_ids, visibility, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (community_post_id) DO NOTHING`,
+        [post.id, payload.groupId || null, resident?.id || null, user.id, body, Array.isArray(payload.mediaObjectIds) ? payload.mediaObjectIds : [], payload.groupId ? "group" : payload.audience || "community", JSON.stringify(payload.metadata || {})]
+      );
       await audit(req, user, "community_post_created", "community_post", post.id, { audience: post.audience }, "info");
       return { ok: true, post };
+    }
+
+    const postLikeMatch = url.pathname.match(/^\/api\/posts\/([^/]+)\/like$/);
+    if (req.method === "POST" && postLikeMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const postId = postLikeMatch[1];
+      const post = (await query(`SELECT * FROM community_posts WHERE id = $1 AND status = 'published'`, [postId])).rows[0];
+      if (!post) {
+        const error = new Error("Post not found");
+        error.status = 404;
+        throw error;
+      }
+      const reactionType = String(payload.reactionType || "heart").trim().toLowerCase();
+      const reaction = (await query(
+        `INSERT INTO social_post_reactions (post_id, user_id, reaction_type)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (post_id, user_id, reaction_type) DO NOTHING
+         RETURNING *`,
+        [postId, user.id, reactionType]
+      )).rows[0] || (await query(`SELECT * FROM social_post_reactions WHERE post_id = $1 AND user_id = $2 AND reaction_type = $3`, [postId, user.id, reactionType])).rows[0];
+      const count = Number((await query(`SELECT count(*) FROM social_post_reactions WHERE post_id = $1`, [postId])).rows[0].count || 0);
+      await audit(req, user, "community_post_liked", "community_post", postId, { reactionType }, "info");
+      return { reaction, reactionCount: count };
+    }
+
+    const postCommentsMatch = url.pathname.match(/^\/api\/posts\/([^/]+)\/comments$/);
+    if (req.method === "POST" && postCommentsMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const postId = postCommentsMatch[1];
+      const body = String(required(payload.body, "body")).trim();
+      const post = (await query(`SELECT * FROM community_posts WHERE id = $1 AND status = 'published'`, [postId])).rows[0];
+      if (!post) {
+        const error = new Error("Post not found");
+        error.status = 404;
+        throw error;
+      }
+      const comment = (await query(
+        `INSERT INTO social_post_comments (post_id, parent_comment_id, author_user_id, body, metadata)
+         VALUES ($1,$2,$3,$4,$5)
+         RETURNING *`,
+        [postId, payload.parentCommentId || null, user.id, body, JSON.stringify(payload.metadata || {})]
+      )).rows[0];
+      await audit(req, user, "community_post_commented", "community_post", postId, { commentId: comment.id }, "info");
+      return { comment };
     }
 
     if (req.method === "POST" && url.pathname === "/api/events/join") {
