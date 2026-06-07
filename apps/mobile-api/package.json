@@ -8,6 +8,7 @@
     "db:seed": "psql \"$DATABASE_URL\" -f seed.sql",
     "smoke:launch-readiness": "node scripts/smoke-launch-readiness.js",
     "smoke:critical-buttons": "node scripts/smoke-critical-buttons.js",
+    "smoke:resident-surface-schema": "node scripts/smoke-resident-surface-schema.js",
     "smoke:flutter-resident": "node scripts/smoke-flutter-resident-contract.js",
     "audit:scale-hardening": "node scripts/audit-scale-hardening.js",
     "worker:jobs": "node scripts/process-job-queue.js",

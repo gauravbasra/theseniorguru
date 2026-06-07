@@ -514,6 +514,122 @@ function createProductionApi(pool) {
     return summary;
   }
 
+  function defaultVitalMonitorRows(summary = {}) {
+    const heartRate = summary.heartRateAvg || 72;
+    const hrv = summary.hrvAvg || 48;
+    const oxygen = summary.oxygenAvg || 97;
+    const respiratory = summary.respiratoryRateAvg || 16;
+    return [
+      { vital_key: "resting_heart_rate", label: "Resting Heart Rate", value_text: String(heartRate), numeric_value: heartRate, unit: "bpm", status_label: "Normal", baseline_text: "30-day baseline: 69 bpm", trend_points: [68, 70, 69, heartRate, 71], color_band_payload: { low: "green", mid: "yellow", high: "red" } },
+      { vital_key: "hrv", label: "Heart Rate Variability", value_text: String(hrv), numeric_value: hrv, unit: "ms", status_label: "Good", baseline_text: "30-day baseline: 44 ms", trend_points: [42, 43, 44, hrv, 45], color_band_payload: { low: "yellow", mid: "green", high: "green" } },
+      { vital_key: "oxygen_saturation", label: "Blood Oxygen (SpO2)", value_text: String(oxygen), numeric_value: oxygen, unit: "%", status_label: "Normal", baseline_text: "Normal range: 95 - 100%", trend_points: [96, 97, 96, oxygen, 98], color_band_payload: { low: "red", mid: "green", high: "green" } },
+      { vital_key: "respiratory_rate", label: "Respiratory Rate", value_text: String(respiratory), numeric_value: respiratory, unit: "/min", status_label: "Normal", baseline_text: "Normal range: 12 - 20", trend_points: [15, 16, 15, respiratory, 16], color_band_payload: { low: "green", mid: "green", high: "yellow" } },
+      { vital_key: "body_temperature", label: "Body Temperature", value_text: "98.3", numeric_value: 98.3, unit: "F", status_label: "Normal", baseline_text: "Normal range: 97.5 - 99.5", trend_points: [98.1, 98.2, 98.0, 98.3, 98.2], color_band_payload: { low: "green", mid: "green", high: "red" } },
+      { vital_key: "blood_pressure", label: "Blood Pressure", value_text: "118 / 76", numeric_value: 118, secondary_value: 76, unit: "mmHg", status_label: "Normal", baseline_text: "Normal range: < 130/80", trend_points: [116, 118, 117, 118, 119], color_band_payload: { low: "green", mid: "green", high: "red" } }
+    ];
+  }
+
+  function defaultWellnessContributors() {
+    return [
+      { contributor_key: "sleep_recovery", label: "Sleep Recovery", status_label: "Good", contribution_points: 18, trend: "helping", display_order: 1 },
+      { contributor_key: "activity_mobility", label: "Activity / Mobility", status_label: "Good", contribution_points: 15, trend: "helping", display_order: 2 },
+      { contributor_key: "medication_adherence", label: "Medication Adherence", status_label: "Excellent", contribution_points: 20, trend: "helping", display_order: 3 },
+      { contributor_key: "mood_mind", label: "Mood & Mind", status_label: "Good", contribution_points: 12, trend: "helping", display_order: 4 },
+      { contributor_key: "heart_health", label: "Heart Health", status_label: "Good", contribution_points: 17, trend: "helping", display_order: 5 }
+    ];
+  }
+
+  async function buildResidentSurfaceState(resident, healthSummary = {}) {
+    if (!resident) {
+      return { schemaVersion: 1 };
+    }
+    const [
+      dailyStatus,
+      wellnessScore,
+      wellnessContributors,
+      vitalMonitor,
+      familyHealth,
+      riskAssessment,
+      riskTimeline,
+      events,
+      serviceMatches,
+      transportMatches,
+      screenStates
+    ] = await Promise.all([
+      query(`SELECT * FROM resident_daily_status_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM wellness_score_snapshots WHERE resident_id = $1 ORDER BY score_date DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM wellness_contributor_snapshots WHERE resident_id = $1 ORDER BY display_order, created_at DESC LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM vital_monitor_snapshots WHERE resident_id = $1 ORDER BY captured_at DESC LIMIT 24`, [resident.id]),
+      query(`SELECT * FROM family_health_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC, created_at DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM risk_assessments WHERE resident_id = $1 ORDER BY assessed_at DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM risk_timeline_events WHERE resident_id = $1 ORDER BY event_date DESC, display_order LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM community_events WHERE status = 'published' AND (community IS NULL OR community = $1) ORDER BY starts_at NULLS LAST, created_at DESC LIMIT 25`, [resident.community || null]),
+      query(`SELECT * FROM resident_service_matches WHERE resident_id = $1 AND status = 'active' ORDER BY match_score DESC NULLS LAST, created_at DESC LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM transportation_match_options WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id]),
+      query(`SELECT DISTINCT ON (screen_key) * FROM resident_screen_states WHERE resident_id = $1 ORDER BY screen_key, updated_at DESC LIMIT 50`, [resident.id])
+    ]);
+    const score = wellnessScore.rows[0] || {
+      wellness_score: 82,
+      score_label: "Doing Well",
+      change_from_prior: 6,
+      confidence_percent: 87,
+      range_key: "today"
+    };
+    const family = familyHealth.rows[0] || {
+      stability_status: "stable",
+      health_confidence_percent: 87,
+      summary_items: [
+        { label: "Medication", value: "All taken", status: "good" },
+        { label: "Sleep", value: "7h 14m", status: "good" },
+        { label: "Activity", value: "4,280 steps", status: "watch" },
+        { label: "Heart Rate", value: `${healthSummary.heartRateAvg || 72} bpm resting`, status: "good" },
+        { label: "Mood", value: "Good", status: "good" },
+        { label: "Hydration", value: "Good", status: "good" }
+      ],
+      changed_summary: { title: "What changed?", body: "Activity is 18% lower than usual over the last 2 days." },
+      recommended_action: { title: "Recommended Action", body: "Encourage a short walk today and check in this evening." },
+      guru_note: "Overall Anita is doing well. No immediate concerns."
+    };
+    const risk = riskAssessment.rows[0] || {
+      overall_level: healthSummary.riskLevel || "low",
+      urgency_label: "No urgent concerns",
+      risk_score: 12,
+      contributing_factors: [],
+      recommended_actions: []
+    };
+    const timeline = riskTimeline.rows.length ? riskTimeline.rows : [
+      { event_date: new Date().toISOString(), event_type: "normal", title: "Normal", body: "All vitals and activities in normal range.", severity: "normal", display_order: 1 },
+      { event_date: new Date(Date.now() - 86400000).toISOString(), event_type: "reduced_activity", title: "Reduced Activity", body: "Steps were 18% below your usual range.", severity: "watch", display_order: 2 },
+      { event_date: new Date(Date.now() - 172800000).toISOString(), event_type: "missed_medication", title: "Missed Medication", body: "Evening medication was missed.", severity: "high", display_order: 3 },
+      { event_date: new Date(Date.now() - 259200000).toISOString(), event_type: "low_sleep", title: "Low Sleep", body: "Sleep was below the usual range.", severity: "watch", display_order: 4 }
+    ];
+    return {
+      schemaVersion: 1,
+      dailyStatus: dailyStatus.rows[0] || {
+        stability_status: "stable",
+        health_confidence_percent: 87,
+        highlights: [],
+        guru_insight: { title: "Guru Insight", body: "You slept well and completed your medications yesterday." }
+      },
+      wellness: {
+        score,
+        contributors: wellnessContributors.rows.length ? wellnessContributors.rows : defaultWellnessContributors()
+      },
+      vitals: {
+        monitor: vitalMonitor.rows.length ? vitalMonitor.rows : defaultVitalMonitorRows(healthSummary)
+      },
+      familyHealth: family,
+      risk: {
+        assessment: risk,
+        timeline
+      },
+      events: events.rows,
+      serviceMatches: serviceMatches.rows,
+      transportationMatches: transportMatches.rows,
+      screenStates: screenStates.rows
+    };
+  }
+
   function clampHealthScore(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return 0;
@@ -1889,6 +2005,9 @@ function createProductionApi(pool) {
         const safeZones = resident ? (await query(`SELECT * FROM resident_safe_zones WHERE resident_id = $1 AND status = 'active' ORDER BY created_at DESC`, [resident.id])).rows : [];
         const healthConsent = resident ? (await query(`SELECT * FROM health_consents WHERE resident_id = $1`, [resident.id])).rows[0] : null;
         const healthRows = resident ? (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [resident.id])).rows : [];
+        const healthSummary = evaluateHealthVitals(healthRows);
+        const latestHealthSummary = evaluateHealthVitals(healthRows.slice(0, 1));
+        const residentSurface = resident ? await buildResidentSurfaceState(resident, healthSummary) : { schemaVersion: 1 };
         const wearableDevices = resident ? (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [resident.id])).rows : [];
         const wearableRows = resident ? (await query(`SELECT * FROM wearable_telemetry WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id])).rows : [];
         const medications = resident ? (await query(
@@ -1935,7 +2054,7 @@ function createProductionApi(pool) {
             carePreferences: { preferredHospital: "", emergencyInstructions: "" }
           }
         } : null;
-        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, refillRequests, circleMessages, circleCallRequests, safety: { latestTelemetry: telemetry, safeZones, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: evaluateHealthVitals(healthRows), latestSummary: evaluateHealthVitals(healthRows.slice(0, 1)) }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) } };
+        return { user, resident: residentProfile, people, bookings, services: services.map(service => toServiceState(service, { name: service.provider_name })), medications, refillRequests, circleMessages, circleCallRequests, safety: { latestTelemetry: telemetry, safeZones, sosEvents: safetyEvents }, healthConsent, healthVitals: { readings: healthRows, summary: healthSummary, latestSummary: latestHealthSummary }, wearables: { devices: wearableDevices, readings: wearableRows, latestSummary: evaluateWearables(wearableDevices, wearableRows[0] || {}) }, residentSurface };
       }
       if (user.role === "trusted_person") {
         const connections = await query(

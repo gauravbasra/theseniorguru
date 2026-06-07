@@ -321,13 +321,23 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.wellness => WellnessScreen(
         key: const ValueKey('wellness'),
         go: go,
+        state: appState,
       ),
-      Screen.vitals => VitalsScreen(key: const ValueKey('vitals'), go: go),
+      Screen.vitals => VitalsScreen(
+        key: const ValueKey('vitals'),
+        go: go,
+        state: appState,
+      ),
       Screen.familyHealth => FamilyHealthScreen(
         key: const ValueKey('family'),
         go: go,
+        state: appState,
       ),
-      Screen.risk => RiskScreen(key: const ValueKey('risk'), go: go),
+      Screen.risk => RiskScreen(
+        key: const ValueKey('risk'),
+        go: go,
+        state: appState,
+      ),
       Screen.services => ServicesScreen(
         key: const ValueKey('services'),
         go: go,
@@ -3505,9 +3515,26 @@ Widget setupRow(IconData icon, String title, String subtitle) {
   );
 }
 
+Map<String, dynamic> residentSurface(ResidentAppState? state) {
+  return mapValue(state?.raw['residentSurface']);
+}
+
+Map<String, dynamic> residentSurfaceSection(
+  ResidentAppState? state,
+  String key,
+) {
+  return mapValue(residentSurface(state)[key]);
+}
+
+String surfaceText(Object? value, String fallback) {
+  final text = stringValue(value);
+  return text.isEmpty ? fallback : text;
+}
+
 class WellnessScreen extends StatelessWidget {
-  const WellnessScreen({super.key, required this.go});
+  const WellnessScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
+  final ResidentAppState? state;
 
   @override
   Widget build(BuildContext context) {
@@ -3619,55 +3646,67 @@ class WellnessScreen extends StatelessWidget {
 }
 
 class VitalsScreen extends StatelessWidget {
-  const VitalsScreen({super.key, required this.go});
+  const VitalsScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
+  final ResidentAppState? state;
 
   @override
   Widget build(BuildContext context) {
-    final vitals = [
-      (
-        'Resting Heart Rate',
-        '72',
-        'bpm',
-        '30-day baseline: 69 bpm',
-        CupertinoIcons.heart_fill,
-      ),
-      (
-        'Heart Rate Variability',
-        '48',
-        'ms',
-        '30-day baseline: 44 ms',
-        CupertinoIcons.heart_circle_fill,
-      ),
-      (
-        'Blood Oxygen (SpO₂)',
-        '97',
-        '%',
-        'Normal range: 95 - 100%',
-        CupertinoIcons.drop_fill,
-      ),
-      (
-        'Respiratory Rate',
-        '16',
-        '/min',
-        'Normal range: 12 - 20',
-        Icons.air_rounded,
-      ),
-      (
-        'Body Temperature',
-        '98.3',
-        '°F',
-        'Normal range: 97.5 - 99.5',
-        CupertinoIcons.thermometer,
-      ),
-      (
-        'Blood Pressure',
-        '118 / 76',
-        'mmHg',
-        'Normal range: < 130/80',
-        CupertinoIcons.waveform_path_ecg,
-      ),
-    ];
+    final vitals = listOfMaps(
+      residentSurfaceSection(state, 'vitals')['monitor'],
+    );
+    final rows = vitals.isNotEmpty
+        ? vitals
+        : [
+            {
+              'label': 'Resting Heart Rate',
+              'value_text': '72',
+              'unit': 'bpm',
+              'baseline_text': '30-day baseline: 69 bpm',
+              'status_label': 'Normal',
+              'vital_key': 'resting_heart_rate',
+            },
+            {
+              'label': 'Heart Rate Variability',
+              'value_text': '48',
+              'unit': 'ms',
+              'baseline_text': '30-day baseline: 44 ms',
+              'status_label': 'Good',
+              'vital_key': 'hrv',
+            },
+            {
+              'label': 'Blood Oxygen (SpO2)',
+              'value_text': '97',
+              'unit': '%',
+              'baseline_text': 'Normal range: 95 - 100%',
+              'status_label': 'Normal',
+              'vital_key': 'oxygen_saturation',
+            },
+            {
+              'label': 'Respiratory Rate',
+              'value_text': '16',
+              'unit': '/min',
+              'baseline_text': 'Normal range: 12 - 20',
+              'status_label': 'Normal',
+              'vital_key': 'respiratory_rate',
+            },
+            {
+              'label': 'Body Temperature',
+              'value_text': '98.3',
+              'unit': 'F',
+              'baseline_text': 'Normal range: 97.5 - 99.5',
+              'status_label': 'Normal',
+              'vital_key': 'body_temperature',
+            },
+            {
+              'label': 'Blood Pressure',
+              'value_text': '118 / 76',
+              'unit': 'mmHg',
+              'baseline_text': 'Normal range: < 130/80',
+              'status_label': 'Normal',
+              'vital_key': 'blood_pressure',
+            },
+          ];
     return ScreenScaffold(
       title: 'Vitals Monitor',
       back: () => go(Screen.more),
@@ -3677,14 +3716,17 @@ class VitalsScreen extends StatelessWidget {
           selected: 0,
         ),
         const SizedBox(height: 16),
-        ...vitals.map(
+        ...rows.map(
           (v) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: SoftCard(
               padding: const EdgeInsets.all(14),
               child: Row(
                 children: [
-                  Icon(v.$5, color: TsgColors.purple),
+                  Icon(
+                    vitalIcon(stringValue(v['vital_key'])),
+                    color: vitalColor(stringValue(v['vital_key'])),
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -3694,15 +3736,15 @@ class VitalsScreen extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                v.$1,
+                                surfaceText(v['label'], 'Vital'),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
                             ),
-                            const Text(
-                              'Normal',
-                              style: TextStyle(
+                            Text(
+                              surfaceText(v['status_label'], 'Normal'),
+                              style: const TextStyle(
                                 color: TsgColors.green,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w900,
@@ -3713,15 +3755,15 @@ class VitalsScreen extends StatelessWidget {
                         const SizedBox(height: 8),
                         RichText(
                           text: TextSpan(
-                            text: v.$2,
+                            text: surfaceText(v['value_text'], '0'),
                             style: const TextStyle(
                               color: TsgColors.ink,
-                              fontSize: 27,
+                              fontSize: 28,
                               fontWeight: FontWeight.w900,
                             ),
                             children: [
                               TextSpan(
-                                text: ' ${v.$3}',
+                                text: ' ${surfaceText(v['unit'], '')}',
                                 style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -3731,17 +3773,20 @@ class VitalsScreen extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          v.$4,
+                          surfaceText(
+                            v['baseline_text'],
+                            'Baseline unavailable',
+                          ),
                           style: const TextStyle(
                             color: TsgColors.muted,
                             fontSize: 12,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        miniChart(),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  SizedBox(width: 92, child: miniChart()),
                 ],
               ),
             ),
@@ -3749,6 +3794,23 @@ class VitalsScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  IconData vitalIcon(String key) {
+    if (key.contains('heart') || key == 'hrv') return CupertinoIcons.heart_fill;
+    if (key.contains('oxygen')) return CupertinoIcons.drop_fill;
+    if (key.contains('respiratory')) return Icons.air_rounded;
+    if (key.contains('temperature')) return CupertinoIcons.thermometer;
+    if (key.contains('pressure')) return CupertinoIcons.waveform_path_ecg;
+    return CupertinoIcons.waveform_path_ecg;
+  }
+
+  Color vitalColor(String key) {
+    if (key.contains('heart')) return TsgColors.red;
+    if (key.contains('oxygen')) return TsgColors.blue;
+    if (key.contains('respiratory')) return TsgColors.blue;
+    if (key.contains('temperature')) return TsgColors.green;
+    return TsgColors.purple;
   }
 }
 
@@ -3793,29 +3855,33 @@ class SparkPainter extends CustomPainter {
 }
 
 class FamilyHealthScreen extends StatelessWidget {
-  const FamilyHealthScreen({super.key, required this.go});
+  const FamilyHealthScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
+  final ResidentAppState? state;
 
   @override
   Widget build(BuildContext context) {
-    final summary = [
-      ('Medication', 'All taken', TsgColors.green, CupertinoIcons.capsule),
-      ('Sleep', '7h 14m', TsgColors.green, CupertinoIcons.moon_fill),
-      (
-        'Activity',
-        '4,280 steps',
-        TsgColors.orange,
-        Icons.directions_walk_rounded,
-      ),
-      (
-        'Heart Rate',
-        '72 bpm resting',
-        TsgColors.green,
-        CupertinoIcons.heart_fill,
-      ),
-      ('Mood', 'Good', TsgColors.green, CupertinoIcons.smiley_fill),
-      ('Hydration', 'Good', TsgColors.green, CupertinoIcons.drop_fill),
-    ];
+    final family = residentSurfaceSection(state, 'familyHealth');
+    final summaryItems = listOfMaps(family['summary_items']);
+    final summary = summaryItems.isNotEmpty
+        ? summaryItems
+        : [
+            {'label': 'Medication', 'value': 'All taken', 'status': 'good'},
+            {'label': 'Sleep', 'value': '7h 14m', 'status': 'good'},
+            {'label': 'Activity', 'value': '4,280 steps', 'status': 'watch'},
+            {
+              'label': 'Heart Rate',
+              'value': '72 bpm resting',
+              'status': 'good',
+            },
+            {'label': 'Mood', 'value': 'Good', 'status': 'good'},
+            {'label': 'Hydration', 'value': 'Good', 'status': 'good'},
+          ];
+    final confidence = intValue(
+      family['health_confidence_percent'],
+      fallback: 87,
+    );
+    final residentName = state?.residentName ?? 'Anita Sharma';
     return ScreenScaffold(
       title: 'Family Health View',
       back: () => go(Screen.more),
@@ -3832,21 +3898,25 @@ class FamilyHealthScreen extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Avatar(size: 58, label: 'A', tone: Color(0xFFFFE0CC)),
+                  Avatar(
+                    size: 58,
+                    label: residentName.characters.first.toUpperCase(),
+                    tone: const Color(0xFFFFE0CC),
+                  ),
                   const SizedBox(width: 14),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Anita Sharma',
-                          style: TextStyle(
+                          residentName,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 19,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        Text(
+                        const Text(
                           'Last check-in: Today, 8:12 AM',
                           style: TextStyle(color: Colors.white70),
                         ),
@@ -3863,18 +3933,18 @@ class FamilyHealthScreen extends StatelessWidget {
               const SizedBox(height: 18),
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: LinearProgressIndicator(
-                      value: .87,
+                      value: confidence / 100,
                       minHeight: 8,
-                      backgroundColor: Color(0x44FFFFFF),
-                      color: Color(0xFFA2E78A),
+                      backgroundColor: const Color(0x44FFFFFF),
+                      color: const Color(0xFFA2E78A),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
-                    '87%',
-                    style: TextStyle(
+                  Text(
+                    '$confidence%',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,
                     ),
@@ -3898,24 +3968,28 @@ class FamilyHealthScreen extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 9),
                     child: Row(
                       children: [
-                        Icon(s.$4, color: s.$3),
+                        Icon(
+                          familyIcon(stringValue(s['label'])),
+                          color: familyColor(stringValue(s['status'])),
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            s.$1,
+                            surfaceText(s['label'], 'Summary'),
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),
                         Text(
-                          s.$2,
+                          surfaceText(s['value'], ''),
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(width: 8),
                         Icon(
-                          s.$3 == TsgColors.green
+                          familyColor(stringValue(s['status'])) ==
+                                  TsgColors.green
                               ? CupertinoIcons.check_mark_circled_solid
                               : CupertinoIcons.exclamationmark_circle_fill,
-                          color: s.$3,
+                          color: familyColor(stringValue(s['status'])),
                           size: 18,
                         ),
                       ],
@@ -3944,11 +4018,29 @@ class FamilyHealthScreen extends StatelessWidget {
       ],
     );
   }
+
+  IconData familyIcon(String label) {
+    final key = label.toLowerCase();
+    if (key.contains('med')) return CupertinoIcons.capsule;
+    if (key.contains('sleep')) return CupertinoIcons.moon_fill;
+    if (key.contains('activity')) return Icons.directions_walk_rounded;
+    if (key.contains('heart')) return CupertinoIcons.heart_fill;
+    if (key.contains('mood')) return CupertinoIcons.smiley_fill;
+    if (key.contains('hydration')) return CupertinoIcons.drop_fill;
+    return CupertinoIcons.check_mark_circled;
+  }
+
+  Color familyColor(String status) {
+    return status.toLowerCase().contains('watch')
+        ? TsgColors.orange
+        : TsgColors.green;
+  }
 }
 
 class RiskScreen extends StatelessWidget {
-  const RiskScreen({super.key, required this.go});
+  const RiskScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
+  final ResidentAppState? state;
 
   @override
   Widget build(BuildContext context) {

@@ -44,6 +44,14 @@ async function main() {
   assert.ok(initialState.resident?.id || initialState.resident?.name, "resident state must load");
   assert.ok(Array.isArray(initialState.services), "services must be readable for Services screen");
   assert.ok(Array.isArray(initialState.medications), "medications must be readable for Medication screens");
+  assert.ok(initialState.residentSurface, "resident surface payload must load");
+  assert.ok(initialState.residentSurface.dailyStatus, "Today screen needs daily status state");
+  assert.ok(initialState.residentSurface.wellness, "Wellness screen needs score state");
+  assert.ok(Array.isArray(initialState.residentSurface.wellness.contributors), "Wellness screen needs contributor rows");
+  assert.ok(Array.isArray(initialState.residentSurface.vitals.monitor), "Vitals screen needs monitor rows");
+  assert.ok(initialState.residentSurface.familyHealth, "Family health screen needs family summary state");
+  assert.ok(Array.isArray(initialState.residentSurface.risk.timeline), "Risk screen needs timeline rows");
+  assert.ok(Array.isArray(initialState.residentSurface.events), "Events screen needs event catalog rows");
 
   const med = await request("/api/medications", {
     method: "POST",
@@ -153,6 +161,7 @@ async function main() {
   const finalState = await request("/api/state", { headers: auth(token) });
   assert.ok(finalState.medications?.some(item => item.id === med.medication.id), "final state must read written medication");
   assert.ok(finalState.bookings?.some(item => item.id === bookingId), "final state must read written booking");
+  assert.ok(finalState.residentSurface?.schemaVersion === 1, "resident surface schema version must be present");
 
   console.log("Flutter resident contract smoke passed");
 }
