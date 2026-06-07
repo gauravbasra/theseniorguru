@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -484,6 +486,37 @@ int supportOrderEstimateCents(String category) {
     'home_care' => 7000,
     _ => 2500,
   };
+}
+
+Color wellnessScoreColor(int score) {
+  if (score >= 80) return TsgColors.green;
+  if (score >= 65) return TsgColors.blue;
+  if (score >= 50) return TsgColors.orange;
+  return TsgColors.red;
+}
+
+Color wellnessTrackColor(int score) {
+  if (score >= 80) return const Color(0xFFE5F6EA);
+  if (score >= 65) return const Color(0xFFE9F1FC);
+  if (score >= 50) return const Color(0xFFFFF3DD);
+  return const Color(0xFFFFE7EA);
+}
+
+String wellnessLabel(int score) {
+  if (score >= 80) return 'Doing Well';
+  if (score >= 65) return 'Stable';
+  if (score >= 50) return 'Watch';
+  return 'Needs Check-In';
+}
+
+String wellnessChangeText(int change) {
+  if (change > 0) {
+    return '↗ Your score is higher than\nlast week (+$change points)';
+  }
+  if (change < 0) {
+    return '↘ Your score is lower than\nlast week ($change points)';
+  }
+  return 'Your score is steady compared\nwith last week';
 }
 
 class PhoneFrame extends StatelessWidget {
@@ -3806,6 +3839,14 @@ class WellnessScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final wellness = residentSurfaceSection(state, 'wellness');
+    final scoreRow = mapValue(wellness['score']);
+    final score = intValue(
+      scoreRow['wellness_score'],
+      fallback: 82,
+    ).clamp(0, 100);
+    final label = surfaceText(scoreRow['score_label'], wellnessLabel(score));
+    final change = intValue(scoreRow['change_from_prior'], fallback: 6);
     final rows = [
       ('Sleep Recovery', 'Good', '+18', CupertinoIcons.moon_fill),
       ('Activity / Mobility', 'Good', '+15', Icons.directions_walk_rounded),
@@ -3823,53 +3864,14 @@ class WellnessScreen extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         Center(
-          child: SizedBox(
-            width: 220,
-            height: 220,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                const CircularProgressIndicator(
-                  value: .82,
-                  strokeWidth: 18,
-                  color: TsgColors.green,
-                  backgroundColor: Color(0xFFE7F6E8),
-                ),
-                const Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '82',
-                      style: TextStyle(
-                        fontSize: 52,
-                        fontWeight: FontWeight.w900,
-                        color: TsgColors.ink,
-                      ),
-                    ),
-                    Text(
-                      'Wellness Score',
-                      style: TextStyle(color: TsgColors.muted),
-                    ),
-                    SizedBox(height: 7),
-                    Text(
-                      'Doing Well',
-                      style: TextStyle(
-                        color: TsgColors.green,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          child: WellnessScoreGauge(score: score, label: label),
         ),
         const SizedBox(height: 20),
-        const Center(
+        Center(
           child: Text(
-            '↗ Your score is higher than\nlast week (+6 points)',
+            wellnessChangeText(change),
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, color: TsgColors.ink),
+            style: const TextStyle(fontSize: 15, color: TsgColors.ink),
           ),
         ),
         const SizedBox(height: 22),
@@ -3910,6 +3912,112 @@ class WellnessScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class WellnessScoreGauge extends StatelessWidget {
+  const WellnessScoreGauge({
+    super.key,
+    required this.score,
+    required this.label,
+  });
+
+  final int score;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = wellnessScoreColor(score);
+    return SizedBox(
+      width: 214,
+      height: 214,
+      child: CustomPaint(
+        painter: WellnessRingPainter(score: score, color: color),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(38),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$score',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 56,
+                    height: .92,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Wellness Score',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: TsgColors.muted, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class WellnessRingPainter extends CustomPainter {
+  const WellnessRingPainter({required this.score, required this.color});
+
+  final int score;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strokeWidth = math.max(12.0, size.width * .072);
+    final inset = strokeWidth / 2;
+    final rect = Rect.fromLTWH(
+      inset,
+      inset,
+      size.width - strokeWidth,
+      size.height - strokeWidth,
+    );
+    final track = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = strokeWidth
+      ..color = wellnessTrackColor(score);
+    final progress = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = strokeWidth
+      ..color = color;
+
+    canvas.drawArc(rect, -math.pi / 2, math.pi * 2, false, track);
+    canvas.drawArc(
+      rect,
+      -math.pi / 2,
+      math.pi * 2 * (score.clamp(0, 100) / 100),
+      false,
+      progress,
+    );
+  }
+
+  @override
+  bool shouldRepaint(WellnessRingPainter oldDelegate) {
+    return oldDelegate.score != score || oldDelegate.color != color;
   }
 }
 
