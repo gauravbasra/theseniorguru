@@ -15,6 +15,7 @@
     "smoke:ai-governance": "node scripts/smoke-ai-governance-v2.js",
     "smoke:local-guru-model": "node scripts/smoke-local-guru-model.js",
     "smoke:flutter-resident": "node scripts/smoke-flutter-resident-contract.js",
+    "smoke:role-onboarding": "node scripts/smoke-role-onboarding.js",
     "audit:scale-hardening": "node scripts/audit-scale-hardening.js",
     "worker:jobs": "node scripts/process-job-queue.js",
     "retention:archive": "node scripts/run-retention-archive.js",

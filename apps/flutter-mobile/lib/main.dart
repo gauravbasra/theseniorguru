@@ -72,10 +72,15 @@ enum Screen {
   companion,
   feed,
   more,
+  onboardingRole,
   onboardingWelcome,
   onboardingProfile,
   onboardingCircle,
   onboardingSafety,
+  trustCircleInvite,
+  trustCircleProfile,
+  businessProfile,
+  businessServices,
   medications,
   medicationConfirm,
   refill,
@@ -184,6 +189,11 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.onboardingProfile ||
       Screen.onboardingCircle ||
       Screen.onboardingSafety ||
+      Screen.onboardingRole ||
+      Screen.trustCircleInvite ||
+      Screen.trustCircleProfile ||
+      Screen.businessProfile ||
+      Screen.businessServices ||
       Screen.wellness ||
       Screen.vitals ||
       Screen.familyHealth ||
@@ -260,6 +270,11 @@ class _ResidentShellState extends State<ResidentShell> {
       ),
       Screen.feed => FeedHome(key: const ValueKey('feed'), go: go),
       Screen.more => MoreHome(key: const ValueKey('more'), go: go),
+      Screen.onboardingRole => OnboardingRoleSelection(
+        key: const ValueKey('onboard-role'),
+        go: go,
+        runApi: runApi,
+      ),
       Screen.onboardingWelcome => OnboardingWelcome(
         key: const ValueKey('onboard1'),
         go: go,
@@ -275,6 +290,27 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.onboardingSafety => OnboardingSafety(
         key: const ValueKey('onboard4'),
         go: go,
+        runApi: runApi,
+      ),
+      Screen.trustCircleInvite => TrustCircleInviteScreen(
+        key: const ValueKey('trust-invite'),
+        go: go,
+        runApi: runApi,
+      ),
+      Screen.trustCircleProfile => TrustCircleProfileScreen(
+        key: const ValueKey('trust-profile'),
+        go: go,
+        runApi: runApi,
+      ),
+      Screen.businessProfile => BusinessProfileScreen(
+        key: const ValueKey('business-profile'),
+        go: go,
+        runApi: runApi,
+      ),
+      Screen.businessServices => BusinessServicesScreen(
+        key: const ValueKey('business-services'),
+        go: go,
+        runApi: runApi,
       ),
       Screen.medications => MedicationsScreen(
         key: const ValueKey('meds'),
@@ -369,6 +405,10 @@ Screen initialScreenFromKey(String key) {
     'events' => Screen.events,
     'services' => Screen.services,
     'safety' => Screen.safety,
+    'onboarding' => Screen.onboardingRole,
+    'onboardingRole' => Screen.onboardingRole,
+    'trustCircle' => Screen.trustCircleInvite,
+    'businessOnboarding' => Screen.businessProfile,
     _ => Screen.guru,
   };
 }
@@ -2835,8 +2875,8 @@ class MoreHome extends StatelessWidget {
       (CupertinoIcons.shield_fill, 'Risk Intelligence', Screen.risk),
       (
         CupertinoIcons.person_badge_plus,
-        'Onboarding Flow',
-        Screen.onboardingWelcome,
+        'Role Onboarding',
+        Screen.onboardingRole,
       ),
     ];
     return ScreenScaffold(
@@ -3400,6 +3440,124 @@ class OnboardingWelcome extends StatelessWidget {
   }
 }
 
+class OnboardingRoleSelection extends StatelessWidget {
+  const OnboardingRoleSelection({
+    super.key,
+    required this.go,
+    required this.runApi,
+  });
+
+  final ValueChanged<Screen> go;
+  final ApiRunner runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Choose your role',
+      subtitle: 'Your first screen depends on how you support the circle.',
+      back: () => go(Screen.more),
+      children: [
+        RoleChoiceCard(
+          icon: CupertinoIcons.heart_fill,
+          title: 'Senior',
+          body: 'Set up your care profile, safety, health, rides, and Guru.',
+          color: const Color(0xFFFFF3E7),
+          onTap: () async {
+            await runApi('Starting senior onboarding', (client, state) {
+              return client.startRoleSession('senior', displayName: 'Anita');
+            });
+            go(Screen.onboardingWelcome);
+          },
+        ),
+        const SizedBox(height: 13),
+        RoleChoiceCard(
+          icon: CupertinoIcons.person_2_fill,
+          title: 'Trusted Circle',
+          body: 'Join by invite to support a senior with approved visibility.',
+          color: const Color(0xFFF1E8F8),
+          onTap: () async {
+            await runApi('Starting trusted circle onboarding', (client, state) {
+              return client.startRoleSession(
+                'trusted_person',
+                displayName: 'Rita Sharma',
+              );
+            });
+            go(Screen.trustCircleInvite);
+          },
+        ),
+        const SizedBox(height: 13),
+        RoleChoiceCard(
+          icon: CupertinoIcons.building_2_fill,
+          title: 'Business',
+          body:
+              'Register services, coverage, credentials, leads, and bookings.',
+          color: const Color(0xFFEAF4FF),
+          onTap: () async {
+            await runApi('Starting business onboarding', (client, state) {
+              return client.startRoleSession(
+                'business',
+                displayName: 'Rohit Mehta',
+              );
+            });
+            go(Screen.businessProfile);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class RoleChoiceCard extends StatelessWidget {
+  const RoleChoiceCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.body,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftCard(
+      color: color,
+      onTap: onTap,
+      child: Row(
+        children: [
+          Avatar(size: 56, icon: icon, tone: Colors.white),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  body,
+                  style: const TextStyle(color: TsgColors.muted, height: 1.25),
+                ),
+              ],
+            ),
+          ),
+          const Icon(CupertinoIcons.chevron_right, color: TsgColors.purple),
+        ],
+      ),
+    );
+  }
+}
+
 class OnboardingProfile extends StatelessWidget {
   const OnboardingProfile({super.key, required this.go});
   final ValueChanged<Screen> go;
@@ -3490,8 +3648,9 @@ class OnboardingCircle extends StatelessWidget {
 }
 
 class OnboardingSafety extends StatelessWidget {
-  const OnboardingSafety({super.key, required this.go});
+  const OnboardingSafety({super.key, required this.go, required this.runApi});
   final ValueChanged<Screen> go;
+  final ApiRunner runApi;
 
   @override
   Widget build(BuildContext context) {
@@ -3521,7 +3680,197 @@ class OnboardingSafety extends StatelessWidget {
           child: Avatar(size: 96, icon: CupertinoIcons.shield_lefthalf_fill),
         ),
         const SizedBox(height: 20),
-        PurpleButton('Finish Setup', onTap: () => go(Screen.today)),
+        PurpleButton(
+          'Finish Setup',
+          onTap: () async {
+            await runApi('Completing senior onboarding', (client, state) {
+              return client.completeSeniorOnboarding();
+            });
+            go(Screen.today);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class TrustCircleInviteScreen extends StatelessWidget {
+  const TrustCircleInviteScreen({
+    super.key,
+    required this.go,
+    required this.runApi,
+  });
+
+  final ValueChanged<Screen> go;
+  final ApiRunner runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Trusted Circle',
+      subtitle: 'Join only from a senior or family invitation.',
+      back: () => go(Screen.onboardingRole),
+      children: [
+        const FlowNumber(1),
+        const SizedBox(height: 18),
+        const H1('Enter invite\ncode', size: 30),
+        const SizedBox(height: 12),
+        field('Invite code', 'RITA-ANITA'),
+        field('Senior', 'Anita Sharma'),
+        field('Requested role', 'Daughter / Primary contact'),
+        const SizedBox(height: 14),
+        SoftCard(
+          color: const Color(0xFFF8F2FF),
+          child: const Row(
+            children: [
+              Icon(CupertinoIcons.lock_shield_fill, color: TsgColors.purple),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Access is limited to what the senior approved.',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        PurpleButton(
+          'Accept Invite',
+          onTap: () => go(Screen.trustCircleProfile),
+        ),
+      ],
+    );
+  }
+}
+
+class TrustCircleProfileScreen extends StatelessWidget {
+  const TrustCircleProfileScreen({
+    super.key,
+    required this.go,
+    required this.runApi,
+  });
+
+  final ValueChanged<Screen> go;
+  final ApiRunner runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Your access',
+      subtitle: 'Confirm contact, alerts, and emergency override.',
+      back: () => go(Screen.trustCircleInvite),
+      children: [
+        const FlowNumber(2),
+        const SizedBox(height: 18),
+        field('Full name', 'Rita Sharma'),
+        field('Relationship', 'Daughter'),
+        field('Phone', '+1 (303) 555-0102'),
+        field('Email', 'rita@theseniorguru.local'),
+        field('Visibility', 'Summary, safety, medications, rides'),
+        field('Alerts', 'SOS, falls, missed medication, daily status'),
+        const SizedBox(height: 18),
+        PurpleButton(
+          'Finish Trusted Circle Setup',
+          onTap: () async {
+            await runApi('Completing trusted circle onboarding', (
+              client,
+              state,
+            ) {
+              return client.completeTrustCircleOnboarding();
+            });
+            go(Screen.familyHealth);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class BusinessProfileScreen extends StatelessWidget {
+  const BusinessProfileScreen({
+    super.key,
+    required this.go,
+    required this.runApi,
+  });
+
+  final ValueChanged<Screen> go;
+  final ApiRunner runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Business setup',
+      subtitle: 'Create the provider profile before leads can route to you.',
+      back: () => go(Screen.onboardingRole),
+      children: [
+        const FlowNumber(1),
+        const SizedBox(height: 18),
+        field('Legal business name', 'CareRide Senior Transportation LLC'),
+        field('Display name', 'CareRide'),
+        field('Owner / manager', 'Rohit Mehta'),
+        field('Phone', '+1 (303) 555-0104'),
+        field('Email', 'rohit@careride.local'),
+        field('Business type', 'Transportation'),
+        const SizedBox(height: 18),
+        PurpleButton('Continue', onTap: () => go(Screen.businessServices)),
+      ],
+    );
+  }
+}
+
+class BusinessServicesScreen extends StatelessWidget {
+  const BusinessServicesScreen({
+    super.key,
+    required this.go,
+    required this.runApi,
+  });
+
+  final ValueChanged<Screen> go;
+  final ApiRunner runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Services & review',
+      subtitle: 'Add coverage, lead rules, and required verification.',
+      back: () => go(Screen.businessProfile),
+      children: [
+        const FlowNumber(2),
+        const SizedBox(height: 18),
+        field(
+          'Services',
+          'Doctor rides, pharmacy pickup, assisted transportation',
+        ),
+        field('Service area', '25 miles, 80124, 80126, 80129, 80202'),
+        field('Lead capacity', '12 per day'),
+        field('Verification', 'License and insurance required'),
+        const SizedBox(height: 14),
+        SoftCard(
+          color: const Color(0xFFEAF4FF),
+          child: const Row(
+            children: [
+              Icon(CupertinoIcons.checkmark_shield_fill, color: TsgColors.blue),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Business profiles are submitted for review before seniors can book.',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        PurpleButton(
+          'Submit Business for Review',
+          onTap: () async {
+            await runApi('Submitting business onboarding', (client, state) {
+              return client.completeBusinessOnboarding();
+            });
+            go(Screen.services);
+          },
+        ),
       ],
     );
   }

@@ -2833,7 +2833,25 @@ function createProductionApi(pool) {
             [user.id]
           );
         }
+        if (role === "business") {
+          const business = (await query(
+            `INSERT INTO businesses (owner_user_id, name, contact_person, email, phone, website, google_business_profile, description, demographics, service_areas, status, onboarding_complete)
+             VALUES ($1, $2, $3, $4, '', '', '', '', '{}', '{}', 'draft', false)
+             RETURNING *`,
+            [user.id, payload.businessName || "Business Profile", payload.displayName || "Business Owner", email]
+          )).rows[0];
+          await ensureDefaultSubscription(business.id);
+        }
         await audit(req, user, "device_user_bootstrapped", "user", user.id, { role }, "info");
+      }
+      if (role === "business" && !(await getBusinessForUser(user))) {
+        const business = (await query(
+          `INSERT INTO businesses (owner_user_id, name, contact_person, email, phone, website, google_business_profile, description, demographics, service_areas, status, onboarding_complete)
+           VALUES ($1, $2, $3, $4, '', '', '', '', '{}', '{}', 'draft', false)
+           RETURNING *`,
+          [user.id, payload.businessName || "Business Profile", payload.displayName || "Business Owner", user.email]
+        )).rows[0];
+        await ensureDefaultSubscription(business.id);
       }
       const token = crypto.randomBytes(32).toString("hex");
       await query(
@@ -3325,7 +3343,7 @@ function createProductionApi(pool) {
     }
 
     if (req.method === "POST" && url.pathname === "/api/onboarding/trust-circle") {
-      const requiredFields = ["name", "relationship", "phone", "email"];
+      const requiredFields = ["inviteCode", "name", "relationship", "phone", "email"];
       const missing = requiredFields.filter(field => !payload[field]);
       if (missing.length) {
         const error = new Error(`Missing trust-circle onboarding fields: ${missing.join(", ")}`);
@@ -3333,11 +3351,32 @@ function createProductionApi(pool) {
         throw error;
       }
       const result = await transaction(async tx => {
+        const inviteCode = String(payload.inviteCode).trim().toUpperCase();
+        const inviteMap = {
+          "RITA-ANITA": ["safety", "sos", "location", "messages", "wellness", "medications"],
+          "ARJUN-ANITA": ["safety", "sos", "location", "messages", "rides"],
+          "DRMEHTA-ANITA": ["wellness", "medications", "safety"],
+          "SUNITA-ANITA": ["messages", "wellness"]
+        };
+        const permissions = inviteMap[inviteCode];
+        if (!permissions) {
+          const error = new Error("Invalid or expired invite code");
+          error.status = 404;
+          throw error;
+        }
+        const resident = await ensureDemoResident();
         const session = (await tx(`INSERT INTO onboarding_sessions (role, account_id, status, current_step, payload, completed_at) VALUES ('trust_circle',$1,'complete','complete',$2,now()) RETURNING *`, [user.id, JSON.stringify(payload)])).rows[0];
         const member = (await tx(
           `INSERT INTO trust_circle_onboarding (onboarding_session_id, member_account_id, full_name, relationship, phone, email, timezone, escalation_role)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
           [session.id, user.id, payload.name, payload.relationship, payload.phone, payload.email, payload.timezone || null, payload.escalationRole || null]
+        )).rows[0];
+        const connection = (await tx(
+          `INSERT INTO trusted_connections (resident_id, trusted_user_id, permissions, status, updated_at)
+           VALUES ($1,$2,$3,'approved',now())
+           ON CONFLICT (resident_id, trusted_user_id) DO UPDATE SET permissions = EXCLUDED.permissions, status = 'approved', updated_at = now()
+           RETURNING *`,
+          [resident.id, user.id, permissions]
         )).rows[0];
         await tx(`INSERT INTO trust_circle_messaging_rules (trust_circle_member_id, routine_window, quiet_hours, emergency_override, alert_types, preferred_channels) VALUES ($1,$2,$3,$4,$5,$6)`, [member.id, payload.routineWindow || null, payload.quietHours || null, String(payload.emergencyOverride || "Yes").toLowerCase() !== "no", payload.alertTypes || [], ["app"]]);
         const capturedEvidenceIds = [payload.identityPhotoEvidenceId, payload.livenessEvidenceId].filter(isUuid);
@@ -3349,10 +3388,10 @@ function createProductionApi(pool) {
             [session.id, user.id, JSON.stringify({ linkedFrom: "trust_circle_onboarding", linkedAt: new Date().toISOString() }), capturedEvidenceIds]
           );
         }
-        await tx(`INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata) VALUES ($1,'trust_circle','alert_receipt_and_senior_approved_visibility','Trust circle onboarding consent captured in mobile app.',true,$2,$3,$4)`, [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ visibility: payload.visibility || [], alertTypes: payload.alertTypes || [] })]);
-        return { session, member };
+        await tx(`INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata) VALUES ($1,'trust_circle','alert_receipt_and_senior_approved_visibility','Trust circle onboarding consent captured in mobile app.',true,$2,$3,$4)`, [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ inviteCode, visibility: payload.visibility || [], alertTypes: payload.alertTypes || [], permissions })]);
+        return { session, member, connection };
       });
-      await audit(req, user, "role_onboarding_trust_circle_completed", "onboarding_session", result.session.id, { memberId: result.member.id });
+      await audit(req, user, "role_onboarding_trust_circle_completed", "onboarding_session", result.session.id, { memberId: result.member.id, connectionId: result.connection.id });
       return { ok: true, onboarding: result };
     }
 

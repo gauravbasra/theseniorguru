@@ -98,6 +98,12 @@ void main() {
       await client.joinEvent('chair_yoga', 'Chair Yoga');
       await client.createPost('Beautiful morning walk with friends');
       await client.triggerSos();
+      await client.startRoleSession('trusted_person', displayName: 'Rita');
+      await client.completeTrustCircleOnboarding();
+      await client.startRoleSession('business', displayName: 'Rohit');
+      await client.completeBusinessOnboarding();
+      await client.startRoleSession('senior', displayName: 'Anita');
+      await client.completeSeniorOnboarding();
 
       expect(
         requests.map((item) => item['path']),
@@ -112,8 +118,21 @@ void main() {
           '/api/events/join',
           '/api/posts',
           '/api/safety/voice-sos',
+          '/api/onboarding/trust-circle',
+          '/api/onboarding/business',
+          '/api/onboarding/senior',
         ]),
       );
+      final sessionBodies = requests
+          .where((item) => item['path'] == '/api/auth/device-session')
+          .map((item) => jsonDecode(item['body'] as String))
+          .toList();
+      expect(sessionBodies.any((body) => body['role'] == 'senior'), isTrue);
+      expect(
+        sessionBodies.any((body) => body['role'] == 'trusted_person'),
+        isTrue,
+      );
+      expect(sessionBodies.any((body) => body['role'] == 'business'), isTrue);
       expect(
         requests
             .where((item) => item['path'] != '/api/auth/device-session')

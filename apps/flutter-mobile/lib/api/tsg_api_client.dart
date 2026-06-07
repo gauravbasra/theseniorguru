@@ -132,10 +132,21 @@ class TsgApiClient {
   final InstallationIdProvider installationIdProvider;
   final http.Client _http;
   String? _token;
+  String _role = 'senior';
 
   Future<ResidentAppState> loadResidentState() async {
     final json = await get('/api/state');
     return ResidentAppState.fromJson(json);
+  }
+
+  Future<Map<String, dynamic>> startRoleSession(
+    String role, {
+    String? displayName,
+  }) async {
+    _role = role;
+    _token = null;
+    await _ensureSession(displayName: displayName);
+    return get('/api/me');
   }
 
   Future<Map<String, dynamic>> confirmMedication(String medicationId) {
@@ -251,6 +262,66 @@ class TsgApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> completeSeniorOnboarding() {
+    return post('/api/onboarding/senior', {
+      'name': 'Anita Sharma',
+      'preferredName': 'Anita',
+      'phone': '+13035550101',
+      'email': 'anita@theseniorguru.local',
+      'address': 'Park View Community',
+      'livingType': 'community',
+      'healthConcerns': ['blood pressure', 'mobility support'],
+      'allergies': 'Seasonal pollen',
+      'mobility': 'Uses walker for longer distances',
+      'wearableSources': ['apple_healthkit', 'android_health_connect'],
+      'devicePermissions': ['location', 'health', 'notifications'],
+      'healthSharing': true,
+      'locationSharing': true,
+      'sosOrder': ['trusted_circle', '911'],
+    });
+  }
+
+  Future<Map<String, dynamic>> completeTrustCircleOnboarding({
+    String inviteCode = 'RITA-ANITA',
+  }) {
+    return post('/api/onboarding/trust-circle', {
+      'inviteCode': inviteCode,
+      'name': 'Rita Sharma',
+      'relationship': 'Daughter',
+      'phone': '+13035550102',
+      'email': 'rita@theseniorguru.local',
+      'timezone': 'America/Denver',
+      'escalationRole': 'Primary family contact',
+      'routineWindow': '8:00 AM - 8:00 PM',
+      'quietHours': '10:00 PM - 7:00 AM',
+      'emergencyOverride': 'Yes',
+      'alertTypes': ['sos', 'falls', 'medications', 'daily_status'],
+      'visibility': ['summary', 'safety', 'medications', 'rides'],
+    });
+  }
+
+  Future<Map<String, dynamic>> completeBusinessOnboarding() {
+    return post('/api/onboarding/business', {
+      'legalName': 'CareRide Senior Transportation LLC',
+      'dba': 'CareRide',
+      'ownerName': 'Rohit Mehta',
+      'phone': '+13035550104',
+      'email': 'rohit@careride.local',
+      'website': 'https://careride.example',
+      'businessType': 'transportation',
+      'address': 'Denver, CO',
+      'services':
+          'Doctor appointment rides, pharmacy pickup, wheelchair assisted rides',
+      'pricing': r'$18 - $35 local rides',
+      'serviceRadius': '25',
+      'serviceZips': '80124, 80126, 80129, 80202',
+      'leadTypes': ['rides', 'appointments', 'pharmacy'],
+      'communication': ['app', 'sms', 'phone'],
+      'maxLeads': '12',
+      'verificationDocs': ['business_license', 'insurance'],
+    });
+  }
+
   Future<Map<String, dynamic>> syncHealthConsentAndVitals({
     String source = 'flutter-health-connect',
     List<Map<String, dynamic>> readings = const [],
@@ -291,13 +362,17 @@ class TsgApiClient {
     return _send(method, path, body: body, authenticated: true);
   }
 
-  Future<void> _ensureSession() async {
+  Future<void> _ensureSession({String? displayName}) async {
     if (_token != null) return;
     final installationId = await installationIdProvider();
     final session = await _send(
       'POST',
       '/api/auth/device-session',
-      body: {'installationId': installationId, 'role': 'senior'},
+      body: {
+        'installationId': '$installationId-$_role',
+        'role': _role,
+        'displayName': displayName,
+      },
       authenticated: false,
     );
     _token = stringValue(
