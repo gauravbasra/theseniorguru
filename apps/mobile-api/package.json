@@ -7,7 +7,12 @@
     "db:schema": "psql \"$DATABASE_URL\" -f schema.sql",
     "db:seed": "psql \"$DATABASE_URL\" -f seed.sql",
     "smoke:launch-readiness": "node scripts/smoke-launch-readiness.js",
-    "smoke:critical-buttons": "node scripts/smoke-critical-buttons.js"
+    "smoke:critical-buttons": "node scripts/smoke-critical-buttons.js",
+    "smoke:flutter-resident": "node scripts/smoke-flutter-resident-contract.js",
+    "audit:scale-hardening": "node scripts/audit-scale-hardening.js",
+    "worker:jobs": "node scripts/process-job-queue.js",
+    "retention:archive": "node scripts/run-retention-archive.js",
+    "load-test:production": "node scripts/load-test-mobile-api.js"
   },
   "dependencies": {
     "pg": "^8.21.0"

@@ -3,9 +3,11 @@ import { getAdminSessionFromRequest } from "@/lib/auth/admin-session";
 
 const protectedPrefixes = [
   "/admin",
+  "/business",
   "/provider",
   "/workbench",
   "/api/v1/admin",
+  "/api/v1/business",
   "/api/v1/provider",
   "/api/v1/system",
   "/api/v1/openapi"
@@ -52,12 +54,13 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/admin/:path*",
+    "/business/:path*",
     "/provider/:path*",
     "/workbench/:path*",
     "/api/v1/admin/:path*",
+    "/api/v1/business/:path*",
     "/api/v1/provider/:path*",
     "/api/v1/system/:path*",
     "/api/v1/openapi"
   ]
 };
-

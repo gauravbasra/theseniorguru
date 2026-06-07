@@ -41,8 +41,8 @@ export async function collectNativeHealthReadings(): Promise<NativeHealthResult>
 
 async function collectIosHealthKit(): Promise<NativeHealthResult> {
   try {
-    const module = require("react-native-health");
-    const appleHealthKit = module.default || module;
+    const healthModule = require("react-native-health");
+    const appleHealthKit = healthModule.default || healthModule;
     const permissions = {
       permissions: {
         read: [

@@ -12,6 +12,8 @@
         "NSLocationWhenInUseUsageDescription": "TheSeniorguru uses location to help trusted people monitor safety when the senior enables live tracking.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "TheSeniorguru uses background location to detect safe-zone exits and notify trusted people during safety events.",
         "NSMotionUsageDescription": "TheSeniorguru uses phone motion analytics to identify possible falls and unusual movement patterns.",
+        "NSCameraUsageDescription": "TheSeniorguru uses the camera for profile photos, liveness videos, medication scans, and business verification when you choose to capture them.",
+        "NSPhotoLibraryUsageDescription": "TheSeniorguru may access selected photos only when you choose to attach verification evidence.",
         "NSHealthShareUsageDescription": "TheSeniorguru reads approved health data such as heart rate, oxygen, breathing, sleep, steps, and calories to support senior safety alerts.",
         "NSHealthUpdateUsageDescription": "TheSeniorguru does not write health data by default; this permission is reserved for future senior-approved health updates."
       }
@@ -24,6 +26,10 @@
         "ACCESS_BACKGROUND_LOCATION",
         "ACTIVITY_RECOGNITION",
         "POST_NOTIFICATIONS",
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "RECORD_AUDIO",
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.POST_NOTIFICATIONS"
       ]
@@ -32,6 +38,14 @@
       "expo-location",
       "expo-notifications",
       "expo-sensors",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TheSeniorguru accesses selected photos only when you choose to attach verification evidence.",
+          "cameraPermission": "TheSeniorguru uses the camera for profile photos, liveness videos, medication scans, and business verification.",
+          "microphonePermission": "TheSeniorguru uses the microphone only when recording liveness videos or voice help."
+        }
+      ],
       "expo-dev-client",
       [
         "react-native-health",

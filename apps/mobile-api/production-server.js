@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const { resolveGuruIntent } = require("./lib/guru-intents");
+const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
 
 const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
@@ -17,6 +19,13 @@ function required(value, name) {
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function normalizeProviderId(provider) {
+  return String(provider || "wearable")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "wearable";
 }
 
 function verifyStripeSignature(rawBody, signatureHeader, webhookSecret) {
@@ -176,6 +185,39 @@ function createProductionApi(pool) {
         JSON.stringify(metadata)
       ]
     );
+  }
+
+  function storageSigningSecret() {
+    return process.env.MEDIA_SIGNING_SECRET || process.env.JWT_SECRET || "local-dev-media-secret";
+  }
+
+  function sanitizeStorageKey(value) {
+    return String(value || "upload.bin")
+      .toLowerCase()
+      .replace(/[^a-z0-9._/-]+/g, "-")
+      .replace(/\/+/g, "/")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 180) || "upload.bin";
+  }
+
+  function signStorageUrl({ method, bucket, storageKey, expiresAt }) {
+    const baseUrl = (process.env.MEDIA_STORAGE_PUBLIC_BASE_URL || "https://storage.theseniorguru.local").replace(/\/+$/, "");
+    const path = `/media/${sanitizeStorageKey(bucket)}/${sanitizeStorageKey(storageKey)}`;
+    const expires = new Date(expiresAt).getTime();
+    const signature = crypto
+      .createHmac("sha256", storageSigningSecret())
+      .update(`${String(method || "GET").toUpperCase()}\n${path}\n${expires}`)
+      .digest("hex");
+    return `${baseUrl}${path}?method=${encodeURIComponent(String(method || "GET").toUpperCase())}&expires=${expires}&signature=${signature}`;
+  }
+
+  async function enqueueJob(queueName, jobType, payload = {}, runAfter = new Date(), maxAttempts = 5) {
+    const result = await query(
+      `INSERT INTO job_queue (queue_name, job_type, payload, run_after, max_attempts)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id, queue_name, job_type, status, run_after`,
+      [queueName, jobType, JSON.stringify(payload || {}), runAfter, maxAttempts]
+    );
+    return result.rows[0];
   }
 
   async function currentUser(req) {
@@ -470,6 +512,310 @@ function createProductionApi(pool) {
     if (summary.riskReasons.length >= 2) summary.riskLevel = 'high';
     else if (summary.riskReasons.length === 1) summary.riskLevel = 'watch';
     return summary;
+  }
+
+  function clampHealthScore(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.min(100, Math.round(numeric * 100) / 100));
+  }
+
+  function rangeScore(value, ideal, caution, invert = false) {
+    if (value === null || value === undefined || value === "") return 70;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 70;
+    if (!invert && numeric >= ideal) return 100;
+    if (invert && numeric <= ideal) return 100;
+    const distance = invert ? numeric - ideal : ideal - numeric;
+    return clampHealthScore(100 - Math.max(0, distance) * (100 / Math.max(1, caution)));
+  }
+
+  function calculateHealthScore(metrics = {}, recent = []) {
+    const sleepScore = rangeScore(metrics.sleepMinutes ?? metrics.sleep_minutes, 420, 240);
+    const steps = metrics.steps ?? metrics.steps_today;
+    const mobilityMinutes = metrics.mobilityMinutes ?? metrics.mobility_minutes;
+    const activityScore = clampHealthScore(Math.max(rangeScore(steps, 5500, 4500), rangeScore(mobilityMinutes, 30, 30)));
+    const heartRate = metrics.restingHeartRate ?? metrics.resting_heart_rate ?? metrics.heartRateAvg ?? metrics.heart_rate_avg ?? metrics.heartRate ?? metrics.heart_rate;
+    const oxygen = metrics.oxygenSaturation ?? metrics.oxygen_saturation;
+    let heartScore = 100;
+    if (heartRate !== null && heartRate !== undefined) {
+      const hr = Number(heartRate);
+      if (Number.isFinite(hr)) {
+        if (hr < 45 || hr > 120) heartScore = 35;
+        else if (hr < 55 || hr > 105) heartScore = 65;
+      }
+    }
+    if (oxygen !== null && oxygen !== undefined && Number(oxygen) < 92) heartScore = Math.min(heartScore, 35);
+    const medicationScore = clampHealthScore(metrics.medicationAdherencePercent ?? metrics.medication_adherence_percent ?? 80);
+    const moodScore = clampHealthScore(metrics.moodScore ?? metrics.mood_score ?? 75);
+    const wellnessScore = clampHealthScore((sleepScore * 0.25) + (activityScore * 0.20) + (heartScore * 0.20) + (medicationScore * 0.20) + (moodScore * 0.15));
+    const riskReasons = [];
+    if (Number(steps || 0) > 0 && Number(steps) < 1200) riskReasons.push("low_activity");
+    if (Number(mobilityMinutes || 0) > 0 && Number(mobilityMinutes) < 10) riskReasons.push("low_mobility");
+    if (Number(metrics.medicationAdherencePercent ?? metrics.medication_adherence_percent ?? 100) < 80) riskReasons.push("missed_medication_pattern");
+    if (Number(metrics.sleepMinutes ?? metrics.sleep_minutes ?? 999) < 240) riskReasons.push("low_sleep");
+    if (Number(metrics.isolationMinutes ?? metrics.isolation_minutes ?? 0) > 480) riskReasons.push("possible_isolation");
+    if (metrics.fallDetected === true || metrics.fall_detected === true) riskReasons.push("fall_detected");
+    const recentHr = recent.map(item => Number(item.resting_heart_rate || item.heart_rate_avg)).filter(Number.isFinite);
+    if (recentHr.length >= 3 && Math.max(...recentHr) - Math.min(...recentHr) >= 25) riskReasons.push("heart_rate_trend_change");
+    let riskLevel = "info";
+    if (riskReasons.includes("fall_detected")) riskLevel = "critical";
+    else if (riskReasons.length >= 2 || wellnessScore < 55) riskLevel = "high";
+    else if (riskReasons.length || wellnessScore < 70) riskLevel = "watch";
+    return { wellnessScore, sleepScore, activityScore, heartScore, medicationScore, moodScore, riskLevel, riskReasons };
+  }
+
+  function normalizeHealthMetrics(payload = {}) {
+    return {
+      metricDate: payload.metricDate || payload.metric_date || new Date().toISOString().slice(0, 10),
+      source: normalizeProviderId(payload.source || "manual"),
+      steps: payload.steps ?? payload.stepsToday ?? null,
+      calories: payload.calories ?? payload.caloriesToday ?? null,
+      sleepMinutes: payload.sleepMinutes ?? payload.sleep_minutes ?? null,
+      restingHeartRate: payload.restingHeartRate ?? payload.resting_heart_rate ?? payload.heartRate ?? null,
+      heartRateAvg: payload.heartRateAvg ?? payload.heart_rate_avg ?? payload.heartRate ?? null,
+      heartRateMin: payload.heartRateMin ?? null,
+      heartRateMax: payload.heartRateMax ?? null,
+      respiratoryRate: payload.respiratoryRate ?? payload.respiratory_rate ?? null,
+      oxygenSaturation: payload.oxygenSaturation ?? payload.oxygen_saturation ?? null,
+      hrv: payload.hrv ?? null,
+      medicationAdherencePercent: payload.medicationAdherencePercent ?? payload.medication_adherence_percent ?? null,
+      moodScore: payload.moodScore ?? payload.mood_score ?? null,
+      fallDetected: payload.fallDetected === true || payload.fall_detected === true,
+      isolationMinutes: payload.isolationMinutes ?? payload.isolation_minutes ?? null,
+      mobilityMinutes: payload.mobilityMinutes ?? payload.mobility_minutes ?? null,
+      manualNotes: payload.manualNotes || payload.manual_notes || null,
+      raw: payload.raw || payload
+    };
+  }
+
+  function healthSourceDisplayName(source) {
+    const normalized = normalizeProviderId(source);
+    const names = {
+      apple_health: "Apple Health",
+      ios_healthkit: "Apple Health",
+      android_health_connect: "Android Health Connect",
+      health_connect: "Android Health Connect",
+      fitbit: "Fitbit",
+      oura: "Oura",
+      garmin: "Garmin",
+      whoop: "WHOOP",
+      samsung_health: "Samsung Health",
+      manual: "Manual Entry"
+    };
+    return names[normalized] || String(source || "Health Source");
+  }
+
+  function sourceRequiresOAuth(source) {
+    return ["fitbit", "oura", "garmin", "whoop"].includes(normalizeProviderId(source));
+  }
+
+  function healthRangeDays(range) {
+    const text = String(range || "7d").toLowerCase();
+    if (text === "30d") return 30;
+    if (text === "90d") return 90;
+    return 7;
+  }
+
+  async function healthResidentAccess(user, seniorId, access = "summary") {
+    const requestedId = seniorId === "self" ? null : seniorId;
+    if (user.role === "senior") {
+      const resident = await getResidentForUser(user);
+      if (!resident || (requestedId && resident.id !== requestedId)) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      return resident;
+    }
+    if (user.role === "superadmin") {
+      const resident = (await query(`SELECT * FROM residents WHERE id = $1`, [required(requestedId, "seniorId")])).rows[0];
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      return resident;
+    }
+    if (user.role === "trusted_person") {
+      const result = await query(
+        `SELECT r.* FROM residents r
+         JOIN trusted_connections tc ON tc.resident_id = r.id
+         LEFT JOIN health_sharing_permissions hp ON hp.senior_id = r.id AND hp.grantee_user_id = tc.trusted_user_id AND hp.status = 'active'
+         WHERE r.id = $1 AND tc.trusted_user_id = $2 AND tc.status = 'approved'
+           AND (
+             $3 = 'summary'
+             OR ($3 = 'trends' AND COALESCE(hp.can_view_trends, true) = true)
+             OR ($3 = 'alerts' AND COALESCE(hp.can_view_alerts, true) = true)
+           )`,
+        [required(requestedId, "seniorId"), user.id, access]
+      );
+      if (result.rows[0]) return result.rows[0];
+    }
+    const error = new Error("Insufficient permissions");
+    error.status = 403;
+    throw error;
+  }
+
+  async function persistHealthMetric(req, user, resident, metric) {
+    const recent = (await query(
+      `SELECT * FROM health_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC LIMIT 14`,
+      [resident.id]
+    )).rows;
+    const savedMetric = (await query(
+      `INSERT INTO health_daily_metrics (senior_id, metric_date, source, steps, calories, sleep_minutes, resting_heart_rate, heart_rate_avg, heart_rate_min, heart_rate_max, respiratory_rate, oxygen_saturation, hrv, medication_adherence_percent, mood_score, fall_detected, isolation_minutes, mobility_minutes, manual_notes, raw, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now())
+       ON CONFLICT (senior_id, metric_date, source) DO UPDATE SET
+         steps = COALESCE(EXCLUDED.steps, health_daily_metrics.steps),
+         calories = COALESCE(EXCLUDED.calories, health_daily_metrics.calories),
+         sleep_minutes = COALESCE(EXCLUDED.sleep_minutes, health_daily_metrics.sleep_minutes),
+         resting_heart_rate = COALESCE(EXCLUDED.resting_heart_rate, health_daily_metrics.resting_heart_rate),
+         heart_rate_avg = COALESCE(EXCLUDED.heart_rate_avg, health_daily_metrics.heart_rate_avg),
+         heart_rate_min = COALESCE(EXCLUDED.heart_rate_min, health_daily_metrics.heart_rate_min),
+         heart_rate_max = COALESCE(EXCLUDED.heart_rate_max, health_daily_metrics.heart_rate_max),
+         respiratory_rate = COALESCE(EXCLUDED.respiratory_rate, health_daily_metrics.respiratory_rate),
+         oxygen_saturation = COALESCE(EXCLUDED.oxygen_saturation, health_daily_metrics.oxygen_saturation),
+         hrv = COALESCE(EXCLUDED.hrv, health_daily_metrics.hrv),
+         medication_adherence_percent = COALESCE(EXCLUDED.medication_adherence_percent, health_daily_metrics.medication_adherence_percent),
+         mood_score = COALESCE(EXCLUDED.mood_score, health_daily_metrics.mood_score),
+         fall_detected = EXCLUDED.fall_detected OR health_daily_metrics.fall_detected,
+         isolation_minutes = COALESCE(EXCLUDED.isolation_minutes, health_daily_metrics.isolation_minutes),
+         mobility_minutes = COALESCE(EXCLUDED.mobility_minutes, health_daily_metrics.mobility_minutes),
+         manual_notes = COALESCE(EXCLUDED.manual_notes, health_daily_metrics.manual_notes),
+         raw = health_daily_metrics.raw || EXCLUDED.raw,
+         updated_at = now()
+       RETURNING *`,
+      [
+        resident.id, metric.metricDate, metric.source, metric.steps, metric.calories, metric.sleepMinutes,
+        metric.restingHeartRate, metric.heartRateAvg, metric.heartRateMin, metric.heartRateMax, metric.respiratoryRate,
+        metric.oxygenSaturation, metric.hrv, metric.medicationAdherencePercent, metric.moodScore,
+        metric.fallDetected, metric.isolationMinutes, metric.mobilityMinutes, metric.manualNotes, JSON.stringify(metric.raw || {})
+      ]
+    )).rows[0];
+    const score = calculateHealthScore(savedMetric, recent);
+    const savedScore = (await query(
+      `INSERT INTO health_scores (senior_id, metric_date, wellness_score, sleep_score, activity_score, heart_score, medication_score, mood_score, risk_level, risk_reasons, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
+       ON CONFLICT (senior_id, metric_date) DO UPDATE SET wellness_score = EXCLUDED.wellness_score, sleep_score = EXCLUDED.sleep_score, activity_score = EXCLUDED.activity_score, heart_score = EXCLUDED.heart_score, medication_score = EXCLUDED.medication_score, mood_score = EXCLUDED.mood_score, risk_level = EXCLUDED.risk_level, risk_reasons = EXCLUDED.risk_reasons, updated_at = now()
+       RETURNING *`,
+      [resident.id, savedMetric.metric_date, score.wellnessScore, score.sleepScore, score.activityScore, score.heartScore, score.medicationScore, score.moodScore, score.riskLevel, score.riskReasons]
+    )).rows[0];
+    const alerts = [];
+    for (const reason of score.riskReasons) {
+      const existing = (await query(
+        `SELECT * FROM health_alerts WHERE senior_id = $1 AND alert_type = $2 AND status = 'open' ORDER BY created_at DESC LIMIT 1`,
+        [resident.id, reason]
+      )).rows[0];
+      if (existing) {
+        const updatedExisting = (await query(
+          `UPDATE health_alerts
+           SET signal_count = signal_count + 1,
+               confidence = LEAST(0.99, confidence + 0.12),
+               last_signal_at = now(),
+               metadata = metadata || $2::jsonb
+           WHERE id = $1
+           RETURNING *`,
+          [existing.id, JSON.stringify({ repeatedAt: new Date().toISOString(), metricId: savedMetric.id })]
+        )).rows[0];
+        const orchestration = await orchestrateHealthCareAction(req, user, resident, updatedExisting, savedMetric, savedScore, score);
+        alerts.push({ ...updatedExisting, orchestration });
+        continue;
+      }
+      const title = reason === "fall_detected" ? "Possible fall detected" : reason.replace(/_/g, " ");
+      const initialDecision = healthFalseAlarmDecision(reason, score, { signalCount: 1, confidence: initialHealthConfidence(reason, score) });
+      const alert = (await query(
+        `INSERT INTO health_alerts (senior_id, score_id, alert_type, severity, title, body, confirmation_status, signal_count, confidence, suppressed_until, action_required, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [resident.id, savedScore.id, reason, score.riskLevel === "info" ? "watch" : score.riskLevel, title, `Guru noticed ${title} for ${user.display_name}. Please review and check in if needed.`, initialDecision.confirmationStatus, 1, initialDecision.confidence, initialDecision.suppressedUntil, initialDecision.actionRequired, JSON.stringify({ metricId: savedMetric.id, source: savedMetric.source, falseAlarmGuard: initialDecision })]
+      )).rows[0];
+      const orchestration = await orchestrateHealthCareAction(req, user, resident, alert, savedMetric, savedScore, score);
+      alerts.push({ ...alert, orchestration });
+    }
+    if (score.riskLevel === "critical" || score.riskLevel === "high") {
+      await createSafetyEvent(req, user, resident.id, "health-intelligence-risk", score.riskLevel, `${user.display_name} has health risk signals: ${score.riskReasons.join(", ")}. Trusted circle notification triggered.`, { scoreId: savedScore.id });
+    }
+    await audit(req, user, "health_metric_saved", "health_daily_metric", savedMetric.id, { scoreId: savedScore.id, riskLevel: score.riskLevel, riskReasons: score.riskReasons });
+    return { metric: savedMetric, score: savedScore, alerts };
+  }
+
+  function initialHealthConfidence(reason, score) {
+    if (reason === "fall_detected") return 0.91;
+    if (score.riskLevel === "critical") return 0.88;
+    if (score.riskReasons.length >= 3) return 0.78;
+    if (score.riskReasons.length >= 2) return 0.68;
+    return 0.54;
+  }
+
+  function healthFalseAlarmDecision(reason, score, context = {}) {
+    const signalCount = Number(context.signalCount || 1);
+    const confidence = Number(context.confidence || initialHealthConfidence(reason, score));
+    const now = Date.now();
+    const softSignals = new Set(["low_sleep", "low_activity", "low_mobility", "possible_isolation", "missed_medication_pattern", "heart_rate_trend_change"]);
+    const immediate = reason === "fall_detected" && confidence >= 0.85;
+    const combinedRisk = score.riskReasons.length >= 2 && confidence >= 0.66;
+    const repeatedSoftSignal = softSignals.has(reason) && signalCount >= 2;
+    const actionRequired = immediate || combinedRisk || repeatedSoftSignal || score.riskLevel === "critical";
+    return {
+      confidence: Math.max(0.1, Math.min(0.99, confidence)),
+      actionRequired,
+      confirmationStatus: actionRequired ? "confirmed_for_action" : "watching_for_confirmation",
+      suppressedUntil: actionRequired ? null : new Date(now + 45 * 60 * 1000).toISOString(),
+      policy: immediate ? "immediate-high-confidence" : repeatedSoftSignal ? "repeated-soft-signal" : combinedRisk ? "combined-risk" : "suppressed-single-soft-signal"
+    };
+  }
+
+  function careActionForHealthAlert(alert, score) {
+    const type = alert.alert_type;
+    if (type === "fall_detected") return { actionType: "urgent_safety_check", title: "Immediate safety check", body: "Possible fall detected. Call the senior and verify safety now.", recommendedFor: ["primary_contact", "caregiver"], urgency: "critical" };
+    if (type === "missed_medication_pattern") return { actionType: "medication_check", title: "Medication check-in", body: "Medication rhythm changed. Confirm whether the dose was taken and whether a reminder is needed.", recommendedFor: ["trusted_circle", "caregiver"], urgency: score.riskLevel === "high" ? "high" : "watch" };
+    if (type === "low_activity" || type === "low_mobility") return { actionType: "mobility_check", title: "Gentle mobility check", body: "Activity is lower than usual. Encourage a short safe walk or check for discomfort.", recommendedFor: ["trusted_circle"], urgency: "watch" };
+    if (type === "low_sleep") return { actionType: "sleep_recovery_check", title: "Sleep recovery support", body: "Sleep is below the normal range. Encourage rest and monitor for repeat sleep disruption.", recommendedFor: ["trusted_circle"], urgency: "watch" };
+    if (type === "possible_isolation") return { actionType: "connection_check", title: "Connection check", body: "Guru noticed possible isolation. A warm call or visit may help.", recommendedFor: ["trusted_circle"], urgency: "watch" };
+    return { actionType: "health_review", title: "Health review", body: "Guru noticed a health signal that should be reviewed.", recommendedFor: ["trusted_circle", "caregiver"], urgency: score.riskLevel === "info" ? "watch" : score.riskLevel };
+  }
+
+  async function createRealtimeHealthEvent(residentId, eventType, severity, title, body, sourceTable, sourceId, payload = {}, audience = ["senior", "trusted_circle", "caregiver"]) {
+    return (await query(
+      `INSERT INTO health_realtime_events (senior_id, event_type, severity, source_table, source_id, audience, title, body, payload)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [residentId, eventType, severity, sourceTable, sourceId, audience, title, body, JSON.stringify(payload)]
+    )).rows[0];
+  }
+
+  async function notifyCareCircleForAction(residentId, action, event) {
+    const userIds = await trustedSafetyUserIds(residentId);
+    for (const userId of userIds) {
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1, 'push', $2, $3, 'queued')`,
+        [userId, action.title, action.body]
+      );
+    }
+    return { notifiedUserIds: userIds, realtimeEventId: event.id };
+  }
+
+  async function orchestrateHealthCareAction(req, user, resident, alert, metric, scoreRow, score) {
+    const decision = healthFalseAlarmDecision(alert.alert_type, score, { signalCount: alert.signal_count, confidence: alert.confidence });
+    await query(
+      `UPDATE health_alerts SET confirmation_status = $2, confidence = $3, suppressed_until = $4, action_required = $5, metadata = metadata || $6::jsonb WHERE id = $1`,
+      [alert.id, decision.confirmationStatus, decision.confidence, decision.suppressedUntil, decision.actionRequired, JSON.stringify({ falseAlarmGuard: decision, latestMetricId: metric.id })]
+    );
+    const watchEvent = await createRealtimeHealthEvent(resident.id, decision.actionRequired ? "health_action_required" : "health_signal_observed", alert.severity, alert.title, alert.body, "health_alerts", alert.id, { alertId: alert.id, metricId: metric.id, scoreId: scoreRow.id, decision });
+    if (!decision.actionRequired) {
+      await audit(req, user, "health_alert_suppressed_false_alarm_guard", "health_alert", alert.id, decision, "info");
+      return { actionRequired: false, decision, realtimeEvent: watchEvent };
+    }
+    const actionPlan = careActionForHealthAlert(alert, score);
+    const existingAction = (await query(`SELECT * FROM health_care_actions WHERE alert_id = $1 AND status = 'open' ORDER BY created_at DESC LIMIT 1`, [alert.id])).rows[0];
+    const action = existingAction || (await query(
+      `INSERT INTO health_care_actions (senior_id, alert_id, action_type, urgency, title, body, recommended_for, false_alarm_guard)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [resident.id, alert.id, actionPlan.actionType, actionPlan.urgency, actionPlan.title, actionPlan.body, actionPlan.recommendedFor, JSON.stringify(decision)]
+    )).rows[0];
+    const actionEvent = await createRealtimeHealthEvent(resident.id, "care_action_created", action.urgency, action.title, action.body, "health_care_actions", action.id, { alertId: alert.id, actionId: action.id, decision });
+    const notificationResult = await notifyCareCircleForAction(resident.id, action, actionEvent);
+    await audit(req, user, "health_care_action_created", "health_care_action", action.id, { alertId: alert.id, notificationResult, decision }, auditSeverity(action.urgency));
+    return { actionRequired: true, decision, action, realtimeEvent: actionEvent, notificationResult };
   }
 
   function healthReadingDataTypes(reading) {
@@ -1369,6 +1715,38 @@ function createProductionApi(pool) {
       return { received: true };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/auth/device-session") {
+      const installationId = required(payload.installationId, "installationId");
+      const role = ["senior", "trusted_person", "business"].includes(payload.role) ? payload.role : "senior";
+      const installHash = hashToken(String(installationId)).slice(0, 32);
+      const email = `install-${installHash}@device.theseniorguru.local`;
+      let user = (await query(`SELECT * FROM users WHERE email = $1`, [email])).rows[0];
+      if (!user) {
+        user = (await query(
+          `INSERT INTO users (email, display_name, role, status)
+           VALUES ($1, $2, $3, 'approved')
+           RETURNING *`,
+          [email, payload.displayName || (role === "business" ? "Business Owner" : role === "trusted_person" ? "Trusted Person" : "Senior"), role]
+        )).rows[0];
+        if (role === "senior") {
+          await query(
+            `INSERT INTO residents (user_id, onboarding_complete)
+             VALUES ($1, false)
+             ON CONFLICT (user_id) DO NOTHING`,
+            [user.id]
+          );
+        }
+        await audit(req, user, "device_user_bootstrapped", "user", user.id, { role }, "info");
+      }
+      const token = crypto.randomBytes(32).toString("hex");
+      await query(
+        `INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '30 days')`,
+        [user.id, hashToken(token)]
+      );
+      await audit(req, user, "device_session_created", "session", null, { role }, "info");
+      return { token, user };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/dev-session") {
       const email = required(payload.email, "email");
       let user = (await query(`SELECT * FROM users WHERE email = $1`, [email])).rows[0];
@@ -1572,6 +1950,154 @@ function createProductionApi(pool) {
       }
     }
 
+    if (req.method === "POST" && url.pathname === "/api/onboarding/senior") {
+      const requiredFields = ["name"];
+      const missing = requiredFields.filter(field => !payload[field]);
+      if (missing.length) {
+        const error = new Error(`Missing senior onboarding fields: ${missing.join(", ")}`);
+        error.status = 400;
+        throw error;
+      }
+      const result = await transaction(async tx => {
+        const session = (await tx(
+          `INSERT INTO onboarding_sessions (role, account_id, status, current_step, payload, completed_at)
+           VALUES ('senior', $1, 'complete', 'complete', $2, now()) RETURNING *`,
+          [user.id, JSON.stringify(payload)]
+        )).rows[0];
+        const profile = (await tx(
+          `INSERT INTO senior_onboarding_profiles (onboarding_session_id, senior_account_id, full_name, preferred_name, phone, email, date_of_birth, address_line, living_type)
+           VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::date,$8,$9) RETURNING *`,
+          [session.id, user.id, payload.name, payload.preferredName || null, payload.phone, payload.email || null, payload.dob || null, payload.address || null, payload.livingType || null]
+        )).rows[0];
+        await tx(`UPDATE users SET display_name = $1, updated_at = now() WHERE id = $2`, [payload.preferredName || payload.name, user.id]);
+        await tx(
+          `INSERT INTO senior_health_onboarding (senior_profile_id, health_concerns, allergies, mobility_notes, baseline_metrics, wearable_sources, health_data_scopes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [profile.id, payload.healthConcerns || [], payload.allergies || null, payload.mobility || null, JSON.stringify({ height: payload.height, weight: payload.weight, bloodPressure: payload.bloodPressure, heartRate: payload.heartRate, medications: payload.medications }), payload.wearableSources || [], payload.devicePermissions || []]
+        );
+        const capturedEvidenceIds = [payload.profilePhotoEvidenceId, payload.livenessEvidenceId].filter(isUuid);
+        if (capturedEvidenceIds.length) {
+          await tx(
+            `UPDATE identity_evidence
+             SET onboarding_session_id = $1, subject_account_id = $2, metadata = metadata || $3::jsonb
+             WHERE id = ANY($4::uuid[])`,
+            [session.id, user.id, JSON.stringify({ linkedFrom: "senior_onboarding", linkedAt: new Date().toISOString() }), capturedEvidenceIds]
+          );
+        }
+        for (const permission of payload.devicePermissions || []) {
+          await tx(
+            `INSERT INTO device_permission_grants (onboarding_session_id, account_id, permission_name, requested_reason, grant_status, granted_at, metadata)
+             VALUES ($1,$2,$3,'onboarding', 'granted', now(), $4)`,
+            [session.id, user.id, String(permission).toLowerCase().replace(/\s+/g, '_'), JSON.stringify({ source: 'mobile_onboarding' })]
+          );
+        }
+        for (const provider of payload.musicApps || []) {
+          await tx(
+            `INSERT INTO music_connections (senior_profile_id, provider, connection_status, favorite_genres)
+             VALUES ($1,$2,'pending',$3)`,
+            [profile.id, String(provider).toLowerCase().replace(/\s+/g, '_'), payload.musicPreferences || []]
+          );
+        }
+        const consent = (await tx(
+          `INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata)
+           VALUES ($1,'senior','senior_onboarding_identity_health_wearables_music_location_sos','Senior onboarding consent captured in mobile app.',true,$2,$3,$4) RETURNING *`,
+          [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ healthSharing: payload.healthSharing, locationSharing: payload.locationSharing, sosOrder: payload.sosOrder })]
+        )).rows[0];
+        if (user.role === "senior") {
+          const resident = await getResidentForUser(user);
+          if (resident) await tx(
+            `UPDATE residents SET community = COALESCE($1, community), onboarding_complete = true, live_tracking_enabled = true, memory_support_enabled = true,
+              health_conditions = $2, allergies = $3, mobility_notes = $4, display_name = $5,
+              profile_photo_evidence_id = COALESCE(NULLIF($6,'')::uuid, profile_photo_evidence_id),
+              health_profile = health_profile || $7::jsonb, updated_at = now()
+             WHERE id = $8`,
+            [payload.address || null, payload.healthConcerns || [], payload.allergies ? [payload.allergies] : [], payload.mobility || null, payload.preferredName || payload.name, payload.profilePhotoEvidenceId || "", JSON.stringify({ onboarding: { profileId: profile.id, sessionId: session.id, consentId: consent.id, baselineMetrics: { height: payload.height, weight: payload.weight, bloodPressure: payload.bloodPressure, heartRate: payload.heartRate }, wearableSources: payload.wearableSources || [] } }), resident.id]
+          );
+        }
+        return { session, profile, consent };
+      });
+      await audit(req, user, "role_onboarding_senior_completed", "onboarding_session", result.session.id, { profileId: result.profile.id });
+      return { ok: true, onboarding: result };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/onboarding/trust-circle") {
+      const requiredFields = ["name", "relationship", "phone", "email"];
+      const missing = requiredFields.filter(field => !payload[field]);
+      if (missing.length) {
+        const error = new Error(`Missing trust-circle onboarding fields: ${missing.join(", ")}`);
+        error.status = 400;
+        throw error;
+      }
+      const result = await transaction(async tx => {
+        const session = (await tx(`INSERT INTO onboarding_sessions (role, account_id, status, current_step, payload, completed_at) VALUES ('trust_circle',$1,'complete','complete',$2,now()) RETURNING *`, [user.id, JSON.stringify(payload)])).rows[0];
+        const member = (await tx(
+          `INSERT INTO trust_circle_onboarding (onboarding_session_id, member_account_id, full_name, relationship, phone, email, timezone, escalation_role)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          [session.id, user.id, payload.name, payload.relationship, payload.phone, payload.email, payload.timezone || null, payload.escalationRole || null]
+        )).rows[0];
+        await tx(`INSERT INTO trust_circle_messaging_rules (trust_circle_member_id, routine_window, quiet_hours, emergency_override, alert_types, preferred_channels) VALUES ($1,$2,$3,$4,$5,$6)`, [member.id, payload.routineWindow || null, payload.quietHours || null, String(payload.emergencyOverride || "Yes").toLowerCase() !== "no", payload.alertTypes || [], ["app"]]);
+        const capturedEvidenceIds = [payload.identityPhotoEvidenceId, payload.livenessEvidenceId].filter(isUuid);
+        if (capturedEvidenceIds.length) {
+          await tx(
+            `UPDATE identity_evidence
+             SET onboarding_session_id = $1, subject_account_id = $2, metadata = metadata || $3::jsonb
+             WHERE id = ANY($4::uuid[])`,
+            [session.id, user.id, JSON.stringify({ linkedFrom: "trust_circle_onboarding", linkedAt: new Date().toISOString() }), capturedEvidenceIds]
+          );
+        }
+        await tx(`INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata) VALUES ($1,'trust_circle','alert_receipt_and_senior_approved_visibility','Trust circle onboarding consent captured in mobile app.',true,$2,$3,$4)`, [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ visibility: payload.visibility || [], alertTypes: payload.alertTypes || [] })]);
+        return { session, member };
+      });
+      await audit(req, user, "role_onboarding_trust_circle_completed", "onboarding_session", result.session.id, { memberId: result.member.id });
+      return { ok: true, onboarding: result };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/onboarding/business") {
+      const requiredFields = ["legalName", "ownerName", "phone", "email", "businessType"];
+      const missing = requiredFields.filter(field => !payload[field]);
+      if (missing.length) {
+        const error = new Error(`Missing business onboarding fields: ${missing.join(", ")}`);
+        error.status = 400;
+        throw error;
+      }
+      const result = await transaction(async tx => {
+        const session = (await tx(`INSERT INTO onboarding_sessions (role, account_id, status, current_step, payload, completed_at) VALUES ('business',$1,'submitted','submitted',$2,now()) RETURNING *`, [user.id, JSON.stringify(payload)])).rows[0];
+        const businessProfile = (await tx(
+          `INSERT INTO business_onboarding_profiles (onboarding_session_id, business_account_id, business_type, legal_name, dba_name, owner_name, phone, email, website, business_address, verification_status, trust_score)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',60) RETURNING *`,
+          [session.id, user.id, payload.businessType, payload.legalName, payload.dba || null, payload.ownerName, payload.phone, payload.email, payload.website || null, payload.address || null]
+        )).rows[0];
+        const serviceLines = String(payload.services || payload.businessType).split(/\n|,/).map(v => v.trim()).filter(Boolean).slice(0, 10);
+        for (const serviceName of serviceLines.length ? serviceLines : [payload.businessType]) {
+          await tx(`INSERT INTO business_service_catalog (business_profile_id, category, service_name, description, price_unit) VALUES ($1,$2,$3,$4,'custom')`, [businessProfile.id, payload.businessType, serviceName, payload.pricing || null]);
+        }
+        await tx(`INSERT INTO business_service_areas (business_profile_id, service_radius_miles, zip_codes, boundary_notes, boundary_geojson) VALUES ($1,NULLIF($2,'')::numeric,$3,$4,$5)`, [businessProfile.id, String(payload.serviceRadius || '').replace(/[^0-9.]/g, '') || null, String(payload.serviceZips || '').split(',').map(v => v.trim()).filter(Boolean), payload.serviceBoundary || null, JSON.stringify({ source: 'mobile_onboarding', pendingGoogleMapsBoundaryValidation: true })]);
+        await tx(`INSERT INTO business_lead_rules (business_profile_id, max_leads_per_day, lead_types, communication_channels, accepts_urgent, accepts_recurring) VALUES ($1,NULLIF($2,'')::int,$3,$4,true,true)`, [businessProfile.id, String(payload.maxLeads || '').replace(/[^0-9]/g, '') || null, payload.leadTypes || [], payload.communication || ['app']]);
+        const capturedEvidenceIds = [payload.ownerPhotoEvidenceId, payload.ownerLivenessEvidenceId].filter(isUuid);
+        if (capturedEvidenceIds.length) {
+          await tx(
+            `UPDATE identity_evidence
+             SET onboarding_session_id = $1, subject_account_id = $2, metadata = metadata || $3::jsonb
+             WHERE id = ANY($4::uuid[])`,
+            [session.id, user.id, JSON.stringify({ linkedFrom: "business_onboarding", linkedAt: new Date().toISOString() }), capturedEvidenceIds]
+          );
+        }
+        await tx(`INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata) VALUES ($1,'business','business_identity_verification_service_matching_lead_delivery','Business onboarding consent captured in mobile app.',true,$2,$3,$4)`, [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ serviceArea: payload.serviceBoundary, verificationDocs: payload.verificationDocs || [] })]);
+        if (user.role === 'business') {
+          const business = await getBusinessForUser(user);
+          if (business) await tx(`UPDATE businesses SET name=$1, contact_person=$2, email=$3, phone=$4, website=$5, description=$6, service_areas=$7, demographics=$8, onboarding_complete=true, status='pending_review', updated_at=now() WHERE id=$9`, [payload.dba || payload.legalName, payload.ownerName, payload.email, payload.phone, payload.website || '', payload.services || '', String(payload.serviceZips || '').split(',').map(v => v.trim()).filter(Boolean), [payload.businessType], business.id]);
+        }
+        return { session, businessProfile };
+      });
+      await audit(req, user, "role_onboarding_business_submitted", "onboarding_session", result.session.id, { businessProfileId: result.businessProfile.id });
+      return { ok: true, onboarding: result };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/onboarding") {
+      const rows = await query(`SELECT * FROM onboarding_sessions WHERE account_id = $1 ORDER BY created_at DESC LIMIT 20`, [user.id]);
+      return { onboarding: rows.rows };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/resident/onboarding") {
       requireRole(user, ["senior"]);
       const resident = await getResidentForUser(user);
@@ -1753,6 +2279,504 @@ function createProductionApi(pool) {
       await query(`UPDATE residents SET onboarding_complete = true, updated_at = now() WHERE id = $1`, [resident.id]);
       await audit(req, user, "resident_onboarding_completed", "resident", resident.id, { medicationCount: medCount });
       return { ok: true };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/media/upload-url") {
+      const allowedContentTypes = new Set(["image/jpeg", "image/png", "image/heic", "video/mp4", "video/quicktime", "application/pdf"]);
+      const contentType = String(payload.contentType || "").trim().toLowerCase();
+      if (!allowedContentTypes.has(contentType)) {
+        const error = new Error("Unsupported media content type");
+        error.status = 400;
+        throw error;
+      }
+      const resident = user.role === "senior" ? await getResidentForUser(user) : null;
+      const originalFileName = sanitizeStorageKey(payload.fileName || `upload-${Date.now()}`);
+      const bucket = sanitizeStorageKey(payload.bucket || (String(payload.evidenceType || "").includes("license") ? "business-evidence" : "identity-evidence"));
+      const storageKey = sanitizeStorageKey(`${user.id}/${Date.now()}-${crypto.randomBytes(6).toString("hex")}-${originalFileName}`);
+      const uploadExpiresAt = new Date(Date.now() + Number(process.env.MEDIA_UPLOAD_URL_TTL_MS || 15 * 60 * 1000));
+      const uploadUrl = signStorageUrl({ method: "PUT", bucket, storageKey, expiresAt: uploadExpiresAt });
+      const mediaObject = (await query(
+        `INSERT INTO media_objects (
+          owner_user_id, resident_id, bucket, storage_key, original_file_name,
+          content_type, byte_size, checksum_sha256, upload_url, upload_expires_at,
+          status, metadata
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending_upload',$11)
+        RETURNING *`,
+        [
+          user.id,
+          resident?.id || payload.residentId || null,
+          bucket,
+          storageKey,
+          originalFileName,
+          contentType,
+          payload.byteSize ? Number(payload.byteSize) : null,
+          payload.checksumSha256 || null,
+          uploadUrl,
+          uploadExpiresAt,
+          JSON.stringify({ evidenceType: payload.evidenceType || null, captureMethod: payload.captureMethod || null, requestedAt: new Date().toISOString() })
+        ]
+      )).rows[0];
+      await enqueueJob("media", "media_postprocess", { mediaObjectId: mediaObject.id, storageKey, contentType }, uploadExpiresAt, 3);
+      await audit(req, user, "media_object_created", "media_object", mediaObject.id, { bucket, storageKey, contentType, byteSize: mediaObject.byte_size }, "info");
+      return { mediaObject, upload: { url: uploadUrl, method: "PUT", expiresAt: uploadExpiresAt.toISOString(), headers: { "Content-Type": contentType } } };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/media/download-url") {
+      const mediaObjectId = required(payload.mediaObjectId, "mediaObjectId");
+      const mediaObject = (await query(`SELECT * FROM media_objects WHERE id = $1`, [mediaObjectId])).rows[0];
+      if (!mediaObject) {
+        const error = new Error("Media object not found");
+        error.status = 404;
+        throw error;
+      }
+      const isOwner = mediaObject.owner_user_id === user.id;
+      const resident = user.role === "senior" ? await getResidentForUser(user) : null;
+      const isResidentOwner = resident?.id && resident.id === mediaObject.resident_id;
+      if (!isOwner && !isResidentOwner && user.role !== "admin") {
+        const error = new Error("Insufficient permissions for media object");
+        error.status = 403;
+        throw error;
+      }
+      const downloadExpiresAt = new Date(Date.now() + Number(process.env.MEDIA_DOWNLOAD_URL_TTL_MS || 10 * 60 * 1000));
+      const downloadUrl = signStorageUrl({ method: "GET", bucket: mediaObject.bucket, storageKey: mediaObject.storage_key, expiresAt: downloadExpiresAt });
+      const updated = (await query(
+        `UPDATE media_objects
+         SET download_url = $1, download_expires_at = $2, updated_at = now()
+         WHERE id = $3 RETURNING *`,
+        [downloadUrl, downloadExpiresAt, mediaObject.id]
+      )).rows[0];
+      await audit(req, user, "media_download_url_created", "media_object", mediaObject.id, { bucket: mediaObject.bucket }, "info");
+      return { mediaObject: updated, download: { url: downloadUrl, method: "GET", expiresAt: downloadExpiresAt.toISOString() } };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/media/evidence-upload/start") {
+      const allowedRoles = new Set(["senior", "trust_circle", "business_owner", "business_staff"]);
+      const allowedTypes = new Set(["profile_photo", "liveness_video", "government_id", "business_license", "insurance", "background_check", "professional_license", "driver_license"]);
+      const allowedContentTypes = new Set(["image/jpeg", "image/png", "image/heic", "video/mp4", "video/quicktime"]);
+      const subjectRole = String(payload.subjectRole || "").trim();
+      const evidenceType = String(payload.evidenceType || "").trim();
+      const localUri = String(payload.localUri || "").trim();
+      const contentType = String(payload.mimeType || (evidenceType === "liveness_video" ? "video/mp4" : "image/jpeg")).trim().toLowerCase();
+      if (!allowedRoles.has(subjectRole)) {
+        const error = new Error("Invalid evidence subject role");
+        error.status = 400;
+        throw error;
+      }
+      if (!allowedTypes.has(evidenceType)) {
+        const error = new Error("Invalid evidence type");
+        error.status = 400;
+        throw error;
+      }
+      if (!allowedContentTypes.has(contentType)) {
+        const error = new Error("Unsupported media content type");
+        error.status = 400;
+        throw error;
+      }
+      if (!localUri) {
+        const error = new Error("localUri is required");
+        error.status = 400;
+        throw error;
+      }
+      const subjectAccountId = payload.subjectAccountId || user.id;
+      const fileName = String(payload.fileName || `${evidenceType}.${evidenceType === "liveness_video" ? "mp4" : "jpg"}`).replace(/[^\w.\-]+/g, "_");
+      const result = await transaction(async tx => {
+        const saved = (await tx(
+          `INSERT INTO identity_evidence
+            (subject_role, subject_account_id, evidence_type, capture_method, verification_status, metadata)
+           VALUES ($1,$2,$3,$4,'captured',$5)
+           RETURNING id, onboarding_session_id, subject_role, subject_account_id, evidence_type, capture_method, verification_status, metadata, created_at`,
+          [
+            subjectRole,
+            subjectAccountId,
+            evidenceType,
+            payload.captureMethod === "upload" ? "upload" : "camera",
+            JSON.stringify({
+              localUri,
+              mimeType: contentType,
+              fileName,
+              width: Number(payload.width || 0) || null,
+              height: Number(payload.height || 0) || null,
+              durationMs: Number(payload.durationMs || 0) || null,
+              source: payload.source || "mobile-native-capture",
+              capturedAt: new Date().toISOString(),
+              chunkedUpload: true,
+              persistedBytes: false,
+              expectedByteSize: Number(payload.byteSize || 0) || null
+            })
+          ]
+        )).rows[0];
+        const bucket = evidenceType === "liveness_video" ? "identity-videos" : "identity-images";
+        const storageKey = `${subjectRole}/${subjectAccountId}/${saved.id}/${fileName}`;
+        const upload = (await tx(
+          `INSERT INTO media_upload_sessions
+            (owner_user_id, resident_id, identity_evidence_id, subject_role, evidence_type, bucket, storage_key,
+             original_file_name, content_type, expected_byte_size, metadata)
+           VALUES ($1, (SELECT id FROM residents WHERE user_id = $1 LIMIT 1), $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING *`,
+          [
+            user.id,
+            saved.id,
+            subjectRole,
+            evidenceType,
+            bucket,
+            storageKey,
+            fileName,
+            contentType,
+            Number(payload.byteSize || 0) || null,
+            JSON.stringify({ source: "mobile-camera", evidenceType, subjectRole })
+          ]
+        )).rows[0];
+        return { saved, upload };
+      });
+      await audit(req, user, "identity_evidence_chunked_upload_started", "identity_evidence", result.saved.id, { subjectRole, evidenceType, uploadId: result.upload.id });
+      return {
+        evidence: {
+          id: result.saved.id,
+          subjectRole: result.saved.subject_role,
+          subjectAccountId: result.saved.subject_account_id,
+          evidenceType: result.saved.evidence_type,
+          verificationStatus: result.saved.verification_status,
+          metadata: result.saved.metadata,
+          createdAt: result.saved.created_at
+        },
+        upload: {
+          id: result.upload.id,
+          status: result.upload.status,
+          contentType: result.upload.content_type,
+          storageKey: result.upload.storage_key
+        }
+      };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/media/evidence-upload/chunk") {
+      const uploadId = required(payload.uploadId, "uploadId");
+      const chunkIndex = Number(payload.chunkIndex);
+      const totalChunks = Number(payload.totalChunks);
+      const base64Chunk = String(payload.base64Chunk || "");
+      if (!Number.isInteger(chunkIndex) || chunkIndex < 0) {
+        const error = new Error("Invalid chunk index");
+        error.status = 400;
+        throw error;
+      }
+      if (!Number.isInteger(totalChunks) || totalChunks < 1 || totalChunks > 200) {
+        const error = new Error("Invalid chunk count");
+        error.status = 400;
+        throw error;
+      }
+      if (!base64Chunk) {
+        const error = new Error("base64Chunk is required");
+        error.status = 400;
+        throw error;
+      }
+      const upload = (await query(`SELECT * FROM media_upload_sessions WHERE id = $1 AND owner_user_id = $2`, [uploadId, user.id])).rows[0];
+      if (!upload) {
+        const error = new Error("Upload session not found");
+        error.status = 404;
+        throw error;
+      }
+      if (upload.status !== "receiving") {
+        const error = new Error("Upload session is not accepting chunks");
+        error.status = 409;
+        throw error;
+      }
+      const chunkBuffer = Buffer.from(base64Chunk.replace(/^data:[^;]+;base64,/, ""), "base64");
+      await transaction(async tx => {
+        await tx(
+          `INSERT INTO media_upload_chunks (upload_session_id, chunk_index, content, byte_size)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (upload_session_id, chunk_index)
+           DO UPDATE SET content = EXCLUDED.content, byte_size = EXCLUDED.byte_size, created_at = now()`,
+          [uploadId, chunkIndex, chunkBuffer, chunkBuffer.length]
+        );
+        await tx(
+          `UPDATE media_upload_sessions
+           SET total_chunks = $2,
+               received_chunks = (SELECT count(*) FROM media_upload_chunks WHERE upload_session_id = $1),
+               metadata = metadata || $3::jsonb
+           WHERE id = $1`,
+          [uploadId, totalChunks, JSON.stringify({ lastChunkAt: new Date().toISOString() })]
+        );
+      });
+      return { ok: true, uploadId, chunkIndex };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/media/evidence-upload/complete") {
+      const uploadId = required(payload.uploadId, "uploadId");
+      const totalChunks = Number(payload.totalChunks);
+      const upload = (await query(`SELECT * FROM media_upload_sessions WHERE id = $1 AND owner_user_id = $2`, [uploadId, user.id])).rows[0];
+      if (!upload) {
+        const error = new Error("Upload session not found");
+        error.status = 404;
+        throw error;
+      }
+      const chunks = (await query(
+        `SELECT chunk_index, content, byte_size
+         FROM media_upload_chunks
+         WHERE upload_session_id = $1
+         ORDER BY chunk_index ASC`,
+        [uploadId]
+      )).rows;
+      const expectedChunks = Number.isInteger(totalChunks) && totalChunks > 0 ? totalChunks : Number(upload.total_chunks || 0);
+      if (!expectedChunks || chunks.length !== expectedChunks) {
+        const error = new Error(`Upload incomplete: received ${chunks.length} of ${expectedChunks || "unknown"} chunks`);
+        error.status = 400;
+        throw error;
+      }
+      for (let index = 0; index < expectedChunks; index += 1) {
+        if (chunks[index].chunk_index !== index) {
+          const error = new Error(`Upload incomplete: missing chunk ${index}`);
+          error.status = 400;
+          throw error;
+        }
+      }
+      const byteBuffer = Buffer.concat(chunks.map(chunk => chunk.content));
+      const result = await transaction(async tx => {
+        const mediaObject = (await tx(
+          `INSERT INTO media_objects
+            (owner_user_id, resident_id, identity_evidence_id, bucket, storage_key, original_file_name, content_type, byte_size, status, metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'uploaded', $9)
+           RETURNING *`,
+          [
+            user.id,
+            upload.resident_id || null,
+            upload.identity_evidence_id,
+            upload.bucket,
+            upload.storage_key,
+            upload.original_file_name,
+            upload.content_type,
+            byteBuffer.length,
+            JSON.stringify({ source: "mobile-camera-chunked", uploadSessionId: upload.id, evidenceType: upload.evidence_type, subjectRole: upload.subject_role })
+          ]
+        )).rows[0];
+        await tx(
+          `INSERT INTO media_object_bytes (media_object_id, content)
+           VALUES ($1,$2)
+           ON CONFLICT (media_object_id) DO UPDATE SET content = EXCLUDED.content`,
+          [mediaObject.id, byteBuffer]
+        );
+        const evidence = (await tx(
+          `UPDATE identity_evidence
+           SET storage_url = $1,
+               thumbnail_url = CASE WHEN evidence_type = 'profile_photo' THEN $1 ELSE thumbnail_url END,
+               metadata = metadata || $2::jsonb
+           WHERE id = $3
+           RETURNING id, onboarding_session_id, subject_role, subject_account_id, evidence_type, capture_method, verification_status, storage_url, thumbnail_url, metadata, created_at`,
+          [`db-media://${mediaObject.id}`, JSON.stringify({ mediaObjectId: mediaObject.id, storageKey: upload.storage_key, persistedBytes: true, byteSize: byteBuffer.length, chunkedUpload: true }), upload.identity_evidence_id]
+        )).rows[0];
+        await tx(
+          `UPDATE media_upload_sessions
+           SET status = 'completed', received_chunks = $2, total_chunks = $2, completed_at = now()
+           WHERE id = $1`,
+          [upload.id, expectedChunks]
+        );
+        return { evidence, mediaObject };
+      });
+      await audit(req, user, "identity_evidence_chunked_upload_completed", "identity_evidence", result.evidence.id, { uploadId, byteSize: byteBuffer.length, totalChunks: expectedChunks });
+      return {
+        evidence: {
+          id: result.evidence.id,
+          onboardingSessionId: result.evidence.onboarding_session_id,
+          subjectRole: result.evidence.subject_role,
+          subjectAccountId: result.evidence.subject_account_id,
+          evidenceType: result.evidence.evidence_type,
+          captureMethod: result.evidence.capture_method,
+          verificationStatus: result.evidence.verification_status,
+          storageUrl: result.evidence.storage_url,
+          thumbnailUrl: result.evidence.thumbnail_url,
+          metadata: result.evidence.metadata,
+          createdAt: result.evidence.created_at
+        },
+        mediaObject: result.mediaObject
+      };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/media/evidence") {
+      const allowedRoles = new Set(["senior", "trust_circle", "business_owner", "business_staff"]);
+      const allowedTypes = new Set(["profile_photo", "liveness_video", "government_id", "business_license", "insurance", "background_check", "professional_license", "driver_license"]);
+      const subjectRole = String(payload.subjectRole || "").trim();
+      const evidenceType = String(payload.evidenceType || "").trim();
+      const localUri = String(payload.localUri || "").trim();
+      const base64Data = String(payload.base64Data || "").trim();
+      if (!allowedRoles.has(subjectRole)) {
+        const error = new Error("Invalid evidence subject role");
+        error.status = 400;
+        throw error;
+      }
+      if (!allowedTypes.has(evidenceType)) {
+        const error = new Error("Invalid evidence type");
+        error.status = 400;
+        throw error;
+      }
+      if (!localUri) {
+        const error = new Error("localUri is required");
+        error.status = 400;
+        throw error;
+      }
+      const subjectAccountId = payload.subjectAccountId || user.id;
+      const contentType = String(payload.mimeType || (evidenceType === "liveness_video" ? "video/mp4" : "image/jpeg")).trim();
+      const fileName = String(payload.fileName || `${evidenceType}.${evidenceType === "liveness_video" ? "mp4" : "jpg"}`).replace(/[^\w.\-]+/g, "_");
+      const byteBuffer = base64Data ? Buffer.from(base64Data.replace(/^data:[^;]+;base64,/, ""), "base64") : null;
+      const result = await transaction(async tx => {
+        await tx(`CREATE TABLE IF NOT EXISTS media_object_bytes (media_object_id UUID PRIMARY KEY REFERENCES media_objects(id) ON DELETE CASCADE, content BYTEA NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+        const saved = (await tx(
+          `INSERT INTO identity_evidence
+            (subject_role, subject_account_id, evidence_type, capture_method, verification_status, metadata)
+           VALUES ($1,$2,$3,$4,'captured',$5)
+           RETURNING id, onboarding_session_id, subject_role, subject_account_id, evidence_type, capture_method, verification_status, metadata, created_at`,
+          [
+            subjectRole,
+            subjectAccountId,
+            evidenceType,
+            payload.captureMethod === "upload" ? "upload" : "camera",
+            JSON.stringify({
+              localUri,
+              mimeType: contentType,
+              fileName,
+              width: Number(payload.width || 0) || null,
+              height: Number(payload.height || 0) || null,
+              durationMs: Number(payload.durationMs || 0) || null,
+              source: payload.source || "mobile-native-capture",
+              capturedAt: new Date().toISOString(),
+              persistedBytes: Boolean(byteBuffer),
+              byteSize: byteBuffer ? byteBuffer.length : null
+            })
+          ]
+        )).rows[0];
+        let mediaObject = null;
+        if (byteBuffer) {
+          const storageKey = `${subjectRole}/${subjectAccountId}/${saved.id}/${fileName}`;
+          mediaObject = (await tx(
+            `INSERT INTO media_objects
+              (owner_user_id, resident_id, identity_evidence_id, bucket, storage_key, original_file_name, content_type, byte_size, status, metadata)
+             VALUES ($1, (SELECT id FROM residents WHERE user_id = $1 LIMIT 1), $2, $3, $4, $5, $6, $7, 'uploaded', $8)
+             RETURNING *`,
+            [
+              user.id,
+              saved.id,
+              evidenceType === "liveness_video" ? "identity-videos" : "identity-images",
+              storageKey,
+              fileName,
+              contentType,
+              byteBuffer.length,
+              JSON.stringify({ source: "mobile-camera", evidenceType, subjectRole })
+            ]
+          )).rows[0];
+          await tx(`INSERT INTO media_object_bytes (media_object_id, content) VALUES ($1,$2) ON CONFLICT (media_object_id) DO UPDATE SET content = EXCLUDED.content`, [mediaObject.id, byteBuffer]);
+          await tx(
+            `UPDATE identity_evidence
+             SET storage_url = $1,
+                 thumbnail_url = CASE WHEN $2 = 'profile_photo' THEN $1 ELSE thumbnail_url END,
+                 metadata = metadata || $3::jsonb
+             WHERE id = $4`,
+            [`db-media://${mediaObject.id}`, evidenceType, JSON.stringify({ mediaObjectId: mediaObject.id, storageKey, persistedBytes: true, byteSize: byteBuffer.length }), saved.id]
+          );
+          if (subjectRole === "senior" && evidenceType === "profile_photo") {
+            await tx(
+              `UPDATE residents
+               SET profile_photo_media_object_id = $1,
+                   profile_photo_evidence_id = $2,
+                   profile_photo_url = $3,
+                   updated_at = now()
+               WHERE user_id = $4`,
+              [mediaObject.id, saved.id, `db-media://${mediaObject.id}`, user.id]
+            );
+          }
+        }
+        const updated = (await tx(
+          `SELECT id, onboarding_session_id, subject_role, subject_account_id, evidence_type, capture_method, verification_status, storage_url, thumbnail_url, metadata, created_at
+           FROM identity_evidence WHERE id = $1`,
+          [saved.id]
+        )).rows[0];
+        return { saved: updated, mediaObject };
+      });
+      const saved = result.saved;
+      await audit(req, user, "identity_evidence_captured", "identity_evidence", saved.id, { subjectRole, evidenceType, captureMethod: saved.capture_method });
+      return {
+        evidence: {
+          id: saved.id,
+          onboardingSessionId: saved.onboarding_session_id,
+          subjectRole: saved.subject_role,
+          subjectAccountId: saved.subject_account_id,
+          evidenceType: saved.evidence_type,
+          captureMethod: saved.capture_method,
+          verificationStatus: saved.verification_status,
+          storageUrl: saved.storage_url,
+          thumbnailUrl: saved.thumbnail_url,
+          metadata: saved.metadata,
+          createdAt: saved.created_at
+        },
+        mediaObject: result.mediaObject
+      };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/wearables/connect") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const provider = String(payload.provider || "").trim();
+      if (!provider) {
+        const error = new Error("provider is required");
+        error.status = 400;
+        throw error;
+      }
+      const diagnostics = payload.nativeDiagnostics || {};
+      const requestedDataTypes = Array.isArray(payload.requestedDataTypes) ? payload.requestedDataTypes : [];
+      const status = diagnostics.available === false ? "failed" : "connected";
+      const source = payload.source || "mobile-onboarding";
+      const providerId = normalizeProviderId(provider);
+      const connection = (await query(
+        `INSERT INTO wearable_connections
+          (resident_id, account_id, provider, status, source, requested_data_types, native_diagnostics, connected_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $4 = 'connected' THEN now() ELSE NULL END, now())
+         RETURNING *`,
+        [resident.id, user.id, provider, status, source, requestedDataTypes, JSON.stringify(diagnostics)]
+      )).rows[0];
+      const readings = Array.isArray(diagnostics.readings) ? diagnostics.readings : [];
+      const latestReading = readings[0] || {};
+      await query(
+        `INSERT INTO wearable_devices (id, resident_id, device_type, name, status, battery_percent, signal, last_seen_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE(NULLIF($8,'')::timestamptz, now()),now())
+         ON CONFLICT (id) DO UPDATE SET
+           resident_id = EXCLUDED.resident_id,
+           device_type = EXCLUDED.device_type,
+           name = EXCLUDED.name,
+           status = EXCLUDED.status,
+           battery_percent = EXCLUDED.battery_percent,
+           signal = EXCLUDED.signal,
+           last_seen_at = EXCLUDED.last_seen_at,
+           updated_at = now()`,
+        [
+          providerId,
+          resident.id,
+          provider.toLowerCase().includes("health") ? "health-platform" : "wearable-platform",
+          provider,
+          status,
+          Number(latestReading.batteryPercent ?? 0),
+          requestedDataTypes.join(", ") || "Health and safety telemetry",
+          latestReading.capturedAt || ""
+        ]
+      );
+      await query(
+        `INSERT INTO health_consents (resident_id, granted, source, data_types, updated_at)
+         VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (resident_id) DO UPDATE SET granted = EXCLUDED.granted, source = EXCLUDED.source, data_types = EXCLUDED.data_types, updated_at = now()`,
+        [resident.id, status === "connected", "mobile-healthkit-health-connect-sync", requestedDataTypes.filter(type => ["heartRate", "oxygenSaturation", "respiratoryRate", "hrv", "sleep", "calories", "steps"].includes(type))]
+      );
+      const wearableDevices = (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [resident.id])).rows;
+      const healthConsent = (await query(`SELECT * FROM health_consents WHERE resident_id = $1`, [resident.id])).rows[0];
+      await audit(req, user, status === "connected" ? "wearable_connection_completed" : "wearable_connection_failed", "wearable_connection", connection.id, { provider, status, source }, status === "connected" ? "info" : "warning");
+      return {
+        connection,
+        healthConsent,
+        wearables: {
+          devices: wearableDevices,
+          latestSummary: evaluateWearables(wearableDevices, {})
+        }
+      };
     }
 
     if (req.method === "POST" && url.pathname === "/api/medications") {
@@ -2356,6 +3380,36 @@ function createProductionApi(pool) {
       requireRole(user, ["trusted_person"]);
       await audit(req, user, "trusted_task_acknowledged", "trusted_task", payload.id || null, {}, "info");
       return { ok: true, id: payload.id || null, status: "acknowledged" };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/messages") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const body = String(payload.body || "").trim();
+      if (!body) {
+        const error = new Error("Message body is required");
+        error.status = 400;
+        throw error;
+      }
+      const message = (await query(
+        `INSERT INTO resident_messages (resident_id, sender_user_id, recipient_key, priority, body, status, metadata)
+         VALUES ($1,$2,$3,$4,$5,'sent',$6) RETURNING *`,
+        [resident.id, user.id, payload.recipient || null, payload.priority || "normal", body, JSON.stringify(payload.metadata || {})]
+      )).rows[0];
+      const job = await enqueueJob("notifications", "notification_delivery", {
+        source: "resident_message",
+        messageId: message.id,
+        residentId: resident.id,
+        recipientKey: message.recipient_key,
+        priority: message.priority
+      });
+      await audit(req, user, "resident_message_sent", "resident_message", message.id, { recipient: message.recipient_key, priority: message.priority }, message.priority === "help_request" ? "high" : "info");
+      return { ok: true, message, job };
     }
 
     if (req.method === "POST" && url.pathname === "/api/help/match") {
@@ -3157,7 +4211,17 @@ function createProductionApi(pool) {
           return { lead, booking };
         });
         await audit(req, user, "resident_booking_requested", "booking", result.booking.id, { leadId: result.lead.id, serviceId: service.id, routeProvider: route?.provider || null, distanceMeters: route?.distanceMeters || null, fulfillmentMode, lifecycleStatus, totalChargeCents: pricing.totalChargeCents });
-        return { ok: true, lead: result.lead, booking: result.booking, fulfillment: selectedFulfillment, pricing };
+        const dispatchJob = await enqueueJob("dispatch", "ride_dispatch", {
+          bookingId: result.booking.id,
+          leadId: result.lead.id,
+          residentId: resident.id,
+          businessId: service.business_id,
+          fulfillmentMode,
+          lifecycleStatus,
+          paymentStatus,
+          scheduledFor: rideIntake.scheduledFor
+        }, new Date(), 6);
+        return { ok: true, lead: result.lead, booking: result.booking, fulfillment: selectedFulfillment, pricing, dispatchJob };
       }
 
       if (user.role === "business") {
@@ -3208,6 +4272,219 @@ function createProductionApi(pool) {
       const error = new Error("Insufficient permissions");
       error.status = 403;
       throw error;
+    }
+
+    const healthConnectMatch = url.pathname.match(/^\/api\/health\/connect\/([^/]+)$/);
+    if (req.method === "POST" && healthConnectMatch) {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const source = normalizeProviderId(healthConnectMatch[1]);
+      const hasCredential = Boolean(payload.accessToken || payload.refreshToken || payload.oauthCode);
+      const requiresOAuth = sourceRequiresOAuth(source);
+      const status = requiresOAuth && !hasCredential ? "pending_oauth" : "active";
+      const credentialRef = hasCredential ? hashToken(String(payload.accessToken || payload.refreshToken || payload.oauthCode)) : null;
+      const scopes = Array.isArray(payload.scopes) ? payload.scopes.map(String) : ["steps", "sleep", "heartRate", "oxygenSaturation", "respiratoryRate", "hrv", "calories"];
+      const result = await query(
+        `INSERT INTO health_sources (user_id, resident_id, source, display_name, status, scopes, credential_ref, metadata, connected_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $5 = 'active' THEN now() ELSE NULL END,now())
+         ON CONFLICT (user_id, source) DO UPDATE SET resident_id = EXCLUDED.resident_id, display_name = EXCLUDED.display_name, status = EXCLUDED.status, scopes = EXCLUDED.scopes, credential_ref = COALESCE(EXCLUDED.credential_ref, health_sources.credential_ref), metadata = health_sources.metadata || EXCLUDED.metadata, connected_at = COALESCE(health_sources.connected_at, EXCLUDED.connected_at), updated_at = now()
+         RETURNING *`,
+        [user.id, resident.id, source, payload.displayName || healthSourceDisplayName(source), status, scopes, credentialRef, JSON.stringify({ requiresOAuth, native: !requiresOAuth, device: payload.device || null })]
+      );
+      await query(
+        `INSERT INTO health_consents (resident_id, granted, source, data_types, updated_at)
+         VALUES ($1,true,$2,$3,now())
+         ON CONFLICT (resident_id) DO UPDATE SET granted = true, source = EXCLUDED.source, data_types = EXCLUDED.data_types, updated_at = now()`,
+        [resident.id, source, scopes]
+      );
+      await audit(req, user, "health_source_connected", "health_source", result.rows[0].id, { source, status, scopes }, status === "active" ? "info" : "warning");
+      return { healthSource: result.rows[0], oauthRequired: requiresOAuth && !hasCredential };
+    }
+
+    const healthSyncMatch = url.pathname.match(/^\/api\/health\/sync\/([^/]+)$/);
+    if (req.method === "POST" && healthSyncMatch) {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const source = normalizeProviderId(healthSyncMatch[1]);
+      const healthSource = (await query(`SELECT * FROM health_sources WHERE user_id = $1 AND source = $2`, [user.id, source])).rows[0];
+      if (!healthSource || healthSource.status !== "active") {
+        const error = new Error(`${healthSourceDisplayName(source)} is not connected for health sync`);
+        error.status = 403;
+        throw error;
+      }
+      const entries = Array.isArray(payload.dailyMetrics) ? payload.dailyMetrics : Array.isArray(payload.readings) ? payload.readings : [payload];
+      const saved = [];
+      for (const entry of entries) {
+        saved.push(await persistHealthMetric(req, user, resident, normalizeHealthMetrics({ ...entry, source })));
+      }
+      await query(`UPDATE health_sources SET last_sync_at = now(), updated_at = now() WHERE id = $1`, [healthSource.id]);
+      return { synced: saved.length, results: saved };
+    }
+
+    const manualMetricMatch = url.pathname.match(/^\/api\/health\/senior\/([^/]+)\/manual-metric$/);
+    if (req.method === "POST" && manualMetricMatch) {
+      const resident = await healthResidentAccess(user, manualMetricMatch[1], "summary");
+      if (user.role !== "senior" && user.role !== "superadmin") {
+        const error = new Error("Only the senior or superadmin can enter manual health metrics");
+        error.status = 403;
+        throw error;
+      }
+      const result = await persistHealthMetric(req, user, resident, normalizeHealthMetrics({ ...payload, source: payload.source || "manual" }));
+      return result;
+    }
+
+    const summaryMatch = url.pathname.match(/^\/api\/health\/senior\/([^/]+)\/summary$/);
+    if (req.method === "GET" && summaryMatch) {
+      const resident = await healthResidentAccess(user, summaryMatch[1], "summary");
+      const score = (await query(`SELECT * FROM health_scores WHERE senior_id = $1 ORDER BY metric_date DESC LIMIT 1`, [resident.id])).rows[0] || null;
+      const metric = (await query(`SELECT * FROM health_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC LIMIT 1`, [resident.id])).rows[0] || null;
+      const alerts = (await query(`SELECT * FROM health_alerts WHERE senior_id = $1 AND status = 'open' ORDER BY created_at DESC LIMIT 5`, [resident.id])).rows;
+      const sources = (await query(`SELECT id, source, display_name, status, scopes, connected_at, last_sync_at FROM health_sources WHERE resident_id = $1 ORDER BY updated_at DESC`, [resident.id])).rows;
+      return { residentId: resident.id, metric, score, alerts, sources };
+    }
+
+    const trendsMatch = url.pathname.match(/^\/api\/health\/senior\/([^/]+)\/trends$/);
+    if (req.method === "GET" && trendsMatch) {
+      const resident = await healthResidentAccess(user, trendsMatch[1], "trends");
+      const days = healthRangeDays(url.searchParams.get("range"));
+      const metrics = (await query(
+        `SELECT * FROM health_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - $2::int ORDER BY metric_date ASC`,
+        [resident.id, days]
+      )).rows;
+      const scores = (await query(
+        `SELECT * FROM health_scores WHERE senior_id = $1 AND metric_date >= current_date - $2::int ORDER BY metric_date ASC`,
+        [resident.id, days]
+      )).rows;
+      return { range: `${days}d`, metrics, scores };
+    }
+
+    const scoresMatch = url.pathname.match(/^\/api\/health\/senior\/([^/]+)\/scores$/);
+    if (req.method === "GET" && scoresMatch) {
+      const resident = await healthResidentAccess(user, scoresMatch[1], "trends");
+      const scores = (await query(`SELECT * FROM health_scores WHERE senior_id = $1 ORDER BY metric_date DESC LIMIT 30`, [resident.id])).rows;
+      return { scores };
+    }
+
+    const alertsMatch = url.pathname.match(/^\/api\/health\/senior\/([^/]+)\/alerts$/);
+    if (req.method === "GET" && alertsMatch) {
+      const resident = await healthResidentAccess(user, alertsMatch[1], "alerts");
+      const status = url.searchParams.get("status") || "open";
+      const alerts = (await query(`SELECT * FROM health_alerts WHERE senior_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT 50`, [resident.id, status])).rows;
+      return { alerts };
+    }
+
+    const careActionsMatch = url.pathname.match(/^\/api\/health\/senior\/([^/]+)\/care-actions$/);
+    if (req.method === "GET" && careActionsMatch) {
+      const resident = await healthResidentAccess(user, careActionsMatch[1], "alerts");
+      const status = url.searchParams.get("status") || "open";
+      const actions = (await query(
+        `SELECT ca.*, ha.alert_type, ha.confirmation_status, ha.confidence
+         FROM health_care_actions ca
+         LEFT JOIN health_alerts ha ON ha.id = ca.alert_id
+         WHERE ca.senior_id = $1 AND ca.status = $2
+         ORDER BY ca.created_at DESC LIMIT 50`,
+        [resident.id, status]
+      )).rows;
+      return { actions };
+    }
+
+    const liveEventsMatch = url.pathname.match(/^\/api\/health\/senior\/([^/]+)\/live-events$/);
+    if (req.method === "GET" && liveEventsMatch) {
+      const resident = await healthResidentAccess(user, liveEventsMatch[1], "alerts");
+      const since = url.searchParams.get("since");
+      const events = since
+        ? (await query(`SELECT * FROM health_realtime_events WHERE senior_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 100`, [resident.id, since])).rows
+        : (await query(`SELECT * FROM health_realtime_events WHERE senior_id = $1 ORDER BY created_at DESC LIMIT 100`, [resident.id])).rows;
+      return { events, serverTime: new Date().toISOString(), transport: "polling-live-feed" };
+    }
+
+    const actionAckMatch = url.pathname.match(/^\/api\/health\/care-actions\/([^/]+)\/acknowledge$/);
+    if (req.method === "PATCH" && actionAckMatch) {
+      const action = (await query(`SELECT * FROM health_care_actions WHERE id = $1`, [actionAckMatch[1]])).rows[0];
+      if (!action) {
+        const error = new Error("Care action not found");
+        error.status = 404;
+        throw error;
+      }
+      await healthResidentAccess(user, action.senior_id, "alerts");
+      const updated = (await query(
+        `UPDATE health_care_actions SET status = 'acknowledged', acknowledged_by = $2, acknowledged_at = now(), updated_at = now() WHERE id = $1 RETURNING *`,
+        [action.id, user.id]
+      )).rows[0];
+      const event = await createRealtimeHealthEvent(action.senior_id, "care_action_acknowledged", action.urgency, "Care action acknowledged", `${user.display_name} acknowledged: ${action.title}`, "health_care_actions", action.id, { actionId: action.id, acknowledgedBy: user.id });
+      await audit(req, user, "health_care_action_acknowledged", "health_care_action", action.id, { eventId: event.id }, auditSeverity(action.urgency));
+      return { action: updated, event };
+    }
+
+    const actionResolveMatch = url.pathname.match(/^\/api\/health\/care-actions\/([^/]+)\/resolve$/);
+    if (req.method === "PATCH" && actionResolveMatch) {
+      const action = (await query(`SELECT * FROM health_care_actions WHERE id = $1`, [actionResolveMatch[1]])).rows[0];
+      if (!action) {
+        const error = new Error("Care action not found");
+        error.status = 404;
+        throw error;
+      }
+      await healthResidentAccess(user, action.senior_id, "alerts");
+      const updated = (await query(
+        `UPDATE health_care_actions SET status = 'resolved', resolved_by = $2, resolved_at = now(), updated_at = now() WHERE id = $1 RETURNING *`,
+        [action.id, user.id]
+      )).rows[0];
+      const event = await createRealtimeHealthEvent(action.senior_id, "care_action_resolved", action.urgency, "Care action resolved", payload.note || `${user.display_name} resolved: ${action.title}`, "health_care_actions", action.id, { actionId: action.id, resolvedBy: user.id, note: payload.note || null });
+      await audit(req, user, "health_care_action_resolved", "health_care_action", action.id, { eventId: event.id, note: payload.note || null }, auditSeverity(action.urgency));
+      return { action: updated, event };
+    }
+
+    const resolveAlertMatch = url.pathname.match(/^\/api\/health\/alerts\/([^/]+)\/resolve$/);
+    if (req.method === "PATCH" && resolveAlertMatch) {
+      const alert = (await query(`SELECT * FROM health_alerts WHERE id = $1`, [resolveAlertMatch[1]])).rows[0];
+      if (!alert) {
+        const error = new Error("Health alert not found");
+        error.status = 404;
+        throw error;
+      }
+      await healthResidentAccess(user, alert.senior_id, "alerts");
+      const result = await query(
+        `UPDATE health_alerts SET status = 'resolved', resolved_at = now(), resolved_by = $2, metadata = metadata || $3::jsonb WHERE id = $1 RETURNING *`,
+        [alert.id, user.id, JSON.stringify({ resolutionNote: payload.note || null })]
+      );
+      await audit(req, user, "health_alert_resolved", "health_alert", alert.id, { note: payload.note || null });
+      return { alert: result.rows[0] };
+    }
+
+    const familySummaryMatch = url.pathname.match(/^\/api\/health\/family\/([^/]+)\/summary$/);
+    if (req.method === "GET" && familySummaryMatch) {
+      const resident = await healthResidentAccess(user, familySummaryMatch[1], "summary");
+      const score = (await query(`SELECT * FROM health_scores WHERE senior_id = $1 ORDER BY metric_date DESC LIMIT 1`, [resident.id])).rows[0] || null;
+      const alerts = (await query(`SELECT id, alert_type, severity, title, body, created_at FROM health_alerts WHERE senior_id = $1 AND status = 'open' ORDER BY created_at DESC LIMIT 5`, [resident.id])).rows;
+      const metric = (await query(`SELECT metric_date, steps, sleep_minutes, resting_heart_rate, oxygen_saturation, medication_adherence_percent, mood_score FROM health_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC LIMIT 1`, [resident.id])).rows[0] || null;
+      return { residentId: resident.id, familyView: true, score, metric, alerts };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/health/permissions") {
+      requireRole(user, ["senior", "superadmin"]);
+      const seniorId = payload.seniorId || "self";
+      const resident = await healthResidentAccess(user, seniorId, "summary");
+      const granteeUserId = required(payload.granteeUserId, "granteeUserId");
+      const visibility = Array.isArray(payload.visibility) ? payload.visibility.map(String) : ["summary", "alerts", "trends"];
+      const result = await query(
+        `INSERT INTO health_sharing_permissions (senior_id, grantee_user_id, visibility, can_view_trends, can_view_alerts, can_view_medication_adherence, can_view_location_context, status, created_by, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,now())
+         ON CONFLICT (senior_id, grantee_user_id) DO UPDATE SET visibility = EXCLUDED.visibility, can_view_trends = EXCLUDED.can_view_trends, can_view_alerts = EXCLUDED.can_view_alerts, can_view_medication_adherence = EXCLUDED.can_view_medication_adherence, can_view_location_context = EXCLUDED.can_view_location_context, status = 'active', updated_at = now()
+         RETURNING *`,
+        [resident.id, granteeUserId, visibility, payload.canViewTrends !== false, payload.canViewAlerts !== false, payload.canViewMedicationAdherence !== false, payload.canViewLocationContext === true, user.id]
+      );
+      await audit(req, user, "health_permission_saved", "health_sharing_permission", result.rows[0].id, { granteeUserId, visibility });
+      return { permission: result.rows[0] };
     }
 
     if (req.method === 'PATCH' && url.pathname === '/api/health/consent') {
@@ -3271,6 +4548,12 @@ function createProductionApi(pool) {
       if (latestSummary.riskLevel === 'high') {
         await createSafetyEvent(req, user, resident.id, 'health-vitals-risk', 'high', `${user.display_name} has elevated health risk signals: ${latestSummary.riskReasons.join(', ')}. Trusted circle notification triggered.`, { source: payload.source });
       }
+      await enqueueJob("telemetry", "telemetry_ingest", {
+        source: "health_vitals",
+        residentId: resident.id,
+        readingIds: inserted.map(reading => reading.id),
+        riskLevel: latestSummary.riskLevel
+      });
       await audit(req, user, 'health_vitals_synced', 'health_vitals', inserted[0]?.id || null, { readings: inserted.length, risk: latestSummary.riskLevel, reasons: latestSummary.riskReasons }, auditSeverity(latestSummary.riskLevel));
       return { healthVitals: { readings: recent, summary: evaluateHealthVitals(recent), latestSummary } };
     }
@@ -3547,8 +4830,275 @@ function createProductionApi(pool) {
           );
         }
       }
+      await enqueueJob("telemetry", "telemetry_ingest", {
+        source: "safety_phone_analytics",
+        residentId: resident.id,
+        telemetryId: telemetry.id,
+        eventIds: createdEvents.map(event => event.id),
+        safeZoneStatus: safeZoneEvaluation.status
+      });
       await audit(req, user, "safety_telemetry_ingested", "resident", resident.id, { telemetryId: telemetry.id, eventCount: createdEvents.length, safeZone: safeZoneEvaluation }, createdEvents.length ? "critical" : "info");
       return { telemetry, safeZone: safeZoneEvaluation, events: createdEvents };
+    }
+
+
+
+    if (req.method === "GET" && url.pathname === "/api/guru/daily-journey") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const medications = (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY time_label NULLS LAST, created_at DESC LIMIT 12`, [resident?.id || null])).rows;
+      const journey = {
+        resident: resident?.name || user.display_name,
+        sections: [
+          { period: "Morning", priority: "medication", title: medications[0]?.name || "Morning medication", subtitle: medications[0]?.time_label || "8:00 AM", action: "confirm_medication" },
+          { period: "Afternoon", priority: "support", title: "Ask Guru for help", subtitle: "Ride, food, cleaning, diapers, medication, or companionship", action: "open_guru" },
+          { period: "Evening", priority: "connection", title: "Family check-in", subtitle: "Call trusted circle", action: "open_circle" },
+          { period: "Today", priority: "safety", title: "Safety check", subtitle: "SOS, wearable, and safe-zone monitoring", action: "open_safety" }
+        ],
+        generatedAt: new Date().toISOString()
+      };
+      await query(
+        `INSERT INTO guru_daily_plans (resident_id, plan, generated_by) VALUES ($1,$2,'guru')
+         ON CONFLICT (resident_id, plan_date) DO UPDATE SET plan = EXCLUDED.plan, created_at = now()
+         RETURNING *`,
+        [resident?.id || null, JSON.stringify(journey)]
+      );
+      await audit(req, user, "guru_daily_journey_generated", "resident", resident?.id || null, {}, "info");
+      return journey;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/orchestrate") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const message = String(payload.message || "").trim();
+      if (!message) {
+        const error = new Error("Message is required");
+        error.status = 400;
+        throw error;
+      }
+      const memories = (await query(`SELECT * FROM guru_memories WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident?.id || null])).rows;
+      const medications = (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident?.id || null])).rows;
+      const resolvedIntent = resolveGuruIntent(message, { medications, memories });
+      let ai = { provider: "local", configured: false, text: null };
+      try {
+        ai = await callOpenAI({
+          system: buildSeniorGuruSystemPrompt({ resident, medications, memories }),
+          messages: [{ role: "user", content: message }]
+        });
+      } catch (error) {
+        ai = { provider: "local", configured: false, text: null, error: error.message };
+      }
+      let task = null;
+      if (resolvedIntent.intent === "task") {
+        task = (await query(
+          `INSERT INTO guru_tasks (resident_id, title, status, source, metadata) VALUES ($1,$2,'open','guru_orchestrator',$3) RETURNING *`,
+          [resident?.id || null, resolvedIntent.taskTitle, JSON.stringify({ screen: payload.screen || null })]
+        )).rows[0];
+      }
+      const event = (await query(
+        `INSERT INTO guru_ai_sessions (resident_id, intent, user_message, assistant_reply, provider, model, safety_level, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [resident?.id || null, resolvedIntent.intent, message, ai.text || resolvedIntent.reply, ai.provider, process.env.OPENAI_MODEL || null, resolvedIntent.intent === "safety" ? "elevated" : "normal", JSON.stringify({ navigateTo: resolvedIntent.navigateTo, screen: payload.screen || null })]
+      )).rows[0];
+      await audit(req, user, "guru_orchestrated", "resident", resident?.id || null, { intent: resolvedIntent.intent, provider: ai.provider }, resolvedIntent.intent === "safety" ? "security" : "info");
+      return { reply: event.assistant_reply, intent: resolvedIntent.intent, navigateTo: resolvedIntent.navigateTo, task, event, aiConfigured: ai.configured };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/voice-session") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const session = (await query(
+        `INSERT INTO guru_voice_sessions (resident_id, status, provider, expires_at, metadata) VALUES ($1,$2,'openai_realtime', now() + interval '5 minutes', $3) RETURNING *`,
+        [resident?.id || null, process.env.OPENAI_API_KEY ? "server_ready" : "needs_openai_key", JSON.stringify({ source: payload.source || "mobile" })]
+      )).rows[0];
+      await audit(req, user, "guru_voice_session_created", "resident", resident?.id || null, { status: session.status }, "info");
+      return { session };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/chat") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const message = String(payload.message || "").trim();
+      const resolvedIntent = resolveGuruIntent(message);
+      let intent = resolvedIntent.intent;
+      let navigateTo = resolvedIntent.navigateTo;
+      let reply = resolvedIntent.reply;
+      let task = null;
+      if (intent === "task") {
+        task = (await query(
+          `INSERT INTO guru_tasks (resident_id, title, status, source, metadata) VALUES ($1,$2,'open','guru',$3) RETURNING *`,
+          [resident?.id || null, resolvedIntent.taskTitle, JSON.stringify({ screen: payload.screen || null })]
+        )).rows[0];
+      }
+
+      const event = (await query(
+        `INSERT INTO guru_conversations (resident_id, message, reply, intent, navigate_to, metadata) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [resident?.id || null, message, reply, intent, navigateTo, JSON.stringify({ screen: payload.screen || null })]
+      )).rows[0];
+      await audit(req, user, "guru_chat", "resident", resident?.id || null, { intent, navigateTo }, "info");
+      return { reply, intent, navigateTo, task, event };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/tasks") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const title = String(payload.title || "").trim();
+      if (!title) {
+        const error = new Error("Task title is required");
+        error.status = 400;
+        throw error;
+      }
+      const task = (await query(
+        `INSERT INTO guru_tasks (resident_id, title, status, source, metadata) VALUES ($1,$2,'open',$3,$4) RETURNING *`,
+        [resident?.id || null, title, payload.source || "mobile", JSON.stringify(payload.metadata || {})]
+      )).rows[0];
+      await audit(req, user, "guru_task_created", "resident", resident?.id || null, { taskId: task.id }, "info");
+      return { task };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/posts") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const body = String(payload.body || "").trim();
+      if (!body) {
+        const error = new Error("Post body is required");
+        error.status = 400;
+        throw error;
+      }
+      const post = (await query(
+        `INSERT INTO community_posts (resident_id, author_user_id, body, audience, status, metadata)
+         VALUES ($1,$2,$3,$4,'published',$5) RETURNING *`,
+        [resident?.id || null, user.id, body, payload.audience || "community", JSON.stringify(payload.metadata || {})]
+      )).rows[0];
+      await audit(req, user, "community_post_created", "community_post", post.id, { audience: post.audience }, "info");
+      return { ok: true, post };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/events/join") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const eventId = String(payload.id || "").trim();
+      if (!eventId) {
+        const error = new Error("Event id is required");
+        error.status = 400;
+        throw error;
+      }
+      const rsvp = (await query(
+        `INSERT INTO community_event_rsvps (event_id, resident_id, user_id, status, metadata, updated_at)
+         VALUES ($1,$2,$3,'interested',$4,now())
+         ON CONFLICT (event_id, user_id) DO UPDATE SET status = 'interested', metadata = EXCLUDED.metadata, updated_at = now()
+         RETURNING *`,
+        [eventId, resident.id, user.id, JSON.stringify({ name: payload.name || eventId, source: "mobile" })]
+      )).rows[0];
+      const job = await enqueueJob("notifications", "notification_delivery", {
+        source: "community_event_rsvp",
+        eventId,
+        rsvpId: rsvp.id,
+        residentId: resident.id,
+        userId: user.id
+      });
+      await audit(req, user, "community_event_rsvp_saved", "community_event_rsvp", rsvp.id, { eventId }, "info");
+      return { ok: true, rsvp, job };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/scan-intents") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const type = String(payload.type || "product");
+      const label = String(payload.label || `${type} scan`);
+      const intent = (await query(
+        `INSERT INTO guru_scan_intents (resident_id, scan_type, label, status, vision_result) VALUES ($1,$2,$3,'created',$4) RETURNING *`,
+        [resident?.id || null, type, label, JSON.stringify({ source: payload.source || "mobile" })]
+      )).rows[0];
+      await audit(req, user, "guru_scan_intent_created", "resident", resident?.id || null, { scanIntentId: intent.id, type }, "info");
+      return { intent };
+    }
+
+
+    if (req.method === "GET" && url.pathname === "/api/guru/scans") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const scans = await query(`SELECT * FROM guru_scans WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 50`, [resident?.id || null]);
+      return { scans: scans.rows };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/scans") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const type = String(payload.type || "product");
+      const label = String(payload.label || `${type} scan`);
+      const title = type === "medicine" ? "Medicine scan prepared" : type === "document" ? "Document scan prepared" : type === "qr" ? "QR scan prepared" : type === "ar" ? "AR helper scene prepared" : "Product scan prepared";
+      const warnings = type === "medicine" ? ["Confirm medication details with the label, pharmacy, or clinician before taking or changing any dose."] : type === "qr" ? ["Only open links you trust. Guru should warn before opening unknown QR destinations."] : [];
+      const recommendedActions = type === "medicine"
+        ? ["Extract medication label", "Add to medication list", "Request refill help", "Ask trusted circle to verify label"]
+        : type === "document"
+          ? ["Summarize document", "Create reminder", "Send to trusted circle", "Call listed phone number"]
+          : type === "ar"
+            ? ["Identify object", "Show next step", "Read label aloud", "Ask family for help"]
+            : ["Identify product", "Check allergens", "Find reorder option", "Add to essentials list"];
+      const summary = type === "medicine"
+        ? "Guru captured the medication image and prepared a senior-safe review flow for name, dose, refill, pharmacy, and warning checks."
+        : type === "document"
+          ? "Guru saved the document image and prepared OCR-style extraction for dates, phone numbers, appointment details, bills, and action items."
+          : type === "qr"
+            ? "Guru captured the QR image and is ready to resolve event links, menu links, appointment pages, or product support links."
+            : type === "ar"
+              ? "Guru captured the scene and prepared step-by-step object guidance for medication cabinets, appliances, labels, and household tasks."
+              : "Guru captured the product image and prepared a product lookup flow for label reading, allergies, expiry, reorder options, and safer alternatives.";
+      const analysis = {
+        id: `analysis_${Date.now()}`,
+        type,
+        title,
+        summary,
+        confidence: payload.uri ? 0.76 : 0.54,
+        warnings,
+        recommendedActions,
+        extracted: {
+          imageUri: payload.uri || null,
+          fileName: payload.fileName || null,
+          width: payload.width || null,
+          height: payload.height || null,
+          source: payload.source || "mobile"
+        }
+      };
+      const category = type === "medicine" ? "Medicine Delivery" : type === "document" ? "Community Support" : type === "product" ? "Essentials" : "Transportation";
+      const matchRows = await query(
+        `SELECT s.id, s.name, s.category, s.price_label, b.name AS provider
+         FROM services s JOIN businesses b ON b.id = s.business_id
+         WHERE s.status = 'approved' AND (s.category = $1 OR $1 = 'Community Support')
+         ORDER BY s.updated_at DESC LIMIT 3`,
+        [category]
+      );
+      const matches = matchRows.rows.map((service, index) => ({ ...service, score: 90 - index * 4, reason: service.category === category ? "Matched to scan category" : "Useful support option based on scan" }));
+      const scan = (await query(
+        `INSERT INTO guru_scans (resident_id, scan_type, label, source, image_uri, file_name, width, height, analysis, matches, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'analyzed') RETURNING *`,
+        [resident?.id || null, type, label, payload.source || "mobile", payload.uri || null, payload.fileName || null, payload.width || null, payload.height || null, JSON.stringify(analysis), JSON.stringify(matches)]
+      )).rows[0];
+      await query(
+        `INSERT INTO guru_conversations (resident_id, message, reply, intent, navigate_to, metadata) VALUES ($1,$2,$3,'scan',NULL,$4)`,
+        [resident?.id || null, `${label} captured`, `${analysis.title}: ${analysis.summary}`, JSON.stringify({ scanId: scan.id, type })]
+      );
+      await audit(req, user, "guru_scan_analyzed", "resident", resident?.id || null, { scanId: scan.id, type, matchCount: matches.length }, "info");
+      return { scan, analysis, matches };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/scan-matches") {
+      requireRole(user, ["senior"]);
+      const type = String(payload.type || "product");
+      const category = type === "medicine" ? "Medicine Delivery" : type === "product" ? "Essentials" : "Transportation";
+      const rows = await query(
+        `SELECT s.id, s.name, s.category, s.price_label, b.name AS provider
+         FROM services s JOIN businesses b ON b.id = s.business_id
+         WHERE s.status = 'approved' AND s.category = $1
+         ORDER BY s.updated_at DESC LIMIT 5`,
+        [category]
+      );
+      return { type, matches: rows.rows };
     }
 
     if (req.method === "GET" && url.pathname === "/api/superadmin/approvals") {

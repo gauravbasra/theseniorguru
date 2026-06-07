@@ -1,6 +1,9 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { resolveGuruIntent } = require("./lib/guru-intents");
+const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
+const { buildDailyJourney } = require("./lib/daily-journey");
 let productionApi = null;
 if (process.env.DATABASE_URL) {
   const { Pool } = require("pg");
@@ -87,6 +90,101 @@ function body(req) {
       catch (error) { reject(error); }
     });
   });
+}
+
+
+function inferScanCategory(type, label = "", prompt = "") {
+  const text = `${type} ${label} ${prompt}`.toLowerCase();
+  if (text.includes("medicine") || text.includes("pill") || text.includes("prescription") || text.includes("bottle")) return "Medicine Delivery";
+  if (text.includes("food") || text.includes("grocery") || text.includes("meal")) return "Food & Meals";
+  if (text.includes("diaper") || text.includes("brief") || text.includes("essential") || text.includes("product")) return "Essentials";
+  if (text.includes("document") || text.includes("bill") || text.includes("form")) return "Community Support";
+  return "Transportation";
+}
+
+function matchServicesForScan(state, type, analysis) {
+  const category = inferScanCategory(type, analysis.title, analysis.summary);
+  const services = Array.isArray(state.services) ? state.services : [];
+  const direct = services.filter(service => service.category === category);
+  const fallback = services.filter(service => ["Medicine Delivery", "Food & Meals", "Essentials", "Transportation"].includes(service.category)).slice(0, 3);
+  return (direct.length ? direct : fallback).slice(0, 3).map((service, index) => ({
+    id: service.id,
+    name: service.name,
+    provider: service.provider,
+    category: service.category,
+    rating: service.rating,
+    eta: service.eta,
+    price: service.price,
+    score: Math.max(72, Math.round((Number(service.rating || 4.5) * 18) - index * 3)),
+    reason: category === service.category ? "Matched to scan category" : "Useful support option based on senior needs"
+  }));
+}
+
+function analyzeGuruScan(payload = {}, state = {}) {
+  const type = String(payload.type || "product").toLowerCase();
+  const label = String(payload.label || "Guru scan");
+  const base = {
+    id: `analysis_${Date.now()}`,
+    type,
+    confidence: payload.uri ? 0.76 : 0.54,
+    extracted: {
+      imageUri: payload.uri || null,
+      fileName: payload.fileName || null,
+      width: payload.width || null,
+      height: payload.height || null,
+      source: payload.source || "mobile"
+    },
+    warnings: [],
+    recommendedActions: ["Ask Guru a follow-up", "Share with trusted circle"]
+  };
+
+  if (type === "medicine") {
+    return {
+      ...base,
+      title: "Medicine scan prepared",
+      summary: "Guru captured the medication image and prepared a senior-safe review flow for name, dose, refill, pharmacy, and warning checks.",
+      warnings: ["Confirm medication details with the label, pharmacy, or clinician before taking or changing any dose."],
+      extracted: { ...base.extracted, candidateFields: ["medication name", "strength", "directions", "prescriber", "pharmacy", "refill count"] },
+      recommendedActions: ["Extract medication label", "Add to medication list", "Request refill help", "Ask trusted circle to verify label"]
+    };
+  }
+
+  if (type === "document") {
+    return {
+      ...base,
+      title: "Document scan prepared",
+      summary: "Guru saved the document image and prepared OCR-style extraction for dates, phone numbers, appointment details, bills, and action items.",
+      extracted: { ...base.extracted, candidateFields: ["due date", "phone number", "appointment", "amount", "address", "instructions"] },
+      recommendedActions: ["Summarize document", "Create reminder", "Send to trusted circle", "Call listed phone number"]
+    };
+  }
+
+  if (type === "qr") {
+    return {
+      ...base,
+      title: "QR scan prepared",
+      summary: "Guru captured the QR image and is ready to resolve event links, menu links, appointment pages, or product support links.",
+      warnings: ["Only open links you trust. Guru should warn before opening unknown QR destinations."],
+      recommendedActions: ["Resolve QR destination", "Add event to calendar", "Open trusted link", "Share with family"]
+    };
+  }
+
+  if (type === "ar") {
+    return {
+      ...base,
+      title: "AR helper scene prepared",
+      summary: "Guru captured the scene and prepared step-by-step object guidance for medication cabinets, appliances, labels, and household tasks.",
+      recommendedActions: ["Identify object", "Show next step", "Read label aloud", "Ask family for help"]
+    };
+  }
+
+  return {
+    ...base,
+    title: "Product scan prepared",
+    summary: "Guru captured the product image and prepared a product lookup flow for label reading, allergies, expiry, reorder options, and safer alternatives.",
+    extracted: { ...base.extracted, candidateFields: ["product name", "brand", "expiry", "nutrition", "allergens", "reorder size"] },
+    recommendedActions: ["Identify product", "Check allergens", "Find reorder option", "Add to essentials list"]
+  };
 }
 
 function scoreServices(state, need) {
@@ -437,6 +535,23 @@ function ensureWearables(state) {
   return state.wearables;
 }
 
+function normalizeProviderId(provider) {
+  return String(provider || "wearable")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "wearable";
+}
+
+function ensureIdentityEvidence(state) {
+  if (!Array.isArray(state.identityEvidence)) state.identityEvidence = [];
+  return state.identityEvidence;
+}
+
+function ensureWearableConnections(state) {
+  if (!Array.isArray(state.wearableConnections)) state.wearableConnections = [];
+  return state.wearableConnections;
+}
+
 function evaluateWearables(devices, proximity) {
   const summary = {
     connectedCount: devices.filter(device => device.status === "connected").length,
@@ -517,7 +632,7 @@ function classifyVoiceSosCommand(command) {
 }
 
 function routeApi(req, res) {
-  return body(req).then(payload => {
+  return body(req).then(async payload => {
     if (productionApi) {
       const url = new URL(req.url, `http://${req.headers.host}`);
       return productionApi.route(req, payload, url)
@@ -880,6 +995,114 @@ function routeApi(req, res) {
       return send(res, 200, {state, healthConsent: state.healthConsent});
     }
 
+    if (req.method === "POST" && url.pathname === "/api/media/evidence") {
+      const allowedRoles = new Set(["senior", "trust_circle", "business_owner", "business_staff"]);
+      const allowedTypes = new Set(["profile_photo", "liveness_video", "government_id", "business_license", "insurance", "background_check", "professional_license", "driver_license"]);
+      const subjectRole = String(payload.subjectRole || "").trim();
+      const evidenceType = String(payload.evidenceType || "").trim();
+      const localUri = String(payload.localUri || "").trim();
+      if (!allowedRoles.has(subjectRole)) return send(res, 400, {error: "Invalid evidence subject role"});
+      if (!allowedTypes.has(evidenceType)) return send(res, 400, {error: "Invalid evidence type"});
+      if (!localUri) return send(res, 400, {error: "localUri is required"});
+      const evidence = {
+        id: `evidence_${Date.now()}`,
+        onboardingSessionId: payload.onboardingSessionId || null,
+        subjectRole,
+        subjectAccountId: payload.subjectAccountId || state.resident.id,
+        evidenceType,
+        captureMethod: payload.captureMethod === "upload" ? "upload" : "camera",
+        verificationStatus: "captured",
+        metadata: {
+          localUri,
+          mimeType: payload.mimeType || null,
+          fileName: payload.fileName || null,
+          width: Number(payload.width || 0) || null,
+          height: Number(payload.height || 0) || null,
+          durationMs: Number(payload.durationMs || 0) || null,
+          source: payload.source || "mobile-native-capture",
+          capturedAt: new Date().toISOString()
+        },
+        createdAt: new Date().toISOString()
+      };
+      ensureIdentityEvidence(state).unshift(evidence);
+      addAuditLog(state, {
+        action: "identity_evidence_captured",
+        entityType: "identity_evidence",
+        entityId: evidence.id,
+        severity: "info",
+        actor: subjectRole,
+        details: `${subjectRole} ${evidenceType} captured via ${evidence.captureMethod}`
+      });
+      writeState(state);
+      return send(res, 201, {state, evidence});
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/wearables/connect") {
+      const provider = String(payload.provider || "").trim();
+      if (!provider) return send(res, 400, {error: "provider is required"});
+      const diagnostics = payload.nativeDiagnostics || {};
+      const providerId = normalizeProviderId(provider);
+      const source = payload.source || "mobile-onboarding";
+      const requestedDataTypes = Array.isArray(payload.requestedDataTypes) ? payload.requestedDataTypes : [];
+      const status = diagnostics.available === false ? "failed" : "connected";
+      const connection = {
+        id: `wearable_connection_${Date.now()}`,
+        residentId: state.resident.id,
+        accountId: state.resident.id,
+        provider,
+        status,
+        source,
+        requestedDataTypes,
+        nativeDiagnostics: diagnostics,
+        connectedAt: status === "connected" ? new Date().toISOString() : null,
+        updatedAt: new Date().toISOString()
+      };
+      const connections = ensureWearableConnections(state);
+      const existingConnection = connections.findIndex(item => item.provider === provider);
+      if (existingConnection >= 0) connections[existingConnection] = connection;
+      else connections.unshift(connection);
+
+      const wearables = ensureWearables(state);
+      const readings = Array.isArray(diagnostics.readings) ? diagnostics.readings : [];
+      const latestReading = readings[0] || {};
+      const device = {
+        id: providerId,
+        type: provider.toLowerCase().includes("health") ? "health-platform" : "wearable-platform",
+        name: provider,
+        status,
+        batteryPercent: Number(latestReading.batteryPercent ?? 0),
+        signal: requestedDataTypes.join(", ") || "Health and safety telemetry",
+        lastSeenAt: latestReading.capturedAt || connection.connectedAt || connection.updatedAt,
+        fallConfidence: Number(latestReading.fallConfidence || 0),
+        sosPressed: Boolean(latestReading.sosPressed)
+      };
+      const deviceMap = new Map((wearables.devices || []).map(item => [item.id, item]));
+      deviceMap.set(device.id, device);
+      wearables.devices = Array.from(deviceMap.values());
+      wearables.lastSyncedAt = connection.updatedAt;
+      wearables.latestSummary = evaluateWearables(wearables.devices, wearables.proximity || {});
+
+      const allowedTypes = ["heartRate", "oxygenSaturation", "respiratoryRate", "hrv", "sleep", "calories", "steps"];
+      state.healthConsent = {
+        residentId: state.resident.id,
+        granted: status === "connected",
+        source: source === "mobile-onboarding" ? "mobile-healthkit-health-connect-sync" : source,
+        dataTypes: requestedDataTypes.filter(type => allowedTypes.includes(type)),
+        updatedAt: connection.updatedAt
+      };
+
+      addAuditLog(state, {
+        action: status === "connected" ? "wearable_connection_completed" : "wearable_connection_failed",
+        entityType: "wearable_connection",
+        entityId: connection.id,
+        severity: status === "connected" ? "info" : "high",
+        actor: source,
+        details: `${provider}: ${status}`
+      });
+      writeState(state);
+      return send(res, 201, {state, connection, healthConsent: state.healthConsent, wearables});
+    }
+
     if (req.method === "POST" && url.pathname === "/api/wearables/telemetry") {
       const wearables = ensureWearables(state);
       const incomingDevices = Array.isArray(payload.devices) ? payload.devices : [];
@@ -1130,6 +1353,77 @@ function routeApi(req, res) {
       return send(res, 200, state);
     }
 
+    if (req.method === "POST" && url.pathname === "/api/medications/remind-later") {
+      const med = state.medications.find(item => item.id === payload.id);
+      if (!med) return send(res, 404, {error: "Medication not found"});
+      const minutes = Math.max(5, Math.min(240, Number(payload.minutes || 30)));
+      const reminder = {
+        id: `notification_${Date.now()}`,
+        userId: state.resident.id,
+        channel: "push",
+        title: "Medication reminder snoozed",
+        body: `${med.name} ${med.strength || ""} reminder snoozed for ${minutes} minutes.`.trim(),
+        status: "queued",
+        nextRetryAt: new Date(Date.now() + minutes * 60000).toISOString(),
+        createdAt: new Date().toISOString()
+      };
+      ensureNotificationQueue(state).unshift(reminder);
+      addAuditLog(state, {
+        action: "medication_reminder_snoozed",
+        entityType: "medication",
+        entityId: med.id,
+        severity: "info",
+        actor: state.resident.name,
+        details: `${med.name} snoozed ${minutes} minutes.`
+      });
+      writeState(state);
+      return send(res, 201, {state, medication: med, reminder});
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/medications/skip-dose") {
+      const med = state.medications.find(item => item.id === payload.id);
+      if (!med) return send(res, 404, {error: "Medication not found"});
+      med.status = "skipped";
+      med.lastSkippedAt = new Date().toISOString();
+      med.skipReason = payload.reason || "Resident skipped from mobile app";
+      addAuditLog(state, {
+        action: "medication_dose_skipped",
+        entityType: "medication",
+        entityId: med.id,
+        severity: "high",
+        actor: state.resident.name,
+        details: `${med.name} skipped. ${med.skipReason}`
+      });
+      writeState(state);
+      return send(res, 200, {state, medication: med});
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/medications/refill-request") {
+      const med = state.medications.find(item => item.id === payload.medicationId);
+      if (!med) return send(res, 404, {error: "Medication not found"});
+      const refill = {
+        id: `refill_${Date.now()}`,
+        medicationId: med.id,
+        medication: med.name,
+        pharmacy: payload.pharmacy || med.pharmacy || "Preferred pharmacy",
+        deliveryRequested: payload.deliveryRequested === true,
+        status: "requested",
+        createdAt: new Date().toISOString()
+      };
+      state.refills.unshift(refill);
+      state.requests.unshift({id: `req_refill_${Date.now()}`, resident: state.resident.name, type: `Refill: ${med.name}`, time: "Today", distance: "Medicine delivery", status: "new", provider: refill.pharmacy});
+      addAuditLog(state, {
+        action: "medication_refill_requested",
+        entityType: "medication_refill",
+        entityId: refill.id,
+        severity: "info",
+        actor: state.resident.name,
+        details: `${med.name} refill requested at ${refill.pharmacy}.`
+      });
+      writeState(state);
+      return send(res, 201, {state, refill});
+    }
+
     if (req.method === "POST" && url.pathname === "/api/refills") {
       const med = state.medications.find(item => item.id === payload.medicationId);
       if (!med) return send(res, 404, {error: "Medication not found"});
@@ -1182,6 +1476,357 @@ function routeApi(req, res) {
       state.posts.unshift({id: `post_${Date.now()}`, author: state.resident.name, body: payload.body || "Shared an update.", likes: 0, comments: 0});
       writeState(state);
       return send(res, 201, state);
+    }
+
+
+
+    if (req.method === "GET" && url.pathname === "/api/guru/daily-journey") {
+      const journey = buildDailyJourney(state);
+      state.guruDailyJourney = journey;
+      writeState(state);
+      return send(res, 200, journey);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/orchestrate") {
+      state.guruConversations = state.guruConversations || [];
+      state.guruTasks = state.guruTasks || [];
+      const message = String(payload.message || "").trim();
+      if (!message) return send(res, 400, { error: "Message is required" });
+      const resolvedIntent = resolveGuruIntent(message, {
+        medications: state.medications || [],
+        memories: state.guruMemories || [],
+        calendarEvents: state.guruCalendarEvents || []
+      });
+      let ai = { provider: "local", configured: false, text: null };
+      try {
+        ai = await callOpenAI({
+          system: buildSeniorGuruSystemPrompt({ resident: state.resident, medications: state.medications, memories: state.guruMemories, calendarEvents: state.guruCalendarEvents }),
+          messages: [{ role: "user", content: message }]
+        });
+      } catch (error) {
+        ai = { provider: "local", configured: false, text: null, error: error.message };
+      }
+      let task = null;
+      if (resolvedIntent.intent === "task") {
+        task = { id: `guru_task_${Date.now()}`, title: resolvedIntent.taskTitle, status: "open", source: "guru_orchestrator", createdAt: new Date().toISOString() };
+        state.guruTasks.unshift(task);
+      }
+      const event = {
+        id: `guru_orchestrate_${Date.now()}`,
+        message,
+        reply: ai.text || resolvedIntent.reply,
+        intent: resolvedIntent.intent,
+        navigateTo: resolvedIntent.navigateTo,
+        provider: ai.provider,
+        model: process.env.OPENAI_MODEL || null,
+        createdAt: new Date().toISOString()
+      };
+      state.guruConversations.unshift(event);
+      writeState(state);
+      return send(res, 200, { reply: event.reply, intent: event.intent, navigateTo: event.navigateTo, task, event, aiConfigured: ai.configured });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/voice-session") {
+      state.guruVoiceSessions = state.guruVoiceSessions || [];
+      const session = {
+        id: `guru_voice_${Date.now()}`,
+        status: process.env.OPENAI_API_KEY ? "server_ready" : "needs_openai_key",
+        provider: "openai_realtime",
+        ephemeralToken: null,
+        note: process.env.OPENAI_API_KEY ? "Create a realtime ephemeral token here in production." : "Set OPENAI_API_KEY to enable realtime voice sessions.",
+        createdAt: new Date().toISOString()
+      };
+      state.guruVoiceSessions.unshift(session);
+      writeState(state);
+      return send(res, 201, { session });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/chat") {
+      state.guruConversations = state.guruConversations || [];
+      state.guruTasks = state.guruTasks || [];
+      const message = String(payload.message || "").trim();
+      const resolvedIntent = resolveGuruIntent(message, {
+        medications: state.medications || [],
+        memories: state.guruMemories || [],
+        calendarEvents: state.guruCalendarEvents || []
+      });
+      let intent = resolvedIntent.intent;
+      let navigateTo = resolvedIntent.navigateTo;
+      let reply = resolvedIntent.reply;
+      let task = null;
+
+      if (intent === "task") {
+        task = { id: `guru_task_${Date.now()}`, title: resolvedIntent.taskTitle, status: "open", source: "guru", createdAt: new Date().toISOString() };
+        state.guruTasks.unshift(task);
+      }
+
+      const event = { id: `guru_msg_${Date.now()}`, message, reply, intent, navigateTo, createdAt: new Date().toISOString() };
+      state.guruConversations.unshift(event);
+      writeState(state);
+      return send(res, 200, { reply, intent, navigateTo, task, event });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/tasks") {
+      state.guruTasks = state.guruTasks || [];
+      const title = String(payload.title || "").trim();
+      if (!title) return send(res, 400, { error: "Task title is required" });
+      const task = { id: `guru_task_${Date.now()}`, title, status: "open", source: payload.source || "mobile", createdAt: new Date().toISOString() };
+      state.guruTasks.unshift(task);
+      writeState(state);
+      return send(res, 201, { task, tasks: state.guruTasks });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/scan-intents") {
+      state.guruScanIntents = state.guruScanIntents || [];
+      const type = String(payload.type || "product");
+      const intent = { id: `guru_scan_${Date.now()}`, type, label: payload.label || `${type} scan`, status: "created", source: payload.source || "mobile", createdAt: new Date().toISOString() };
+      state.guruScanIntents.unshift(intent);
+      writeState(state);
+      return send(res, 201, { intent });
+    }
+
+
+    if (req.method === "GET" && url.pathname === "/api/guru/scans") {
+      return send(res, 200, { scans: (state.guruScans || []).slice(0, 50) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/scans") {
+      state.guruScans = state.guruScans || [];
+      state.guruScanIntents = state.guruScanIntents || [];
+      const type = String(payload.type || "product");
+      const analysis = analyzeGuruScan(payload, state);
+      const matches = matchServicesForScan(state, type, analysis);
+      analysis.matches = matches;
+      const scan = {
+        id: `guru_scan_${Date.now()}`,
+        type,
+        label: payload.label || analysis.title,
+        status: "analyzed",
+        source: payload.source || "mobile",
+        imageUri: payload.uri || null,
+        fileName: payload.fileName || null,
+        analysis,
+        matches,
+        createdAt: new Date().toISOString()
+      };
+      state.guruScans.unshift(scan);
+      state.guruConversations = state.guruConversations || [];
+      state.guruConversations.unshift({
+        id: `guru_scan_msg_${Date.now()}`,
+        message: `${scan.label} captured`,
+        reply: `${analysis.title}: ${analysis.summary}`,
+        intent: "scan",
+        navigateTo: null,
+        createdAt: new Date().toISOString()
+      });
+      writeState(state);
+      return send(res, 201, { scan, analysis, matches });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/scan-matches") {
+      const type = String(payload.type || "product");
+      const analysis = payload.analysis || analyzeGuruScan(payload, state);
+      return send(res, 200, { type, matches: matchServicesForScan(state, type, analysis) });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/guru/memory") {
+      state.guruMemories = state.guruMemories || [
+        { id: "memory_rita", title: "Rita", category: "family", value: "Rita is Anita's daughter and primary trusted circle contact.", importance: "high", createdAt: new Date().toISOString() },
+        { id: "memory_music", title: "Music preference", category: "preference", value: "Anita likes old Hindi songs, calming devotional music, and familiar classics.", importance: "medium", createdAt: new Date().toISOString() }
+      ];
+      writeState(state);
+      return send(res, 200, { memories: state.guruMemories.slice(0, 50) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/memory") {
+      state.guruMemories = state.guruMemories || [];
+      const value = String(payload.value || payload.body || "").trim();
+      if (!value) return send(res, 400, { error: "Memory value is required" });
+      const title = String(payload.title || value.split(/[,.]/)[0] || "Memory").slice(0, 80);
+      const memory = {
+        id: `guru_memory_${Date.now()}`,
+        title,
+        category: payload.category || "note",
+        value,
+        importance: payload.importance || "medium",
+        source: payload.source || "api",
+        createdAt: new Date().toISOString()
+      };
+      state.guruMemories.unshift(memory);
+      writeState(state);
+      return send(res, 201, { memory, memories: state.guruMemories.slice(0, 50) });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/guru/calendar") {
+      state.guruCalendarEvents = state.guruCalendarEvents || [
+        { id: "calendar_stretch", title: "Morning stretch", startsAt: "Today, 10:30 AM", source: "community", notes: "Light activity" },
+        { id: "calendar_call_rita", title: "Call Rita", startsAt: "Tomorrow, 5:00 PM", source: "family", notes: "Family check-in" }
+      ];
+      writeState(state);
+      return send(res, 200, { events: state.guruCalendarEvents.slice(0, 50) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/calendar") {
+      state.guruCalendarEvents = state.guruCalendarEvents || [];
+      const title = String(payload.title || "").trim();
+      if (!title) return send(res, 400, { error: "Calendar title is required" });
+      const event = {
+        id: `guru_calendar_${Date.now()}`,
+        title,
+        startsAt: payload.startsAt || payload.when || "Needs scheduling",
+        source: payload.source || "guru",
+        notes: payload.notes || "Created by Guru Companion",
+        createdAt: new Date().toISOString()
+      };
+      state.guruCalendarEvents.unshift(event);
+      state.guruTasks = state.guruTasks || [];
+      state.guruTasks.unshift({ id: `guru_task_${Date.now()}`, title, status: "open", source: "calendar", createdAt: event.createdAt });
+      writeState(state);
+      return send(res, 201, { event, events: state.guruCalendarEvents.slice(0, 50), tasks: state.guruTasks.slice(0, 50) });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/guru/phase3") {
+      return send(res, 200, {
+        memories: state.guruMemories || [],
+        calendarEvents: state.guruCalendarEvents || [],
+        storySessions: state.guruStorySessions || [],
+        musicSessions: state.guruMusicSessions || []
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/music") {
+      state.guruMusicSessions = state.guruMusicSessions || [];
+      const query = String(payload.query || "relaxing music for seniors").trim();
+      const session = {
+        id: `guru_music_${Date.now()}`,
+        provider: payload.provider || "youtube",
+        query,
+        mood: payload.mood || "calm",
+        url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+        createdAt: new Date().toISOString()
+      };
+      state.guruMusicSessions.unshift(session);
+      writeState(state);
+      return send(res, 200, session);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/story") {
+      state.guruStorySessions = state.guruStorySessions || [];
+      const theme = String(payload.theme || "comfort").trim();
+      const residentName = String(payload.residentName || state.resident?.name || "Anita");
+      const memory = (state.guruMemories || []).find(item => ["family", "preference", "place", "note"].includes(String(item.category || "")));
+      const memoryLine = memory ? ` It remembered: ${memory.value}` : " It used a calm reassurance style and familiar daily routine.";
+      const story = `${residentName} sat near a sunny window while a familiar melody played softly.${memoryLine} Guru spoke gently, turning the moment into a short comforting story about connection, safety, and someone close who could be reached with one tap.`;
+      const session = { id: `guru_story_${Date.now()}`, theme, story, createdAt: new Date().toISOString() };
+      state.guruStorySessions.unshift(session);
+      writeState(state);
+      return send(res, 200, session);
+    }
+
+
+    if (req.method === "GET" && url.pathname === "/api/guru/phase4") {
+      const healthVitals = ensureHealthVitals(state);
+      const wearables = ensureWearables(state);
+      const safety = state.safety || {};
+      const riskReasons = [];
+      if (Number(healthVitals?.latest?.heartRate || 0) > 110) riskReasons.push("elevated heart rate");
+      if (wearables?.latestSummary?.riskLevel === "high") riskReasons.push(...(wearables.latestSummary.riskReasons || []));
+      if (safety?.fallDetection?.confidence >= 0.8) riskReasons.push("fall confidence is high");
+      const riskLevel = riskReasons.length ? "high" : wearables?.latestSummary?.riskLevel === "watch" ? "watch" : "low";
+      const status = {
+        title: "Phase 4 Safety Copilot",
+        riskLevel,
+        summary: riskReasons.length ? `Guru found safety signals: ${riskReasons.join(", ")}.` : "Health, wearable, safe-zone, fall-detection, and AR helper workflows are ready.",
+        actions: riskReasons.length ? ["Notify trusted circle", "Open Safety screen", "Confirm resident status"] : ["Sync native health", "Sync watch", "Review safe zones"],
+        vitals: healthVitals,
+        wearables,
+        safety
+      };
+      state.guruPhase4Sessions = state.guruPhase4Sessions || [];
+      state.guruPhase4Sessions.unshift({ id: `guru_phase4_${Date.now()}`, status, createdAt: new Date().toISOString() });
+      writeState(state);
+      return send(res, 200, { status, sessions: state.guruPhase4Sessions.slice(0, 20) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/health-insights") {
+      const healthVitals = ensureHealthVitals(state);
+      const latest = healthVitals.latest || {};
+      const reasons = [];
+      if (Number(latest.heartRate || 0) > 105) reasons.push("heart rate should be watched");
+      if (Number(latest.oxygenSaturation || 100) < 94) reasons.push("oxygen saturation looks low");
+      if (Number(latest.sleepMinutes || 480) < 300) reasons.push("sleep was short");
+      const status = {
+        title: "Health insight",
+        riskLevel: reasons.length ? "watch" : "low",
+        summary: reasons.length ? `Guru noticed ${reasons.join(", ")}.` : "Vitals look stable from the latest sync.",
+        actions: reasons.length ? ["Check how Anita feels", "Share with trusted circle", "Escalate if symptoms are present"] : ["Continue routine", "Sync again later", "Keep phone nearby"],
+        vitals: healthVitals
+      };
+      state.guruHealthInsights = state.guruHealthInsights || [];
+      state.guruHealthInsights.unshift({ id: `guru_health_${Date.now()}`, diagnostics: payload.diagnostics || null, status, createdAt: new Date().toISOString() });
+      writeState(state);
+      return send(res, 201, { status, insights: state.guruHealthInsights.slice(0, 20) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/wearable-status") {
+      const wearables = ensureWearables(state);
+      const summary = payload.wearables?.latestSummary || wearables.latestSummary || { riskLevel: "low", riskReasons: [] };
+      const riskLevel = summary.riskLevel === "high" ? "high" : summary.riskLevel === "watch" ? "watch" : "low";
+      const status = {
+        title: "Wearable status",
+        riskLevel,
+        summary: riskLevel === "high" ? `Wearable alert: ${(summary.riskReasons || []).join(", ") || "review immediately"}.` : "Wearable data synced. No urgent alert found.",
+        actions: riskLevel === "high" ? ["Notify trusted circle", "Open active SOS event", "Confirm resident is safe"] : ["Keep watch charged", "Review battery", "Sync later"],
+        wearables
+      };
+      state.guruWearableInsights = state.guruWearableInsights || [];
+      state.guruWearableInsights.unshift({ id: `guru_wearable_${Date.now()}`, kind: payload.kind || "normal", status, createdAt: new Date().toISOString() });
+      writeState(state);
+      return send(res, 201, { status, insights: state.guruWearableInsights.slice(0, 20) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/safety-copilot") {
+      const safety = state.safety || payload.safety || {};
+      const active = Array.isArray(safety.sosEvents) ? safety.sosEvents.find(event => event.status === "active") : null;
+      const status = {
+        title: payload.scenario === "fall" ? "Fall detection simulation" : "Safety Copilot",
+        riskLevel: active || payload.scenario === "fall" ? "high" : "watch",
+        summary: active ? `Active safety event: ${active.body}` : "Safety scenario reviewed. Guru prepared trusted-circle escalation and resident confirmation steps.",
+        actions: active ? ["Notify trusted circle", "Acknowledge event", "Call resident"] : ["Review safe zones", "Check location", "Keep monitoring"],
+        safety
+      };
+      state.guruSafetyCopilotEvents = state.guruSafetyCopilotEvents || [];
+      state.guruSafetyCopilotEvents.unshift({ id: `guru_safety_${Date.now()}`, scenario: payload.scenario || "review", status, createdAt: new Date().toISOString() });
+      writeState(state);
+      return send(res, 201, { status, events: state.guruSafetyCopilotEvents.slice(0, 20) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/ar-guidance") {
+      state.guruArGuidanceSessions = state.guruArGuidanceSessions || [];
+      const steps = [
+        "Hold the phone steady and point at one object.",
+        "Guru identifies the item or label before suggesting an action.",
+        "Show one large instruction at a time and allow family escalation.",
+        "Do not provide medication or appliance guidance without confirmation when risk is high."
+      ];
+      const session = {
+        id: `guru_ar_${Date.now()}`,
+        scene: payload.scene || "home object helper",
+        prompt: payload.prompt || "Guide a senior step by step.",
+        steps,
+        createdAt: new Date().toISOString()
+      };
+      state.guruArGuidanceSessions.unshift(session);
+      writeState(state);
+      return send(res, 201, {
+        session,
+        status: {
+          title: "AR guidance ready",
+          riskLevel: "low",
+          summary: "Guru prepared a camera-first helper flow for object, label, appliance, and room guidance.",
+          actions: steps
+        }
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/api/messages") {

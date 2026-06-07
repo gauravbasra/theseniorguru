@@ -586,3 +586,307 @@ CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempts_notification ON no
 CREATE INDEX IF NOT EXISTS idx_circle_messages_resident_created ON circle_messages(resident_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_circle_call_requests_resident_status ON circle_call_requests(resident_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_support_orders_resident_category ON support_orders(resident_id, category, created_at DESC);
+
+
+CREATE TABLE IF NOT EXISTS guru_scans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  scan_type TEXT NOT NULL,
+  label TEXT,
+  source TEXT,
+  image_uri TEXT,
+  file_name TEXT,
+  width INT,
+  height INT,
+  analysis JSONB NOT NULL DEFAULT '{}'::jsonb,
+  matches JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT 'analyzed',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_guru_scans_resident_created ON guru_scans (resident_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guru_scans_type ON guru_scans (scan_type);
+
+-- Guru Companion Phase 3: storytelling, music, memory graph, calendar/reminder foundation.
+CREATE TABLE IF NOT EXISTS guru_memories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'note',
+  value TEXT NOT NULL,
+  importance TEXT NOT NULL DEFAULT 'medium',
+  source TEXT,
+  visibility TEXT NOT NULL DEFAULT 'resident_and_trusted_circle',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS guru_calendar_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT,
+  source TEXT NOT NULL DEFAULT 'guru',
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'scheduled',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS guru_story_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  theme TEXT NOT NULL DEFAULT 'comfort',
+  story TEXT NOT NULL,
+  source TEXT,
+  memory_ids UUID[] DEFAULT '{}',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS guru_music_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL DEFAULT 'youtube',
+  query TEXT NOT NULL,
+  mood TEXT,
+  url TEXT,
+  source TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_guru_memories_resident_category ON guru_memories(resident_id, category, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guru_calendar_events_resident_created ON guru_calendar_events(resident_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guru_story_sessions_resident_created ON guru_story_sessions(resident_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guru_music_sessions_resident_created ON guru_music_sessions(resident_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS community_event_rsvps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id TEXT NOT NULL,
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'interested',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(event_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS resident_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  sender_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  recipient_key TEXT,
+  priority TEXT NOT NULL DEFAULT 'normal',
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'sent',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS wearable_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  account_id TEXT,
+  provider TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  source TEXT NOT NULL,
+  requested_data_types TEXT[] NOT NULL DEFAULT '{}',
+  native_diagnostics JSONB NOT NULL DEFAULT '{}'::jsonb,
+  connected_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_community_event_rsvps_user_created ON community_event_rsvps(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_resident_messages_resident_created ON resident_messages(resident_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wearable_connections_resident ON wearable_connections(resident_id, provider);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_entity ON audit_logs(created_at DESC, entity_type);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_status_created ON notifications(user_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_vitals_created_resident ON health_vitals(created_at DESC, resident_id);
+CREATE INDEX IF NOT EXISTS idx_wearable_telemetry_created_resident ON wearable_telemetry(created_at DESC, resident_id);
+CREATE INDEX IF NOT EXISTS idx_safety_telemetry_created_resident ON safety_telemetry(created_at DESC, resident_id);
+CREATE TABLE IF NOT EXISTS health_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  resident_id UUID REFERENCES residents(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_oauth',
+  scopes TEXT[] NOT NULL DEFAULT '{}',
+  credential_ref TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  connected_at TIMESTAMPTZ,
+  last_sync_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, source)
+);
+
+CREATE TABLE IF NOT EXISTS health_daily_metrics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  senior_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  metric_date DATE NOT NULL,
+  source TEXT NOT NULL,
+  steps INT,
+  calories INT,
+  sleep_minutes INT,
+  resting_heart_rate INT,
+  heart_rate_avg INT,
+  heart_rate_min INT,
+  heart_rate_max INT,
+  respiratory_rate INT,
+  oxygen_saturation INT,
+  hrv INT,
+  medication_adherence_percent NUMERIC(5,2),
+  mood_score INT,
+  fall_detected BOOLEAN NOT NULL DEFAULT FALSE,
+  isolation_minutes INT,
+  mobility_minutes INT,
+  manual_notes TEXT,
+  raw JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (senior_id, metric_date, source)
+);
+
+CREATE TABLE IF NOT EXISTS health_scores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  senior_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  metric_date DATE NOT NULL,
+  wellness_score NUMERIC(5,2) NOT NULL,
+  sleep_score NUMERIC(5,2) NOT NULL,
+  activity_score NUMERIC(5,2) NOT NULL,
+  heart_score NUMERIC(5,2) NOT NULL,
+  medication_score NUMERIC(5,2) NOT NULL,
+  mood_score NUMERIC(5,2) NOT NULL,
+  risk_level safety_severity NOT NULL DEFAULT 'info',
+  risk_reasons TEXT[] NOT NULL DEFAULT '{}',
+  source TEXT NOT NULL DEFAULT 'health-intelligence',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (senior_id, metric_date)
+);
+
+CREATE TABLE IF NOT EXISTS health_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  senior_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  score_id UUID REFERENCES health_scores(id) ON DELETE SET NULL,
+  alert_type TEXT NOT NULL,
+  severity safety_severity NOT NULL DEFAULT 'watch',
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  source TEXT NOT NULL DEFAULT 'health-intelligence',
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ,
+  resolved_by UUID REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS health_sharing_permissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  senior_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  grantee_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  visibility TEXT[] NOT NULL DEFAULT '{}',
+  can_view_trends BOOLEAN NOT NULL DEFAULT TRUE,
+  can_view_alerts BOOLEAN NOT NULL DEFAULT TRUE,
+  can_view_medication_adherence BOOLEAN NOT NULL DEFAULT TRUE,
+  can_view_location_context BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (senior_id, grantee_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_health_sources_resident_source ON health_sources(resident_id, source);
+CREATE INDEX IF NOT EXISTS idx_health_daily_metrics_senior_date ON health_daily_metrics(senior_id, metric_date DESC);
+CREATE INDEX IF NOT EXISTS idx_health_scores_senior_date ON health_scores(senior_id, metric_date DESC);
+CREATE INDEX IF NOT EXISTS idx_health_alerts_senior_status ON health_alerts(senior_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_sharing_permissions_grantee ON health_sharing_permissions(grantee_user_id, status);
+ALTER TABLE health_alerts ADD COLUMN IF NOT EXISTS confirmation_status TEXT NOT NULL DEFAULT 'pending_confirmation';
+ALTER TABLE health_alerts ADD COLUMN IF NOT EXISTS signal_count INT NOT NULL DEFAULT 1;
+ALTER TABLE health_alerts ADD COLUMN IF NOT EXISTS confidence NUMERIC(5,2) NOT NULL DEFAULT 0.50;
+ALTER TABLE health_alerts ADD COLUMN IF NOT EXISTS suppressed_until TIMESTAMPTZ;
+ALTER TABLE health_alerts ADD COLUMN IF NOT EXISTS last_signal_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE health_alerts ADD COLUMN IF NOT EXISTS action_required BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS health_care_actions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  senior_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  alert_id UUID REFERENCES health_alerts(id) ON DELETE SET NULL,
+  action_type TEXT NOT NULL,
+  urgency safety_severity NOT NULL DEFAULT 'watch',
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  recommended_for TEXT[] NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'open',
+  false_alarm_guard JSONB NOT NULL DEFAULT '{}',
+  assigned_user_id UUID REFERENCES users(id),
+  acknowledged_by UUID REFERENCES users(id),
+  acknowledged_at TIMESTAMPTZ,
+  resolved_by UUID REFERENCES users(id),
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS health_realtime_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  senior_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  severity safety_severity NOT NULL DEFAULT 'info',
+  source_table TEXT,
+  source_id UUID,
+  audience TEXT[] NOT NULL DEFAULT '{}',
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_health_care_actions_senior_status ON health_care_actions(senior_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_care_actions_alert ON health_care_actions(alert_id);
+CREATE INDEX IF NOT EXISTS idx_health_realtime_events_senior_created ON health_realtime_events(senior_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_realtime_events_source ON health_realtime_events(source_table, source_id);
+-- Chunked identity evidence uploads for liveness videos.
+-- Avoids sending large videos as a single JSON request body.
+
+CREATE TABLE IF NOT EXISTS media_upload_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  resident_id UUID REFERENCES residents(id) ON DELETE SET NULL,
+  identity_evidence_id UUID REFERENCES identity_evidence(id) ON DELETE CASCADE,
+  subject_role TEXT NOT NULL,
+  evidence_type TEXT NOT NULL,
+  bucket TEXT NOT NULL,
+  storage_key TEXT NOT NULL,
+  original_file_name TEXT,
+  content_type TEXT NOT NULL,
+  expected_byte_size BIGINT,
+  total_chunks INT,
+  received_chunks INT NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'receiving' CHECK (status IN ('receiving','completed','failed')),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS media_upload_chunks (
+  upload_session_id UUID NOT NULL REFERENCES media_upload_sessions(id) ON DELETE CASCADE,
+  chunk_index INT NOT NULL,
+  content BYTEA NOT NULL,
+  byte_size INT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (upload_session_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_upload_sessions_owner_created
+  ON media_upload_sessions(owner_user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_media_upload_sessions_evidence
+  ON media_upload_sessions(identity_evidence_id);
