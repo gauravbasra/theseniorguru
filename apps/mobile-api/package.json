@@ -10,6 +10,7 @@
     "smoke:critical-buttons": "node scripts/smoke-critical-buttons.js",
     "smoke:resident-surface-schema": "node scripts/smoke-resident-surface-schema.js",
     "smoke:context-intelligence-schema": "node scripts/smoke-context-intelligence-schema.js",
+    "smoke:guru-intelligence": "node scripts/smoke-guru-intelligence-layer.js",
     "smoke:flutter-resident": "node scripts/smoke-flutter-resident-contract.js",
     "audit:scale-hardening": "node scripts/audit-scale-hardening.js",
     "worker:jobs": "node scripts/process-job-queue.js",
