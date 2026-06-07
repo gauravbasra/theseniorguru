@@ -259,6 +259,7 @@ class _ResidentShellState extends State<ResidentShell> {
                 tabs: bottomTabsForRole(appRole),
                 current: tabIndex,
                 onTap: _onTab,
+                bottomInset: MediaQuery.of(context).padding.bottom,
               ),
             ),
             Positioned(
@@ -1023,17 +1024,19 @@ class BottomTabs extends StatelessWidget {
     required this.tabs,
     required this.current,
     required this.onTap,
+    required this.bottomInset,
   });
 
   final List<BottomTabDestination> tabs;
   final int current;
   final ValueChanged<int> onTap;
+  final double bottomInset;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 86,
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+      height: 86 + bottomInset,
+      padding: EdgeInsets.fromLTRB(14, 10, 14, 18 + bottomInset),
       decoration: BoxDecoration(
         color: TsgColors.glass.withValues(alpha: .94),
         backgroundBlendMode: BlendMode.srcOver,
@@ -6566,6 +6569,9 @@ class FamilyHealthScreen extends StatelessWidget {
       fallback: 87,
     );
     final residentName = state?.residentName ?? 'Resident';
+    final residentInitial = residentName.trim().isNotEmpty
+        ? residentName.trim().characters.first.toUpperCase()
+        : 'R';
     return ScreenScaffold(
       title: 'Family Health View',
       back: () => go(Screen.more),
@@ -6584,7 +6590,7 @@ class FamilyHealthScreen extends StatelessWidget {
                 children: [
                   Avatar(
                     size: 58,
-                    label: residentName.characters.first.toUpperCase(),
+                    label: residentInitial,
                     tone: const Color(0xFFFFE0CC),
                   ),
                   const SizedBox(width: 14),
