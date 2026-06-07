@@ -3327,6 +3327,331 @@ function createProductionApi(pool) {
       }
     }
 
+    if (req.method === "PATCH" && url.pathname === "/api/settings/senior") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const displayName = payload.displayName || payload.fullName || payload.preferredName || null;
+      const community = payload.community ?? payload.address ?? null;
+      const healthProfilePatch = {
+        settings: {
+          updatedAt: new Date().toISOString(),
+          dailyRoutine: payload.dailyRoutine || {},
+          privacyControls: payload.privacyControls || {},
+          musicPreferences: payload.musicPreferences || [],
+          devicePermissions: payload.devicePermissions || []
+        }
+      };
+      const result = await transaction(async tx => {
+        const updatedUser = (await tx(
+          `UPDATE users SET
+             display_name = COALESCE($1, display_name),
+             phone = COALESCE($2, phone),
+             updated_at = now()
+           WHERE id = $3
+           RETURNING *`,
+          [displayName, payload.phone || null, user.id]
+        )).rows[0];
+        const updatedResident = (await tx(
+          `UPDATE residents SET
+             community = COALESCE($1, community),
+             health_conditions = COALESCE($2, health_conditions),
+             allergies = COALESCE($3, allergies),
+             mobility_notes = COALESCE($4, mobility_notes),
+             cognitive_support = COALESCE($5, cognitive_support),
+             display_name = COALESCE($6, display_name),
+             health_profile = health_profile || $7::jsonb,
+             updated_at = now()
+           WHERE id = $8
+           RETURNING *`,
+          [
+            community,
+            Array.isArray(payload.healthConcerns) ? payload.healthConcerns : null,
+            Array.isArray(payload.allergies) ? payload.allergies : payload.allergies ? [payload.allergies] : null,
+            payload.mobilityNotes || payload.mobility || null,
+            payload.cognitiveNotes || null,
+            displayName,
+            JSON.stringify(healthProfilePatch),
+            resident.id
+          ]
+        )).rows[0];
+        const latestProfile = (await tx(
+          `SELECT * FROM senior_onboarding_profiles WHERE senior_account_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [user.id]
+        )).rows[0];
+        let seniorProfile = null;
+        if (latestProfile) {
+          seniorProfile = (await tx(
+            `UPDATE senior_onboarding_profiles SET
+               full_name = COALESCE($2, full_name),
+               preferred_name = COALESCE($3, preferred_name),
+               phone = COALESCE($4, phone),
+               email = COALESCE($5, email),
+               address_line = COALESCE($6, address_line),
+               community_name = COALESCE($7, community_name),
+               preferred_language = COALESCE($8, preferred_language),
+               text_size_preference = COALESCE($9, text_size_preference),
+               voice_preference = COALESCE($10, voice_preference),
+               emergency_access_notes = COALESCE($11, emergency_access_notes),
+               updated_at = now()
+             WHERE id = $1
+             RETURNING *`,
+            [
+              latestProfile.id,
+              payload.fullName || displayName || null,
+              payload.preferredName || null,
+              payload.phone || null,
+              payload.email || null,
+              payload.address || null,
+              payload.community || null,
+              payload.preferredLanguage || null,
+              payload.textSizePreference || null,
+              payload.voicePreference || null,
+              payload.emergencyAccessNotes || null
+            ]
+          )).rows[0];
+        }
+        if (seniorProfile && (payload.healthConcerns || payload.allergies || payload.mobilityNotes || payload.wearableSources || payload.healthDataScopes)) {
+          await tx(
+            `UPDATE senior_health_onboarding SET
+               health_concerns = COALESCE($2, health_concerns),
+               allergies = COALESCE($3, allergies),
+               mobility_notes = COALESCE($4, mobility_notes),
+               wearable_sources = COALESCE($5, wearable_sources),
+               health_data_scopes = COALESCE($6, health_data_scopes),
+               updated_at = now()
+             WHERE senior_profile_id = $1`,
+            [
+              seniorProfile.id,
+              Array.isArray(payload.healthConcerns) ? payload.healthConcerns : null,
+              payload.allergies || null,
+              payload.mobilityNotes || payload.mobility || null,
+              Array.isArray(payload.wearableSources) ? payload.wearableSources : null,
+              Array.isArray(payload.healthDataScopes) ? payload.healthDataScopes : null
+            ]
+          );
+        }
+        return { user: updatedUser, resident: updatedResident, seniorProfile };
+      });
+      await audit(req, user, "senior_settings_updated", "resident", resident.id, { fields: Object.keys(payload) });
+      return { ok: true, settings: result };
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/settings/trust-circle") {
+      requireRole(user, ["trusted_person"]);
+      const result = await transaction(async tx => {
+        const updatedUser = (await tx(
+          `UPDATE users SET
+             display_name = COALESCE($1, display_name),
+             phone = COALESCE($2, phone),
+             updated_at = now()
+           WHERE id = $3
+           RETURNING *`,
+          [payload.displayName || payload.fullName || null, payload.phone || null, user.id]
+        )).rows[0];
+        const member = (await tx(
+          `SELECT * FROM trust_circle_onboarding WHERE member_account_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [user.id]
+        )).rows[0];
+        let trustCircleProfile = null;
+        if (member) {
+          trustCircleProfile = (await tx(
+            `UPDATE trust_circle_onboarding SET
+               full_name = COALESCE($2, full_name),
+               relationship = COALESCE($3, relationship),
+               phone = COALESCE($4, phone),
+               email = COALESCE($5, email),
+               timezone = COALESCE($6, timezone),
+               role_type = COALESCE($7, role_type),
+               escalation_role = COALESCE($8, escalation_role),
+               updated_at = now()
+             WHERE id = $1
+             RETURNING *`,
+            [
+              member.id,
+              payload.fullName || payload.displayName || null,
+              payload.relationship || null,
+              payload.phone || null,
+              payload.email || null,
+              payload.timezone || null,
+              payload.roleType || null,
+              payload.escalationRole || null
+            ]
+          )).rows[0];
+          if (payload.messagingRules || payload.alertTypes || payload.preferredChannels) {
+            const rules = payload.messagingRules || {};
+            await tx(
+              `INSERT INTO trust_circle_messaging_rules (trust_circle_member_id, routine_window, quiet_hours, emergency_override, alert_types, preferred_channels)
+               VALUES ($1,$2,$3,$4,$5,$6)
+               ON CONFLICT DO NOTHING`,
+              [
+                member.id,
+                rules.routineWindow || payload.routineWindow || null,
+                rules.quietHours || payload.quietHours || null,
+                payload.emergencyOverride !== false,
+                Array.isArray(payload.alertTypes) ? payload.alertTypes : [],
+                Array.isArray(payload.preferredChannels) ? payload.preferredChannels : ["app"]
+              ]
+            );
+            await tx(
+              `UPDATE trust_circle_messaging_rules SET
+                 routine_window = COALESCE($2, routine_window),
+                 quiet_hours = COALESCE($3, quiet_hours),
+                 emergency_override = COALESCE($4, emergency_override),
+                 alert_types = COALESCE($5, alert_types),
+                 preferred_channels = COALESCE($6, preferred_channels),
+                 updated_at = now()
+               WHERE trust_circle_member_id = $1`,
+              [
+                member.id,
+                rules.routineWindow || payload.routineWindow || null,
+                rules.quietHours || payload.quietHours || null,
+                payload.emergencyOverride ?? null,
+                Array.isArray(payload.alertTypes) ? payload.alertTypes : null,
+                Array.isArray(payload.preferredChannels) ? payload.preferredChannels : null
+              ]
+            );
+          }
+        }
+        if (Array.isArray(payload.visibility) || Array.isArray(payload.permissions)) {
+          await tx(
+            `UPDATE trusted_connections SET
+               permissions = COALESCE($1, permissions),
+               updated_at = now()
+             WHERE trusted_user_id = $2`,
+            [payload.permissions || payload.visibility || null, user.id]
+          );
+        }
+        return { user: updatedUser, trustCircleProfile };
+      });
+      await audit(req, user, "trust_circle_settings_updated", "trust_circle_member", result.trustCircleProfile?.id || null, { fields: Object.keys(payload) });
+      return { ok: true, settings: result };
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/settings/business") {
+      requireRole(user, ["business"]);
+      const business = await getBusinessForUser(user);
+      if (!business) {
+        const error = new Error("Business profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const result = await transaction(async tx => {
+        const updatedUser = (await tx(
+          `UPDATE users SET
+             display_name = COALESCE($1, display_name),
+             phone = COALESCE($2, phone),
+             updated_at = now()
+           WHERE id = $3
+           RETURNING *`,
+          [payload.ownerName || payload.displayName || null, payload.phone || null, user.id]
+        )).rows[0];
+        const updatedBusiness = (await tx(
+          `UPDATE businesses SET
+             name = COALESCE($1, name),
+             contact_person = COALESCE($2, contact_person),
+             email = COALESCE($3, email),
+             phone = COALESCE($4, phone),
+             website = COALESCE($5, website),
+             google_business_profile = COALESCE($6, google_business_profile),
+             description = COALESCE($7, description),
+             demographics = COALESCE($8, demographics),
+             service_areas = COALESCE($9, service_areas),
+             updated_at = now()
+           WHERE id = $10
+           RETURNING *`,
+          [
+            payload.dba || payload.legalName || payload.name || null,
+            payload.ownerName || null,
+            payload.email || null,
+            payload.phone || null,
+            payload.website || null,
+            payload.googleBusinessProfile || null,
+            payload.description || payload.services || null,
+            Array.isArray(payload.demographics) ? payload.demographics : null,
+            Array.isArray(payload.serviceAreas) ? payload.serviceAreas : Array.isArray(payload.serviceZips) ? payload.serviceZips : null,
+            business.id
+          ]
+        )).rows[0];
+        const profile = (await tx(
+          `SELECT * FROM business_onboarding_profiles WHERE business_account_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [user.id]
+        )).rows[0];
+        let businessProfile = null;
+        if (profile) {
+          businessProfile = (await tx(
+            `UPDATE business_onboarding_profiles SET
+               business_type = COALESCE($2, business_type),
+               legal_name = COALESCE($3, legal_name),
+               dba_name = COALESCE($4, dba_name),
+               owner_name = COALESCE($5, owner_name),
+               phone = COALESCE($6, phone),
+               email = COALESCE($7, email),
+               website = COALESCE($8, website),
+               business_address = COALESCE($9, business_address),
+               updated_at = now()
+             WHERE id = $1
+             RETURNING *`,
+            [
+              profile.id,
+              payload.businessType || null,
+              payload.legalName || null,
+              payload.dba || null,
+              payload.ownerName || null,
+              payload.phone || null,
+              payload.email || null,
+              payload.website || null,
+              payload.address || null
+            ]
+          )).rows[0];
+          if (payload.leadRules || payload.leadTypes || payload.communication) {
+            const rules = payload.leadRules || {};
+            await tx(
+              `UPDATE business_lead_rules SET
+                 max_leads_per_day = COALESCE($2, max_leads_per_day),
+                 lead_types = COALESCE($3, lead_types),
+                 minimum_job_value = COALESCE($4, minimum_job_value),
+                 accepts_urgent = COALESCE($5, accepts_urgent),
+                 accepts_recurring = COALESCE($6, accepts_recurring),
+                 communication_channels = COALESCE($7, communication_channels)
+               WHERE business_profile_id = $1`,
+              [
+                profile.id,
+                rules.maxLeadsPerDay ?? null,
+                Array.isArray(payload.leadTypes) ? payload.leadTypes : null,
+                rules.minimumJobValue ?? null,
+                rules.acceptUrgentRequests ?? null,
+                rules.acceptRecurringRequests ?? null,
+                Array.isArray(payload.communication) ? payload.communication : null
+              ]
+            );
+          }
+          if (payload.serviceRadius || payload.serviceZips || payload.serviceBoundary) {
+            await tx(
+              `UPDATE business_service_areas SET
+                 service_radius_miles = COALESCE(NULLIF($2,'')::numeric, service_radius_miles),
+                 zip_codes = COALESCE($3, zip_codes),
+                 boundary_notes = COALESCE($4, boundary_notes)
+               WHERE business_profile_id = $1`,
+              [
+                profile.id,
+                String(payload.serviceRadius || "").replace(/[^0-9.]/g, ""),
+                Array.isArray(payload.serviceZips) ? payload.serviceZips : typeof payload.serviceZips === "string" ? list(payload.serviceZips) : null,
+                payload.serviceBoundary || null
+              ]
+            );
+          }
+        }
+        return { user: updatedUser, business: toBusinessState(updatedBusiness, await ensureDefaultSubscription(business.id)), businessProfile };
+      });
+      await audit(req, user, "business_settings_updated", "business", business.id, { fields: Object.keys(payload) });
+      return { ok: true, settings: result };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/onboarding/senior") {
       const requiredFields = ["name"];
       const missing = requiredFields.filter(field => !payload[field]);
@@ -4493,6 +4818,8 @@ function createProductionApi(pool) {
           checkoutSessionId: checkout.id,
           checkoutUrl: checkout.url,
           priceCents: PAID_PLAN_PRICE_CENTS,
+          interval: PAID_PLAN_INTERVAL,
+          trialDays: PAID_PLAN_TRIAL_DAYS,
           plan: "growth_100"
         };
       }
@@ -4520,7 +4847,7 @@ function createProductionApi(pool) {
       }
       const current = await ensureDefaultSubscription(business.id);
       if (current.plan !== "growth_100") {
-        const error = new Error("Lead top-ups are only available on the $100/month Growth package.");
+        const error = new Error("Lead top-ups are only available on the paid Growth package.");
         error.status = 402;
         throw error;
       }
@@ -4554,7 +4881,7 @@ function createProductionApi(pool) {
       requireBillingAccess(entitlement, "adding services");
       const count = Number((await query(`SELECT count(*) FROM services WHERE business_id = $1 AND status != 'rejected'`, [business.id])).rows[0].count);
       if (count >= entitlement.serviceLimit) {
-        const error = new Error("Free package allows 1 service. Upgrade to $100/month to add more.");
+        const error = new Error("Free package allows 1 service. Upgrade to the paid Growth package to add more.");
         error.status = 402;
         throw error;
       }
@@ -5682,7 +6009,7 @@ function createProductionApi(pool) {
         const entitlement = await getLeadEntitlement(business.id);
         requireBillingAccess(entitlement, "accepting leads");
         if (entitlement.used >= entitlement.allowed) {
-          const error = new Error(`Lead limit reached for the ${entitlement.plan === "free" ? "free" : "$100/month Growth"} package.`);
+          const error = new Error(`Lead limit reached for the ${entitlement.plan === "free" ? "free" : "paid Growth"} package.`);
           error.status = 402;
           throw error;
         }

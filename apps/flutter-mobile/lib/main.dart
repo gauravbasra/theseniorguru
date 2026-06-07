@@ -1542,7 +1542,7 @@ class TodayHome extends StatelessWidget {
     final residentFirstName =
         (state?.residentName.split(' ').first.trim().isNotEmpty ?? false)
         ? state!.residentName.split(' ').first.trim()
-        : 'Anita';
+        : 'Senior';
     final medication = state?.medications.isNotEmpty == true
         ? state!.medications.first
         : null;
@@ -2569,6 +2569,8 @@ class RideMatchesScreen extends StatelessWidget {
         serviceId: requireTransportServiceId(state),
         label: 'Cardiology Visit',
         time: 'Tomorrow, 10:00 AM',
+        pickupLabel: state?.community ?? '',
+        riderName: state?.residentName ?? '',
       );
     });
     go(Screen.rideStatus);
@@ -4233,6 +4235,8 @@ class ServicesScreen extends StatelessWidget {
                       serviceId: requireTransportServiceId(state),
                       label: 'Cardiology Visit',
                       time: 'Tomorrow, 10:00 AM',
+                      pickupLabel: state?.community ?? '',
+                      riderName: state?.residentName ?? '',
                     );
                   });
                   go(Screen.rideStatus);
@@ -4243,6 +4247,8 @@ class ServicesScreen extends StatelessWidget {
                     category: s.$2,
                     label: s.$1,
                     providerBillCents: supportOrderEstimateCents(s.$2),
+                    recipientName: state?.residentName ?? '',
+                    deliveryAddress: state?.community ?? '',
                   );
                 });
               },
@@ -6559,7 +6565,7 @@ class FamilyHealthScreen extends StatelessWidget {
       family['health_confidence_percent'],
       fallback: 87,
     );
-    final residentName = state?.residentName ?? 'Anita Sharma';
+    final residentName = state?.residentName ?? 'Resident';
     return ScreenScaffold(
       title: 'Family Health View',
       back: () => go(Screen.more),

@@ -103,11 +103,9 @@ class ResidentAppState {
       residentId: stringValue(resident['id']),
       residentName: stringValue(
         resident['name'] ?? resident['display_name'],
-        fallback: 'Anita Sharma',
       ),
       community: stringValue(
         resident['community'],
-        fallback: 'Park View Community',
       ),
       medications: listOfMaps(
         json['medications'],
@@ -191,6 +189,9 @@ class TsgApiClient {
     required String serviceId,
     required String label,
     required String time,
+    required String pickupLabel,
+    required String riderName,
+    String riderPhone = '',
   }) {
     return post('/api/bookings', {
       'serviceId': serviceId,
@@ -200,7 +201,7 @@ class TsgApiClient {
           .add(const Duration(days: 1))
           .toIso8601String(),
       'pickup': {
-        'label': 'Park View Community',
+        'label': pickupLabel,
         'lat': 39.5447,
         'lng': -104.9673,
       },
@@ -208,17 +209,17 @@ class TsgApiClient {
       'fulfillmentMode': 'manual_coordination',
       'paymentResponsibility': 'senior',
       'rideIntake': {
-        'riderName': 'Anita Sharma',
-        'riderPhone': '+13035550123',
+        'riderName': riderName,
+        'riderPhone': riderPhone,
         'contactPreference': 'call_and_text',
-        'mobilityAid': 'walker',
-        'accessibilityNeeds': ['walker'],
+        'mobilityAid': '',
+        'accessibilityNeeds': [],
         'needsDoorToDoor': true,
         'caregiverRidingAlong': false,
         'okToShareWithDriver': true,
-        'pickupInstructions': 'Resident pickup from front entrance.',
-        'dropoffInstructions': 'Doctor appointment dropoff.',
-        'assistanceNotes': 'Please allow extra boarding time.',
+        'pickupInstructions': '',
+        'dropoffInstructions': '',
+        'assistanceNotes': '',
       },
     });
   }
@@ -228,6 +229,9 @@ class TsgApiClient {
     required String label,
     String provider = 'manual_coordination',
     int providerBillCents = 2500,
+    required String recipientName,
+    required String deliveryAddress,
+    String recipientPhone = '',
   }) {
     return post('/api/orders', {
       'category': category,
@@ -237,9 +241,9 @@ class TsgApiClient {
       'fulfillmentMode': 'manual_coordination',
       'paymentResponsibility': 'senior',
       'orderIntake': {
-        'recipientName': 'Anita Sharma',
-        'recipientPhone': '+13035550123',
-        'deliveryAddress': 'Park View Community',
+        'recipientName': recipientName,
+        'recipientPhone': recipientPhone,
+        'deliveryAddress': deliveryAddress,
         'contactPreference': 'call_and_text',
         'notes': 'Requested from Flutter resident services screen.',
       },
@@ -262,172 +266,22 @@ class TsgApiClient {
     });
   }
 
-  Future<Map<String, dynamic>> completeSeniorOnboarding() {
-    return post('/api/onboarding/senior', {
-      'name': 'Anita Sharma',
-      'preferredName': 'Anita',
-      'phone': '+13035550101',
-      'email': 'anita@theseniorguru.local',
-      'address': 'Park View Community',
-      'dob': '1959-05-09',
-      'height': '5 ft 4 in',
-      'weight': '142 lb',
-      'bloodPressure': '128/78',
-      'heartRate': '72',
-      'livingType': 'community',
-      'healthConcerns': [
-        'high blood pressure',
-        'heart condition',
-        'arthritis / joint pain',
-        'mobility limitation',
-        'memory concerns',
-      ],
-      'allergies': 'Seasonal pollen',
-      'mobility': 'Uses walker for longer distances',
-      'medications': [
-        {'name': 'Lisinopril 10mg', 'time': '8:00 AM', 'remaining': 5},
-        {'name': 'Metformin 500mg', 'time': '2:00 PM', 'remaining': 12},
-      ],
-      'wearableSources': [
-        'apple_healthkit',
-        'fitbit',
-        'garmin',
-        'samsung_health',
-        'oura',
-      ],
-      'devicePermissions': ['location', 'notifications', 'health_data'],
-      'musicPreferences': [
-        'Old Hindi Songs',
-        'Bhajans',
-        'Classical',
-        'Devotional',
-      ],
-      'musicApps': ['spotify', 'apple_music', 'youtube_music'],
-      'trustCircle': [
-        {
-          'name': 'Rita Sharma',
-          'relationship': 'Daughter',
-          'phone': '+16559876543',
-        },
-        {'name': 'Amit Sharma', 'relationship': 'Son', 'phone': '+18584567890'},
-        {
-          'name': 'Neha Patel',
-          'relationship': 'Friend',
-          'phone': '+18592345678',
-        },
-      ],
-      'privacyControls': {
-        'dailyCheckins': true,
-        'medications': true,
-        'appointments': true,
-        'location': false,
-        'healthData': true,
-      },
-      'dailyRoutine': {
-        'emergencyAlerts': true,
-        'medicationAlerts': true,
-        'appointments': true,
-        'location': false,
-        'healthData': true,
-        'dailyCheckins': true,
-      },
-      'healthSharing': true,
-      'locationSharing': true,
-      'sosOrder': ['trusted_circle', '911'],
-    });
+  Future<Map<String, dynamic>> completeSeniorOnboarding([
+    Map<String, dynamic> payload = const {},
+  ]) {
+    return post('/api/onboarding/senior', payload);
   }
 
   Future<Map<String, dynamic>> completeTrustCircleOnboarding({
-    String inviteCode = 'RITA-ANITA',
+    Map<String, dynamic> payload = const {},
   }) {
-    return post('/api/onboarding/trust-circle', {
-      'inviteCode': inviteCode,
-      'name': 'Rita Sharma',
-      'relationship': 'Daughter',
-      'phone': '+13035550102',
-      'email': 'rita@theseniorguru.local',
-      'timezone': 'America/Denver',
-      'escalationRole': 'Primary family contact',
-      'routineWindow': '8:00 AM - 8:00 PM',
-      'quietHours': '10:00 PM - 7:00 AM',
-      'emergencyOverride': 'Yes',
-      'alertTypes': ['sos', 'falls', 'medications', 'daily_status'],
-      'visibility': ['summary', 'safety', 'medications', 'rides'],
-      'messagingRules': {
-        'routineUpdates': '9:00 AM - 8:00 PM',
-        'quietHours': '8:00 PM - 8:00 AM',
-        'urgentAlerts': 'Anytime',
-        'emergencyAlerts': 'Anytime Call + SMS',
-      },
-      'dataVisibility': {
-        'basicInfo': true,
-        'dailyCheckins': true,
-        'medications': true,
-        'appointments': true,
-        'healthAnalytics': false,
-        'locationHistory': false,
-      },
-      'emergencyRole': {
-        'role': 'Primary Contact',
-        'canCall911': true,
-        'canContactCommunityStaff': true,
-        'canBookServices': false,
-      },
-    });
+    return post('/api/onboarding/trust-circle', payload);
   }
 
-  Future<Map<String, dynamic>> completeBusinessOnboarding() {
-    return post('/api/onboarding/business', {
-      'legalName': 'CareRide Senior Transportation LLC',
-      'dba': 'CareRide',
-      'ownerName': 'Rohit Mehta',
-      'phone': '+13035550104',
-      'email': 'rohit@careride.local',
-      'website': 'https://careride.example',
-      'businessType': 'transportation',
-      'address': 'Denver, CO',
-      'services':
-          'Doctor appointment rides, pharmacy pickup, wheelchair assisted rides',
-      'pricing': r'$18 - $35 local rides',
-      'serviceCatalog': [
-        {'name': 'Local Ride', 'price': r'$18 - $25'},
-        {'name': 'Airport Ride', 'price': r'$55 - $65'},
-        {'name': 'Doctor Appointment Ride', 'price': r'$25'},
-        {'name': 'Senior Shopping Trip', 'price': r'$20'},
-      ],
-      'serviceRadius': '25',
-      'serviceZips': '80124, 80126, 80129, 80202',
-      'leadTypes': ['rides', 'appointments', 'pharmacy'],
-      'communication': ['app', 'sms', 'phone'],
-      'maxLeads': '12',
-      'verificationDocs': ['business_license', 'insurance'],
-      'availability': {
-        'days': ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-        'from': '6:00 AM',
-        'to': '10:00 PM',
-        'sameDayService': true,
-        'emergencyService': true,
-      },
-      'leadRules': {
-        'maxLeadsPerDay': 10,
-        'preferredLeadType': 'All rides',
-        'minimumJobValue': 15,
-        'acceptUrgentRequests': true,
-        'acceptRecurringRequests': true,
-      },
-      'communicationRules': {
-        'sms': true,
-        'email': true,
-        'phoneCall': true,
-        'inAppNotifications': true,
-        'autoReply': 'Thank you. We will get back to you shortly.',
-      },
-      'promotionPreferences': {
-        'canAdvertise': true,
-        'targeting': 'location_based',
-        'audience': ['seniors', 'trusted_circle'],
-      },
-    });
+  Future<Map<String, dynamic>> completeBusinessOnboarding([
+    Map<String, dynamic> payload = const {},
+  ]) {
+    return post('/api/onboarding/business', payload);
   }
 
   Future<Map<String, dynamic>> syncHealthConsentAndVitals({

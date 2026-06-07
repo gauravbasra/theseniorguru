@@ -16,6 +16,8 @@
     "smoke:local-guru-model": "node scripts/smoke-local-guru-model.js",
     "smoke:flutter-resident": "node scripts/smoke-flutter-resident-contract.js",
     "smoke:role-onboarding": "node scripts/smoke-role-onboarding.js",
+    "smoke:role-settings": "node scripts/smoke-role-settings.js",
+    "audit:no-fake-data": "node scripts/audit-no-fake-data.js",
     "audit:scale-hardening": "node scripts/audit-scale-hardening.js",
     "worker:jobs": "node scripts/process-job-queue.js",
     "retention:archive": "node scripts/run-retention-archive.js",

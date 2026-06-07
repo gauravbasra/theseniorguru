@@ -93,8 +93,15 @@ void main() {
         serviceId: 'service-1',
         label: 'Cardiology Visit',
         time: 'Tomorrow, 10:00 AM',
+        pickupLabel: state.community,
+        riderName: state.residentName,
       );
-      await client.createSupportOrder(category: 'grocery', label: 'Groceries');
+      await client.createSupportOrder(
+        category: 'grocery',
+        label: 'Groceries',
+        recipientName: state.residentName,
+        deliveryAddress: state.community,
+      );
       await client.joinEvent('chair_yoga', 'Chair Yoga');
       await client.createPost('Beautiful morning walk with friends');
       await client.triggerSos();
@@ -142,21 +149,13 @@ void main() {
       }
 
       final seniorOnboarding = requestBody('/api/onboarding/senior');
-      expect(seniorOnboarding['wearableSources'], contains('fitbit'));
-      expect(seniorOnboarding['musicApps'], contains('spotify'));
-      expect(seniorOnboarding['dailyRoutine'], isA<Map<String, dynamic>>());
+      expect(seniorOnboarding, isEmpty);
 
       final trustOnboarding = requestBody('/api/onboarding/trust-circle');
-      expect(trustOnboarding['dataVisibility'], isA<Map<String, dynamic>>());
-      expect(trustOnboarding['emergencyRole'], isA<Map<String, dynamic>>());
+      expect(trustOnboarding, isEmpty);
 
       final businessOnboarding = requestBody('/api/onboarding/business');
-      expect(businessOnboarding['serviceCatalog'], isA<List<dynamic>>());
-      expect(businessOnboarding['leadRules'], isA<Map<String, dynamic>>());
-      expect(
-        businessOnboarding['promotionPreferences'],
-        isA<Map<String, dynamic>>(),
-      );
+      expect(businessOnboarding, isEmpty);
       expect(
         requests
             .where((item) => item['path'] != '/api/auth/device-session')
