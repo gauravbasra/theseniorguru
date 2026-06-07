@@ -631,6 +631,76 @@ function classifyVoiceSosCommand(command) {
   return null;
 }
 
+function defaultResidentSurfaceState(state) {
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 1,
+    dailyStatus: {
+      stability_status: "stable",
+      health_confidence_percent: 87,
+      highlights: [],
+      guru_insight: {
+        title: "Guru Insight",
+        body: "Daily status is ready from resident data."
+      }
+    },
+    wellness: {
+      score: {
+        wellness_score: 82,
+        score_label: "Doing Well",
+        change_from_prior: 6,
+        confidence_percent: 87
+      },
+      contributors: []
+    },
+    vitals: {
+      monitor: []
+    },
+    familyHealth: {
+      stability_status: "stable",
+      health_confidence_percent: 87,
+      summary_items: []
+    },
+    risk: {
+      assessment: {
+        overall_level: "low",
+        urgency_label: "No urgent concerns",
+        risk_score: 12
+      },
+      timeline: [
+        {
+          event_date: now,
+          event_type: "normal",
+          title: "Normal",
+          body: "No active safety event is open.",
+          severity: "normal",
+          display_order: 1
+        }
+      ]
+    },
+    contextIntelligence: {
+      guidanceItems: [
+        {
+          title: "Safety check",
+          body: state.safety?.liveTrackingEnabled
+            ? "Location sharing is available for safe-zone checks."
+            : "Location sharing can be enabled from Safety."
+        }
+      ],
+      risk: {
+        environmental: "low",
+        mobility: "low",
+        safety: "low"
+      },
+      sections: []
+    },
+    events: state.communityEvents || [],
+    serviceMatches: state.services || [],
+    transportationMatches: [],
+    screenStates: []
+  };
+}
+
 function routeApi(req, res) {
   return body(req).then(async payload => {
     if (productionApi) {
@@ -648,6 +718,7 @@ function routeApi(req, res) {
       ensureWearables(state);
       ensureNotificationQueue(state);
       ensureAuditLogs(state);
+      state.residentSurface = state.residentSurface || defaultResidentSurfaceState(state);
       writeState(state);
       return send(res, 200, state);
     }
@@ -814,6 +885,43 @@ function routeApi(req, res) {
       };
       writeState(state);
       return send(res, 200, state);
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/settings/senior") {
+      state.resident = {
+        ...state.resident,
+        ...(payload.preferredName || payload.displayName || payload.fullName
+          ? {name: payload.preferredName || payload.displayName || payload.fullName}
+          : {}),
+        community: payload.community || state.resident.community,
+        healthConcerns: Array.isArray(payload.healthConcerns)
+          ? payload.healthConcerns
+          : state.resident.healthConcerns,
+        mobilityNotes: payload.mobilityNotes || state.resident.mobilityNotes,
+        liveTrackingEnabled:
+          typeof payload.liveTrackingEnabled === "boolean"
+            ? payload.liveTrackingEnabled
+            : state.resident.liveTrackingEnabled,
+        memorySupportEnabled:
+          typeof payload.memorySupportEnabled === "boolean"
+            ? payload.memorySupportEnabled
+            : state.resident.memorySupportEnabled
+      };
+      state.safety = state.safety || {};
+      state.safety.liveTrackingEnabled =
+        typeof payload.liveTrackingEnabled === "boolean"
+          ? payload.liveTrackingEnabled
+          : state.safety.liveTrackingEnabled;
+      addAuditLog(state, {
+        action: "senior_settings_updated",
+        entityType: "resident",
+        entityId: state.resident.id,
+        severity: "info",
+        actor: state.resident.name,
+        details: `Updated senior settings: ${Object.keys(payload).join(", ")}`
+      });
+      writeState(state);
+      return send(res, 200, {ok: true, resident: state.resident, safety: state.safety});
     }
 
     if (req.method === "POST" && url.pathname === "/api/medications") {

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'api/tsg_api_client.dart';
 import 'services/native_health_service.dart';
@@ -18,7 +20,7 @@ const defaultApiBase = String.fromEnvironment(
 const initialScreenKey = String.fromEnvironment('TSG_INITIAL_SCREEN');
 
 typedef ApiRunner =
-    Future<void> Function(
+    Future<bool> Function(
       String label,
       Future<Object?> Function(TsgApiClient client, ResidentAppState? state)
       action,
@@ -195,7 +197,7 @@ class _ResidentShellState extends State<ResidentShell> {
     }
   }
 
-  Future<void> runApi(
+  Future<bool> runApi(
     String label,
     Future<Object?> Function(TsgApiClient client, ResidentAppState? state)
     action,
@@ -207,19 +209,21 @@ class _ResidentShellState extends State<ResidentShell> {
     try {
       await action(apiClient, appState);
       final state = await apiClient.loadResidentState();
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         appState = state;
         appRole = roleFromState(state, fallback: appRole);
         apiStatus = '$label saved';
         apiBusy = false;
       });
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         apiStatus = '$label failed: $error';
         apiBusy = false;
       });
+      return false;
     }
   }
 
@@ -1126,7 +1130,12 @@ class ScreenScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(22, topPadding, 22, 112),
+      padding: EdgeInsets.fromLTRB(
+        22,
+        topPadding,
+        22,
+        MediaQuery.of(context).padding.bottom + 154,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1795,7 +1804,7 @@ class TodayHome extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         GestureDetector(
-          onTap: () {},
+          onTap: () => go(Screen.safety),
           child: Container(
             height: 96,
             padding: const EdgeInsets.all(22),
@@ -2852,7 +2861,7 @@ class CircleScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        PurpleButton('Add Person', onTap: () {}),
+        PurpleButton('Add Person', onTap: () => go(Screen.trustCircleInvite)),
       ],
     );
   }
@@ -2879,7 +2888,7 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Call',
                 icon: CupertinoIcons.phone_fill,
-                onTap: () {},
+                onTap: () => go(Screen.companionChat),
               ),
             ),
             const SizedBox(width: 10),
@@ -2887,7 +2896,7 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Message',
                 icon: CupertinoIcons.chat_bubble_fill,
-                onTap: () {},
+                onTap: () => go(Screen.companionChat),
               ),
             ),
             const SizedBox(width: 10),
@@ -2895,7 +2904,7 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Video',
                 icon: CupertinoIcons.video_camera_solid,
-                onTap: () {},
+                onTap: () => go(Screen.trustCircleSettings),
               ),
             ),
           ],
@@ -4338,21 +4347,35 @@ class ServicesScreen extends StatelessWidget {
   }
 }
 
-class SafetyScreen extends StatelessWidget {
+class SafetyScreen extends StatefulWidget {
   const SafetyScreen({super.key, required this.go, required this.runApi});
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
 
   @override
+  State<SafetyScreen> createState() => _SafetyScreenState();
+}
+
+class _SafetyScreenState extends State<SafetyScreen> {
+  Position? position;
+  String locationStatus = 'Tap to sync live location';
+  String safeZoneStatus = 'Not synced';
+  bool syncingLocation = false;
+
+  @override
   Widget build(BuildContext context) {
+    final hasLocation = position != null;
+    final center = hasLocation
+        ? LatLng(position!.latitude, position!.longitude)
+        : const LatLng(37.3688, -122.0363);
     return ScreenScaffold(
       title: 'Safety',
       subtitle: 'Fast help and trusted alerts.',
-      back: () => go(Screen.more),
+      back: () => widget.go(Screen.more),
       children: [
         GestureDetector(
           onTap: () {
-            runApi('Triggering SOS event', (client, state) {
+            widget.runApi('Triggering SOS event', (client, state) {
               return client.triggerSos();
             });
           },
@@ -4410,19 +4433,113 @@ class SafetyScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
+        SoftCard(
+          padding: const EdgeInsets.all(0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: SizedBox(
+              height: 214,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: GoogleMap(
+                      initialCameraPosition: CameraPosition(
+                        target: center,
+                        zoom: hasLocation ? 15 : 12,
+                      ),
+                      markers: {
+                        Marker(
+                          markerId: const MarkerId('resident-location'),
+                          position: center,
+                          infoWindow: InfoWindow(
+                            title: hasLocation
+                                ? 'Current location'
+                                : 'Waiting for location',
+                            snippet: safeZoneStatus,
+                          ),
+                        ),
+                      },
+                      circles: {
+                        Circle(
+                          circleId: const CircleId('safe-zone'),
+                          center: center,
+                          radius: hasLocation ? 250 : 500,
+                          strokeColor: TsgColors.green,
+                          fillColor: TsgColors.green.withValues(alpha: .12),
+                          strokeWidth: 2,
+                        ),
+                      },
+                      myLocationEnabled: hasLocation,
+                      myLocationButtonEnabled: false,
+                      zoomControlsEnabled: false,
+                      compassEnabled: false,
+                    ),
+                  ),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .92),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: TsgColors.line),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            hasLocation
+                                ? CupertinoIcons.location_solid
+                                : CupertinoIcons.location,
+                            color: hasLocation
+                                ? TsgColors.green
+                                : TsgColors.orange,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              locationStatus,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         const SectionHeader('Safety status'),
         const SizedBox(height: 12),
         safetyRow(
           CupertinoIcons.location_fill,
           'Location sharing',
-          'On with Rita and Arjun',
+          syncingLocation ? 'Syncing live location...' : safeZoneStatus,
           TsgColors.green,
+          onTap: _syncLocation,
         ),
         safetyRow(
           CupertinoIcons.bell_fill,
           'Check-in reminder',
           'Today at 7:30 PM',
           TsgColors.orange,
+          onTap: () {
+            widget.runApi('Creating safety check-in', (client, state) {
+              return client.sendGuruMessage(
+                'Set a safety check-in for tonight at 7:30 PM.',
+                screen: 'safety',
+              );
+            });
+          },
         ),
         safetyRow(
           CupertinoIcons.waveform_path_ecg,
@@ -4430,7 +4547,7 @@ class SafetyScreen extends StatelessWidget {
           'Vitals look stable',
           TsgColors.green,
           onTap: () {
-            runApi('Syncing wearable health data', (client, state) async {
+            widget.runApi('Syncing wearable health data', (client, state) async {
               final snapshot = await NativeHealthService()
                   .collectRecentVitals();
               return client.syncHealthConsentAndVitals(
@@ -4446,12 +4563,12 @@ class SafetyScreen extends StatelessWidget {
           'Risk intelligence',
           'Low risk today',
           TsgColors.green,
-          onTap: () => go(Screen.risk),
+          onTap: () => widget.go(Screen.risk),
         ),
         const SizedBox(height: 16),
         SoftCard(
           color: const Color(0xFFF7F1FF),
-          onTap: () => go(Screen.familyHealth),
+          onTap: () => widget.go(Screen.familyHealth),
           child: const Row(
             children: [
               Avatar(
@@ -4483,6 +4600,77 @@ class SafetyScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _syncLocation() async {
+    if (syncingLocation) return;
+    setState(() {
+      syncingLocation = true;
+      locationStatus = 'Requesting phone location...';
+    });
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() {
+          locationStatus = 'Location services are off on this phone.';
+          safeZoneStatus = 'Location disabled';
+          syncingLocation = false;
+        });
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        setState(() {
+          locationStatus = 'Location permission is not granted.';
+          safeZoneStatus = 'Permission needed';
+          syncingLocation = false;
+        });
+        return;
+      }
+      final current = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 12),
+        ),
+      );
+      setState(() {
+        position = current;
+        locationStatus =
+            '${current.latitude.toStringAsFixed(5)}, ${current.longitude.toStringAsFixed(5)}';
+        safeZoneStatus = 'Sending safe-zone check...';
+      });
+      final synced = await widget.runApi('Syncing safety location', (
+        client,
+        state,
+      ) {
+        return client.syncSafetyLocation(
+          lat: current.latitude,
+          lng: current.longitude,
+          accuracyMeters: current.accuracy.roundToDouble(),
+          label: 'Phone location',
+          movementStatus: current.speed > 0.6 ? 'moving' : 'still',
+          lastKnownSpeedMph:
+              (current.speed * 2.236936 * 10).roundToDouble() / 10,
+          safeZoneStatus: 'inside',
+        );
+      });
+      if (!mounted) return;
+      setState(() {
+        safeZoneStatus = synced ? 'Safe-zone check synced' : 'Sync failed';
+        syncingLocation = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        locationStatus = 'Location sync failed: $error';
+        safeZoneStatus = 'Sync failed';
+        syncingLocation = false;
+      });
+    }
   }
 
   Widget safetyRow(

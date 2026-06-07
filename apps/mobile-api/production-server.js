@@ -3548,8 +3548,10 @@ function createProductionApi(pool) {
              cognitive_support = COALESCE($5, cognitive_support),
              display_name = COALESCE($6, display_name),
              health_profile = health_profile || $7::jsonb,
+             live_tracking_enabled = COALESCE($8, live_tracking_enabled),
+             memory_support_enabled = COALESCE($9, memory_support_enabled),
              updated_at = now()
-           WHERE id = $8
+           WHERE id = $10
            RETURNING *`,
           [
             community,
@@ -3559,6 +3561,8 @@ function createProductionApi(pool) {
             payload.cognitiveNotes || null,
             displayName,
             JSON.stringify(healthProfilePatch),
+            typeof payload.liveTrackingEnabled === "boolean" ? payload.liveTrackingEnabled : null,
+            typeof payload.memorySupportEnabled === "boolean" ? payload.memorySupportEnabled : null,
             resident.id
           ]
         )).rows[0];

@@ -266,6 +266,36 @@ class TsgApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> syncSafetyLocation({
+    required double lat,
+    required double lng,
+    double? accuracyMeters,
+    String label = 'Current phone location',
+    String movementStatus = 'active',
+    int? stepsLastHour,
+    int? stillMinutes,
+    double? lastKnownSpeedMph,
+    int? phoneBattery,
+    String? safeZoneStatus,
+  }) async {
+    await patch('/api/settings/senior', {'liveTrackingEnabled': true});
+    return post('/api/safety/phone-analytics', {
+      'location': {
+        'lat': lat,
+        'lng': lng,
+        'accuracyMeters': accuracyMeters,
+        'label': label,
+      },
+      'movementStatus': movementStatus,
+      'stepsLastHour': stepsLastHour,
+      'stillMinutes': stillMinutes,
+      'lastKnownSpeedMph': lastKnownSpeedMph,
+      'phoneBattery': phoneBattery,
+      'safeZoneStatus': safeZoneStatus,
+      'source': 'flutter-resident-app',
+    });
+  }
+
   Future<Map<String, dynamic>> completeSeniorOnboarding([
     Map<String, dynamic> payload = const {},
   ]) {
