@@ -52,6 +52,10 @@ async function main() {
   assert.ok(initialState.residentSurface.familyHealth, "Family health screen needs family summary state");
   assert.ok(Array.isArray(initialState.residentSurface.risk.timeline), "Risk screen needs timeline rows");
   assert.ok(Array.isArray(initialState.residentSurface.events), "Events screen needs event catalog rows");
+  assert.ok(initialState.residentSurface.contextIntelligence, "Guru needs context intelligence state");
+  assert.ok(Array.isArray(initialState.residentSurface.contextIntelligence.guidanceItems), "Today screen needs Guru guidance items");
+  assert.ok(initialState.residentSurface.contextIntelligence.risk?.environmental, "Risk engine needs environmental risk");
+  assert.ok(initialState.residentSurface.contextIntelligence.risk?.mobility, "Risk engine needs mobility risk");
 
   const med = await request("/api/medications", {
     method: "POST",
@@ -150,6 +154,43 @@ async function main() {
     })
   });
   assert.ok(vitals.healthVitals?.readings?.length, "health/vitals screen must write readings");
+
+  const contextObservation = await request("/api/context/observations", {
+    method: "POST",
+    headers: auth(token),
+    body: JSON.stringify({
+      environment: {
+        provider: "flutter-smoke",
+        condition: "Partly cloudy",
+        temperatureF: 72,
+        aqi: 54,
+        pollenLevel: "high",
+        snowProbabilityPercent: 0,
+        heatRisk: "low"
+      },
+      mobility: {
+        stepsToday: 4280,
+        stepsBaseline: 5200,
+        stepsDeltaPercent: -18,
+        weatherAdjusted: false,
+        reasons: ["below usual range"]
+      },
+      social: {
+        daysWithoutFamilyContact: 4,
+        trustedCircleTouchCount: 0,
+        communityInteractionCount: 1
+      },
+      location: {
+        label: "Park View Community",
+        lat: 39.5447,
+        lng: -104.9673,
+        movementStatus: "home",
+        safeZoneStatus: "inside"
+      }
+    })
+  });
+  assert.ok(contextObservation.environmentObservation?.id, "context observations must write environment rows");
+  assert.ok(contextObservation.dailyGuidance?.id, "context observations must write daily guidance rows");
 
   const sos = await request("/api/safety/voice-sos", {
     method: "POST",

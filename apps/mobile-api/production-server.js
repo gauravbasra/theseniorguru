@@ -539,6 +539,175 @@ function createProductionApi(pool) {
     ];
   }
 
+  function defaultContextIntelligenceState(resident, healthSummary = {}) {
+    const steps = Math.round(Number(healthSummary.stepsToday || 4280));
+    const mobilityStatus = steps < 2500 ? "Watch" : "Normal";
+    const healthStatus = healthSummary.riskLevel === "watch" ? "Watch" : "Stable";
+    return {
+      dailyStatus: mobilityStatus === "Watch" ? "watch" : "stable",
+      risk: {
+        health: healthSummary.riskLevel || "low",
+        environmental: "watch",
+        mobility: mobilityStatus === "Watch" ? "watch" : "low",
+        isolation: "watch",
+        medication: "low",
+        safety: "low"
+      },
+      guidanceItems: [
+        {
+          domain: "environment",
+          severity: "watch",
+          title: "High pollen today",
+          body: "Limit outdoor activity this afternoon if allergies flare.",
+          action: "Take allergy medication if prescribed."
+        },
+        {
+          domain: "transportation",
+          severity: "info",
+          title: "Roads look clear for appointments",
+          body: "Cardiology transportation can stay on the current schedule.",
+          action: "Monitor weather before pickup."
+        },
+        {
+          domain: "health",
+          severity: "info",
+          title: "Hydration reminder recommended",
+          body: "Keep water nearby through the afternoon.",
+          action: "Remind every two hours."
+        }
+      ],
+      sections: [
+        { key: "health", label: "Health", status: healthStatus, severity: healthStatus === "Watch" ? "watch" : "good" },
+        { key: "environment", label: "Environment", status: "Pollen High", severity: "watch" },
+        { key: "mobility", label: "Mobility", status: mobilityStatus, severity: mobilityStatus === "Watch" ? "watch" : "good" },
+        { key: "social", label: "Social", status: "No family contact 4d", severity: "watch" },
+        { key: "safety", label: "Safety", status: "Protected", severity: "good" }
+      ],
+      environment: {
+        status: "Pollen High",
+        temperatureF: 72,
+        condition: "Partly cloudy",
+        aqi: 54,
+        pollenLevel: "high",
+        smokeRisk: "low",
+        heatRisk: "low",
+        snowRisk: "none"
+      },
+      mobility: {
+        status: mobilityStatus,
+        stepsToday: steps,
+        stepsDeltaPercent: -18,
+        weatherAdjusted: false,
+        explanation: "Activity is slightly lower than usual."
+      },
+      social: {
+        status: "watch",
+        daysWithoutFamilyContact: 4
+      },
+      places: [
+        { place_key: "home", name: resident?.community || "Park View Community", category: "home", is_safe_zone: true },
+        { place_key: "doctor", name: "Dr. Mehta Clinic", category: "doctor", is_safe_zone: true },
+        { place_key: "pharmacy", name: "HealthPlus Pharmacy", category: "pharmacy", is_safe_zone: true }
+      ],
+      routines: [
+        { routine_key: "weekly_pharmacy", title: "Weekly pharmacy visit", routine_type: "pharmacy", status: "watch" }
+      ],
+      transportationDecisions: [],
+      signals: []
+    };
+  }
+
+  async function buildContextIntelligenceState(resident, healthSummary = {}) {
+    if (!resident) return defaultContextIntelligenceState(resident, healthSummary);
+    const [
+      guidance,
+      signals,
+      environment,
+      alerts,
+      mobility,
+      social,
+      places,
+      routines,
+      visits,
+      transport
+    ] = await Promise.all([
+      query(`SELECT * FROM guru_daily_guidance WHERE resident_id = $1 ORDER BY guidance_date DESC, created_at DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM guru_context_signals WHERE resident_id = $1 AND suppressed = false ORDER BY signal_date DESC, created_at DESC LIMIT 12`, [resident.id]),
+      query(`SELECT * FROM environment_observations WHERE resident_id = $1 OR resident_id IS NULL ORDER BY observed_at DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM environment_alerts WHERE (resident_id = $1 OR resident_id IS NULL) AND status = 'active' ORDER BY created_at DESC LIMIT 8`, [resident.id]),
+      query(`SELECT * FROM mobility_context_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM social_contact_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM resident_places WHERE resident_id = $1 ORDER BY is_safe_zone DESC, category, name LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM resident_routines WHERE resident_id = $1 ORDER BY status DESC, routine_type LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM resident_place_visits WHERE resident_id = $1 ORDER BY visit_started_at DESC LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM transportation_context_decisions WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id])
+    ]);
+    const fallback = defaultContextIntelligenceState(resident, healthSummary);
+    const guidanceRow = guidance.rows[0];
+    const environmentRow = environment.rows[0];
+    const mobilityRow = mobility.rows[0];
+    const socialRow = social.rows[0];
+    const guidanceItems = Array.isArray(guidanceRow?.guidance_items) && guidanceRow.guidance_items.length
+      ? guidanceRow.guidance_items
+      : (signals.rows.length
+        ? signals.rows.slice(0, 3).map(signal => ({
+            domain: signal.domain,
+            severity: signal.severity,
+            title: signal.title,
+            body: signal.body,
+            action: signal.metadata?.action || ""
+          }))
+        : fallback.guidanceItems);
+    return {
+      dailyStatus: guidanceRow?.daily_status || fallback.dailyStatus,
+      risk: {
+        health: guidanceRow?.health_risk || fallback.risk.health,
+        environmental: guidanceRow?.environmental_risk || fallback.risk.environmental,
+        mobility: guidanceRow?.mobility_risk || fallback.risk.mobility,
+        isolation: guidanceRow?.isolation_risk || fallback.risk.isolation,
+        medication: guidanceRow?.medication_risk || fallback.risk.medication,
+        safety: guidanceRow?.safety_risk || fallback.risk.safety
+      },
+      guidanceItems,
+      sections: [
+        { key: "health", label: "Health", status: guidanceRow?.health_risk === "watch" ? "Watch" : "Stable", severity: guidanceRow?.health_risk === "watch" ? "watch" : "good" },
+        { key: "environment", label: "Environment", status: environmentRow?.pollen_tree_level === "high" || environmentRow?.pollen_grass_level === "high" || environmentRow?.pollen_weed_level === "high" ? "Pollen High" : (alerts.rows[0]?.title || fallback.sections[1].status), severity: alerts.rows[0]?.severity || fallback.sections[1].severity },
+        { key: "mobility", label: "Mobility", status: mobilityRow?.status || fallback.sections[2].status, severity: mobilityRow?.status === "watch" ? "watch" : "good" },
+        { key: "social", label: "Social", status: socialRow?.days_since_family_contact ? `No family contact ${socialRow.days_since_family_contact}d` : fallback.sections[3].status, severity: socialRow?.isolation_risk === "low" ? "good" : "watch" },
+        { key: "safety", label: "Safety", status: guidanceRow?.safety_risk === "low" ? "Protected" : "Watch", severity: guidanceRow?.safety_risk === "low" ? "good" : "watch" }
+      ],
+      environment: environmentRow ? {
+        status: alerts.rows[0]?.title || environmentRow.aqi_category || environmentRow.weather_condition || fallback.environment.status,
+        temperatureF: environmentRow.temperature_f,
+        condition: environmentRow.weather_condition,
+        aqi: environmentRow.aqi,
+        pollenLevel: environmentRow.pollen_tree_level || environmentRow.pollen_grass_level || environmentRow.pollen_weed_level,
+        smokeRisk: environmentRow.smoke_risk,
+        heatRisk: environmentRow.heat_risk,
+        snowRisk: environmentRow.snow_probability_percent && Number(environmentRow.snow_probability_percent) > 40 ? "watch" : "none"
+      } : fallback.environment,
+      mobility: mobilityRow ? {
+        status: mobilityRow.status,
+        stepsToday: mobilityRow.steps_today,
+        stepsDeltaPercent: mobilityRow.steps_delta_percent,
+        weatherAdjusted: mobilityRow.weather_adjusted,
+        explanation: (mobilityRow.reasons || []).join(", ") || fallback.mobility.explanation
+      } : fallback.mobility,
+      social: socialRow ? {
+        status: socialRow.isolation_risk,
+        daysWithoutFamilyContact: socialRow.days_since_family_contact,
+        trustedCircleTouchCount: socialRow.trusted_circle_touch_count,
+        communityInteractionCount: socialRow.community_interaction_count
+      } : fallback.social,
+      places: places.rows.length ? places.rows : fallback.places,
+      routines: routines.rows.length ? routines.rows : fallback.routines,
+      recentVisits: visits.rows,
+      transportationDecisions: transport.rows,
+      alerts: alerts.rows,
+      signals: signals.rows
+    };
+  }
+
   async function buildResidentSurfaceState(resident, healthSummary = {}) {
     if (!resident) {
       return { schemaVersion: 1 };
@@ -554,6 +723,7 @@ function createProductionApi(pool) {
       events,
       serviceMatches,
       transportMatches,
+      contextIntelligence,
       screenStates
     ] = await Promise.all([
       query(`SELECT * FROM resident_daily_status_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC LIMIT 1`, [resident.id]),
@@ -566,6 +736,7 @@ function createProductionApi(pool) {
       query(`SELECT * FROM community_events WHERE status = 'published' AND (community IS NULL OR community = $1) ORDER BY starts_at NULLS LAST, created_at DESC LIMIT 25`, [resident.community || null]),
       query(`SELECT * FROM resident_service_matches WHERE resident_id = $1 AND status = 'active' ORDER BY match_score DESC NULLS LAST, created_at DESC LIMIT 20`, [resident.id]),
       query(`SELECT * FROM transportation_match_options WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id]),
+      buildContextIntelligenceState(resident, healthSummary),
       query(`SELECT DISTINCT ON (screen_key) * FROM resident_screen_states WHERE resident_id = $1 ORDER BY screen_key, updated_at DESC LIMIT 50`, [resident.id])
     ]);
     const score = wellnessScore.rows[0] || {
@@ -623,6 +794,7 @@ function createProductionApi(pool) {
         assessment: risk,
         timeline
       },
+      contextIntelligence,
       events: events.rows,
       serviceMatches: serviceMatches.rows,
       transportationMatches: transportMatches.rows,
@@ -4883,6 +5055,237 @@ function createProductionApi(pool) {
       )).rows[0];
       await audit(req, user, "resident_safe_zone_created", "resident_safe_zone", safeZone.id, { residentId: resident.id, name, radiusMeters }, "info");
       return { safeZone };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/context/observations") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const environmentPayload = payload.environment || {};
+      const mobilityPayload = payload.mobility || {};
+      const socialPayload = payload.social || {};
+      const locationPayload = payload.location || {};
+      let environmentObservation = null;
+      let mobilitySnapshot = null;
+      let socialSnapshot = null;
+      let locationPoint = null;
+      const guidanceItems = [];
+
+      if (Object.keys(environmentPayload).length) {
+        environmentObservation = (await query(
+          `INSERT INTO environment_observations (
+             resident_id, observed_at, provider, weather_condition, temperature_f, feels_like_f,
+             precipitation_probability_percent, snow_probability_percent, wind_mph, uv_index,
+             aqi, aqi_category, pollen_tree_level, pollen_grass_level, pollen_weed_level,
+             ozone_level, smoke_risk, wildfire_risk, heat_risk, ice_risk, storm_risk, metadata
+           ) VALUES ($1,COALESCE($2::timestamptz, now()),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+           RETURNING *`,
+          [
+            resident.id,
+            environmentPayload.observedAt || null,
+            environmentPayload.provider || "mobile_context",
+            environmentPayload.condition || environmentPayload.weatherCondition || null,
+            environmentPayload.temperatureF ?? null,
+            environmentPayload.feelsLikeF ?? null,
+            environmentPayload.precipitationProbabilityPercent ?? null,
+            environmentPayload.snowProbabilityPercent ?? null,
+            environmentPayload.windMph ?? null,
+            environmentPayload.uvIndex ?? null,
+            environmentPayload.aqi ?? null,
+            environmentPayload.aqiCategory || null,
+            environmentPayload.pollenTreeLevel || environmentPayload.pollenLevel || null,
+            environmentPayload.pollenGrassLevel || null,
+            environmentPayload.pollenWeedLevel || null,
+            environmentPayload.ozoneLevel || null,
+            environmentPayload.smokeRisk || null,
+            environmentPayload.wildfireRisk || null,
+            environmentPayload.heatRisk || null,
+            environmentPayload.iceRisk || null,
+            environmentPayload.stormRisk || null,
+            JSON.stringify(environmentPayload.metadata || {})
+          ]
+        )).rows[0];
+        const pollenLevel = String(environmentPayload.pollenLevel || environmentPayload.pollenTreeLevel || "").toLowerCase();
+        if (pollenLevel === "high") {
+          guidanceItems.push({
+            domain: "environment",
+            severity: "watch",
+            title: "High pollen today",
+            body: "Limit outdoor activity this afternoon if allergies flare.",
+            action: "Take allergy medication if prescribed."
+          });
+        }
+        if (Number(environmentPayload.snowProbabilityPercent || 0) >= 40) {
+          guidanceItems.push({
+            domain: "transportation",
+            severity: "watch",
+            title: "Snow may affect travel",
+            body: "Leave earlier for appointments if roads worsen.",
+            action: "Review ride pickup time."
+          });
+        }
+        if (String(environmentPayload.heatRisk || "").toLowerCase() === "high") {
+          guidanceItems.push({
+            domain: "health",
+            severity: "watch",
+            title: "Heat advisory today",
+            body: "Drink extra water and avoid long outdoor activity.",
+            action: "Add hydration reminders."
+          });
+        }
+      }
+
+      if (Object.keys(mobilityPayload).length) {
+        const stepsDeltaPercent = mobilityPayload.stepsDeltaPercent ?? mobilityPayload.steps_delta_percent ?? null;
+        const weatherAdjusted = Boolean(mobilityPayload.weatherAdjusted || mobilityPayload.weather_adjusted);
+        const mobilityStatus = Number(stepsDeltaPercent || 0) <= -35 && !weatherAdjusted ? "watch" : "normal";
+        mobilitySnapshot = (await query(
+          `INSERT INTO mobility_context_snapshots (
+             resident_id, snapshot_date, steps_today, steps_baseline, steps_delta_percent,
+             walking_speed_mps, distance_meters, community_visits, outside_home_minutes,
+             weather_adjusted, status, reasons, metadata
+           ) VALUES ($1,COALESCE($2::date, current_date),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           ON CONFLICT (resident_id, snapshot_date) DO UPDATE SET
+             steps_today = EXCLUDED.steps_today,
+             steps_baseline = EXCLUDED.steps_baseline,
+             steps_delta_percent = EXCLUDED.steps_delta_percent,
+             walking_speed_mps = EXCLUDED.walking_speed_mps,
+             distance_meters = EXCLUDED.distance_meters,
+             community_visits = EXCLUDED.community_visits,
+             outside_home_minutes = EXCLUDED.outside_home_minutes,
+             weather_adjusted = EXCLUDED.weather_adjusted,
+             status = EXCLUDED.status,
+             reasons = EXCLUDED.reasons,
+             metadata = EXCLUDED.metadata
+           RETURNING *`,
+          [
+            resident.id,
+            mobilityPayload.snapshotDate || null,
+            mobilityPayload.stepsToday ?? null,
+            mobilityPayload.stepsBaseline ?? null,
+            stepsDeltaPercent,
+            mobilityPayload.walkingSpeedMps ?? null,
+            mobilityPayload.distanceMeters ?? null,
+            mobilityPayload.communityVisits ?? null,
+            mobilityPayload.outsideHomeMinutes ?? null,
+            weatherAdjusted,
+            mobilityStatus,
+            mobilityPayload.reasons || [],
+            JSON.stringify(mobilityPayload.metadata || {})
+          ]
+        )).rows[0];
+        if (mobilityStatus === "watch") {
+          guidanceItems.push({
+            domain: "mobility",
+            severity: "watch",
+            title: "Possible wellness decline",
+            body: "Activity is lower than usual without a weather explanation.",
+            action: "Set watch status."
+          });
+        }
+      }
+
+      if (Object.keys(socialPayload).length) {
+        const days = Number(socialPayload.daysWithoutFamilyContact ?? socialPayload.days_since_family_contact ?? 0);
+        socialSnapshot = (await query(
+          `INSERT INTO social_contact_snapshots (
+             resident_id, snapshot_date, last_family_contact_at, days_since_family_contact,
+             trusted_circle_touch_count, community_interaction_count, isolation_risk, metadata
+           ) VALUES ($1,COALESCE($2::date, current_date),$3,$4,$5,$6,$7,$8)
+           ON CONFLICT (resident_id, snapshot_date) DO UPDATE SET
+             last_family_contact_at = EXCLUDED.last_family_contact_at,
+             days_since_family_contact = EXCLUDED.days_since_family_contact,
+             trusted_circle_touch_count = EXCLUDED.trusted_circle_touch_count,
+             community_interaction_count = EXCLUDED.community_interaction_count,
+             isolation_risk = EXCLUDED.isolation_risk,
+             metadata = EXCLUDED.metadata
+           RETURNING *`,
+          [
+            resident.id,
+            socialPayload.snapshotDate || null,
+            socialPayload.lastFamilyContactAt || null,
+            days || null,
+            socialPayload.trustedCircleTouchCount || 0,
+            socialPayload.communityInteractionCount || 0,
+            days >= 4 ? "watch" : "low",
+            JSON.stringify(socialPayload.metadata || {})
+          ]
+        )).rows[0];
+      }
+
+      if (Object.keys(locationPayload).length) {
+        locationPoint = (await query(
+          `INSERT INTO resident_location_timeline (
+             resident_id, lat, lng, location_label, movement_status, safe_zone_status, observed_at, source, metadata
+           ) VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz, now()),$8,$9)
+           RETURNING *`,
+          [
+            resident.id,
+            locationPayload.lat ?? null,
+            locationPayload.lng ?? null,
+            locationPayload.label || locationPayload.locationLabel || null,
+            locationPayload.movementStatus || null,
+            locationPayload.safeZoneStatus || null,
+            locationPayload.observedAt || null,
+            locationPayload.source || "mobile_context",
+            JSON.stringify(locationPayload.metadata || {})
+          ]
+        )).rows[0];
+      }
+
+      if (!guidanceItems.length) {
+        guidanceItems.push({
+          domain: "health",
+          severity: "info",
+          title: "Context updated",
+          body: "Guru has refreshed today's status.",
+          action: "Continue monitoring."
+        });
+      }
+      for (const item of guidanceItems) {
+        await query(
+          `INSERT INTO guru_context_signals (resident_id, domain, signal_key, severity, title, body, metadata)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [resident.id, item.domain, item.title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""), item.severity, item.title, item.body, JSON.stringify({ action: item.action || "" })]
+        );
+      }
+      const dailyStatus = guidanceItems.some(item => item.severity === "high" || item.severity === "emergency")
+        ? "needs_check_in"
+        : (guidanceItems.some(item => item.severity === "watch") ? "watch" : "stable");
+      const dailyGuidance = (await query(
+        `INSERT INTO guru_daily_guidance (
+           resident_id, guidance_date, daily_status, health_risk, environmental_risk,
+           mobility_risk, isolation_risk, medication_risk, safety_risk, guidance_items, summary, calculated_from
+         ) VALUES ($1,current_date,$2,$3,$4,$5,$6,'low','low',$7,$8,$9)
+         ON CONFLICT (resident_id, guidance_date) DO UPDATE SET
+           daily_status = EXCLUDED.daily_status,
+           health_risk = EXCLUDED.health_risk,
+           environmental_risk = EXCLUDED.environmental_risk,
+           mobility_risk = EXCLUDED.mobility_risk,
+           isolation_risk = EXCLUDED.isolation_risk,
+           guidance_items = EXCLUDED.guidance_items,
+           summary = EXCLUDED.summary,
+           calculated_from = EXCLUDED.calculated_from,
+           updated_at = now()
+         RETURNING *`,
+        [
+          resident.id,
+          dailyStatus,
+          guidanceItems.some(item => item.domain === "health" && item.severity === "watch") ? "watch" : "low",
+          guidanceItems.some(item => item.domain === "environment" || item.domain === "transportation") ? "watch" : "low",
+          guidanceItems.some(item => item.domain === "mobility") ? "watch" : "low",
+          socialSnapshot?.isolation_risk || "low",
+          JSON.stringify(guidanceItems),
+          guidanceItems[0]?.title || "Context updated",
+          JSON.stringify({ environmentObservationId: environmentObservation?.id, mobilitySnapshotId: mobilitySnapshot?.id, socialSnapshotId: socialSnapshot?.id, locationPointId: locationPoint?.id })
+        ]
+      )).rows[0];
+      await audit(req, user, "resident_context_observation_recorded", "resident_context", resident.id, { guidanceItems: guidanceItems.length, dailyStatus }, dailyStatus === "stable" ? "info" : "warning");
+      return { environmentObservation, mobilitySnapshot, socialSnapshot, locationPoint, dailyGuidance };
     }
 
     if (req.method === "POST" && url.pathname === "/api/safety/phone-analytics") {

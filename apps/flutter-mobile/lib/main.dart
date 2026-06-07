@@ -12,6 +12,8 @@ const defaultApiBase = String.fromEnvironment(
   defaultValue: 'https://mobile-api-nine.vercel.app',
 );
 
+const initialScreenKey = String.fromEnvironment('TSG_INITIAL_SCREEN');
+
 typedef ApiRunner =
     Future<void> Function(
       String label,
@@ -98,7 +100,7 @@ class ResidentShell extends StatefulWidget {
 }
 
 class _ResidentShellState extends State<ResidentShell> {
-  Screen screen = Screen.guru;
+  late Screen screen;
   late final TsgApiClient apiClient;
   ResidentAppState? appState;
   String apiStatus = 'Connecting to mobile API...';
@@ -107,6 +109,7 @@ class _ResidentShellState extends State<ResidentShell> {
   @override
   void initState() {
     super.initState();
+    screen = initialScreenFromKey(initialScreenKey);
     apiClient = TsgApiClient(
       baseUrl: defaultApiBase,
       installationIdProvider: () async =>
@@ -351,6 +354,20 @@ class _ResidentShellState extends State<ResidentShell> {
       ),
     };
   }
+}
+
+Screen initialScreenFromKey(String key) {
+  return switch (key) {
+    'today' => Screen.today,
+    'wellness' => Screen.wellness,
+    'vitals' => Screen.vitals,
+    'familyHealth' => Screen.familyHealth,
+    'risk' => Screen.risk,
+    'events' => Screen.events,
+    'services' => Screen.services,
+    'safety' => Screen.safety,
+    _ => Screen.guru,
+  };
 }
 
 class ApiStatusPill extends StatelessWidget {
@@ -1030,6 +1047,9 @@ class TodayHome extends StatelessWidget {
     final avatarLabel = residentFirstName.isEmpty
         ? 'A'
         : residentFirstName.characters.first.toUpperCase();
+    final contextIntel = residentSurfaceSection(state, 'contextIntelligence');
+    final guidanceItems = listOfMaps(contextIntel['guidanceItems']);
+    final sections = listOfMaps(contextIntel['sections']);
     return ScreenScaffold(
       children: [
         SizedBox(
@@ -1077,6 +1097,10 @@ class TodayHome extends StatelessWidget {
           style: TextStyle(color: TsgColors.muted, fontSize: 17),
         ),
         const SizedBox(height: 22),
+        ContextGuidanceCard(items: guidanceItems),
+        const SizedBox(height: 14),
+        ContextStatusGrid(sections: sections),
+        const SizedBox(height: 14),
         SoftCard(
           color: const Color(0xFFFFF6FB),
           child: Column(
@@ -3531,6 +3555,210 @@ String surfaceText(Object? value, String fallback) {
   return text.isEmpty ? fallback : text;
 }
 
+Color contextSeverityColor(String severity) {
+  final key = severity.toLowerCase();
+  if (key.contains('high') || key.contains('emergency')) return TsgColors.red;
+  if (key.contains('watch') || key.contains('medium')) return TsgColors.orange;
+  if (key.contains('info')) return TsgColors.blue;
+  return TsgColors.green;
+}
+
+IconData contextDomainIcon(String domain) {
+  final key = domain.toLowerCase();
+  if (key.contains('environment')) return CupertinoIcons.cloud_sun_fill;
+  if (key.contains('transport')) return CupertinoIcons.car_detailed;
+  if (key.contains('mobility')) return Icons.directions_walk_rounded;
+  if (key.contains('social') || key.contains('isolation')) {
+    return CupertinoIcons.person_2_fill;
+  }
+  if (key.contains('safety')) return CupertinoIcons.shield_fill;
+  if (key.contains('medication')) return CupertinoIcons.capsule_fill;
+  return CupertinoIcons.sparkles;
+}
+
+class ContextGuidanceCard extends StatelessWidget {
+  const ContextGuidanceCard({super.key, required this.items});
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final guidance = items.isNotEmpty
+        ? items.take(3).toList()
+        : [
+            {
+              'domain': 'environment',
+              'severity': 'watch',
+              'title': 'High pollen today',
+              'body': 'Limit outdoor activity this afternoon.',
+            },
+            {
+              'domain': 'health',
+              'severity': 'info',
+              'title': 'Hydration reminder recommended',
+              'body': 'Keep water nearby through the afternoon.',
+            },
+          ];
+    return SoftCard(
+      color: const Color(0xFFF8F3FF),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Avatar(
+                size: 40,
+                icon: CupertinoIcons.sparkles,
+                tone: Color(0xFFEFE2FF),
+              ),
+              SizedBox(width: 12),
+              Expanded(child: H1("Today's Guidance", size: 24)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...guidance.map((item) {
+            final domain = stringValue(item['domain']);
+            final severity = stringValue(item['severity']);
+            final color = contextSeverityColor(severity);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: .12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      contextDomainIcon(domain),
+                      color: color,
+                      size: 17,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          surfaceText(item['title'], 'Guru guidance'),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: TsgColors.ink,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          surfaceText(item['body'], ''),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.3,
+                            color: TsgColors.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class ContextStatusGrid extends StatelessWidget {
+  const ContextStatusGrid({super.key, required this.sections});
+  final List<Map<String, dynamic>> sections;
+
+  @override
+  Widget build(BuildContext context) {
+    final tiles = sections.isNotEmpty
+        ? sections.take(5).toList()
+        : [
+            {'key': 'health', 'label': 'Health', 'status': 'Stable'},
+            {
+              'key': 'environment',
+              'label': 'Environment',
+              'status': 'Pollen High',
+              'severity': 'watch',
+            },
+            {'key': 'mobility', 'label': 'Mobility', 'status': 'Normal'},
+            {
+              'key': 'social',
+              'label': 'Social',
+              'status': 'No family contact 4d',
+              'severity': 'watch',
+            },
+            {'key': 'safety', 'label': 'Safety', 'status': 'Protected'},
+          ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: tiles.map((tile) {
+        final severity = stringValue(tile['severity']).isEmpty
+            ? 'good'
+            : stringValue(tile['severity']);
+        final color = contextSeverityColor(severity);
+        return Container(
+          width: 106,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: color.withValues(alpha: .18)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x102D2038),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                contextDomainIcon(stringValue(tile['key'] ?? tile['label'])),
+                color: color,
+                size: 18,
+              ),
+              const SizedBox(height: 7),
+              Text(
+                surfaceText(tile['label'], 'Status'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: TsgColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                surfaceText(tile['status'], 'Stable'),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: TsgColors.ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  height: 1.15,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
 class WellnessScreen extends StatelessWidget {
   const WellnessScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
@@ -3979,9 +4207,14 @@ class FamilyHealthScreen extends StatelessWidget {
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),
-                        Text(
-                          surfaceText(s['value'], ''),
-                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        Flexible(
+                          child: Text(
+                            surfaceText(s['value'], ''),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Icon(
