@@ -46,6 +46,9 @@ function resolveGuruIntent(message, context = {}) {
   }
   if (normalized.includes("ride") || normalized.includes("doctor") || normalized.includes("transport")) return { intent: "ride", navigateTo: "residentHelp", reply: "I opened Help. Tell me pickup, destination, and time, and I will match transportation options." };
   if (normalized.includes("lonely") || normalized.includes("talk") || normalized.includes("companion")) return { intent: "companion", navigateTo: "residentPeople", reply: "I am here with you. I can chat, help call your trusted circle, or find an activity nearby." };
+  if (normalized.includes("family") || normalized.includes("rita") || normalized.includes("daughter") || normalized.includes("call her")) return { intent: "family", navigateTo: "residentPeople", reply: "I can help you check in with your family or trusted circle." };
+  if (normalized.includes("safe zone") || normalized.includes("where am i") || normalized.includes("location")) return { intent: "location", navigateTo: "residentSafety", reply: "I can check location and safe-zone context from the Safety screen." };
+  if (normalized.includes("health summary") || normalized.includes("why am i watch") || normalized.includes("why am i stable")) return { intent: "health_summary", navigateTo: "residentHome", reply: "I can explain today's health status from your existing Guru scores." };
   if (normalized.includes("food") || normalized.includes("meal") || normalized.includes("grocery") || normalized.includes("diaper") || normalized.includes("clean")) return { intent: "services", navigateTo: "residentServices", reply: "I opened Services. I can help find food, essentials, cleaning, laundry, or other local support." };
   if (normalized.includes("sos") || normalized.includes("emergency") || normalized.includes("fall") || normalized.includes("unsafe")) return { intent: "safety", navigateTo: "residentSafety", reply: "I opened Safety. If this is urgent, press SOS now or call emergency services." };
   if (normalized.includes("remember") || normalized.includes("who is") || normalized.includes("birthday")) {
@@ -75,11 +78,13 @@ function isRoutineGuruIntent(intent) {
     "safety",
     "memory",
     "calendar",
-    "story",
     "music",
     "scan",
     "environment",
-    "daily_status"
+    "daily_status",
+    "family",
+    "location",
+    "health_summary"
   ].includes(intent);
 }
 

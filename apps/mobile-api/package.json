@@ -12,6 +12,7 @@
     "smoke:context-intelligence-schema": "node scripts/smoke-context-intelligence-schema.js",
     "smoke:guru-intelligence": "node scripts/smoke-guru-intelligence-layer.js",
     "smoke:guru-phase2": "node scripts/smoke-guru-intelligence-phase2.js",
+    "smoke:ai-governance": "node scripts/smoke-ai-governance-v2.js",
     "smoke:local-guru-model": "node scripts/smoke-local-guru-model.js",
     "smoke:flutter-resident": "node scripts/smoke-flutter-resident-contract.js",
     "audit:scale-hardening": "node scripts/audit-scale-hardening.js",

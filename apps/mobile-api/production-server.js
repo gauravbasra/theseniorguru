@@ -1197,74 +1197,233 @@ function createProductionApi(pool) {
     return { riskScore, recommendations, explanation, reasons: explanationPayload.reasons, whatChanged: explanationPayload.whatChanged, whyItMatters: explanationPayload.whyItMatters, recommendedAction: explanationPayload.recommendedAction, familyContext, baselines, trends };
   }
 
+  function tenantIdForResident(resident) {
+    return resident?.community ? `community:${String(resident.community).toLowerCase().replace(/[^a-z0-9]+/g, "_")}` : "default";
+  }
+
+  function estimateTokensFromText(text) {
+    return Math.max(1, Math.ceil(String(text || "").length / 4));
+  }
+
+  function estimateOpenAiCostUsd(promptTokens, completionTokens) {
+    const inputPerMillion = Number(process.env.OPENAI_INPUT_USD_PER_MILLION || 0.15);
+    const outputPerMillion = Number(process.env.OPENAI_OUTPUT_USD_PER_MILLION || 0.60);
+    return ((promptTokens * inputPerMillion) + (completionTokens * outputPerMillion)) / 1000000;
+  }
+
+  function localConfidenceForIntent(intent, message = "") {
+    if (isRoutineGuruIntent(intent)) return 0.92;
+    if (["companion", "story", "complex_reasoning", "emotional_support", "multilingual", "vision"].includes(intent)) return 0.55;
+    if (String(message || "").split(/\s+/).length > 18) return 0.58;
+    return 0.74;
+  }
+
+  async function aiRoutingPolicy(intent) {
+    const row = (await query(`SELECT * FROM ai_routing_policies WHERE intent = $1 AND status = 'active'`, [intent])).rows[0]
+      || (await query(`SELECT * FROM ai_routing_policies WHERE intent = 'complex_reasoning' AND status = 'active'`)).rows[0];
+    return row || {
+      intent,
+      route_class: isRoutineGuruIntent(intent) ? "local_only" : "remote_allowed",
+      remote_allowed: !isRoutineGuruIntent(intent),
+      min_local_confidence: 0.70,
+      cache_allowed: isRoutineGuruIntent(intent),
+      cache_ttl_seconds: 86400,
+      emergency_bypass: intent === "safety"
+    };
+  }
+
+  async function aiBudgetMode({ resident, tenantId, emergencyBypass }) {
+    if (emergencyBypass) {
+      return { mode: "emergency_bypass", blocked: false, warning: false, throttled: false, reason: "emergency_bypass" };
+    }
+    const windows = (await query(
+      `SELECT * FROM ai_budget_windows
+       WHERE status = 'active'
+         AND now() >= window_start
+         AND now() <= window_end
+         AND (
+           scope_key IN ($1,$2,$3)
+           OR senior_id = $4
+           OR tenant_id = $5
+         )
+       ORDER BY created_at DESC`,
+      [`senior:${resident?.id}:daily`, `tenant:${tenantId}:monthly`, "global", resident?.id || null, tenantId]
+    )).rows;
+    for (const window of windows) {
+      const maxCalls = Number(window.max_remote_calls || 0);
+      const usedCalls = Number(window.remote_calls_used || 0);
+      const maxCost = Number(window.max_estimated_cost_usd || 0) || Number(window.max_estimated_cost_cents || 0) / 100;
+      const usedCost = Number(window.estimated_cost_usd_used || 0) || Number(window.estimated_cost_cents_used || 0) / 100;
+      const callRatio = maxCalls > 0 ? usedCalls / maxCalls : (maxCalls === 0 ? 1 : 0);
+      const costRatio = maxCost > 0 ? usedCost / maxCost : (maxCost === 0 ? 1 : 0);
+      const ratio = Math.max(callRatio, costRatio);
+      if (window.hard_cap_reached || ratio >= 1) return { mode: "local_only", blocked: true, warning: true, throttled: true, reason: "budget_exceeded", window };
+      if (ratio >= Number(window.throttle_threshold || 0.90)) return { mode: "throttled", blocked: false, warning: true, throttled: true, reason: "budget_throttled", window };
+      if (ratio >= Number(window.warning_threshold || 0.70)) return { mode: "warning", blocked: false, warning: true, throttled: false, reason: "budget_warning", window };
+    }
+    return { mode: "normal", blocked: false, warning: false, throttled: false, reason: "budget_available" };
+  }
+
+  async function incrementAiBudgetUsage(decision, estimatedCostUsd) {
+    if (!decision?.window) return;
+    await query(
+      `UPDATE ai_budget_windows
+       SET remote_calls_used = remote_calls_used + 1,
+           estimated_cost_usd_used = estimated_cost_usd_used + $2,
+           estimated_cost_cents_used = estimated_cost_cents_used + ($2 * 100),
+           hard_cap_reached = CASE
+             WHEN max_remote_calls > 0 AND remote_calls_used + 1 >= max_remote_calls THEN true
+             WHEN max_estimated_cost_usd > 0 AND estimated_cost_usd_used + $2 >= max_estimated_cost_usd THEN true
+             ELSE hard_cap_reached
+           END,
+           updated_at = now()
+       WHERE id = $1`,
+      [decision.window.id, estimatedCostUsd]
+    );
+  }
+
   async function recordGuruModelInvocation(residentId, provider, intent, route, metadata = {}) {
     try {
+      const seniorId = residentId || metadata.seniorId || null;
+      const tenantId = metadata.tenantId || "default";
+      const promptTokens = metadata.promptTokens || 0;
+      const completionTokens = metadata.completionTokens || 0;
+      const estimatedCostUsd = Number(metadata.estimatedCostUsd || metadata.estimated_cost_usd || 0);
       await query(
         `INSERT INTO guru_model_invocations (
-           resident_id, provider, model, intent, route, used_remote_ai,
-           prompt_tokens, completion_tokens, estimated_cost_cents, cache_hit, metadata
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+           resident_id, senior_id, tenant_id, provider, model, model_name, intent, route, used_remote_ai,
+           prompt_tokens, completion_tokens, estimated_cost_cents, estimated_cost_usd,
+           route_reason, local_confidence, cache_hit, latency_ms, metadata
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
         [
-          residentId || null,
+          seniorId,
+          seniorId,
+          tenantId,
           provider,
-          metadata.model || null,
+          metadata.modelName || metadata.model || null,
+          metadata.modelName || metadata.model || null,
           intent || "general",
           route,
           provider === "openai",
-          metadata.promptTokens || 0,
-          metadata.completionTokens || 0,
-          metadata.estimatedCostCents || 0,
+          promptTokens,
+          completionTokens,
+          metadata.estimatedCostCents || estimatedCostUsd * 100,
+          estimatedCostUsd,
+          metadata.routeReason || metadata.reason || "unspecified",
+          metadata.localConfidence ?? null,
           metadata.cacheHit === true,
+          metadata.latencyMs || 0,
           JSON.stringify(metadata)
         ]
+      );
+      await query(
+        `INSERT INTO ai_usage_daily (
+           usage_date, tenant_id, senior_id, provider, model_name, request_count, remote_request_count,
+           cache_hit_count, prompt_tokens, completion_tokens, estimated_cost_usd, latency_ms_total
+         ) VALUES (current_date,$1,$2,$3,$4,1,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (usage_date, tenant_id, senior_id, provider, model_name) DO UPDATE SET
+           request_count = ai_usage_daily.request_count + 1,
+           remote_request_count = ai_usage_daily.remote_request_count + EXCLUDED.remote_request_count,
+           cache_hit_count = ai_usage_daily.cache_hit_count + EXCLUDED.cache_hit_count,
+           prompt_tokens = ai_usage_daily.prompt_tokens + EXCLUDED.prompt_tokens,
+           completion_tokens = ai_usage_daily.completion_tokens + EXCLUDED.completion_tokens,
+           estimated_cost_usd = ai_usage_daily.estimated_cost_usd + EXCLUDED.estimated_cost_usd,
+           latency_ms_total = ai_usage_daily.latency_ms_total + EXCLUDED.latency_ms_total,
+           updated_at = now()`,
+        [tenantId, seniorId, provider, metadata.modelName || metadata.model || "", provider === "openai" ? 1 : 0, metadata.cacheHit === true ? 1 : 0, promptTokens, completionTokens, estimatedCostUsd, metadata.latencyMs || 0]
       );
     } catch (error) {
       console.warn("guru_model_invocation_failed", error.message);
     }
   }
 
-  async function cachedLocalGuruResponse(intent, message, resolvedIntent) {
+  function cacheAllowedForIntent(intent, policy) {
+    if (policy?.cache_allowed === false) return false;
+    return !["safety", "medication", "health_summary", "family", "emotional_support", "vision"].includes(intent);
+  }
+
+  async function cachedLocalGuruResponse(intent, message, resolvedIntent, policy = {}) {
+    if (!cacheAllowedForIntent(intent, policy)) {
+      return { reply: resolvedIntent.reply, navigateTo: resolvedIntent.navigateTo, cacheHit: false, cacheAllowed: false };
+    }
     const cacheKey = `${intent}:${localCacheKey(message)}`;
     if (!cacheKey.split(":")[1]) {
       return { reply: resolvedIntent.reply, cacheHit: false };
     }
     const cached = (await query(
-      `SELECT * FROM guru_response_cache WHERE cache_key = $1`,
+      `SELECT * FROM ai_response_cache WHERE cache_key = $1 AND expires_at > now()`,
       [cacheKey]
     )).rows[0];
     if (cached) {
-      await query(`UPDATE guru_response_cache SET hit_count = hit_count + 1, updated_at = now() WHERE id = $1`, [cached.id]);
-      return { reply: cached.reply, navigateTo: cached.navigate_to, cacheHit: true };
+      await query(`UPDATE ai_response_cache SET hit_count = hit_count + 1, updated_at = now() WHERE id = $1`, [cached.id]);
+      return { reply: cached.response, navigateTo: cached.metadata?.navigateTo || resolvedIntent.navigateTo, cacheHit: true, cacheAllowed: true };
     }
     await query(
-      `INSERT INTO guru_response_cache (cache_key, intent, reply, navigate_to, safety_level, metadata)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO ai_response_cache (cache_key, intent, response, provider, model_name, cache_safety, expires_at, metadata)
+       VALUES ($1,$2,$3,'local_small_language_model','tsg-local-intent-v2','safe', now() + ($4::int * interval '1 second'), $5)
        ON CONFLICT (cache_key) DO NOTHING`,
-      [cacheKey, intent, resolvedIntent.reply, resolvedIntent.navigateTo || null, intent === "safety" ? "elevated" : "normal", JSON.stringify({ source: "local_small_language_model" })]
+      [cacheKey, intent, resolvedIntent.reply, Number(policy.cache_ttl_seconds || 86400), JSON.stringify({ source: "local_small_language_model", navigateTo: resolvedIntent.navigateTo || null })]
     );
-    return { reply: resolvedIntent.reply, navigateTo: resolvedIntent.navigateTo, cacheHit: false };
+    return { reply: resolvedIntent.reply, navigateTo: resolvedIntent.navigateTo, cacheHit: false, cacheAllowed: true };
   }
 
-  async function resolveGuruWithLocalFirst({ req, user, resident, message, context, route, screen }) {
+  async function resolveGuruWithLocalFirst({ req, user, resident, message, context, route, screen, forcedIntent = null }) {
+    const startedAt = Date.now();
     const resolvedIntent = resolveGuruIntent(message, context);
-    const allowRemoteFallback = process.env.GURU_ALLOW_REMOTE_AI === "1" || process.env.GURU_ALLOW_REMOTE_AI === "true";
-    const routine = isRoutineGuruIntent(resolvedIntent.intent);
-    if (routine || !allowRemoteFallback) {
-      const cached = await cachedLocalGuruResponse(resolvedIntent.intent, message, resolvedIntent);
+    if (forcedIntent) {
+      resolvedIntent.intent = forcedIntent;
+      if (forcedIntent === "complex_reasoning") {
+        resolvedIntent.reply = "I can help think through this step by step. For now, I will use a careful local response and avoid remote AI unless policy and budget allow it.";
+      }
+      if (forcedIntent === "safety") {
+        resolvedIntent.reply = "Safety comes first. I can route SOS and trusted-circle actions without waiting on AI budget.";
+        resolvedIntent.navigateTo = "residentSafety";
+      }
+    }
+    const policy = await aiRoutingPolicy(resolvedIntent.intent);
+    const tenantId = tenantIdForResident(resident);
+    const localConfidence = localConfidenceForIntent(resolvedIntent.intent, message);
+    const budget = await aiBudgetMode({ resident, tenantId, emergencyBypass: policy.emergency_bypass === true });
+    const remoteGloballyEnabled = process.env.GURU_REMOTE_AI_ENABLED === "true" || process.env.GURU_ALLOW_REMOTE_AI === "true" || process.env.GURU_ALLOW_REMOTE_AI === "1";
+    const remoteEligible = policy.remote_allowed === true && remoteGloballyEnabled && localConfidence < Number(policy.min_local_confidence || 0.70) && !budget.blocked && !budget.throttled;
+    const routeReason = policy.emergency_bypass
+      ? "emergency_bypass"
+      : remoteEligible
+        ? "remote_allowed_low_local_confidence"
+        : budget.blocked || budget.throttled
+          ? budget.reason
+          : policy.remote_allowed
+            ? "local_fallback_remote_disabled_or_confident"
+            : "policy_local_only";
+    if (!remoteEligible) {
+      const cached = await cachedLocalGuruResponse(resolvedIntent.intent, message, resolvedIntent, policy);
       await recordGuruModelInvocation(resident?.id, "local_small_language_model", resolvedIntent.intent, route, {
+        tenantId,
         screen,
+        modelName: "tsg-local-intent-v2",
         cacheHit: cached.cacheHit,
-        remoteFallbackAllowed: allowRemoteFallback,
-        reason: routine ? "routine_intent" : "remote_fallback_disabled"
+        routeReason,
+        localConfidence,
+        budgetMode: budget.mode,
+        blockedByBudget: budget.blocked,
+        latencyMs: Date.now() - startedAt
       });
+      if ((policy.remote_allowed || budget.blocked || budget.throttled) && !policy.emergency_bypass) {
+        await query(
+          `INSERT INTO ai_fallback_events (senior_id, tenant_id, intent, requested_provider, actual_provider, route_reason, local_confidence, budget_mode, budget_scope, metadata)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [resident?.id || null, tenantId, resolvedIntent.intent, "openai", "local_small_language_model", routeReason, localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ screen })]
+        );
+      }
       return {
         resolvedIntent,
         reply: cached.reply,
         provider: "local_small_language_model",
-        model: "tsg-local-intent-v1",
+        model: "tsg-local-intent-v2",
         configured: false,
         navigateTo: cached.navigateTo || resolvedIntent.navigateTo,
-        cacheHit: cached.cacheHit
+        cacheHit: cached.cacheHit,
+        decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: budget.blocked, emergencyBypass: policy.emergency_bypass === true, usedRemoteAi: false }
       };
     }
     try {
@@ -1272,10 +1431,21 @@ function createProductionApi(pool) {
         system: buildSeniorGuruSystemPrompt(context),
         messages: [{ role: "user", content: message }]
       });
+      const promptTokens = estimateTokensFromText(JSON.stringify(context)) + estimateTokensFromText(message);
+      const completionTokens = estimateTokensFromText(ai.text || "");
+      const estimatedCostUsd = estimateOpenAiCostUsd(promptTokens, completionTokens);
+      await incrementAiBudgetUsage(budget, estimatedCostUsd);
       await recordGuruModelInvocation(resident?.id, "openai", resolvedIntent.intent, route, {
+        tenantId,
         screen,
-        model: process.env.OPENAI_MODEL || null,
-        remoteFallbackAllowed: true
+        modelName: process.env.OPENAI_MODEL || null,
+        routeReason,
+        localConfidence,
+        promptTokens,
+        completionTokens,
+        estimatedCostUsd,
+        budgetMode: budget.mode,
+        latencyMs: Date.now() - startedAt
       });
       return {
         resolvedIntent,
@@ -1284,23 +1454,35 @@ function createProductionApi(pool) {
         model: process.env.OPENAI_MODEL || null,
         configured: ai.configured,
         navigateTo: resolvedIntent.navigateTo,
-        cacheHit: false
+        cacheHit: false,
+        decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: false, usedRemoteAi: true }
       };
     } catch (error) {
       await recordGuruModelInvocation(resident?.id, "local_small_language_model", resolvedIntent.intent, route, {
+        tenantId,
         screen,
-        remoteFallbackAllowed: true,
-        fallbackReason: error.message
+        modelName: "tsg-local-intent-v2",
+        routeReason: "remote_error_local_fallback",
+        localConfidence,
+        fallbackReason: error.message,
+        budgetMode: budget.mode,
+        latencyMs: Date.now() - startedAt
       });
+      await query(
+        `INSERT INTO ai_fallback_events (senior_id, tenant_id, intent, requested_provider, actual_provider, route_reason, local_confidence, budget_mode, budget_scope, metadata)
+         VALUES ($1,$2,$3,'openai','local_small_language_model',$4,$5,$6,$7,$8)`,
+        [resident?.id || null, tenantId, resolvedIntent.intent, "remote_error_local_fallback", localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ error: error.message, screen })]
+      );
       return {
         resolvedIntent,
         reply: resolvedIntent.reply,
         provider: "local_small_language_model",
-        model: "tsg-local-intent-v1",
+        model: "tsg-local-intent-v2",
         configured: false,
         navigateTo: resolvedIntent.navigateTo,
         cacheHit: false,
-        error: error.message
+        error: error.message,
+        decision: { routeReason: "remote_error_local_fallback", localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: false, usedRemoteAi: false }
       };
     }
   }
@@ -2701,6 +2883,210 @@ function createProductionApi(pool) {
 
     if (req.method === "GET" && url.pathname === "/api/me") {
       return { user };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/ai-usage/summary") {
+      requireRole(user, ["superadmin"]);
+      const since = url.searchParams.get("since") || "30 days";
+      const rows = (await query(
+        `SELECT provider, model_name,
+                sum(request_count)::int AS requests,
+                sum(remote_request_count)::int AS remote_requests,
+                sum(cache_hit_count)::int AS cache_hits,
+                sum(prompt_tokens)::int AS prompt_tokens,
+                sum(completion_tokens)::int AS completion_tokens,
+                sum(estimated_cost_usd)::numeric AS estimated_cost_usd,
+                sum(latency_ms_total)::bigint AS latency_ms_total
+         FROM ai_usage_daily
+         WHERE usage_date >= current_date - $1::interval
+         GROUP BY provider, model_name
+         ORDER BY requests DESC`,
+        [since]
+      )).rows;
+      const totals = rows.reduce((acc, row) => {
+        acc.requests += Number(row.requests || 0);
+        acc.remoteRequests += Number(row.remote_requests || 0);
+        acc.cacheHits += Number(row.cache_hits || 0);
+        acc.promptTokens += Number(row.prompt_tokens || 0);
+        acc.completionTokens += Number(row.completion_tokens || 0);
+        acc.estimatedCostUsd += Number(row.estimated_cost_usd || 0);
+        acc.latencyMsTotal += Number(row.latency_ms_total || 0);
+        return acc;
+      }, { requests: 0, remoteRequests: 0, cacheHits: 0, promptTokens: 0, completionTokens: 0, estimatedCostUsd: 0, latencyMsTotal: 0 });
+      return {
+        range: since,
+        totals,
+        byProvider: rows.map(row => ({
+          provider: row.provider,
+          modelName: row.model_name,
+          requests: Number(row.requests || 0),
+          remoteRequests: Number(row.remote_requests || 0),
+          cacheHits: Number(row.cache_hits || 0),
+          promptTokens: Number(row.prompt_tokens || 0),
+          completionTokens: Number(row.completion_tokens || 0),
+          estimatedCostUsd: Number(row.estimated_cost_usd || 0),
+          latencyMsTotal: Number(row.latency_ms_total || 0)
+        }))
+      };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/ai-usage/by-tenant") {
+      requireRole(user, ["superadmin"]);
+      const rows = (await query(
+        `SELECT tenant_id,
+                sum(request_count)::int AS requests,
+                sum(remote_request_count)::int AS remote_requests,
+                sum(cache_hit_count)::int AS cache_hits,
+                sum(prompt_tokens)::int AS prompt_tokens,
+                sum(completion_tokens)::int AS completion_tokens,
+                sum(estimated_cost_usd)::numeric AS estimated_cost_usd
+         FROM ai_usage_daily
+         WHERE usage_date >= current_date - interval '30 days'
+         GROUP BY tenant_id
+         ORDER BY estimated_cost_usd DESC, requests DESC`
+      )).rows;
+      return { tenants: rows.map(row => ({
+        tenantId: row.tenant_id,
+        requests: Number(row.requests || 0),
+        remoteRequests: Number(row.remote_requests || 0),
+        cacheHits: Number(row.cache_hits || 0),
+        promptTokens: Number(row.prompt_tokens || 0),
+        completionTokens: Number(row.completion_tokens || 0),
+        estimatedCostUsd: Number(row.estimated_cost_usd || 0)
+      })) };
+    }
+
+    const aiUsageSeniorMatch = url.pathname.match(/^\/api\/admin\/ai-usage\/by-senior\/([^/]+)$/);
+    if (req.method === "GET" && aiUsageSeniorMatch) {
+      requireRole(user, ["superadmin"]);
+      const seniorId = aiUsageSeniorMatch[1];
+      const rows = (await query(
+        `SELECT usage_date, provider, model_name, request_count, remote_request_count, cache_hit_count,
+                prompt_tokens, completion_tokens, estimated_cost_usd, latency_ms_total
+         FROM ai_usage_daily
+         WHERE senior_id = $1
+         ORDER BY usage_date DESC, provider`,
+        [seniorId]
+      )).rows;
+      return { seniorId, usage: rows.map(row => ({
+        usageDate: row.usage_date,
+        provider: row.provider,
+        modelName: row.model_name,
+        requests: row.request_count,
+        remoteRequests: row.remote_request_count,
+        cacheHits: row.cache_hit_count,
+        promptTokens: row.prompt_tokens,
+        completionTokens: row.completion_tokens,
+        estimatedCostUsd: Number(row.estimated_cost_usd || 0),
+        latencyMsTotal: Number(row.latency_ms_total || 0)
+      })) };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/ai-routing/policies") {
+      requireRole(user, ["superadmin"]);
+      const policies = (await query(`SELECT * FROM ai_routing_policies ORDER BY intent`)).rows;
+      return { policies };
+    }
+
+    const aiPolicyPatchMatch = url.pathname.match(/^\/api\/admin\/ai-routing\/policies\/([^/]+)$/);
+    if (req.method === "PATCH" && aiPolicyPatchMatch) {
+      requireRole(user, ["superadmin"]);
+      const existing = (await query(`SELECT * FROM ai_routing_policies WHERE id = $1`, [aiPolicyPatchMatch[1]])).rows[0];
+      if (!existing) {
+        const error = new Error("AI routing policy not found");
+        error.status = 404;
+        throw error;
+      }
+      const updated = (await query(
+        `UPDATE ai_routing_policies SET
+           route_class = COALESCE($2, route_class),
+           remote_allowed = COALESCE($3, remote_allowed),
+           min_local_confidence = COALESCE($4, min_local_confidence),
+           cache_ttl_seconds = COALESCE($5, cache_ttl_seconds),
+           cache_allowed = COALESCE($6, cache_allowed),
+           emergency_bypass = COALESCE($7, emergency_bypass),
+           degradation_mode = COALESCE($8, degradation_mode),
+           status = COALESCE($9, status),
+           notes = COALESCE($10, notes),
+           metadata = metadata || $11::jsonb,
+           updated_at = now()
+         WHERE id = $1 RETURNING *`,
+        [
+          existing.id,
+          payload.routeClass || payload.route_class || null,
+          payload.remoteAllowed ?? payload.remote_allowed ?? null,
+          payload.minLocalConfidence ?? payload.min_local_confidence ?? null,
+          payload.cacheTtlSeconds ?? payload.cache_ttl_seconds ?? null,
+          payload.cacheAllowed ?? payload.cache_allowed ?? null,
+          payload.emergencyBypass ?? payload.emergency_bypass ?? null,
+          payload.degradationMode || payload.degradation_mode || null,
+          payload.status || null,
+          payload.notes || null,
+          JSON.stringify(payload.metadata || {})
+        ]
+      )).rows[0];
+      await audit(req, user, "ai_routing_policy_updated", "ai_routing_policy", updated.id, { intent: updated.intent }, "warning");
+      return { policy: updated };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/ai-budget/windows") {
+      requireRole(user, ["superadmin"]);
+      const windowType = payload.windowType || payload.window_type || "custom";
+      const tenantId = payload.tenantId || payload.tenant_id || null;
+      const seniorId = payload.seniorId || payload.senior_id || null;
+      const scope = payload.scope || (seniorId ? "senior_daily" : tenantId ? "tenant_monthly" : "global");
+      const now = new Date();
+      let windowStart = payload.windowStart || payload.window_start || null;
+      let windowEnd = payload.windowEnd || payload.window_end || null;
+      if (!windowStart || !windowEnd) {
+        if (windowType === "monthly" || scope === "tenant_monthly") {
+          windowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+          windowEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+        } else {
+          windowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+          windowEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+        }
+      }
+      const scopeKey = payload.scopeKey || payload.scope_key || (seniorId ? `senior:${seniorId}:daily` : tenantId ? `tenant:${tenantId}:monthly` : "global");
+      const maxUsd = Number(payload.maxEstimatedCostUsd ?? payload.max_estimated_cost_usd ?? 0);
+      const windowRow = (await query(
+        `INSERT INTO ai_budget_windows (
+           scope_key, tenant_id, senior_id, window_type, window_start, window_end,
+           max_remote_calls, max_estimated_cost_cents, max_estimated_cost_usd,
+           warning_threshold, throttle_threshold, status, metadata
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         ON CONFLICT (scope_key, window_start, window_end) DO UPDATE SET
+           tenant_id = EXCLUDED.tenant_id,
+           senior_id = EXCLUDED.senior_id,
+           window_type = EXCLUDED.window_type,
+           max_remote_calls = EXCLUDED.max_remote_calls,
+           max_estimated_cost_cents = EXCLUDED.max_estimated_cost_cents,
+           max_estimated_cost_usd = EXCLUDED.max_estimated_cost_usd,
+           warning_threshold = EXCLUDED.warning_threshold,
+           throttle_threshold = EXCLUDED.throttle_threshold,
+           status = EXCLUDED.status,
+           metadata = ai_budget_windows.metadata || EXCLUDED.metadata,
+           hard_cap_reached = false,
+           updated_at = now()
+         RETURNING *`,
+        [
+          scopeKey,
+          tenantId,
+          seniorId,
+          windowType,
+          windowStart,
+          windowEnd,
+          payload.maxRemoteCalls ?? payload.max_remote_calls ?? 0,
+          maxUsd * 100,
+          maxUsd,
+          payload.warningThreshold ?? payload.warning_threshold ?? 0.70,
+          payload.throttleThreshold ?? payload.throttle_threshold ?? 0.90,
+          payload.status || "active",
+          JSON.stringify({ createdBy: user.id, scope })
+        ]
+      )).rows[0];
+      await audit(req, user, "ai_budget_window_upserted", "ai_budget_window", windowRow.id, { scopeKey, seniorId, tenantId }, "warning");
+      return { window: windowRow };
     }
 
     if (req.method === "GET" && url.pathname === "/api/state") {
@@ -6016,6 +6402,41 @@ function createProductionApi(pool) {
         throw error;
       }
       return calculateAndPersistGuruRisk(req, user, resident);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/guru/model/route-debug") {
+      requireRole(user, ["senior", "superadmin"]);
+      const resident = user.role === "senior"
+        ? await getResidentForUser(user)
+        : (await query(`SELECT * FROM residents WHERE id = $1`, [required(payload.seniorId, "seniorId")])).rows[0];
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const message = String(payload.message || "").trim() || "Route this request";
+      const contextIntelligence = await buildContextIntelligenceState(resident, evaluateHealthVitals([]));
+      const guru = await resolveGuruWithLocalFirst({
+        req,
+        user,
+        resident,
+        message,
+        context: { resident, contextIntelligence },
+        route: "/api/guru/model/route-debug",
+        screen: "route-debug",
+        forcedIntent: payload.intent || null
+      });
+      return {
+        intent: guru.resolvedIntent.intent,
+        reply: guru.reply,
+        provider: guru.provider,
+        model: guru.model,
+        decision: guru.decision || {
+          routeReason: "legacy",
+          usedRemoteAi: guru.provider === "openai",
+          cacheHit: guru.cacheHit === true
+        }
+      };
     }
 
     if (req.method === "GET" && url.pathname === "/api/guru/daily-status") {
