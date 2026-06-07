@@ -326,6 +326,54 @@ function createProductionApi(pool) {
     return user.role === "superadmin";
   }
 
+  const DEFAULT_GROUP_PERMISSIONS = {
+    owner: ["manage_group", "manage_rules", "manage_roles", "add_members", "remove_members", "post", "comment", "react", "moderate_content"],
+    admin: ["add_members", "remove_members", "post", "comment", "react", "moderate_content"],
+    moderator: ["post", "comment", "react", "moderate_content"],
+    member: ["post", "comment", "react"]
+  };
+
+  const DEFAULT_GROUP_RULES = {
+    posting: "members",
+    invites: "admins",
+    memberApproval: "admins",
+    commenting: "members",
+    visibility: "invite_only"
+  };
+
+  function groupRolePermissions(group, member) {
+    const role = member?.member_role || "member";
+    const configured = group?.permissions && typeof group.permissions === "object" ? group.permissions : DEFAULT_GROUP_PERMISSIONS;
+    return [...new Set([...(configured[role] || []), ...(member?.permissions || [])])];
+  }
+
+  async function loadActiveGroupMember(groupId, userId) {
+    return (await query(
+      `SELECT * FROM social_group_members
+       WHERE group_id = $1 AND user_id = $2 AND status = 'active'
+       LIMIT 1`,
+      [groupId, userId]
+    )).rows[0] || null;
+  }
+
+  async function requireGroupPermission(user, groupId, permission) {
+    const group = (await query(`SELECT * FROM social_groups WHERE id = $1 AND status = 'active'`, [groupId])).rows[0];
+    if (!group) {
+      const error = new Error("Group not found");
+      error.status = 404;
+      throw error;
+    }
+    const member = await loadActiveGroupMember(groupId, user.id);
+    const permissions = groupRolePermissions(group, member);
+    const allowed = user.role === "superadmin" || group.owner_user_id === user.id || permissions.includes(permission);
+    if (!allowed) {
+      const error = new Error(`Group permission required: ${permission}`);
+      error.status = 403;
+      throw error;
+    }
+    return { group, member, permissions };
+  }
+
   async function getResidentForUser(user) {
     const result = await query(`SELECT * FROM residents WHERE user_id = $1`, [user.id]);
     return result.rows[0];
@@ -7547,10 +7595,20 @@ function createProductionApi(pool) {
       const groupType = ["family", "friends", "caregivers", "community", "activity"].includes(payload.groupType) ? payload.groupType : "community";
       const group = await transaction(async tx => {
         const row = (await tx(
-          `INSERT INTO social_groups (resident_id, owner_user_id, name, description, group_type, visibility, metadata)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
+          `INSERT INTO social_groups (resident_id, owner_user_id, name, description, group_type, visibility, rules, permissions, metadata)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
            RETURNING *`,
-          [resident?.id || payload.residentId || null, user.id, name, payload.description || "", groupType, payload.visibility || "invite_only", JSON.stringify(payload.metadata || {})]
+          [
+            resident?.id || payload.residentId || null,
+            user.id,
+            name,
+            payload.description || "",
+            groupType,
+            payload.visibility || "invite_only",
+            JSON.stringify(payload.rules || DEFAULT_GROUP_RULES),
+            JSON.stringify(payload.permissions || DEFAULT_GROUP_PERMISSIONS),
+            JSON.stringify(payload.metadata || {})
+          ]
         )).rows[0];
         await tx(
           `INSERT INTO social_group_members (group_id, user_id, member_role, source, status, added_by)
@@ -7564,23 +7622,69 @@ function createProductionApi(pool) {
       return { group };
     }
 
-    const groupMembersMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/members$/);
-    if (req.method === "POST" && groupMembersMatch) {
+    const groupDetailMatch = url.pathname.match(/^\/api\/groups\/([^/]+)$/);
+    if (req.method === "GET" && groupDetailMatch) {
       requireRole(user, ["senior", "trusted_person"]);
-      const groupId = groupMembersMatch[1];
+      const groupId = groupDetailMatch[1];
       const group = (await query(`SELECT * FROM social_groups WHERE id = $1 AND status = 'active'`, [groupId])).rows[0];
       if (!group) {
         const error = new Error("Group not found");
         error.status = 404;
         throw error;
       }
-      const owner = group.owner_user_id === user.id;
-      const admin = owner || (await query(`SELECT 1 FROM social_group_members WHERE group_id = $1 AND user_id = $2 AND member_role IN ('owner','admin') AND status = 'active'`, [groupId, user.id])).rows[0];
-      if (!admin) {
-        const error = new Error("Only group owners and admins can add members");
+      const viewerMember = await loadActiveGroupMember(groupId, user.id);
+      const isOwner = group.owner_user_id === user.id;
+      if (!viewerMember && !isOwner) {
+        const error = new Error("You are not a member of this group");
         error.status = 403;
         throw error;
       }
+      const members = (await query(
+        `SELECT gm.*, u.display_name, u.phone, u.email, u.role AS app_role
+         FROM social_group_members gm
+         JOIN users u ON u.id = gm.user_id
+         WHERE gm.group_id = $1 AND gm.status = 'active'
+         ORDER BY CASE gm.member_role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 3 ELSE 4 END, u.display_name`,
+        [groupId]
+      )).rows;
+      return { group, viewerPermissions: groupRolePermissions(group, viewerMember || { member_role: "owner" }), members };
+    }
+
+    const groupRulesMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/rules$/);
+    if (req.method === "PATCH" && groupRulesMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const groupId = groupRulesMatch[1];
+      const { group } = await requireGroupPermission(user, groupId, "manage_rules");
+      const beforeState = { rules: group.rules || {}, permissions: group.permissions || DEFAULT_GROUP_PERMISSIONS, visibility: group.visibility };
+      const rules = payload.rules && typeof payload.rules === "object" ? payload.rules : {};
+      const permissions = payload.permissions && typeof payload.permissions === "object" ? payload.permissions : null;
+      const updated = await transaction(async tx => {
+        const row = (await tx(
+          `UPDATE social_groups SET
+             rules = rules || $2::jsonb,
+             permissions = CASE WHEN $3::jsonb = '{}'::jsonb THEN permissions ELSE permissions || $3::jsonb END,
+             visibility = COALESCE($4, visibility),
+             updated_at = now()
+           WHERE id = $1
+           RETURNING *`,
+          [groupId, JSON.stringify(rules), JSON.stringify(permissions || {}), payload.visibility || null]
+        )).rows[0];
+        await tx(
+          `INSERT INTO social_group_rule_events (group_id, actor_user_id, action, before_state, after_state)
+           VALUES ($1,$2,'rules_updated',$3,$4)`,
+          [groupId, user.id, JSON.stringify(beforeState), JSON.stringify({ rules: row.rules, permissions: row.permissions, visibility: row.visibility })]
+        );
+        return row;
+      });
+      await audit(req, user, "social_group_rules_updated", "social_group", groupId, { fields: Object.keys(payload) }, "warning");
+      return { group: updated };
+    }
+
+    const groupMembersMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/members$/);
+    if (req.method === "POST" && groupMembersMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const groupId = groupMembersMatch[1];
+      await requireGroupPermission(user, groupId, "add_members");
       const userIds = Array.isArray(payload.userIds) ? payload.userIds : [payload.userId].filter(Boolean);
       const members = [];
       for (const memberUserId of userIds) {
@@ -7599,6 +7703,73 @@ function createProductionApi(pool) {
       }
       await audit(req, user, "social_group_members_added", "social_group", groupId, { count: members.length }, "info");
       return { members };
+    }
+
+    const groupMemberMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/members\/([^/]+)$/);
+    if (groupMemberMatch && ["PATCH", "DELETE"].includes(req.method)) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const groupId = groupMemberMatch[1];
+      const memberId = groupMemberMatch[2];
+      const permission = req.method === "PATCH" ? "manage_roles" : "remove_members";
+      const { group } = await requireGroupPermission(user, groupId, permission);
+      const target = (await query(`SELECT * FROM social_group_members WHERE id = $1 AND group_id = $2`, [memberId, groupId])).rows[0];
+      if (!target) {
+        const error = new Error("Group member not found");
+        error.status = 404;
+        throw error;
+      }
+      if (target.member_role === "owner" && target.user_id !== user.id) {
+        const error = new Error("Group owner cannot be changed by another member");
+        error.status = 403;
+        throw error;
+      }
+      if (req.method === "PATCH") {
+        const allowedRoles = new Set(["admin", "moderator", "member"]);
+        const nextRole = payload.memberRole || payload.member_role || target.member_role;
+        if (!allowedRoles.has(nextRole)) {
+          const error = new Error("Invalid group member role");
+          error.status = 400;
+          throw error;
+        }
+        const updated = (await query(
+          `UPDATE social_group_members SET
+             member_role = $3,
+             permissions = COALESCE($4::text[], permissions),
+             updated_at = now()
+           WHERE id = $1 AND group_id = $2
+           RETURNING *`,
+          [memberId, groupId, nextRole, Array.isArray(payload.permissions) ? payload.permissions : null]
+        )).rows[0];
+        await query(
+          `INSERT INTO social_group_rule_events (group_id, actor_user_id, action, before_state, after_state)
+           VALUES ($1,$2,'member_role_updated',$3,$4)`,
+          [groupId, user.id, JSON.stringify(target), JSON.stringify(updated)]
+        );
+        await audit(req, user, "social_group_member_role_updated", "social_group_member", memberId, { groupId, memberRole: nextRole }, "warning");
+        return { member: updated, group };
+      }
+      if (target.user_id === group.owner_user_id) {
+        const error = new Error("Group owner cannot be removed");
+        error.status = 403;
+        throw error;
+      }
+      const removed = (await query(
+        `UPDATE social_group_members SET
+           status = 'removed',
+           removed_by = $3,
+           removed_at = now(),
+           updated_at = now()
+         WHERE id = $1 AND group_id = $2
+         RETURNING *`,
+        [memberId, groupId, user.id]
+      )).rows[0];
+      await query(
+        `INSERT INTO social_group_rule_events (group_id, actor_user_id, action, before_state, after_state)
+         VALUES ($1,$2,'member_removed',$3,$4)`,
+        [groupId, user.id, JSON.stringify(target), JSON.stringify(removed)]
+      );
+      await audit(req, user, "social_group_member_removed", "social_group_member", memberId, { groupId }, "warning");
+      return { member: removed };
     }
 
     if (req.method === "GET" && url.pathname === "/api/posts") {

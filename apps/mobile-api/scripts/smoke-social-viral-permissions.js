@@ -201,6 +201,51 @@ async function main() {
     body: JSON.stringify({ userIds: [family.user.id], source: "trusted_circle_invite" })
   });
 
+  let groupDetail = await request(`/api/groups/${group.group.id}`, { headers: auth(senior.token) });
+  const familyMember = groupDetail.members.find(member => member.user_id === family.user.id);
+  assert.ok(familyMember?.id, "group detail must show added family member");
+
+  const promoted = await request(`/api/groups/${group.group.id}/members/${familyMember.id}`, {
+    method: "PATCH",
+    headers: auth(senior.token),
+    body: JSON.stringify({ memberRole: "admin", permissions: ["manage_roles"] })
+  });
+  assert.equal(promoted.member.member_role, "admin", "owner must promote member to admin");
+  assert.ok(promoted.member.permissions.includes("manage_roles"), "member-specific permissions must persist");
+
+  const rules = await request(`/api/groups/${group.group.id}/rules`, {
+    method: "PATCH",
+    headers: auth(senior.token),
+    body: JSON.stringify({
+      rules: {
+        posting: "members",
+        invites: "admins",
+        memberApproval: "admins",
+        moderation: "admins"
+      },
+      permissions: {
+        admin: ["add_members", "remove_members", "manage_roles", "post", "comment", "react", "moderate_content"]
+      }
+    })
+  });
+  assert.equal(rules.group.rules.invites, "admins", "group invite rule must persist");
+  assert.ok(rules.group.permissions.admin.includes("manage_roles"), "group admin permissions must persist");
+
+  await request(`/api/groups/${group.group.id}/members`, {
+    method: "POST",
+    headers: auth(family.token),
+    body: JSON.stringify({ userIds: [friend.user.id], source: "admin_add" })
+  });
+  groupDetail = await request(`/api/groups/${group.group.id}`, { headers: auth(senior.token) });
+  const friendMember = groupDetail.members.find(member => member.user_id === friend.user.id);
+  assert.ok(friendMember?.id, "group admin must add friend member");
+
+  const removed = await request(`/api/groups/${group.group.id}/members/${friendMember.id}`, {
+    method: "DELETE",
+    headers: auth(family.token)
+  });
+  assert.equal(removed.member.status, "removed", "group admin must remove member");
+
   console.log("Social viral permissions smoke passed");
 }
 

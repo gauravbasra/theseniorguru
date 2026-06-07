@@ -75,7 +75,7 @@ function send(res, status, body) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS"
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS"
   });
   res.end(JSON.stringify(body));
 }
@@ -1879,7 +1879,7 @@ function appHandler(req, res) {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS"
+      "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS"
     });
     res.end();
     return;
