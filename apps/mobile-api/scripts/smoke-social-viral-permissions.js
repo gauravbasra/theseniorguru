@@ -89,15 +89,42 @@ async function main() {
     method: "POST",
     headers: auth(senior.token),
     body: JSON.stringify({
+      title: "Social smoke update",
       body: "Social smoke post from real API state",
       audience: "community",
-      mediaObjectIds: [profilePhoto.mediaObject.id]
+      mediaObjectIds: [profilePhoto.mediaObject.id],
+      targetConnectionTypes: ["family", "friend", "caregiver"]
     })
   });
   assert.ok(post.post?.id, "post creation must persist a community post");
+  assert.ok(post.post.media_object_ids?.includes(profilePhoto.mediaObject.id), "post must persist image media attachment");
+
+  const editedPost = await request(`/api/posts/${post.post.id}`, {
+    method: "PATCH",
+    headers: auth(senior.token),
+    body: JSON.stringify({
+      title: "Edited social smoke update",
+      body: "Edited social smoke post from real API state"
+    })
+  });
+  assert.equal(editedPost.post.title, "Edited social smoke update", "post editor must update title");
+  assert.ok(editedPost.post.edited_at, "post editor must stamp edited_at");
+
+  const deletedPost = await request("/api/posts", {
+    method: "POST",
+    headers: auth(senior.token),
+    body: JSON.stringify({ body: "Delete me from feed smoke", audience: "community" })
+  });
+  const deleted = await request(`/api/posts/${deletedPost.post.id}`, {
+    method: "DELETE",
+    headers: auth(senior.token)
+  });
+  assert.equal(deleted.post.status, "hidden", "post delete must soft-hide post");
+  assert.ok(deleted.post.deleted_at, "post delete must stamp deleted_at");
 
   const feed = await request("/api/posts", { headers: auth(senior.token) });
   assert.ok(feed.posts.some(item => item.id === post.post.id), "feed must read created post");
+  assert.ok(!feed.posts.some(item => item.id === deletedPost.post.id), "feed must not show deleted post");
 
   const like = await request(`/api/posts/${post.post.id}/like`, {
     method: "POST",
@@ -194,6 +221,59 @@ async function main() {
     })
   });
   assert.equal(approval.connection.health_access_status, "approved", "senior approval must update health access");
+
+  const caregiverInvite = await request("/api/circle/invites", {
+    method: "POST",
+    headers: auth(senior.token),
+    body: JSON.stringify({
+      connectionType: "caregiver",
+      channel: "sms",
+      name: "Social Smoke Caregiver",
+      email: "caregiver-social-smoke@theseniorguru.test",
+      permissions: ["messages", "safety", "wellness"]
+    })
+  });
+  const caregiver = await roleSession("trusted_person", "Social Smoke Caregiver");
+  const acceptedCaregiver = await request("/api/circle/accept-token", {
+    method: "POST",
+    headers: auth(caregiver.token),
+    body: JSON.stringify({ token: caregiverInvite.token })
+  });
+  assert.equal(acceptedCaregiver.connection.connection_type, "caregiver", "caregiver invite must store caregiver role");
+
+  const business = await roleSession("business", "Social Smoke Business");
+  const ad = await request("/api/business/ads", {
+    method: "POST",
+    headers: auth(business.token),
+    body: JSON.stringify({
+      title: "Social Smoke Service Ad",
+      body: "Helpful local services for seniors and families.",
+      ctaLabel: "View service",
+      category: "transportation",
+      frequency: 4,
+      targetConnectionTypes: ["family", "friend", "caregiver"]
+    })
+  });
+  assert.ok(ad.ad?.id, "business ad must persist");
+
+  const familyFeed = await request("/api/feed", { headers: auth(family.token) });
+  assert.ok(familyFeed.items.some(item => item.itemType === "post" && item.id === post.post.id), "family feed must show circle post");
+  assert.ok(familyFeed.items.some(item => item.itemType === "ad" && item.id === ad.ad.id), "family feed must include business ad insertion");
+
+  const friendFeed = await request("/api/feed", { headers: auth(friend.token) });
+  assert.ok(friendFeed.items.some(item => item.itemType === "post" && item.id === post.post.id), "friend feed must show circle post");
+
+  const caregiverFeed = await request("/api/feed", { headers: auth(caregiver.token) });
+  assert.ok(caregiverFeed.items.some(item => item.itemType === "post" && item.id === post.post.id), "caregiver feed must show circle post");
+
+  const friendPrefs = await request("/api/feed/preferences", {
+    method: "PATCH",
+    headers: auth(friend.token),
+    body: JSON.stringify({ showFriends: false, showBusinessAds: false })
+  });
+  assert.equal(friendPrefs.preferences.show_friends, false, "feed preferences must persist hidden friend feed choice");
+  const mutedFriendFeed = await request("/api/feed", { headers: auth(friend.token) });
+  assert.equal(mutedFriendFeed.items.length, 0, "feed preferences must hide feed items when member disables their feed type");
 
   await request(`/api/groups/${group.group.id}/members`, {
     method: "POST",

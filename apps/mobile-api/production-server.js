@@ -374,6 +374,82 @@ function createProductionApi(pool) {
     return { group, member, permissions };
   }
 
+  function normalizeConnectionTypes(value) {
+    const allowed = new Set(["family", "friend", "caregiver"]);
+    const values = Array.isArray(value) ? value : String(value || "").split(",");
+    const normalized = values.map(item => normalizeTrustConnectionType(item)).filter(item => allowed.has(item));
+    return normalized.length ? [...new Set(normalized)] : ["family", "friend", "caregiver"];
+  }
+
+  async function feedContextForUser(user) {
+    if (user.role === "senior") {
+      const resident = await getResidentForUser(user);
+      return { resident, connectionType: "senior" };
+    }
+    if (user.role === "trusted_person") {
+      const connection = (await query(
+        `SELECT tc.*, r.community, senior.display_name AS resident_name
+         FROM trusted_connections tc
+         JOIN residents r ON r.id = tc.resident_id
+         JOIN users senior ON senior.id = r.user_id
+         WHERE tc.trusted_user_id = $1 AND tc.status = 'approved'
+         ORDER BY tc.updated_at DESC LIMIT 1`,
+        [user.id]
+      )).rows[0];
+      return { resident: connection ? { id: connection.resident_id, community: connection.community, resident_name: connection.resident_name } : null, connectionType: connection?.connection_type || "friend", connection };
+    }
+    return { resident: null, connectionType: user.role };
+  }
+
+  async function feedPreferencesFor(userId, residentId) {
+    if (!residentId) {
+      return {
+        show_family: true,
+        show_friends: true,
+        show_caregivers: true,
+        show_community: true,
+        show_business_ads: true,
+        muted_group_ids: [],
+        muted_user_ids: [],
+        preferred_categories: []
+      };
+    }
+    return (await query(
+      `INSERT INTO social_feed_preferences (user_id, resident_id)
+       VALUES ($1,$2)
+       ON CONFLICT (user_id, resident_id) DO UPDATE SET updated_at = social_feed_preferences.updated_at
+       RETURNING *`,
+      [userId, residentId]
+    )).rows[0];
+  }
+
+  function preferenceAllowsConnection(preferences, connectionType) {
+    if (connectionType === "senior") return true;
+    if (connectionType === "family") return preferences.show_family !== false;
+    if (connectionType === "friend") return preferences.show_friends !== false;
+    if (connectionType === "caregiver") return preferences.show_caregivers !== false;
+    return true;
+  }
+
+  function interleaveFeedAds(posts, ads, frequency = 4) {
+    if (!ads.length) return posts;
+    const result = [];
+    let adIndex = 0;
+    for (const post of posts) {
+      result.push(post);
+      const organicCount = result.filter(item => item.itemType === "post").length;
+      if (organicCount > 0 && organicCount % frequency === 0) {
+        const ad = ads[adIndex % ads.length];
+        result.push({ itemType: "ad", ...ad });
+        adIndex += 1;
+      }
+    }
+    if (posts.length > 0 && posts.length < frequency) {
+      result.push({ itemType: "ad", ...ads[0] });
+    }
+    return result;
+  }
+
   async function getResidentForUser(user) {
     const result = await query(`SELECT * FROM residents WHERE user_id = $1`, [user.id]);
     return result.rows[0];
@@ -5016,6 +5092,56 @@ function createProductionApi(pool) {
       return { service: result.rows[0] };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/business/ads") {
+      requireRole(user, ["business"]);
+      const business = await getBusinessForUser(user);
+      if (!business) {
+        const error = new Error("Business profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const title = String(required(payload.title, "title")).trim();
+      const body = String(required(payload.body, "body")).trim();
+      const imageMediaObjectId = payload.imageMediaObjectId || payload.image_media_object_id || null;
+      if (imageMediaObjectId) {
+        const media = (await query(`SELECT * FROM media_objects WHERE id = $1 AND owner_user_id = $2`, [imageMediaObjectId, user.id])).rows[0];
+        if (!media) {
+          const error = new Error("Ad image media object not found");
+          error.status = 404;
+          throw error;
+        }
+      }
+      const status = ["draft", "pending_review", "active", "paused"].includes(payload.status) ? payload.status : "active";
+      const ad = (await query(
+        `INSERT INTO business_ads (
+           business_id, created_by, title, body, image_media_object_id,
+           cta_label, cta_url, service_id, target_connection_types,
+           target_communities, category, placement, frequency, status, starts_at, ends_at, metadata
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'feed',$12,$13,COALESCE($14::timestamptz, now()), $15::timestamptz, $16)
+         RETURNING *`,
+        [
+          business.id,
+          user.id,
+          title,
+          body,
+          imageMediaObjectId,
+          payload.ctaLabel || payload.cta_label || "Learn more",
+          payload.ctaUrl || payload.cta_url || null,
+          payload.serviceId || payload.service_id || null,
+          normalizeConnectionTypes(payload.targetConnectionTypes || payload.target_connection_types),
+          Array.isArray(payload.targetCommunities) ? payload.targetCommunities : [],
+          payload.category || "services",
+          Math.max(3, Math.min(8, Number(payload.frequency || 4))),
+          status,
+          payload.startsAt || payload.starts_at || null,
+          payload.endsAt || payload.ends_at || null,
+          JSON.stringify(payload.metadata || {})
+        ]
+      )).rows[0];
+      await audit(req, user, "business_feed_ad_created", "business_ad", ad.id, { businessId: business.id, status: ad.status }, "info");
+      return { ad };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/circle/accept-invite") {
       requireRole(user, ["trusted_person"]);
       const inviteCode = String(required(payload.inviteCode, "inviteCode")).trim().toUpperCase();
@@ -7772,25 +7898,68 @@ function createProductionApi(pool) {
       return { member: removed };
     }
 
-    if (req.method === "GET" && url.pathname === "/api/posts") {
+    if (req.method === "GET" && (url.pathname === "/api/posts" || url.pathname === "/api/feed")) {
       requireRole(user, ["senior", "trusted_person"]);
+      const { resident, connectionType } = await feedContextForUser(user);
+      const preferences = await feedPreferencesFor(user.id, resident?.id || null);
+      if (!preferenceAllowsConnection(preferences, connectionType)) {
+        return { posts: [], items: [], preferences };
+      }
+      const mutedGroupIds = preferences.muted_group_ids || [];
+      const mutedUserIds = preferences.muted_user_ids || [];
       const rows = (await query(
         `SELECT cp.*,
                 u.display_name AS author_name,
+                sfp.group_id,
+                sfp.post_type,
+                sfp.visibility,
+                sfp.target_connection_types,
                 count(DISTINCT spr.id)::int AS reaction_count,
                 count(DISTINCT spc.id)::int AS comment_count,
                 bool_or(spr.user_id = $1)::boolean AS liked_by_me
          FROM community_posts cp
+         LEFT JOIN social_feed_posts sfp ON sfp.community_post_id = cp.id
          LEFT JOIN users u ON u.id = cp.author_user_id
          LEFT JOIN social_post_reactions spr ON spr.post_id = cp.id
          LEFT JOIN social_post_comments spc ON spc.post_id = cp.id AND spc.status = 'published'
          WHERE cp.status = 'published'
-         GROUP BY cp.id, u.display_name
+           AND cp.deleted_at IS NULL
+           AND ($2::uuid IS NULL OR cp.resident_id IS NULL OR cp.resident_id = $2)
+           AND ($3 = 'senior' OR $3 = ANY(COALESCE(cp.target_connection_types, '{family,friend,caregiver}'::text[])))
+           AND NOT (cp.author_user_id = ANY($4::uuid[]))
+           AND NOT (COALESCE(sfp.group_id, '00000000-0000-0000-0000-000000000000'::uuid) = ANY($5::uuid[]))
+         GROUP BY cp.id, u.display_name, sfp.group_id, sfp.post_type, sfp.visibility, sfp.target_connection_types
          ORDER BY cp.created_at DESC
          LIMIT 50`,
-        [user.id]
+        [user.id, resident?.id || null, connectionType, mutedUserIds, mutedGroupIds]
       )).rows;
-      return { posts: rows.map(row => ({ ...row, liked_by_me: row.liked_by_me === true })) };
+      const posts = rows.map(row => ({ itemType: "post", ...row, liked_by_me: row.liked_by_me === true }));
+      const adRows = preferences.show_business_ads === false ? [] : (await query(
+        `SELECT ba.*, b.name AS business_name
+         FROM business_ads ba
+         JOIN businesses b ON b.id = ba.business_id
+         WHERE ba.status = 'active'
+           AND ba.placement = 'feed'
+           AND now() >= ba.starts_at
+           AND (ba.ends_at IS NULL OR now() <= ba.ends_at)
+           AND ($1 = 'senior' OR $1 = ANY(ba.target_connection_types))
+           AND (cardinality(ba.target_communities) = 0 OR $2 = ANY(ba.target_communities))
+         ORDER BY ba.created_at DESC
+         LIMIT 10`,
+        [connectionType, resident?.community || ""]
+      )).rows;
+      const items = interleaveFeedAds(posts, adRows, Number(adRows[0]?.frequency || 4));
+      const impressions = items
+        .map((item, index) => item.itemType === "ad" ? [item.id, index] : null)
+        .filter(Boolean);
+      for (const [adId, position] of impressions) {
+        await query(
+          `INSERT INTO business_ad_impressions (ad_id, viewer_user_id, resident_id, feed_position, metadata)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [adId, user.id, resident?.id || null, position, JSON.stringify({ connectionType, source: "api_feed" })]
+        );
+      }
+      return { posts, items, preferences };
     }
 
     if (req.method === "POST" && url.pathname === "/api/posts") {
@@ -7802,19 +7971,147 @@ function createProductionApi(pool) {
         error.status = 400;
         throw error;
       }
+      const mediaObjectIds = Array.isArray(payload.mediaObjectIds) ? payload.mediaObjectIds : [];
+      if (mediaObjectIds.length) {
+        const count = Number((await query(
+          `SELECT count(*) FROM media_objects WHERE id = ANY($1::uuid[]) AND owner_user_id = $2`,
+          [mediaObjectIds, user.id]
+        )).rows[0].count || 0);
+        if (count !== mediaObjectIds.length) {
+          const error = new Error("One or more media attachments are unavailable");
+          error.status = 403;
+          throw error;
+        }
+      }
+      const targetConnectionTypes = normalizeConnectionTypes(payload.targetConnectionTypes);
       const post = (await query(
-        `INSERT INTO community_posts (resident_id, author_user_id, body, audience, status, metadata)
-         VALUES ($1,$2,$3,$4,'published',$5) RETURNING *`,
-        [resident?.id || null, user.id, body, payload.audience || "community", JSON.stringify(payload.metadata || {})]
+        `INSERT INTO community_posts (resident_id, author_user_id, title, body, audience, status, media_object_ids, target_connection_types, metadata)
+         VALUES ($1,$2,$3,$4,$5,'published',$6,$7,$8) RETURNING *`,
+        [resident?.id || null, user.id, payload.title || null, body, payload.audience || "community", mediaObjectIds, targetConnectionTypes, JSON.stringify(payload.metadata || {})]
       )).rows[0];
       await query(
-        `INSERT INTO social_feed_posts (community_post_id, group_id, resident_id, author_user_id, body, media_object_ids, visibility, metadata)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `INSERT INTO social_feed_posts (community_post_id, group_id, resident_id, author_user_id, title, body, media_object_ids, visibility, post_type, target_connection_types, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (community_post_id) DO NOTHING`,
-        [post.id, payload.groupId || null, resident?.id || null, user.id, body, Array.isArray(payload.mediaObjectIds) ? payload.mediaObjectIds : [], payload.groupId ? "group" : payload.audience || "community", JSON.stringify(payload.metadata || {})]
+        [post.id, payload.groupId || null, resident?.id || null, user.id, payload.title || null, body, mediaObjectIds, payload.groupId ? "group" : payload.audience || "community", payload.postType || (mediaObjectIds.length ? "photo" : "status"), targetConnectionTypes, JSON.stringify(payload.metadata || {})]
       );
       await audit(req, user, "community_post_created", "community_post", post.id, { audience: post.audience }, "info");
       return { ok: true, post };
+    }
+
+    const postEditMatch = url.pathname.match(/^\/api\/posts\/([^/]+)$/);
+    if (postEditMatch && ["PATCH", "DELETE"].includes(req.method)) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const postId = postEditMatch[1];
+      const existing = (await query(`SELECT * FROM community_posts WHERE id = $1`, [postId])).rows[0];
+      if (!existing) {
+        const error = new Error("Post not found");
+        error.status = 404;
+        throw error;
+      }
+      if (existing.author_user_id !== user.id) {
+        const error = new Error("Only the author can edit or delete this post");
+        error.status = 403;
+        throw error;
+      }
+      if (req.method === "DELETE") {
+        const deleted = await transaction(async tx => {
+          const post = (await tx(
+            `UPDATE community_posts SET status = 'hidden', deleted_at = now(), updated_at = now()
+             WHERE id = $1 RETURNING *`,
+            [postId]
+          )).rows[0];
+          await tx(
+            `UPDATE social_feed_posts SET status = 'deleted', deleted_at = now(), updated_at = now()
+             WHERE community_post_id = $1`,
+            [postId]
+          );
+          return post;
+        });
+        await audit(req, user, "community_post_deleted", "community_post", postId, {}, "warning");
+        return { post: deleted };
+      }
+      const mediaObjectIds = Array.isArray(payload.mediaObjectIds) ? payload.mediaObjectIds : existing.media_object_ids || [];
+      const targetConnectionTypes = payload.targetConnectionTypes ? normalizeConnectionTypes(payload.targetConnectionTypes) : existing.target_connection_types || ["family", "friend", "caregiver"];
+      const updated = await transaction(async tx => {
+        const post = (await tx(
+          `UPDATE community_posts SET
+             title = COALESCE($2, title),
+             body = COALESCE($3, body),
+             media_object_ids = COALESCE($4, media_object_ids),
+             target_connection_types = COALESCE($5, target_connection_types),
+             metadata = metadata || $6::jsonb,
+             edited_at = now(),
+             updated_at = now()
+           WHERE id = $1
+           RETURNING *`,
+          [postId, payload.title || null, payload.body || null, mediaObjectIds, targetConnectionTypes, JSON.stringify(payload.metadata || {})]
+        )).rows[0];
+        await tx(
+          `UPDATE social_feed_posts SET
+             title = COALESCE($2, title),
+             body = COALESCE($3, body),
+             media_object_ids = COALESCE($4, media_object_ids),
+             target_connection_types = COALESCE($5, target_connection_types),
+             post_type = COALESCE($6, post_type),
+             metadata = metadata || $7::jsonb,
+             edited_at = now(),
+             updated_at = now()
+           WHERE community_post_id = $1`,
+          [postId, payload.title || null, payload.body || null, mediaObjectIds, targetConnectionTypes, payload.postType || null, JSON.stringify(payload.metadata || {})]
+        );
+        return post;
+      });
+      await audit(req, user, "community_post_edited", "community_post", postId, { fields: Object.keys(payload) }, "info");
+      return { post: updated };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/feed/preferences") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const { resident } = await feedContextForUser(user);
+      const preferences = await feedPreferencesFor(user.id, resident?.id || null);
+      return { preferences };
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/feed/preferences") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const { resident } = await feedContextForUser(user);
+      if (!resident?.id) {
+        const error = new Error("Feed preferences require a senior context");
+        error.status = 404;
+        throw error;
+      }
+      await feedPreferencesFor(user.id, resident.id);
+      const preferences = (await query(
+        `UPDATE social_feed_preferences SET
+           show_family = COALESCE($3::boolean, show_family),
+           show_friends = COALESCE($4::boolean, show_friends),
+           show_caregivers = COALESCE($5::boolean, show_caregivers),
+           show_community = COALESCE($6::boolean, show_community),
+           show_business_ads = COALESCE($7::boolean, show_business_ads),
+           muted_group_ids = COALESCE($8::uuid[], muted_group_ids),
+           muted_user_ids = COALESCE($9::uuid[], muted_user_ids),
+           preferred_categories = COALESCE($10::text[], preferred_categories),
+           metadata = metadata || $11::jsonb,
+           updated_at = now()
+         WHERE user_id = $1 AND resident_id = $2
+         RETURNING *`,
+        [
+          user.id,
+          resident.id,
+          payload.showFamily ?? payload.show_family ?? null,
+          payload.showFriends ?? payload.show_friends ?? null,
+          payload.showCaregivers ?? payload.show_caregivers ?? null,
+          payload.showCommunity ?? payload.show_community ?? null,
+          payload.showBusinessAds ?? payload.show_business_ads ?? null,
+          Array.isArray(payload.mutedGroupIds) ? payload.mutedGroupIds : null,
+          Array.isArray(payload.mutedUserIds) ? payload.mutedUserIds : null,
+          Array.isArray(payload.preferredCategories) ? payload.preferredCategories : null,
+          JSON.stringify(payload.metadata || {})
+        ]
+      )).rows[0];
+      await audit(req, user, "social_feed_preferences_updated", "social_feed_preferences", preferences.id, { residentId: resident.id }, "info");
+      return { preferences };
     }
 
     const postLikeMatch = url.pathname.match(/^\/api\/posts\/([^/]+)\/like$/);
