@@ -98,6 +98,22 @@ enum Screen {
   risk,
   services,
   safety,
+  trustCircleMore,
+  businessDashboard,
+  businessLeads,
+  businessBookings,
+  businessMessages,
+  businessMore,
+}
+
+enum AppRole { senior, trustedCircle, business }
+
+class BottomTabDestination {
+  const BottomTabDestination(this.icon, this.label, this.screen);
+
+  final IconData icon;
+  final String label;
+  final Screen screen;
 }
 
 class ResidentShell extends StatefulWidget {
@@ -111,6 +127,7 @@ class _ResidentShellState extends State<ResidentShell> {
   late Screen screen;
   late final TsgApiClient apiClient;
   ResidentAppState? appState;
+  AppRole appRole = initialRoleFromKey(initialScreenKey);
   String apiStatus = 'Connecting to mobile API...';
   bool apiBusy = false;
 
@@ -136,6 +153,7 @@ class _ResidentShellState extends State<ResidentShell> {
       if (!mounted) return;
       setState(() {
         appState = state;
+        appRole = roleFromState(state, fallback: appRole);
         apiStatus = 'Live API connected';
         apiBusy = false;
       });
@@ -163,6 +181,7 @@ class _ResidentShellState extends State<ResidentShell> {
       if (!mounted) return;
       setState(() {
         appState = state;
+        appRole = roleFromState(state, fallback: appRole);
         apiStatus = '$label saved';
         apiBusy = false;
       });
@@ -176,36 +195,17 @@ class _ResidentShellState extends State<ResidentShell> {
   }
 
   int get tabIndex {
-    return switch (screen) {
-      Screen.guru ||
-      Screen.rideChat ||
-      Screen.rideMatches ||
-      Screen.rideStatus => 0,
-      Screen.today ||
-      Screen.medications ||
-      Screen.medicationConfirm ||
-      Screen.refill ||
-      Screen.onboardingWelcome ||
-      Screen.onboardingProfile ||
-      Screen.onboardingCircle ||
-      Screen.onboardingSafety ||
-      Screen.onboardingRole ||
-      Screen.trustCircleInvite ||
-      Screen.trustCircleProfile ||
-      Screen.businessProfile ||
-      Screen.businessServices ||
-      Screen.wellness ||
-      Screen.vitals ||
-      Screen.familyHealth ||
-      Screen.risk ||
-      Screen.safety => 1,
-      Screen.companion || Screen.companionChat => 2,
-      Screen.feed || Screen.createPost => 3,
-      _ => 4,
-    };
+    final index = bottomTabsForRole(appRole).indexWhere((tab) {
+      return tab.screen == primaryTabForScreen(screen, appRole);
+    });
+    return index < 0 ? 0 : index;
   }
 
-  void go(Screen target) => setState(() => screen = target);
+  void go(Screen target) => setState(() {
+    screen = target;
+    final role = roleForScreen(target);
+    if (role != null) appRole = role;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +226,11 @@ class _ResidentShellState extends State<ResidentShell> {
               left: 0,
               right: 0,
               bottom: 0,
-              child: BottomTabs(current: tabIndex, onTap: _onTab),
+              child: BottomTabs(
+                tabs: bottomTabsForRole(appRole),
+                current: tabIndex,
+                onTap: _onTab,
+              ),
             ),
             Positioned(
               left: 16,
@@ -241,15 +245,9 @@ class _ResidentShellState extends State<ResidentShell> {
   }
 
   void _onTab(int index) {
-    go(
-      [
-        Screen.guru,
-        Screen.today,
-        Screen.companion,
-        Screen.feed,
-        Screen.more,
-      ][index],
-    );
+    final tabs = bottomTabsForRole(appRole);
+    if (index < 0 || index >= tabs.length) return;
+    go(tabs[index].screen);
   }
 
   Widget _activeScreen() {
@@ -270,6 +268,34 @@ class _ResidentShellState extends State<ResidentShell> {
       ),
       Screen.feed => FeedHome(key: const ValueKey('feed'), go: go),
       Screen.more => MoreHome(key: const ValueKey('more'), go: go),
+      Screen.trustCircleMore => TrustCircleMore(
+        key: const ValueKey('trust-more'),
+        go: go,
+      ),
+      Screen.businessDashboard => BusinessDashboard(
+        key: const ValueKey('business-dashboard'),
+        go: go,
+        state: appState,
+      ),
+      Screen.businessLeads => BusinessLeadsScreen(
+        key: const ValueKey('business-leads'),
+        go: go,
+        state: appState,
+      ),
+      Screen.businessBookings => BusinessBookingsScreen(
+        key: const ValueKey('business-bookings'),
+        go: go,
+        state: appState,
+      ),
+      Screen.businessMessages => BusinessMessagesScreen(
+        key: const ValueKey('business-messages'),
+        go: go,
+      ),
+      Screen.businessMore => BusinessMoreScreen(
+        key: const ValueKey('business-more'),
+        go: go,
+        state: appState,
+      ),
       Screen.onboardingRole => OnboardingRoleSelection(
         key: const ValueKey('onboard-role'),
         go: go,
@@ -409,7 +435,159 @@ Screen initialScreenFromKey(String key) {
     'onboardingRole' => Screen.onboardingRole,
     'trustCircle' => Screen.trustCircleInvite,
     'businessOnboarding' => Screen.businessProfile,
+    'business' => Screen.businessDashboard,
+    'trusted' => Screen.familyHealth,
     _ => Screen.guru,
+  };
+}
+
+AppRole initialRoleFromKey(String key) {
+  return switch (key) {
+    'trustCircle' || 'trusted' => AppRole.trustedCircle,
+    'businessOnboarding' || 'business' => AppRole.business,
+    _ => AppRole.senior,
+  };
+}
+
+AppRole roleFromState(ResidentAppState state, {required AppRole fallback}) {
+  final role = stringValue(mapValue(state.raw['user'])['role']);
+  return switch (role) {
+    'trusted_person' || 'trust_circle' => AppRole.trustedCircle,
+    'business' => AppRole.business,
+    'senior' => AppRole.senior,
+    _ => fallback,
+  };
+}
+
+AppRole? roleForScreen(Screen screen) {
+  return switch (screen) {
+    Screen.trustCircleInvite ||
+    Screen.trustCircleProfile ||
+    Screen.trustCircleMore => AppRole.trustedCircle,
+    Screen.businessProfile ||
+    Screen.businessServices ||
+    Screen.businessDashboard ||
+    Screen.businessLeads ||
+    Screen.businessBookings ||
+    Screen.businessMessages ||
+    Screen.businessMore => AppRole.business,
+    Screen.onboardingWelcome ||
+    Screen.onboardingProfile ||
+    Screen.onboardingCircle ||
+    Screen.onboardingSafety => AppRole.senior,
+    _ => null,
+  };
+}
+
+List<BottomTabDestination> bottomTabsForRole(AppRole role) {
+  return switch (role) {
+    AppRole.senior => const [
+      BottomTabDestination(CupertinoIcons.sparkles, 'TSG Guru', Screen.guru),
+      BottomTabDestination(CupertinoIcons.house_fill, 'Today', Screen.today),
+      BottomTabDestination(
+        CupertinoIcons.chat_bubble_2,
+        'Companion',
+        Screen.companion,
+      ),
+      BottomTabDestination(CupertinoIcons.heart, 'Feed', Screen.feed),
+      BottomTabDestination(CupertinoIcons.ellipsis, 'More', Screen.more),
+    ],
+    AppRole.trustedCircle => const [
+      BottomTabDestination(
+        CupertinoIcons.heart_circle_fill,
+        'Overview',
+        Screen.familyHealth,
+      ),
+      BottomTabDestination(
+        CupertinoIcons.waveform_path_ecg,
+        'Vitals',
+        Screen.vitals,
+      ),
+      BottomTabDestination(CupertinoIcons.shield_fill, 'Risk', Screen.risk),
+      BottomTabDestination(
+        CupertinoIcons.person_2_fill,
+        'Circle',
+        Screen.circle,
+      ),
+      BottomTabDestination(
+        CupertinoIcons.ellipsis,
+        'More',
+        Screen.trustCircleMore,
+      ),
+    ],
+    AppRole.business => const [
+      BottomTabDestination(
+        CupertinoIcons.square_grid_2x2_fill,
+        'Dashboard',
+        Screen.businessDashboard,
+      ),
+      BottomTabDestination(
+        CupertinoIcons.person_crop_circle_badge_plus,
+        'Leads',
+        Screen.businessLeads,
+      ),
+      BottomTabDestination(
+        CupertinoIcons.calendar_badge_plus,
+        'Bookings',
+        Screen.businessBookings,
+      ),
+      BottomTabDestination(
+        CupertinoIcons.chat_bubble_2_fill,
+        'Messages',
+        Screen.businessMessages,
+      ),
+      BottomTabDestination(
+        CupertinoIcons.ellipsis,
+        'More',
+        Screen.businessMore,
+      ),
+    ],
+  };
+}
+
+Screen primaryTabForScreen(Screen screen, AppRole role) {
+  return switch (role) {
+    AppRole.senior => switch (screen) {
+      Screen.guru ||
+      Screen.rideChat ||
+      Screen.rideMatches ||
+      Screen.rideStatus => Screen.guru,
+      Screen.today ||
+      Screen.medications ||
+      Screen.medicationConfirm ||
+      Screen.refill ||
+      Screen.onboardingWelcome ||
+      Screen.onboardingProfile ||
+      Screen.onboardingCircle ||
+      Screen.onboardingSafety ||
+      Screen.onboardingRole ||
+      Screen.wellness ||
+      Screen.vitals ||
+      Screen.familyHealth ||
+      Screen.risk ||
+      Screen.safety => Screen.today,
+      Screen.companion || Screen.companionChat => Screen.companion,
+      Screen.feed || Screen.createPost => Screen.feed,
+      _ => Screen.more,
+    },
+    AppRole.trustedCircle => switch (screen) {
+      Screen.familyHealth ||
+      Screen.trustCircleInvite ||
+      Screen.trustCircleProfile => Screen.familyHealth,
+      Screen.vitals => Screen.vitals,
+      Screen.risk || Screen.safety => Screen.risk,
+      Screen.circle || Screen.person => Screen.circle,
+      _ => Screen.trustCircleMore,
+    },
+    AppRole.business => switch (screen) {
+      Screen.businessProfile ||
+      Screen.businessServices ||
+      Screen.businessDashboard => Screen.businessDashboard,
+      Screen.businessLeads || Screen.services => Screen.businessLeads,
+      Screen.businessBookings => Screen.businessBookings,
+      Screen.businessMessages => Screen.businessMessages,
+      _ => Screen.businessMore,
+    },
   };
 }
 
@@ -609,20 +787,19 @@ class PhoneFrame extends StatelessWidget {
 }
 
 class BottomTabs extends StatelessWidget {
-  const BottomTabs({super.key, required this.current, required this.onTap});
+  const BottomTabs({
+    super.key,
+    required this.tabs,
+    required this.current,
+    required this.onTap,
+  });
 
+  final List<BottomTabDestination> tabs;
   final int current;
   final ValueChanged<int> onTap;
 
   @override
   Widget build(BuildContext context) {
-    final tabs = [
-      (CupertinoIcons.sparkles, 'TSG Guru'),
-      (CupertinoIcons.house_fill, 'Today'),
-      (CupertinoIcons.chat_bubble_2, 'Companion'),
-      (CupertinoIcons.heart, 'Feed'),
-      (CupertinoIcons.ellipsis, 'More'),
-    ];
     return Container(
       height: 86,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
@@ -665,7 +842,7 @@ class BottomTabs extends StatelessWidget {
                   else
                     const SizedBox(height: 11),
                   Icon(
-                    tabs[index].$1,
+                    tabs[index].icon,
                     size: 24,
                     color: selected
                         ? TsgColors.purple
@@ -673,7 +850,7 @@ class BottomTabs extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    tabs[index].$2,
+                    tabs[index].label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -2978,6 +3155,512 @@ class MoreHome extends StatelessWidget {
   }
 }
 
+class TrustCircleMore extends StatelessWidget {
+  const TrustCircleMore({super.key, required this.go});
+
+  final ValueChanged<Screen> go;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (
+        CupertinoIcons.heart_circle_fill,
+        'Family Health View',
+        Screen.familyHealth,
+      ),
+      (CupertinoIcons.waveform_path_ecg, 'Vitals Monitor', Screen.vitals),
+      (CupertinoIcons.shield_fill, 'Risk Timeline', Screen.risk),
+      (CupertinoIcons.person_2_fill, 'Trusted Circle', Screen.circle),
+      (CupertinoIcons.bell_fill, 'Safety Alerts', Screen.safety),
+      (
+        CupertinoIcons.person_badge_plus,
+        'Invite Setup',
+        Screen.trustCircleInvite,
+      ),
+    ];
+    return ScreenScaffold(
+      title: 'Circle tools',
+      subtitle: 'Approved care visibility and family actions.',
+      children: [
+        SoftCard(
+          color: const Color(0xFFF8F2FF),
+          child: const Row(
+            children: [
+              Avatar(size: 58, label: 'R', tone: Color(0xFFF1E8F8)),
+              SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Rita Sharma',
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Text(
+                      'Daughter · Approved visibility for Anita',
+                      style: TextStyle(color: TsgColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(CupertinoIcons.lock_shield_fill, color: TsgColors.purple),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        ...items.map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: SoftCard(
+              padding: const EdgeInsets.all(16),
+              onTap: () => go(item.$3),
+              child: Row(
+                children: [
+                  Avatar(size: 44, icon: item.$1, tone: TsgColors.lilac),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Text(
+                      item.$2,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    CupertinoIcons.chevron_right,
+                    color: TsgColors.muted,
+                    size: 17,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class BusinessDashboard extends StatelessWidget {
+  const BusinessDashboard({super.key, required this.go, required this.state});
+
+  final ValueChanged<Screen> go;
+  final ResidentAppState? state;
+
+  @override
+  Widget build(BuildContext context) {
+    final business = mapValue(state?.raw['business']);
+    final name = stringValue(business['name'], fallback: 'CareRide');
+    final status = stringValue(
+      business['status'],
+      fallback: 'pending_review',
+    ).replaceAll('_', ' ');
+    return ScreenScaffold(
+      title: 'Business',
+      subtitle: 'Provider operations and service requests.',
+      children: [
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF293B5F), Color(0xFF3F6F91), Color(0xFF86B6A8)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x223F6F91),
+                blurRadius: 28,
+                offset: Offset(0, 14),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              const Avatar(
+                size: 62,
+                icon: CupertinoIcons.car_detailed,
+                tone: Colors.white,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Profile status: $status',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(CupertinoIcons.checkmark_seal, color: Colors.white),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: BusinessMetricCard(
+                label: 'New leads',
+                value: '12',
+                icon: CupertinoIcons.person_crop_circle_badge_plus,
+                onTap: () => go(Screen.businessLeads),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: BusinessMetricCard(
+                label: 'Bookings',
+                value: '5',
+                icon: CupertinoIcons.calendar_badge_plus,
+                onTap: () => go(Screen.businessBookings),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SoftCard(
+          onTap: () => go(Screen.businessMessages),
+          child: const Row(
+            children: [
+              Avatar(
+                size: 48,
+                icon: CupertinoIcons.chat_bubble_2_fill,
+                tone: Color(0xFFEAF4FF),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Messages and coordination',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                ),
+              ),
+              Icon(CupertinoIcons.chevron_right, color: TsgColors.muted),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class BusinessMetricCard extends StatelessWidget {
+  const BusinessMetricCard({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftCard(
+      padding: const EdgeInsets.all(15),
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Avatar(size: 40, icon: icon, tone: const Color(0xFFEAF4FF)),
+          const SizedBox(height: 14),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              color: TsgColors.muted,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class RoleStatusChip extends StatelessWidget {
+  const RoleStatusChip(this.label, {super.key, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class BusinessLeadsScreen extends StatelessWidget {
+  const BusinessLeadsScreen({super.key, required this.go, required this.state});
+
+  final ValueChanged<Screen> go;
+  final ResidentAppState? state;
+
+  @override
+  Widget build(BuildContext context) {
+    final leads = const [
+      ('Ride to hospital', 'Tomorrow, 10:00 AM · 3.2 mi', 'New'),
+      ('Pharmacy pickup', 'Today · 2.1 mi', 'New'),
+      ('Airport ride', 'Jun 6, 8:00 AM · 18 mi', 'Review'),
+    ];
+    return ScreenScaffold(
+      title: 'Leads',
+      subtitle: 'Service requests routed to this provider.',
+      children: [
+        ...leads.map(
+          (lead) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: SoftCard(
+              child: Row(
+                children: [
+                  const Avatar(
+                    size: 46,
+                    icon: CupertinoIcons.car_detailed,
+                    tone: Color(0xFFEAF4FF),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          lead.$1,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          lead.$2,
+                          style: const TextStyle(color: TsgColors.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  RoleStatusChip(
+                    lead.$3,
+                    color: lead.$3 == 'New' ? TsgColors.green : TsgColors.blue,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class BusinessBookingsScreen extends StatelessWidget {
+  const BusinessBookingsScreen({super.key, required this.go, this.state});
+
+  final ValueChanged<Screen> go;
+  final ResidentAppState? state;
+
+  @override
+  Widget build(BuildContext context) {
+    final bookings = const [
+      ('Today, 2:30 PM', 'Ride · Local', 'Confirmed'),
+      ('Tomorrow, 10:00 AM', 'Ride · Hospital', 'Confirmed'),
+      ('Jun 6, 8:00 AM', 'Ride · Airport', 'Pending'),
+    ];
+    return ScreenScaffold(
+      title: 'Bookings',
+      subtitle: 'Confirmed and pending provider work.',
+      children: [
+        ...bookings.map(
+          (booking) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: SoftCard(
+              child: Row(
+                children: [
+                  const Avatar(
+                    size: 44,
+                    icon: CupertinoIcons.calendar,
+                    tone: Color(0xFFF1E8F8),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          booking.$1,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          booking.$2,
+                          style: const TextStyle(color: TsgColors.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  RoleStatusChip(
+                    booking.$3,
+                    color: booking.$3 == 'Confirmed'
+                        ? TsgColors.green
+                        : TsgColors.orange,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class BusinessMessagesScreen extends StatelessWidget {
+  const BusinessMessagesScreen({super.key, required this.go});
+
+  final ValueChanged<Screen> go;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Messages',
+      subtitle: 'Requests, family coordination, and booking updates.',
+      children: const [
+        SoftCard(
+          child: Row(
+            children: [
+              Avatar(size: 46, label: 'A', tone: Color(0xFFFFF3E7)),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Anita Sharma',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Ride confirmation for cardiology visit',
+                      style: TextStyle(color: TsgColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              Text('9:30 AM', style: TextStyle(color: TsgColors.muted)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class BusinessMoreScreen extends StatelessWidget {
+  const BusinessMoreScreen({super.key, required this.go, this.state});
+
+  final ValueChanged<Screen> go;
+  final ResidentAppState? state;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (
+        CupertinoIcons.building_2_fill,
+        'Business profile',
+        Screen.businessProfile,
+      ),
+      (
+        CupertinoIcons.square_grid_2x2_fill,
+        'Services',
+        Screen.businessServices,
+      ),
+      (CupertinoIcons.chart_bar_fill, 'Performance', Screen.businessDashboard),
+      (CupertinoIcons.chat_bubble_2_fill, 'Messages', Screen.businessMessages),
+      (CupertinoIcons.calendar_badge_plus, 'Bookings', Screen.businessBookings),
+    ];
+    return ScreenScaffold(
+      title: 'Business tools',
+      subtitle: 'Provider profile, services, and operations.',
+      children: [
+        ...items.map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: SoftCard(
+              padding: const EdgeInsets.all(16),
+              onTap: () => go(item.$3),
+              child: Row(
+                children: [
+                  Avatar(
+                    size: 44,
+                    icon: item.$1,
+                    tone: const Color(0xFFEAF4FF),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Text(
+                      item.$2,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    CupertinoIcons.chevron_right,
+                    color: TsgColors.muted,
+                    size: 17,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class ServicesScreen extends StatelessWidget {
   const ServicesScreen({
     super.key,
@@ -3868,7 +4551,7 @@ class BusinessServicesScreen extends StatelessWidget {
             await runApi('Submitting business onboarding', (client, state) {
               return client.completeBusinessOnboarding();
             });
-            go(Screen.services);
+            go(Screen.businessDashboard);
           },
         ),
       ],
