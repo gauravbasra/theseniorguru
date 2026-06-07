@@ -4,7 +4,11 @@ const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
 
 const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
-const PAID_PLAN_PRICE_CENTS = 10000;
+const PAID_PLAN_PRICE_CENTS = Number(process.env.STRIPE_GROWTH_PRICE_CENTS || 10000);
+const PAID_PLAN_TRIAL_DAYS = Number(process.env.STRIPE_GROWTH_TRIAL_DAYS || 7);
+const PAID_PLAN_INTERVAL = ["month", "year"].includes(process.env.STRIPE_GROWTH_INTERVAL)
+  ? process.env.STRIPE_GROWTH_INTERVAL
+  : "year";
 const STRIPE_API_VERSION = "2026-02-25.clover";
 const RIDE_PLATFORM_MARGIN_BPS = 2000;
 
@@ -125,19 +129,32 @@ function createProductionApi(pool) {
       mode: "subscription",
       success_url: successUrl,
       cancel_url: cancelUrl,
+      payment_method_collection: "always",
+      billing_address_collection: "auto",
       customer_email: business.email || user.email,
       client_reference_id: business.id,
       "line_items[0][quantity]": "1",
-      "line_items[0][price_data][currency]": "usd",
-      "line_items[0][price_data][unit_amount]": String(PAID_PLAN_PRICE_CENTS),
-      "line_items[0][price_data][recurring][interval]": "month",
-      "line_items[0][price_data][product_data][name]": "TheSeniorguru Growth Package",
-      "line_items[0][price_data][product_data][description]": "More than one service and 5 leads per month for approved senior support businesses.",
+      "payment_method_types[0]": "card",
+      "subscription_data[trial_period_days]": String(PAID_PLAN_TRIAL_DAYS),
+      "subscription_data[trial_settings][end_behavior][missing_payment_method]": "cancel",
       "metadata[businessId]": business.id,
       "metadata[subscriptionRowId]": subscription.id,
+      "metadata[trialDays]": String(PAID_PLAN_TRIAL_DAYS),
+      "metadata[billingInterval]": PAID_PLAN_INTERVAL,
       "subscription_data[metadata][businessId]": business.id,
-      "subscription_data[metadata][subscriptionRowId]": subscription.id
+      "subscription_data[metadata][subscriptionRowId]": subscription.id,
+      "subscription_data[metadata][trialDays]": String(PAID_PLAN_TRIAL_DAYS),
+      "subscription_data[metadata][billingInterval]": PAID_PLAN_INTERVAL
     };
+    if (process.env.STRIPE_GROWTH_PRICE_ID) {
+      params["line_items[0][price]"] = process.env.STRIPE_GROWTH_PRICE_ID;
+    } else {
+      params["line_items[0][price_data][currency]"] = "usd";
+      params["line_items[0][price_data][unit_amount]"] = String(PAID_PLAN_PRICE_CENTS);
+      params["line_items[0][price_data][recurring][interval]"] = PAID_PLAN_INTERVAL;
+      params["line_items[0][price_data][product_data][name]"] = "TheSeniorguru Growth Package";
+      params["line_items[0][price_data][product_data][description]"] = "Service marketplace, lead routing, provider bookings, communication, and promotions for approved senior support businesses.";
+    }
     return stripeRequest("/v1/checkout/sessions", params);
   }
 
@@ -2375,7 +2392,8 @@ function createProductionApi(pool) {
   async function getLeadEntitlement(businessId) {
     const result = await query(`SELECT * FROM subscriptions WHERE business_id = $1`, [businessId]);
     const sub = await refreshSubscriptionPeriod(result.rows[0] || await ensureDefaultSubscription(businessId));
-    if (sub?.plan === "growth_100" && sub?.billing_status && sub.billing_status !== "active") {
+    const billingUsable = ["active", "trialing"].includes(sub?.billing_status || "active");
+    if (sub?.plan === "growth_100" && !billingUsable) {
       return { plan: "growth_100", billingStatus: sub.billing_status, locked: true, lockReason: sub.lock_reason || "billing_not_active", serviceLimit: Infinity, allowed: 0, used: sub.used_leads_month || 0 };
     }
     if (!sub || sub.plan === "free") {
@@ -2614,6 +2632,23 @@ function createProductionApi(pool) {
   }
 
   async function route(req, payload, url) {
+    if (req.method === "GET" && url.pathname === "/api/billing/success") {
+      return {
+        ok: true,
+        status: "checkout_returned",
+        message: "Payment method saved. Your 7-day trial is starting and billing will activate after the trial unless cancelled in Stripe.",
+        checkoutSessionId: url.searchParams.get("session_id") || null
+      };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/billing/cancelled") {
+      return {
+        ok: false,
+        status: "checkout_cancelled",
+        message: "Checkout was cancelled. No subscription was started."
+      };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/stripe/webhook") {
       if (!verifyStripeSignature(req.rawBody, req.headers["stripe-signature"], process.env.STRIPE_WEBHOOK_SECRET)) {
         const error = new Error("Invalid Stripe webhook signature");
@@ -2640,20 +2675,21 @@ function createProductionApi(pool) {
         const session = event.data?.object || {};
         const businessId = session.metadata?.businessId || session.client_reference_id;
         if (businessId && session.mode === "subscription") {
+          const billingStatus = session.subscription && Number(session.amount_total || 0) === 0 ? "trialing" : "active";
           await query(
             `UPDATE subscriptions
              SET plan = 'growth_100',
-                 billing_status = 'active',
+                 billing_status = $1,
                  lock_reason = null,
                  locked_at = null,
-                 stripe_customer_id = $1,
-                 stripe_subscription_id = $2,
+                 stripe_customer_id = $2,
+                 stripe_subscription_id = $3,
                  used_leads_month = 0,
                  current_period_start = date_trunc('month', now()),
                  current_period_end = date_trunc('month', now()) + interval '1 month',
                  updated_at = now()
-             WHERE business_id = $3`,
-            [session.customer || null, session.subscription || null, businessId]
+             WHERE business_id = $4`,
+            [billingStatus, session.customer || null, session.subscription || null, businessId]
           );
           await query(
             `INSERT INTO audit_logs (entity_type, entity_id, action, severity, metadata)
@@ -2691,6 +2727,25 @@ function createProductionApi(pool) {
             "Billing subscription cancelled",
             "Your Growth package was cancelled and your account has been moved to the Free package. Paid lead actions are disabled until billing is restored.",
             { stripeSubscriptionId: subscription.id, source: "customer.subscription.deleted" }
+          );
+        }
+      }
+      if (event.type === "customer.subscription.updated") {
+        const subscription = event.data?.object || {};
+        const businessId = await businessIdFromStripeObject(subscription);
+        if (businessId) {
+          const status = ["active", "trialing"].includes(subscription.status)
+            ? subscription.status
+            : (subscription.status || "inactive");
+          await query(
+            `UPDATE subscriptions
+             SET billing_status = $1,
+                 lock_reason = CASE WHEN $1 IN ('active','trialing') THEN null ELSE 'subscription_not_active' END,
+                 locked_at = CASE WHEN $1 IN ('active','trialing') THEN null ELSE now() END,
+                 stripe_subscription_id = $2,
+                 updated_at = now()
+             WHERE business_id = $3`,
+            [status, subscription.id || null, businessId]
           );
         }
       }
