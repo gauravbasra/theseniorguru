@@ -825,6 +825,173 @@ function createProductionApi(pool) {
     return recommendations;
   }
 
+  function trendDirection(deltaPercent) {
+    const numeric = numericValue(deltaPercent);
+    if (numeric >= 10) return "up";
+    if (numeric <= -10) return "down";
+    return "flat";
+  }
+
+  function trendSignificance(metricKey, deltaPercent) {
+    const absolute = Math.abs(numericValue(deltaPercent));
+    if (["steps", "sleep_minutes", "family_interactions"].includes(metricKey) && absolute >= 30) return "watch";
+    if (["resting_heart_rate", "aqi", "pollen_level"].includes(metricKey) && absolute >= 20) return "watch";
+    return "normal";
+  }
+
+  async function computeMetricBaseline(residentId, metricKey, unit, rows, valuePicker) {
+    const values = rows.map(valuePicker).map(Number).filter(Number.isFinite);
+    const baselineValue = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    const computedFrom = rows.length ? rows[rows.length - 1].metric_date : null;
+    const computedTo = rows.length ? rows[0].metric_date : null;
+    if (baselineValue !== null) {
+      await query(
+        `INSERT INTO guru_baselines (senior_id, metric_key, window_days, baseline_value, sample_count, unit, computed_from, computed_to)
+         VALUES ($1,$2,30,$3,$4,$5,$6,$7)
+         ON CONFLICT (senior_id, metric_key, window_days) DO UPDATE SET
+           baseline_value = EXCLUDED.baseline_value,
+           sample_count = EXCLUDED.sample_count,
+           unit = EXCLUDED.unit,
+           computed_from = EXCLUDED.computed_from,
+           computed_to = EXCLUDED.computed_to,
+           updated_at = now()
+         RETURNING *`,
+        [residentId, metricKey, baselineValue, values.length, unit, computedFrom, computedTo]
+      );
+    }
+    return { metricKey, baselineValue, sampleCount: values.length, unit };
+  }
+
+  async function buildGuruBaselinesAndTrends(residentId, context = {}) {
+    const [healthRows, environmentRows, socialRows] = await Promise.all([
+      query(`SELECT * FROM health_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId]),
+      query(`SELECT * FROM environmental_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId]),
+      query(`SELECT * FROM social_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId])
+    ]);
+    const baselineSpecs = [
+      ["steps", "steps", healthRows.rows, row => row.steps],
+      ["sleep_minutes", "minutes", healthRows.rows, row => row.sleep_minutes],
+      ["resting_heart_rate", "bpm", healthRows.rows, row => row.resting_heart_rate || row.heart_rate_avg],
+      ["aqi", "AQI", environmentRows.rows, row => row.aqi],
+      ["pollen_level", "score", environmentRows.rows, row => row.pollen_level],
+      ["family_interactions", "count", socialRows.rows, row => row.family_interactions]
+    ];
+    const baselines = [];
+    const trends = [];
+    for (const [metricKey, unit, rows, picker] of baselineSpecs) {
+      const baseline = await computeMetricBaseline(residentId, metricKey, unit, rows, picker);
+      baselines.push(baseline);
+      const currentValue = {
+        steps: context.health?.steps,
+        sleep_minutes: context.health?.sleep_minutes,
+        resting_heart_rate: context.health?.resting_heart_rate || context.health?.heart_rate_avg,
+        aqi: context.environment?.aqi,
+        pollen_level: context.environment?.pollen_level,
+        family_interactions: context.social?.family_interactions
+      }[metricKey];
+      if (baseline.baselineValue !== null && Number.isFinite(Number(currentValue))) {
+        const deltaValue = Number(currentValue) - Number(baseline.baselineValue);
+        const deltaPercent = baseline.baselineValue ? (deltaValue / Number(baseline.baselineValue)) * 100 : 0;
+        const direction = trendDirection(deltaPercent);
+        const significance = trendSignificance(metricKey, deltaPercent);
+        const explanation = `${metricKey.replace(/_/g, " ")} is ${Math.abs(Math.round(deltaPercent))}% ${direction === "down" ? "below" : direction === "up" ? "above" : "near"} the 30-day baseline.`;
+        const savedTrend = (await query(
+          `INSERT INTO guru_trends (
+             senior_id, metric_key, window_days, current_value, baseline_value, delta_value,
+             delta_percent, direction, significance, explanation
+           ) VALUES ($1,$2,30,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (senior_id, metric_key, window_days) DO UPDATE SET
+             current_value = EXCLUDED.current_value,
+             baseline_value = EXCLUDED.baseline_value,
+             delta_value = EXCLUDED.delta_value,
+             delta_percent = EXCLUDED.delta_percent,
+             direction = EXCLUDED.direction,
+             significance = EXCLUDED.significance,
+             explanation = EXCLUDED.explanation,
+             updated_at = now()
+           RETURNING *`,
+          [residentId, metricKey, currentValue, baseline.baselineValue, deltaValue, deltaPercent, direction, significance, explanation]
+        )).rows[0];
+        trends.push(savedTrend);
+      }
+    }
+    return { baselines, trends };
+  }
+
+  async function buildFamilyContext(residentId) {
+    const trustedRows = (await query(
+      `SELECT tc.*, u.display_name, u.id AS user_id
+       FROM trusted_connections tc
+       JOIN users u ON u.id = tc.trusted_user_id
+       WHERE tc.resident_id = $1 AND tc.status = 'approved'
+       ORDER BY tc.created_at ASC LIMIT 10`,
+      [residentId]
+    )).rows;
+    for (const row of trustedRows) {
+      await query(
+        `INSERT INTO family_relationships (senior_id, user_id, relationship, display_name, priority, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (senior_id, user_id, relationship) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
+           metadata = family_relationships.metadata || EXCLUDED.metadata,
+           updated_at = now()`,
+        [residentId, row.user_id, row.relationship || row.metadata?.relationship || "Family", row.display_name || "Family", 10, JSON.stringify({ permissions: row.permissions || [] })]
+      );
+    }
+    const relationship = (await query(
+      `SELECT * FROM family_relationships WHERE senior_id = $1 ORDER BY priority, created_at LIMIT 1`,
+      [residentId]
+    )).rows[0] || null;
+    const lastInteraction = relationship ? (await query(
+      `SELECT * FROM family_interactions WHERE senior_id = $1 AND family_relationship_id = $2 ORDER BY occurred_at DESC LIMIT 1`,
+      [residentId, relationship.id]
+    )).rows[0] : null;
+    const social = (await query(`SELECT * FROM social_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC LIMIT 1`, [residentId])).rows[0] || null;
+    return {
+      primaryContact: relationship ? {
+        id: relationship.id,
+        name: relationship.display_name,
+        relationship: relationship.relationship
+      } : null,
+      lastInteractionAt: lastInteraction?.occurred_at || null,
+      daysWithoutFamilyContact: social?.days_without_family_contact ?? null,
+      summary: relationship
+        ? `${relationship.display_name} is listed as ${relationship.relationship}.`
+        : "No family relationship is configured yet."
+    };
+  }
+
+  function buildGuruExplanationPayload({ finalStatus, recommendations, trends, context, familyContext, confidence }) {
+    const whatChanged = trends
+      .filter(trend => trend.significance === "watch")
+      .slice(0, 4)
+      .map(trend => trend.explanation);
+    const whyItMatters = recommendations.map(item => item.why).filter(Boolean).slice(0, 4);
+    const reasons = [
+      ...whatChanged,
+      ...recommendations.map(item => item.title)
+    ].filter(Boolean).slice(0, 6);
+    const recommendedAction = recommendations[0]
+      ? {
+          title: recommendations[0].title,
+          body: recommendations[0].body,
+          actionType: recommendations[0].action_type || recommendations[0].actionType || "inform",
+          domain: recommendations[0].domain
+        }
+      : { title: "Keep routine", body: "No urgent action is needed right now.", actionType: "inform", domain: "daily" };
+    const plain = `${finalStatus.replace(/_/g, " ")} today. ${recommendedAction.body}`;
+    return {
+      reasons,
+      whatChanged: whatChanged.length ? whatChanged : ["No major change from baseline."],
+      whyItMatters: whyItMatters.length ? whyItMatters : ["Current signals are below the watch threshold."],
+      recommendedAction,
+      familyContext,
+      confidence,
+      plainLanguageSummary: plain,
+      context
+    };
+  }
+
   async function latestGuruIntelligenceContext(resident) {
     const [
       health,
@@ -864,6 +1031,8 @@ function createProductionApi(pool) {
 
   async function calculateAndPersistGuruRisk(req, user, resident) {
     const context = await latestGuruIntelligenceContext(resident);
+    const { baselines, trends } = await buildGuruBaselinesAndTrends(resident.id, context);
+    const familyContext = await buildFamilyContext(resident.id);
     const healthRisk = clampRiskScore(Math.max(
       integerRiskLevel(300 - numericValue(context.health?.sleep_minutes, 420), 0, 180),
       integerRiskLevel(55 - numericValue(context.health?.oxygen_saturation, 97), 0, 8),
@@ -905,9 +1074,26 @@ function createProductionApi(pool) {
     };
     const finalStatus = statusFromRiskScores(scoreFields, safetyRisk >= 100);
     const wellnessScore = clampRiskScore(100 - Math.max(...Object.values(scoreFields)));
-    const recommendations = buildGuruRecommendations(context);
+    const recommendations = buildGuruRecommendations({ ...context, trends, baselines });
+    if (familyContext.primaryContact && numericValue(context.social?.days_without_family_contact) >= 5) {
+      recommendations.push({
+        domain: "social",
+        severity: "watch",
+        title: `Call ${familyContext.primaryContact.name}`,
+        body: `${familyContext.primaryContact.name} has not connected recently.`,
+        why: "Family contact is a protective signal for isolation risk.",
+        actionType: "family_checkin"
+      });
+    }
+    const confidence = Math.max(50, Math.min(96, 100 - Math.round(Math.max(...Object.values(scoreFields)) / 4)));
+    const explanationPayload = buildGuruExplanationPayload({ finalStatus, recommendations, trends, context, familyContext, confidence });
     const explanation = {
       status: finalStatus,
+      reasons: explanationPayload.reasons,
+      whatChanged: explanationPayload.whatChanged,
+      whyItMatters: explanationPayload.whyItMatters,
+      recommendedAction: explanationPayload.recommendedAction,
+      familyContext,
       why: recommendations.map(item => item.why),
       context: {
         health: context.health ? { sleepMinutes: context.health.sleep_minutes, oxygenSaturation: context.health.oxygen_saturation, fallDetected: context.health.fall_detected } : null,
@@ -937,6 +1123,45 @@ function createProductionApi(pool) {
        RETURNING *`,
       [resident.id, wellnessScore, healthRisk, mobilityRisk, medicationRisk, socialRisk, environmentalRisk, safetyRisk, finalStatus, JSON.stringify(explanation), JSON.stringify(recommendations)]
     )).rows[0];
+    await query(`DELETE FROM guru_recommendations WHERE senior_id = $1 AND recommendation_date = current_date`, [resident.id]);
+    for (const item of recommendations) {
+      await query(
+        `INSERT INTO guru_recommendations (senior_id, domain, title, body, why, action_type, priority, source_risk_score_id, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [resident.id, item.domain || "daily", item.title, item.body || "", item.why || "", item.actionType || item.action_type || "inform", item.severity === "emergency" ? 100 : item.severity === "watch" ? 75 : 40, riskScore.id, JSON.stringify(item)]
+      );
+    }
+    await query(
+      `INSERT INTO guru_explanations (
+         senior_id, explanation_date, status, confidence, reasons, what_changed,
+         why_it_matters, recommended_action, family_context, plain_language_summary, source_risk_score_id, metadata
+       ) VALUES ($1,current_date,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (senior_id, explanation_date) DO UPDATE SET
+         status = EXCLUDED.status,
+         confidence = EXCLUDED.confidence,
+         reasons = EXCLUDED.reasons,
+         what_changed = EXCLUDED.what_changed,
+         why_it_matters = EXCLUDED.why_it_matters,
+         recommended_action = EXCLUDED.recommended_action,
+         family_context = EXCLUDED.family_context,
+         plain_language_summary = EXCLUDED.plain_language_summary,
+         source_risk_score_id = EXCLUDED.source_risk_score_id,
+         metadata = EXCLUDED.metadata,
+         updated_at = now()`,
+      [
+        resident.id,
+        finalStatus,
+        confidence,
+        JSON.stringify(explanationPayload.reasons),
+        JSON.stringify(explanationPayload.whatChanged),
+        JSON.stringify(explanationPayload.whyItMatters),
+        JSON.stringify(explanationPayload.recommendedAction),
+        JSON.stringify(familyContext),
+        explanationPayload.plainLanguageSummary,
+        riskScore.id,
+        JSON.stringify({ trends: trends.map(trend => trend.id), baselines })
+      ]
+    );
     await query(
       `INSERT INTO guru_daily_guidance (
          resident_id, guidance_date, daily_status, health_risk, environmental_risk,
@@ -964,12 +1189,12 @@ function createProductionApi(pool) {
         textRisk(medicationRisk),
         textRisk(safetyRisk),
         JSON.stringify(recommendations),
-        recommendations[0]?.title || "Daily status calculated",
-        JSON.stringify({ guruRiskScoreId: riskScore.id })
+        explanationPayload.plainLanguageSummary,
+        JSON.stringify({ guruRiskScoreId: riskScore.id, explanation: explanationPayload })
       ]
     );
     await audit(req, user, "guru_risk_recalculated", "guru_risk_score", riskScore.id, { finalStatus, scoreFields }, finalStatus === "STABLE" ? "info" : "warning");
-    return { riskScore, recommendations, explanation };
+    return { riskScore, recommendations, explanation, reasons: explanationPayload.reasons, whatChanged: explanationPayload.whatChanged, whyItMatters: explanationPayload.whyItMatters, recommendedAction: explanationPayload.recommendedAction, familyContext, baselines, trends };
   }
 
   async function recordGuruModelInvocation(residentId, provider, intent, route, metadata = {}) {
@@ -5801,9 +6026,15 @@ function createProductionApi(pool) {
       const existing = (await query(`SELECT * FROM guru_risk_scores WHERE senior_id = $1 ORDER BY score_date DESC, updated_at DESC LIMIT 1`, [resident.id])).rows[0];
       const result = existing ? { riskScore: existing, recommendations: existing.recommendations || [], explanation: existing.explanation || {} } : await calculateAndPersistGuruRisk(req, user, resident);
       const riskScore = result.riskScore;
+      const explanationRow = (await query(`SELECT * FROM guru_explanations WHERE senior_id = $1 ORDER BY explanation_date DESC, updated_at DESC LIMIT 1`, [resident.id])).rows[0] || null;
+      const familyContext = explanationRow?.family_context || result.familyContext || result.explanation?.familyContext || {};
+      const recommendedAction = explanationRow?.recommended_action || result.recommendedAction || result.explanation?.recommendedAction || result.recommendations[0] || {};
+      const whatChanged = explanationRow?.what_changed || result.whatChanged || result.explanation?.whatChanged || [];
+      const whyItMatters = explanationRow?.why_it_matters || result.whyItMatters || result.explanation?.whyItMatters || [];
+      const reasons = explanationRow?.reasons || result.reasons || result.explanation?.reasons || [];
       return {
         status: riskScore.final_status,
-        confidence: Math.max(50, Math.min(96, 100 - Math.round(Math.max(
+        confidence: explanationRow?.confidence || Math.max(50, Math.min(96, 100 - Math.round(Math.max(
           riskScore.health_risk_score,
           riskScore.mobility_risk_score,
           riskScore.medication_risk_score,
@@ -5811,7 +6042,12 @@ function createProductionApi(pool) {
           riskScore.environmental_risk_score,
           riskScore.safety_risk_score
         ) / 4))),
-        summary: result.recommendations[0]?.why || "Guru reviewed health, location, environment, mobility, social, medication, and safety signals.",
+        summary: explanationRow?.plain_language_summary || result.recommendations[0]?.body || "Guru reviewed health, location, environment, mobility, social, medication, and safety signals.",
+        whatChanged,
+        whyItMatters,
+        recommendedAction,
+        familyContext,
+        explanation: { reasons, whatChanged, whyItMatters, recommendedAction, familyContext },
         recommendations: result.recommendations,
         riskScore
       };
