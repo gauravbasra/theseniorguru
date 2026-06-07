@@ -3410,12 +3410,21 @@ function createProductionApi(pool) {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',60) RETURNING *`,
           [session.id, user.id, payload.businessType, payload.legalName, payload.dba || null, payload.ownerName, payload.phone, payload.email, payload.website || null, payload.address || null]
         )).rows[0];
-        const serviceLines = String(payload.services || payload.businessType).split(/\n|,/).map(v => v.trim()).filter(Boolean).slice(0, 10);
-        for (const serviceName of serviceLines.length ? serviceLines : [payload.businessType]) {
-          await tx(`INSERT INTO business_service_catalog (business_profile_id, category, service_name, description, price_unit) VALUES ($1,$2,$3,$4,'custom')`, [businessProfile.id, payload.businessType, serviceName, payload.pricing || null]);
+        const catalogItems = Array.isArray(payload.serviceCatalog)
+          ? payload.serviceCatalog.map(item => ({
+              name: String(item?.name || "").trim(),
+              price: String(item?.price || payload.pricing || "").trim()
+            })).filter(item => item.name).slice(0, 20)
+          : [];
+        const serviceLines = catalogItems.length
+          ? catalogItems
+          : String(payload.services || payload.businessType).split(/\n|,/).map(v => ({ name: v.trim(), price: payload.pricing || null })).filter(item => item.name).slice(0, 10);
+        for (const service of serviceLines.length ? serviceLines : [{ name: payload.businessType, price: payload.pricing || null }]) {
+          await tx(`INSERT INTO business_service_catalog (business_profile_id, category, service_name, description, price_unit) VALUES ($1,$2,$3,$4,'custom')`, [businessProfile.id, payload.businessType, service.name, service.price]);
         }
         await tx(`INSERT INTO business_service_areas (business_profile_id, service_radius_miles, zip_codes, boundary_notes, boundary_geojson) VALUES ($1,NULLIF($2,'')::numeric,$3,$4,$5)`, [businessProfile.id, String(payload.serviceRadius || '').replace(/[^0-9.]/g, '') || null, String(payload.serviceZips || '').split(',').map(v => v.trim()).filter(Boolean), payload.serviceBoundary || null, JSON.stringify({ source: 'mobile_onboarding', pendingGoogleMapsBoundaryValidation: true })]);
-        await tx(`INSERT INTO business_lead_rules (business_profile_id, max_leads_per_day, lead_types, communication_channels, accepts_urgent, accepts_recurring) VALUES ($1,NULLIF($2,'')::int,$3,$4,true,true)`, [businessProfile.id, String(payload.maxLeads || '').replace(/[^0-9]/g, '') || null, payload.leadTypes || [], payload.communication || ['app']]);
+        const leadRules = payload.leadRules || {};
+        await tx(`INSERT INTO business_lead_rules (business_profile_id, max_leads_per_day, lead_types, communication_channels, accepts_urgent, accepts_recurring) VALUES ($1,NULLIF($2,'')::int,$3,$4,$5,$6)`, [businessProfile.id, String(leadRules.maxLeadsPerDay || payload.maxLeads || '').replace(/[^0-9]/g, '') || null, payload.leadTypes || [], payload.communication || ['app'], leadRules.acceptUrgentRequests !== false, leadRules.acceptRecurringRequests !== false]);
         const capturedEvidenceIds = [payload.ownerPhotoEvidenceId, payload.ownerLivenessEvidenceId].filter(isUuid);
         if (capturedEvidenceIds.length) {
           await tx(
@@ -3428,7 +3437,16 @@ function createProductionApi(pool) {
         await tx(`INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata) VALUES ($1,'business','business_identity_verification_service_matching_lead_delivery','Business onboarding consent captured in mobile app.',true,$2,$3,$4)`, [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ serviceArea: payload.serviceBoundary, verificationDocs: payload.verificationDocs || [] })]);
         if (user.role === 'business') {
           const business = await getBusinessForUser(user);
-          if (business) await tx(`UPDATE businesses SET name=$1, contact_person=$2, email=$3, phone=$4, website=$5, description=$6, service_areas=$7, demographics=$8, onboarding_complete=true, status='pending_review', updated_at=now() WHERE id=$9`, [payload.dba || payload.legalName, payload.ownerName, payload.email, payload.phone, payload.website || '', payload.services || '', String(payload.serviceZips || '').split(',').map(v => v.trim()).filter(Boolean), [payload.businessType], business.id]);
+          if (business) {
+            await tx(`UPDATE businesses SET name=$1, contact_person=$2, email=$3, phone=$4, website=$5, description=$6, service_areas=$7, demographics=$8, onboarding_complete=true, status='pending_review', updated_at=now() WHERE id=$9`, [payload.dba || payload.legalName, payload.ownerName, payload.email, payload.phone, payload.website || '', payload.services || '', String(payload.serviceZips || '').split(',').map(v => v.trim()).filter(Boolean), [payload.businessType], business.id]);
+            for (const service of serviceLines.length ? serviceLines : [{ name: payload.businessType, price: payload.pricing || null }]) {
+              await tx(
+                `INSERT INTO services (business_id, name, category, price_label, status)
+                 VALUES ($1,$2,$3,$4,'pending_review')`,
+                [business.id, service.name, payload.businessType, service.price]
+              );
+            }
+          }
         }
         return { session, businessProfile };
       });

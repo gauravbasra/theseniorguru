@@ -133,6 +133,30 @@ void main() {
         isTrue,
       );
       expect(sessionBodies.any((body) => body['role'] == 'business'), isTrue);
+      Map<String, dynamic> requestBody(String path) {
+        return jsonDecode(
+              requests.lastWhere((item) => item['path'] == path)['body']
+                  as String,
+            )
+            as Map<String, dynamic>;
+      }
+
+      final seniorOnboarding = requestBody('/api/onboarding/senior');
+      expect(seniorOnboarding['wearableSources'], contains('fitbit'));
+      expect(seniorOnboarding['musicApps'], contains('spotify'));
+      expect(seniorOnboarding['dailyRoutine'], isA<Map<String, dynamic>>());
+
+      final trustOnboarding = requestBody('/api/onboarding/trust-circle');
+      expect(trustOnboarding['dataVisibility'], isA<Map<String, dynamic>>());
+      expect(trustOnboarding['emergencyRole'], isA<Map<String, dynamic>>());
+
+      final businessOnboarding = requestBody('/api/onboarding/business');
+      expect(businessOnboarding['serviceCatalog'], isA<List<dynamic>>());
+      expect(businessOnboarding['leadRules'], isA<Map<String, dynamic>>());
+      expect(
+        businessOnboarding['promotionPreferences'],
+        isA<Map<String, dynamic>>(),
+      );
       expect(
         requests
             .where((item) => item['path'] != '/api/auth/device-session')

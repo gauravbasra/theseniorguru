@@ -74,13 +74,42 @@ enum Screen {
   more,
   onboardingRole,
   onboardingWelcome,
+  seniorPhoto,
+  seniorVerify,
   onboardingProfile,
+  seniorAddress,
+  seniorHealth,
+  seniorMedications,
+  seniorDevices,
+  seniorPermissions,
+  seniorMusic,
   onboardingCircle,
+  seniorPrivacy,
+  seniorSos,
+  seniorRoutine,
   onboardingSafety,
   trustCircleInvite,
+  trustCircleRelationship,
   trustCircleProfile,
+  trustCircleMessaging,
+  trustCircleAlerts,
+  trustCircleVisibility,
+  trustCircleEmergency,
+  trustCirclePreview,
+  trustCircleSettings,
+  businessType,
   businessProfile,
+  businessVerification,
+  businessOwnerVerify,
   businessServices,
+  businessPricing,
+  businessAvailability,
+  businessServiceArea,
+  businessLeadRules,
+  businessCommunication,
+  businessReview,
+  businessDone,
+  businessSettings,
   medications,
   medicationConfirm,
   refill,
@@ -305,13 +334,69 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('onboard1'),
         go: go,
       ),
+      Screen.seniorPhoto => SeniorStepScreen(
+        key: const ValueKey('senior-photo'),
+        step: seniorStepSpecs[1],
+        go: go,
+      ),
+      Screen.seniorVerify => SeniorStepScreen(
+        key: const ValueKey('senior-verify'),
+        step: seniorStepSpecs[2],
+        go: go,
+      ),
       Screen.onboardingProfile => OnboardingProfile(
         key: const ValueKey('onboard2'),
+        go: go,
+      ),
+      Screen.seniorAddress => SeniorStepScreen(
+        key: const ValueKey('senior-address'),
+        step: seniorStepSpecs[4],
+        go: go,
+      ),
+      Screen.seniorHealth => SeniorStepScreen(
+        key: const ValueKey('senior-health'),
+        step: seniorStepSpecs[5],
+        go: go,
+      ),
+      Screen.seniorMedications => SeniorStepScreen(
+        key: const ValueKey('senior-meds'),
+        step: seniorStepSpecs[6],
+        go: go,
+      ),
+      Screen.seniorDevices => SeniorStepScreen(
+        key: const ValueKey('senior-devices'),
+        step: seniorStepSpecs[7],
+        go: go,
+      ),
+      Screen.seniorPermissions => SeniorStepScreen(
+        key: const ValueKey('senior-permissions'),
+        step: seniorStepSpecs[8],
+        go: go,
+      ),
+      Screen.seniorMusic => SeniorStepScreen(
+        key: const ValueKey('senior-music'),
+        step: seniorStepSpecs[9],
         go: go,
       ),
       Screen.onboardingCircle => OnboardingCircle(
         key: const ValueKey('onboard3'),
         go: go,
+      ),
+      Screen.seniorPrivacy => SeniorStepScreen(
+        key: const ValueKey('senior-privacy'),
+        step: seniorStepSpecs[11],
+        go: go,
+      ),
+      Screen.seniorSos => SeniorStepScreen(
+        key: const ValueKey('senior-sos'),
+        step: seniorStepSpecs[12],
+        go: go,
+      ),
+      Screen.seniorRoutine => SeniorStepScreen(
+        key: const ValueKey('senior-routine'),
+        step: seniorStepSpecs[13],
+        go: go,
+        runApi: runApi,
       ),
       Screen.onboardingSafety => OnboardingSafety(
         key: const ValueKey('onboard4'),
@@ -323,20 +408,109 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
         runApi: runApi,
       ),
+      Screen.trustCircleRelationship => TrustCircleStepScreen(
+        key: const ValueKey('trust-relationship'),
+        step: trustCircleStepSpecs[1],
+        go: go,
+      ),
       Screen.trustCircleProfile => TrustCircleProfileScreen(
         key: const ValueKey('trust-profile'),
         go: go,
         runApi: runApi,
+      ),
+      Screen.trustCircleMessaging => TrustCircleStepScreen(
+        key: const ValueKey('trust-messaging'),
+        step: trustCircleStepSpecs[3],
+        go: go,
+      ),
+      Screen.trustCircleAlerts => TrustCircleStepScreen(
+        key: const ValueKey('trust-alerts'),
+        step: trustCircleStepSpecs[4],
+        go: go,
+      ),
+      Screen.trustCircleVisibility => TrustCircleStepScreen(
+        key: const ValueKey('trust-visibility'),
+        step: trustCircleStepSpecs[5],
+        go: go,
+      ),
+      Screen.trustCircleEmergency => TrustCircleStepScreen(
+        key: const ValueKey('trust-emergency'),
+        step: trustCircleStepSpecs[6],
+        go: go,
+      ),
+      Screen.trustCirclePreview => TrustCircleStepScreen(
+        key: const ValueKey('trust-preview'),
+        step: trustCircleStepSpecs[7],
+        go: go,
+        runApi: runApi,
+      ),
+      Screen.trustCircleSettings => TrustCircleSettingsScreen(
+        key: const ValueKey('trust-settings'),
+        go: go,
+      ),
+      Screen.businessType => BusinessStepScreen(
+        key: const ValueKey('business-type'),
+        step: businessStepSpecs[0],
+        go: go,
       ),
       Screen.businessProfile => BusinessProfileScreen(
         key: const ValueKey('business-profile'),
         go: go,
         runApi: runApi,
       ),
+      Screen.businessVerification => BusinessStepScreen(
+        key: const ValueKey('business-verification'),
+        step: businessStepSpecs[2],
+        go: go,
+      ),
+      Screen.businessOwnerVerify => BusinessStepScreen(
+        key: const ValueKey('business-owner'),
+        step: businessStepSpecs[3],
+        go: go,
+      ),
       Screen.businessServices => BusinessServicesScreen(
         key: const ValueKey('business-services'),
         go: go,
         runApi: runApi,
+      ),
+      Screen.businessPricing => BusinessStepScreen(
+        key: const ValueKey('business-pricing'),
+        step: businessStepSpecs[5],
+        go: go,
+      ),
+      Screen.businessAvailability => BusinessStepScreen(
+        key: const ValueKey('business-availability'),
+        step: businessStepSpecs[6],
+        go: go,
+      ),
+      Screen.businessServiceArea => BusinessStepScreen(
+        key: const ValueKey('business-area'),
+        step: businessStepSpecs[7],
+        go: go,
+      ),
+      Screen.businessLeadRules => BusinessStepScreen(
+        key: const ValueKey('business-leads-rules'),
+        step: businessStepSpecs[8],
+        go: go,
+      ),
+      Screen.businessCommunication => BusinessStepScreen(
+        key: const ValueKey('business-comm'),
+        step: businessStepSpecs[9],
+        go: go,
+      ),
+      Screen.businessReview => BusinessStepScreen(
+        key: const ValueKey('business-review'),
+        step: businessStepSpecs[10],
+        go: go,
+        runApi: runApi,
+      ),
+      Screen.businessDone => BusinessDoneScreen(
+        key: const ValueKey('business-done'),
+        go: go,
+      ),
+      Screen.businessSettings => BusinessSettingsScreen(
+        key: const ValueKey('business-settings'),
+        go: go,
       ),
       Screen.medications => MedicationsScreen(
         key: const ValueKey('meds'),
@@ -434,7 +608,7 @@ Screen initialScreenFromKey(String key) {
     'onboarding' => Screen.onboardingRole,
     'onboardingRole' => Screen.onboardingRole,
     'trustCircle' => Screen.trustCircleInvite,
-    'businessOnboarding' => Screen.businessProfile,
+    'businessOnboarding' => Screen.businessType,
     'business' => Screen.businessDashboard,
     'trusted' => Screen.familyHealth,
     _ => Screen.guru,
@@ -463,17 +637,46 @@ AppRole? roleForScreen(Screen screen) {
   return switch (screen) {
     Screen.trustCircleInvite ||
     Screen.trustCircleProfile ||
+    Screen.trustCircleRelationship ||
+    Screen.trustCircleMessaging ||
+    Screen.trustCircleAlerts ||
+    Screen.trustCircleVisibility ||
+    Screen.trustCircleEmergency ||
+    Screen.trustCirclePreview ||
+    Screen.trustCircleSettings ||
     Screen.trustCircleMore => AppRole.trustedCircle,
+    Screen.businessType ||
     Screen.businessProfile ||
+    Screen.businessVerification ||
+    Screen.businessOwnerVerify ||
     Screen.businessServices ||
+    Screen.businessPricing ||
+    Screen.businessAvailability ||
+    Screen.businessServiceArea ||
+    Screen.businessLeadRules ||
+    Screen.businessCommunication ||
+    Screen.businessReview ||
+    Screen.businessDone ||
+    Screen.businessSettings ||
     Screen.businessDashboard ||
     Screen.businessLeads ||
     Screen.businessBookings ||
     Screen.businessMessages ||
     Screen.businessMore => AppRole.business,
     Screen.onboardingWelcome ||
+    Screen.seniorPhoto ||
+    Screen.seniorVerify ||
     Screen.onboardingProfile ||
+    Screen.seniorAddress ||
+    Screen.seniorHealth ||
+    Screen.seniorMedications ||
+    Screen.seniorDevices ||
+    Screen.seniorPermissions ||
+    Screen.seniorMusic ||
     Screen.onboardingCircle ||
+    Screen.seniorPrivacy ||
+    Screen.seniorSos ||
+    Screen.seniorRoutine ||
     Screen.onboardingSafety => AppRole.senior,
     _ => null,
   };
@@ -557,8 +760,19 @@ Screen primaryTabForScreen(Screen screen, AppRole role) {
       Screen.medicationConfirm ||
       Screen.refill ||
       Screen.onboardingWelcome ||
+      Screen.seniorPhoto ||
+      Screen.seniorVerify ||
       Screen.onboardingProfile ||
+      Screen.seniorAddress ||
+      Screen.seniorHealth ||
+      Screen.seniorMedications ||
+      Screen.seniorDevices ||
+      Screen.seniorPermissions ||
+      Screen.seniorMusic ||
       Screen.onboardingCircle ||
+      Screen.seniorPrivacy ||
+      Screen.seniorSos ||
+      Screen.seniorRoutine ||
       Screen.onboardingSafety ||
       Screen.onboardingRole ||
       Screen.wellness ||
@@ -573,7 +787,13 @@ Screen primaryTabForScreen(Screen screen, AppRole role) {
     AppRole.trustedCircle => switch (screen) {
       Screen.familyHealth ||
       Screen.trustCircleInvite ||
-      Screen.trustCircleProfile => Screen.familyHealth,
+      Screen.trustCircleRelationship ||
+      Screen.trustCircleProfile ||
+      Screen.trustCircleMessaging ||
+      Screen.trustCircleAlerts ||
+      Screen.trustCircleVisibility ||
+      Screen.trustCircleEmergency ||
+      Screen.trustCirclePreview => Screen.familyHealth,
       Screen.vitals => Screen.vitals,
       Screen.risk || Screen.safety => Screen.risk,
       Screen.circle || Screen.person => Screen.circle,
@@ -581,11 +801,22 @@ Screen primaryTabForScreen(Screen screen, AppRole role) {
     },
     AppRole.business => switch (screen) {
       Screen.businessProfile ||
+      Screen.businessType ||
+      Screen.businessVerification ||
+      Screen.businessOwnerVerify ||
       Screen.businessServices ||
+      Screen.businessPricing ||
+      Screen.businessAvailability ||
+      Screen.businessServiceArea ||
+      Screen.businessLeadRules ||
+      Screen.businessCommunication ||
+      Screen.businessReview ||
+      Screen.businessDone ||
       Screen.businessDashboard => Screen.businessDashboard,
       Screen.businessLeads || Screen.services => Screen.businessLeads,
       Screen.businessBookings => Screen.businessBookings,
       Screen.businessMessages => Screen.businessMessages,
+      Screen.businessSettings || Screen.businessMore => Screen.businessMore,
       _ => Screen.businessMore,
     },
   };
@@ -1011,11 +1242,18 @@ class SoftCard extends StatelessWidget {
 }
 
 class PurpleButton extends StatelessWidget {
-  const PurpleButton(this.label, {super.key, required this.onTap, this.icon});
+  const PurpleButton(
+    this.label, {
+    super.key,
+    required this.onTap,
+    this.icon,
+    this.color = TsgColors.purple,
+  });
 
   final String label;
   final VoidCallback onTap;
   final IconData? icon;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -1025,15 +1263,19 @@ class PurpleButton extends StatelessWidget {
         height: 50,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFFA66CC5), TsgColors.purple, Color(0xFF4F2A73)],
+          gradient: LinearGradient(
+            colors: [
+              color.withValues(alpha: .78),
+              color,
+              Color.lerp(color, Colors.black, .28)!,
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(17),
           boxShadow: [
             BoxShadow(
-              color: TsgColors.purple.withValues(alpha: .22),
+              color: color.withValues(alpha: .22),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -3173,6 +3415,11 @@ class TrustCircleMore extends StatelessWidget {
       (CupertinoIcons.person_2_fill, 'Trusted Circle', Screen.circle),
       (CupertinoIcons.bell_fill, 'Safety Alerts', Screen.safety),
       (
+        CupertinoIcons.slider_horizontal_3,
+        'Trust Circle Settings',
+        Screen.trustCircleSettings,
+      ),
+      (
         CupertinoIcons.person_badge_plus,
         'Invite Setup',
         Screen.trustCircleInvite,
@@ -3611,11 +3858,17 @@ class BusinessMoreScreen extends StatelessWidget {
         Screen.businessProfile,
       ),
       (
+        CupertinoIcons.slider_horizontal_3,
+        'Business settings',
+        Screen.businessSettings,
+      ),
+      (
         CupertinoIcons.square_grid_2x2_fill,
         'Services',
         Screen.businessServices,
       ),
       (CupertinoIcons.chart_bar_fill, 'Performance', Screen.businessDashboard),
+      (CupertinoIcons.speaker_2_fill, 'Promotions', Screen.businessSettings),
       (CupertinoIcons.chat_bubble_2_fill, 'Messages', Screen.businessMessages),
       (CupertinoIcons.calendar_badge_plus, 'Bookings', Screen.businessBookings),
     ];
@@ -3657,6 +3910,211 @@ class BusinessMoreScreen extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class TrustCircleSettingsScreen extends StatelessWidget {
+  const TrustCircleSettingsScreen({super.key, required this.go});
+
+  final ValueChanged<Screen> go;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Trust Circle Settings',
+      subtitle: 'Edit invite access, alerts, visibility, and emergency role.',
+      back: () => go(Screen.trustCircleMore),
+      children: [
+        SettingsSection(
+          title: 'Relationship and Contact',
+          rows: const [
+            ('Relationship', 'Daughter'),
+            ('Phone', '+1 (655) 987-6543'),
+            ('Email', 'rita.sharma@email.com'),
+            ('Time zone', '(PST) Pacific Time'),
+          ],
+        ),
+        SettingsSection(
+          title: 'Alerts and Messaging',
+          rows: const [
+            ('Routine updates', '9:00 AM - 8:00 PM'),
+            ('Quiet hours', '8:00 PM - 8:00 AM'),
+            ('SOS alerts', 'On'),
+            ('Emergency alerts', 'Call + SMS'),
+          ],
+        ),
+        SettingsSection(
+          title: 'Data Visibility',
+          rows: const [
+            ('Basic info', 'Allowed'),
+            ('Daily check-ins', 'Allowed'),
+            ('Medications', 'Allowed'),
+            ('Appointments', 'Allowed'),
+            ('Health analytics', 'Locked'),
+            ('Location history', 'Locked'),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class BusinessSettingsScreen extends StatelessWidget {
+  const BusinessSettingsScreen({super.key, required this.go});
+
+  final ValueChanged<Screen> go;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Business Settings',
+      subtitle:
+          'Edit services, pricing, service area, leads, ads, and contact rules.',
+      back: () => go(Screen.businessMore),
+      children: [
+        SettingsSection(
+          title: 'Services and Pricing',
+          rows: const [
+            ('Local Ride', r'$18 - $25'),
+            ('Airport Ride', r'$55 - $65'),
+            ('Doctor Appointment Ride', r'$25'),
+            ('Senior Shopping Trip', r'$20'),
+          ],
+        ),
+        SettingsSection(
+          title: 'Location and Availability',
+          rows: const [
+            ('Service radius', '15 miles around Sunnyvale'),
+            ('Zip codes', '80124, 80126, 80129, 80202'),
+            ('Hours', 'Mon - Sun, 6:00 AM - 10:00 PM'),
+            ('Same-day service', 'On'),
+            ('Emergency service', 'On'),
+          ],
+        ),
+        SettingsSection(
+          title: 'Leads and Promotion',
+          rows: const [
+            ('Max leads per day', '10'),
+            ('Preferred lead type', 'All rides'),
+            ('Urgent requests', 'Accepted'),
+            ('Recurring requests', 'Accepted'),
+            ('Platform advertising', 'Ready to create promotion'),
+          ],
+        ),
+        SettingsSection(
+          title: 'Communication',
+          rows: const [
+            ('SMS', 'On'),
+            ('Email', 'On'),
+            ('Phone call', 'On'),
+            ('In-app notifications', 'On'),
+            ('Auto-reply', 'Thank you. We will get back to you shortly.'),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class BusinessDoneScreen extends StatelessWidget {
+  const BusinessDoneScreen({super.key, required this.go});
+
+  final ValueChanged<Screen> go;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: "You're all set!",
+      subtitle:
+          'Your account is under review. We will notify you once it is approved.',
+      children: [
+        const Center(
+          child: Avatar(
+            size: 112,
+            icon: CupertinoIcons.checkmark_shield_fill,
+            tone: Color(0xFFE4F7EA),
+          ),
+        ),
+        const SizedBox(height: 22),
+        SoftCard(
+          color: const Color(0xFFEAF8EF),
+          child: const Row(
+            children: [
+              Icon(CupertinoIcons.car_detailed, color: TsgColors.green),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'CareRide is ready for profile review, service approval, and marketplace matching.',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        PurpleButton(
+          'Go to Dashboard',
+          color: TsgColors.green,
+          onTap: () => go(Screen.businessDashboard),
+        ),
+      ],
+    );
+  }
+}
+
+class SettingsSection extends StatelessWidget {
+  const SettingsSection({super.key, required this.title, required this.rows});
+
+  final String title;
+  final List<(String, String)> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: SoftCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 12),
+            ...rows.map(
+              (row) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        row.$1,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        row.$2,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(color: TsgColors.muted),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      CupertinoIcons.pencil,
+                      size: 15,
+                      color: TsgColors.muted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -4107,10 +4565,7 @@ class OnboardingWelcome extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 34),
-        PurpleButton(
-          'Create Account',
-          onTap: () => go(Screen.onboardingProfile),
-        ),
+        PurpleButton('Create Account', onTap: () => go(Screen.seniorPhoto)),
         const SizedBox(height: 18),
         Center(
           child: TextButton(
@@ -4182,7 +4637,7 @@ class OnboardingRoleSelection extends StatelessWidget {
                 displayName: 'Rohit Mehta',
               );
             });
-            go(Screen.businessProfile);
+            go(Screen.businessType);
           },
         ),
       ],
@@ -4241,6 +4696,840 @@ class RoleChoiceCard extends StatelessWidget {
   }
 }
 
+class OnboardingStepSpec {
+  const OnboardingStepSpec({
+    required this.flow,
+    required this.step,
+    required this.total,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.next,
+    this.back,
+    this.heroIcon,
+    this.fields = const [],
+    this.cards = const [],
+    this.toggles = const [],
+    this.primaryLabel = 'Continue',
+  });
+
+  final String flow;
+  final int step;
+  final int total;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final Screen next;
+  final Screen? back;
+  final IconData? heroIcon;
+  final List<(String, String)> fields;
+  final List<(IconData, String, String)> cards;
+  final List<(String, bool)> toggles;
+  final String primaryLabel;
+}
+
+final seniorStepSpecs = <OnboardingStepSpec>[
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 1,
+    total: 14,
+    title: 'Hello Anita!',
+    subtitle:
+        'I am Guru, your AI companion. I am here to make daily life easier, safer and more connected.',
+    accent: TsgColors.purple,
+    next: Screen.seniorPhoto,
+    heroIcon: CupertinoIcons.hand_raised_fill,
+    primaryLabel: 'Get Started',
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 2,
+    total: 14,
+    title: 'Photo',
+    subtitle: 'Add your photo so friends and family can recognize you.',
+    accent: TsgColors.purple,
+    back: Screen.onboardingWelcome,
+    next: Screen.seniorVerify,
+    heroIcon: CupertinoIcons.camera_fill,
+    cards: const [
+      (CupertinoIcons.camera_fill, 'Take Photo', 'Use camera'),
+      (CupertinoIcons.photo_fill, 'Upload Photo', 'Choose existing'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 3,
+    total: 14,
+    title: 'Verify',
+    subtitle: 'Short safety check to confirm it is really you.',
+    accent: TsgColors.purple,
+    back: Screen.seniorPhoto,
+    next: Screen.onboardingProfile,
+    heroIcon: CupertinoIcons.video_camera_solid,
+    cards: const [
+      (CupertinoIcons.arrow_right, 'Turn your head right', 'Completed'),
+      (CupertinoIcons.check_mark, 'Blink your eyes', 'Completed'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 4,
+    total: 14,
+    title: 'Basic Info',
+    subtitle: 'Tell me a bit about you.',
+    accent: TsgColors.purple,
+    back: Screen.seniorVerify,
+    next: Screen.seniorAddress,
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 5,
+    total: 14,
+    title: 'Address',
+    subtitle: 'Where should Guru coordinate help?',
+    accent: TsgColors.purple,
+    back: Screen.onboardingProfile,
+    next: Screen.seniorHealth,
+    fields: const [
+      ('Home', '123 Greenview Dr, Sunnyvale, CA 94086'),
+      ('Community', 'Park View Community'),
+      ('Preferred hospital', 'City Care Hospital'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 6,
+    total: 14,
+    title: 'Health Snapshot',
+    subtitle: 'Select what applies to you. You can update anytime.',
+    accent: TsgColors.purple,
+    back: Screen.seniorAddress,
+    next: Screen.seniorMedications,
+    cards: const [
+      (CupertinoIcons.heart_fill, 'Heart Condition', 'Track gently'),
+      (CupertinoIcons.drop_fill, 'High Blood Pressure', 'Baseline'),
+      (CupertinoIcons.memories, 'Memory Concerns', 'Support'),
+      (CupertinoIcons.person_fill, 'Mobility Limitation', 'Fall aware'),
+      (CupertinoIcons.ear, 'Vision / Hearing', 'Accessibility'),
+      (CupertinoIcons.bandage_fill, 'Arthritis / Joint Pain', 'Activity'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 7,
+    total: 14,
+    title: 'Medications',
+    subtitle: 'Add medications so I can remind you.',
+    accent: TsgColors.purple,
+    back: Screen.seniorHealth,
+    next: Screen.seniorDevices,
+    heroIcon: CupertinoIcons.capsule_fill,
+    cards: const [
+      (CupertinoIcons.pencil, 'Add Manually', 'Lisinopril 10mg'),
+      (CupertinoIcons.camera, 'Scan Medication Bottle', 'Use camera'),
+      (CupertinoIcons.tray_arrow_down_fill, 'Import from Pharmacy', 'Connect'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 8,
+    total: 14,
+    title: 'Connect Devices',
+    subtitle: 'Connect your devices to track your health.',
+    accent: TsgColors.purple,
+    back: Screen.seniorMedications,
+    next: Screen.seniorPermissions,
+    cards: const [
+      (CupertinoIcons.heart_fill, 'Apple Health', 'Connect'),
+      (CupertinoIcons.heart_fill, 'Fitbit', 'Connect'),
+      (CupertinoIcons.location_north_fill, 'Garmin', 'Connect'),
+      (CupertinoIcons.circle_grid_3x3_fill, 'Samsung Health', 'Connect'),
+      (CupertinoIcons.timer, 'Oura', 'Connect'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 9,
+    total: 14,
+    title: 'Permissions',
+    subtitle: 'Allow permissions to enable core features.',
+    accent: TsgColors.purple,
+    back: Screen.seniorDevices,
+    next: Screen.seniorMusic,
+    cards: const [
+      (
+        CupertinoIcons.location_fill,
+        'Location',
+        'Used for rides, emergencies and check-ins',
+      ),
+      (
+        CupertinoIcons.bell_fill,
+        'Notifications',
+        'Reminders and important alerts',
+      ),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 10,
+    total: 14,
+    title: 'Music',
+    subtitle: 'What music do you enjoy?',
+    accent: TsgColors.purple,
+    back: Screen.seniorPermissions,
+    next: Screen.onboardingCircle,
+    cards: const [
+      (CupertinoIcons.music_note_2, 'Old Hindi Songs', 'Favorite'),
+      (CupertinoIcons.music_note, 'Bhajans', 'Favorite'),
+      (CupertinoIcons.play_circle_fill, 'Spotify', 'Connect'),
+      (CupertinoIcons.music_albums_fill, 'Apple Music', 'Connect'),
+      (CupertinoIcons.play_rectangle_fill, 'YouTube Music', 'Connect'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 11,
+    total: 14,
+    title: 'Trust Circle',
+    subtitle: 'Who should I contact if you need help?',
+    accent: TsgColors.purple,
+    back: Screen.seniorMusic,
+    next: Screen.seniorPrivacy,
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 12,
+    total: 14,
+    title: 'Privacy Controls',
+    subtitle: 'Choose what your circle can see.',
+    accent: TsgColors.purple,
+    back: Screen.onboardingCircle,
+    next: Screen.seniorSos,
+    toggles: const [
+      ('Daily check-ins', true),
+      ('Medications', true),
+      ('Appointments', true),
+      ('Location history', false),
+      ('Health analytics', true),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 13,
+    total: 14,
+    title: 'SOS Setup',
+    subtitle: 'Set the emergency escalation order.',
+    accent: TsgColors.purple,
+    back: Screen.seniorPrivacy,
+    next: Screen.seniorRoutine,
+    cards: const [
+      (CupertinoIcons.person_2_fill, 'Rita Sharma', 'Primary contact'),
+      (CupertinoIcons.phone_fill, '911', 'Emergency fallback'),
+      (CupertinoIcons.building_2_fill, 'Community Staff', 'Backup support'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Senior onboarding flow',
+    step: 14,
+    total: 14,
+    title: 'Daily Routine',
+    subtitle: 'Set up your daily rhythm and alerts.',
+    accent: TsgColors.purple,
+    back: Screen.seniorSos,
+    next: Screen.today,
+    primaryLabel: 'Finish Setup',
+    toggles: const [
+      ('Emergency alerts', true),
+      ('Medication alerts', true),
+      ('Appointments', true),
+      ('Location', false),
+      ('Health data', true),
+      ('Daily check-ins', true),
+    ],
+  ),
+];
+
+final trustCircleStepSpecs = <OnboardingStepSpec>[
+  OnboardingStepSpec(
+    flow: 'Trust circle onboarding flow',
+    step: 1,
+    total: 8,
+    title: 'Invite',
+    subtitle: 'Anita has invited you to her Trust Circle.',
+    accent: TsgColors.purple,
+    next: Screen.trustCircleRelationship,
+    heroIcon: CupertinoIcons.person_crop_circle_badge_checkmark,
+    primaryLabel: 'Accept Invite',
+  ),
+  OnboardingStepSpec(
+    flow: 'Trust circle onboarding flow',
+    step: 2,
+    total: 8,
+    title: 'Relationship',
+    subtitle: 'What is your relationship with Anita?',
+    accent: TsgColors.purple,
+    back: Screen.trustCircleInvite,
+    next: Screen.trustCircleProfile,
+    cards: const [
+      (CupertinoIcons.check_mark_circled_solid, 'Daughter', 'Selected'),
+      (CupertinoIcons.person_fill, 'Son', 'Option'),
+      (CupertinoIcons.heart_fill, 'Spouse', 'Option'),
+      (CupertinoIcons.person_2_fill, 'Caregiver', 'Option'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Trust circle onboarding flow',
+    step: 3,
+    total: 8,
+    title: 'Contact Info',
+    subtitle: 'Your contact information.',
+    accent: TsgColors.purple,
+    back: Screen.trustCircleRelationship,
+    next: Screen.trustCircleMessaging,
+  ),
+  OnboardingStepSpec(
+    flow: 'Trust circle onboarding flow',
+    step: 4,
+    total: 8,
+    title: 'Messaging Rules',
+    subtitle: 'When can we message you?',
+    accent: TsgColors.purple,
+    back: Screen.trustCircleProfile,
+    next: Screen.trustCircleAlerts,
+    toggles: const [
+      ('Routine updates: 9:00 AM - 8:00 PM', true),
+      ('Quiet hours: 8:00 PM - 8:00 AM', true),
+      ('Urgent alerts anytime', true),
+      ('Emergency alerts by call + SMS', true),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Trust circle onboarding flow',
+    step: 5,
+    total: 8,
+    title: 'Alert Preferences',
+    subtitle: 'Which alerts do you want to receive?',
+    accent: TsgColors.purple,
+    back: Screen.trustCircleMessaging,
+    next: Screen.trustCircleVisibility,
+    toggles: const [
+      ('Missed check-ins', true),
+      ('Medication alerts', true),
+      ('Health alerts', true),
+      ('Mood / wellness alerts', false),
+      ('Location alerts', true),
+      ('SOS alerts', true),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Trust circle onboarding flow',
+    step: 6,
+    total: 8,
+    title: 'Data Visibility',
+    subtitle: 'What can you see?',
+    accent: TsgColors.purple,
+    back: Screen.trustCircleAlerts,
+    next: Screen.trustCircleEmergency,
+    toggles: const [
+      ('Basic info', true),
+      ('Daily check-ins', true),
+      ('Medications', true),
+      ('Appointments', true),
+      ('Health analytics', false),
+      ('Location history', false),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Trust circle onboarding flow',
+    step: 7,
+    total: 8,
+    title: 'Emergency Role',
+    subtitle: 'What is your role in emergencies?',
+    accent: TsgColors.purple,
+    back: Screen.trustCircleVisibility,
+    next: Screen.trustCirclePreview,
+    toggles: const [
+      ('Primary contact', true),
+      ('I can call 911 if needed', true),
+      ('I can contact community staff', true),
+      ('I can book services on behalf of Anita', false),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Trust circle onboarding flow',
+    step: 8,
+    total: 8,
+    title: 'Dashboard Preview',
+    subtitle: 'Control what your dashboard looks like.',
+    accent: TsgColors.purple,
+    back: Screen.trustCircleEmergency,
+    next: Screen.familyHealth,
+    primaryLabel: 'Go to Dashboard',
+    cards: const [
+      (
+        CupertinoIcons.person_fill,
+        'Anita Sharma',
+        'All good - checked in 2h ago',
+      ),
+      (CupertinoIcons.capsule_fill, 'Next Medication', 'Call 8 AM'),
+      (CupertinoIcons.calendar, 'Upcoming Appointment', 'May 10 - 10:00 AM'),
+      (
+        CupertinoIcons.check_mark_circled_solid,
+        'Today Plan',
+        '3 tasks remaining',
+      ),
+    ],
+  ),
+];
+
+final businessStepSpecs = <OnboardingStepSpec>[
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 1,
+    total: 11,
+    title: 'Business Type',
+    subtitle: 'What type of service do you provide?',
+    accent: TsgColors.green,
+    next: Screen.businessProfile,
+    cards: const [
+      (CupertinoIcons.car_detailed, 'Transportation', 'Rides'),
+      (CupertinoIcons.bag_fill, 'Meals', 'Food'),
+      (CupertinoIcons.house_fill, 'Home Care', 'Support'),
+      (CupertinoIcons.sparkles, 'Cleaning', 'Home'),
+      (CupertinoIcons.person_2_fill, 'Companionship', 'Social'),
+      (CupertinoIcons.capsule_fill, 'Pharmacy', 'Medication'),
+      (CupertinoIcons.wrench_fill, 'Handyman', 'Repairs'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 2,
+    total: 11,
+    title: 'Business Info',
+    subtitle: 'Tell us about your business.',
+    accent: TsgColors.green,
+    back: Screen.businessType,
+    next: Screen.businessVerification,
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 3,
+    total: 11,
+    title: 'Verification',
+    subtitle: 'Verify your business.',
+    accent: TsgColors.green,
+    back: Screen.businessProfile,
+    next: Screen.businessOwnerVerify,
+    cards: const [
+      (CupertinoIcons.doc_text_fill, 'Business License', 'Upload'),
+      (CupertinoIcons.link, 'Insurance Certificate', 'Upload'),
+      (CupertinoIcons.person_crop_square_fill, 'Owner Photo', 'Upload'),
+      (CupertinoIcons.creditcard_fill, 'Government ID', 'Upload'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 4,
+    total: 11,
+    title: 'Owner Verification',
+    subtitle: 'Let us verify it is really you.',
+    accent: TsgColors.green,
+    back: Screen.businessVerification,
+    next: Screen.businessServices,
+    heroIcon: CupertinoIcons.person_crop_circle_badge_checkmark,
+    cards: const [
+      (CupertinoIcons.arrow_right, 'Blink your eyes', 'Completed'),
+      (CupertinoIcons.check_mark, 'Face match', 'Passed'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 5,
+    total: 11,
+    title: 'Services',
+    subtitle: 'Add the services you offer.',
+    accent: TsgColors.green,
+    back: Screen.businessOwnerVerify,
+    next: Screen.businessPricing,
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 6,
+    total: 11,
+    title: 'Pricing',
+    subtitle: 'Set transparent pricing.',
+    accent: TsgColors.green,
+    back: Screen.businessServices,
+    next: Screen.businessAvailability,
+    fields: const [
+      ('Local Ride', r'$18 - $25'),
+      ('Airport Ride', r'$55 - $65'),
+      ('Doctor Appointment Ride', r'$25'),
+      ('Senior Shopping Trip', r'$20'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 7,
+    total: 11,
+    title: 'Availability',
+    subtitle: 'When are you available?',
+    accent: TsgColors.green,
+    back: Screen.businessPricing,
+    next: Screen.businessServiceArea,
+    fields: const [
+      ('Days', 'Sun, Mon, Tue, Wed, Thu, Fri, Sat'),
+      ('Hours', '6:00 AM - 10:00 PM'),
+    ],
+    toggles: const [('Same-day service', true), ('Emergency service', true)],
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 8,
+    total: 11,
+    title: 'Service Area',
+    subtitle: 'Where do you provide service?',
+    accent: TsgColors.green,
+    back: Screen.businessAvailability,
+    next: Screen.businessLeadRules,
+    heroIcon: CupertinoIcons.map_fill,
+    fields: const [
+      ('Radius', '15 miles around Sunnyvale, CA'),
+      ('Zip codes', '80124, 80126, 80129, 80202'),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 9,
+    total: 11,
+    title: 'Lead Preferences',
+    subtitle: 'What leads do you want?',
+    accent: TsgColors.green,
+    back: Screen.businessServiceArea,
+    next: Screen.businessCommunication,
+    fields: const [
+      ('Max leads per day', '10'),
+      ('Preferred lead type', 'All rides'),
+      ('Min. job value', r'$15'),
+    ],
+    toggles: const [
+      ('Accept urgent requests', true),
+      ('Accept recurring requests', true),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 10,
+    total: 11,
+    title: 'Communication',
+    subtitle: 'How should we contact you?',
+    accent: TsgColors.green,
+    back: Screen.businessLeadRules,
+    next: Screen.businessReview,
+    toggles: const [
+      ('SMS', true),
+      ('Email', true),
+      ('Phone call', true),
+      ('In-app notifications', true),
+    ],
+    fields: const [
+      ('Auto-reply message', "Thank you. We will get back to you shortly."),
+    ],
+  ),
+  OnboardingStepSpec(
+    flow: 'Business onboarding flow',
+    step: 11,
+    total: 11,
+    title: 'Review',
+    subtitle: 'Review your information before submitting.',
+    accent: TsgColors.green,
+    back: Screen.businessCommunication,
+    next: Screen.businessDone,
+    primaryLabel: 'Submit for Review',
+    cards: const [
+      (CupertinoIcons.car_detailed, 'Business Type', 'Transportation'),
+      (CupertinoIcons.square_grid_2x2_fill, 'Services', '4 services added'),
+      (
+        CupertinoIcons.location_fill,
+        'Service Area',
+        '15 miles around Sunnyvale',
+      ),
+      (CupertinoIcons.clock_fill, 'Availability', 'Mon - Sun, 6AM - 10PM'),
+      (CupertinoIcons.check_mark_circled_solid, 'Verification', 'In review'),
+    ],
+  ),
+];
+
+class SeniorStepScreen extends StatelessWidget {
+  const SeniorStepScreen({
+    super.key,
+    required this.step,
+    required this.go,
+    this.runApi,
+  });
+
+  final OnboardingStepSpec step;
+  final ValueChanged<Screen> go;
+  final ApiRunner? runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    return OnboardingSpecScreen(
+      step: step,
+      go: go,
+      runApi: runApi,
+      onFinish: (runner) async {
+        await runner?.call('Completing senior onboarding', (client, state) {
+          return client.completeSeniorOnboarding();
+        });
+      },
+    );
+  }
+}
+
+class TrustCircleStepScreen extends StatelessWidget {
+  const TrustCircleStepScreen({
+    super.key,
+    required this.step,
+    required this.go,
+    this.runApi,
+  });
+
+  final OnboardingStepSpec step;
+  final ValueChanged<Screen> go;
+  final ApiRunner? runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    return OnboardingSpecScreen(
+      step: step,
+      go: go,
+      runApi: runApi,
+      onFinish: (runner) async {
+        await runner?.call('Completing trusted circle onboarding', (
+          client,
+          state,
+        ) {
+          return client.completeTrustCircleOnboarding();
+        });
+      },
+    );
+  }
+}
+
+class BusinessStepScreen extends StatelessWidget {
+  const BusinessStepScreen({
+    super.key,
+    required this.step,
+    required this.go,
+    this.runApi,
+  });
+
+  final OnboardingStepSpec step;
+  final ValueChanged<Screen> go;
+  final ApiRunner? runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    return OnboardingSpecScreen(
+      step: step,
+      go: go,
+      runApi: runApi,
+      onFinish: (runner) async {
+        await runner?.call('Submitting business onboarding', (client, state) {
+          return client.completeBusinessOnboarding();
+        });
+      },
+    );
+  }
+}
+
+class OnboardingSpecScreen extends StatelessWidget {
+  const OnboardingSpecScreen({
+    super.key,
+    required this.step,
+    required this.go,
+    this.runApi,
+    this.onFinish,
+  });
+
+  final OnboardingStepSpec step;
+  final ValueChanged<Screen> go;
+  final ApiRunner? runApi;
+  final Future<void> Function(ApiRunner? runApi)? onFinish;
+
+  @override
+  Widget build(BuildContext context) {
+    final isFinish =
+        step.primaryLabel.toLowerCase().contains('finish') ||
+        step.primaryLabel.toLowerCase().contains('submit') ||
+        step.primaryLabel.toLowerCase().contains('dashboard');
+    return ScreenScaffold(
+      title: step.title,
+      subtitle: step.subtitle,
+      back: step.back == null ? null : () => go(step.back!),
+      children: [
+        RoleFlowHeader(step),
+        if (step.heroIcon != null) ...[
+          const SizedBox(height: 18),
+          Center(
+            child: Avatar(
+              size: 104,
+              icon: step.heroIcon!,
+              tone: step.accent.withValues(alpha: .12),
+            ),
+          ),
+        ],
+        if (step.fields.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          ...step.fields.map((item) => field(item.$1, item.$2)),
+        ],
+        if (step.cards.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          ...step.cards.map(
+            (item) => OnboardingOptionCard(item: item, accent: step.accent),
+          ),
+        ],
+        if (step.toggles.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          ...step.toggles.map(
+            (item) => OnboardingToggleRow(item: item, accent: step.accent),
+          ),
+        ],
+        const SizedBox(height: 22),
+        PurpleButton(
+          step.primaryLabel,
+          color: step.accent,
+          onTap: () async {
+            if (isFinish) await onFinish?.call(runApi);
+            go(step.next);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class RoleFlowHeader extends StatelessWidget {
+  const RoleFlowHeader(this.step, {super.key});
+  final OnboardingStepSpec step;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: step.accent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            step.flow.toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const Spacer(),
+        Text(
+          '${step.step} / ${step.total}',
+          style: TextStyle(color: step.accent, fontWeight: FontWeight.w900),
+        ),
+      ],
+    );
+  }
+}
+
+class OnboardingOptionCard extends StatelessWidget {
+  const OnboardingOptionCard({
+    super.key,
+    required this.item,
+    required this.accent,
+  });
+
+  final (IconData, String, String) item;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: SoftCard(
+        padding: const EdgeInsets.all(13),
+        child: Row(
+          children: [
+            Avatar(
+              size: 42,
+              icon: item.$1,
+              tone: accent.withValues(alpha: .12),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.$2,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.$3,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: TsgColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(CupertinoIcons.chevron_right, color: accent, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class OnboardingToggleRow extends StatelessWidget {
+  const OnboardingToggleRow({
+    super.key,
+    required this.item,
+    required this.accent,
+  });
+
+  final (String, bool) item;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: SoftCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                item.$1,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            CupertinoSwitch(
+              value: item.$2,
+              activeTrackColor: accent,
+              onChanged: (_) {},
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class OnboardingProfile extends StatelessWidget {
   const OnboardingProfile({super.key, required this.go});
   final ValueChanged<Screen> go;
@@ -4262,7 +5551,7 @@ class OnboardingProfile extends StatelessWidget {
         field('Community (optional)', 'Park View Community'),
         field('Medical preferences', 'None selected'),
         const SizedBox(height: 20),
-        PurpleButton('Continue', onTap: () => go(Screen.onboardingCircle)),
+        PurpleButton('Continue', onTap: () => go(Screen.seniorAddress)),
       ],
     );
   }
@@ -4324,7 +5613,7 @@ class OnboardingCircle extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        PurpleButton('Continue', onTap: () => go(Screen.onboardingSafety)),
+        PurpleButton('Continue', onTap: () => go(Screen.seniorPrivacy)),
       ],
     );
   }
@@ -4420,7 +5709,7 @@ class TrustCircleInviteScreen extends StatelessWidget {
         const SizedBox(height: 22),
         PurpleButton(
           'Accept Invite',
-          onTap: () => go(Screen.trustCircleProfile),
+          onTap: () => go(Screen.trustCircleRelationship),
         ),
       ],
     );
@@ -4453,18 +5742,7 @@ class TrustCircleProfileScreen extends StatelessWidget {
         field('Visibility', 'Summary, safety, medications, rides'),
         field('Alerts', 'SOS, falls, missed medication, daily status'),
         const SizedBox(height: 18),
-        PurpleButton(
-          'Finish Trusted Circle Setup',
-          onTap: () async {
-            await runApi('Completing trusted circle onboarding', (
-              client,
-              state,
-            ) {
-              return client.completeTrustCircleOnboarding();
-            });
-            go(Screen.familyHealth);
-          },
-        ),
+        PurpleButton('Continue', onTap: () => go(Screen.trustCircleMessaging)),
       ],
     );
   }
@@ -4496,7 +5774,7 @@ class BusinessProfileScreen extends StatelessWidget {
         field('Email', 'rohit@careride.local'),
         field('Business type', 'Transportation'),
         const SizedBox(height: 18),
-        PurpleButton('Continue', onTap: () => go(Screen.businessServices)),
+        PurpleButton('Continue', onTap: () => go(Screen.businessVerification)),
       ],
     );
   }
@@ -4545,15 +5823,7 @@ class BusinessServicesScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 22),
-        PurpleButton(
-          'Submit Business for Review',
-          onTap: () async {
-            await runApi('Submitting business onboarding', (client, state) {
-              return client.completeBusinessOnboarding();
-            });
-            go(Screen.businessDashboard);
-          },
-        ),
+        PurpleButton('Continue', onTap: () => go(Screen.businessPricing)),
       ],
     );
   }
