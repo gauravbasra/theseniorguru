@@ -94,6 +94,7 @@ void main() {
         label: 'Cardiology Visit',
         time: 'Tomorrow, 10:00 AM',
       );
+      await client.createSupportOrder(category: 'grocery', label: 'Groceries');
       await client.joinEvent('chair_yoga', 'Chair Yoga');
       await client.createPost('Beautiful morning walk with friends');
       await client.triggerSos();
@@ -107,6 +108,7 @@ void main() {
           '/api/medications/refill-request',
           '/api/guru/chat',
           '/api/bookings',
+          '/api/orders',
           '/api/events/join',
           '/api/posts',
           '/api/safety/voice-sos',

@@ -216,11 +216,13 @@ class TsgApiClient {
     required String category,
     required String label,
     String provider = 'manual_coordination',
+    int providerBillCents = 2500,
   }) {
     return post('/api/orders', {
       'category': category,
       'provider': provider,
       'label': label,
+      'providerBillCents': providerBillCents,
       'fulfillmentMode': 'manual_coordination',
       'paymentResponsibility': 'senior',
       'orderIntake': {
@@ -249,23 +251,28 @@ class TsgApiClient {
     });
   }
 
-  Future<Map<String, dynamic>> syncHealthConsentAndVitals() async {
+  Future<Map<String, dynamic>> syncHealthConsentAndVitals({
+    String source = 'flutter-health-connect',
+    List<Map<String, dynamic>> readings = const [],
+    List<String>? dataTypes,
+  }) async {
+    final consentTypes = dataTypes ?? healthConsentDataTypes(readings);
     await patch('/api/health/consent', {
       'granted': true,
-      'source': 'flutter-health-connect',
-      'dataTypes': ['heartRate', 'hrv', 'sleep', 'steps'],
+      'source': source,
+      'dataTypes': consentTypes,
     });
     return post('/api/health/vitals', {
-      'source': 'flutter-health-connect',
-      'readings': [
-        {
-          'heartRate': 72,
-          'hrv': 48,
-          'sleepMinutes': 434,
-          'stepsToday': 4280,
-          'capturedAt': DateTime.now().toIso8601String(),
-        },
-      ],
+      'source': source,
+      'readings': readings
+          .map(
+            (reading) => {
+              ...reading,
+              'capturedAt':
+                  reading['capturedAt'] ?? DateTime.now().toIso8601String(),
+            },
+          )
+          .toList(growable: false),
     });
   }
 
@@ -354,4 +361,18 @@ int intValue(Object? value, {int fallback = 0}) {
   if (value is int) return value;
   if (value is num) return value.round();
   return int.tryParse(value.toString()) ?? fallback;
+}
+
+List<String> healthConsentDataTypes(List<Map<String, dynamic>> readings) {
+  final types = <String>{};
+  for (final reading in readings) {
+    if (reading['heartRate'] != null) types.add('heartRate');
+    if (reading['oxygenSaturation'] != null) types.add('oxygenSaturation');
+    if (reading['respiratoryRate'] != null) types.add('respiratoryRate');
+    if (reading['hrv'] != null) types.add('hrv');
+    if (reading['sleepMinutes'] != null) types.add('sleep');
+    if (reading['caloriesToday'] != null) types.add('calories');
+    if (reading['stepsToday'] != null) types.add('steps');
+  }
+  return types.toList(growable: false);
 }

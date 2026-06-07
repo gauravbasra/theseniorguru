@@ -2073,6 +2073,12 @@ function createProductionApi(pool) {
       ["grocery", "instacart", "Instacart", "INSTACART_CLIENT_ID/INSTACART_CLIENT_SECRET", "Grocery partner/API access required."],
       ["grocery", "walmart", "Walmart", "WALMART_CLIENT_ID/WALMART_CLIENT_SECRET", "Partner/API access required for grocery ordering."],
       ["pharmacy", "local_pharmacy", "Local pharmacy", "approved_business_network", "Approved pharmacy partner fallback."],
+      ["cleaning", "local_partner", "Approved cleaning partner", "approved_business_network", "Approved home cleaning partner fallback."],
+      ["handyman", "taskrabbit", "Taskrabbit", "TASKRABBIT_CLIENT_ID/TASKRABBIT_CLIENT_SECRET", "Partner/API access required for handyman task fulfillment."],
+      ["handyman", "angi", "Angi Services", "ANGI_CLIENT_ID/ANGI_CLIENT_SECRET", "Partner/API access required for home service fulfillment."],
+      ["handyman", "local_partner", "Approved handyman partner", "approved_business_network", "Approved local handyman fallback."],
+      ["home_care", "local_partner", "Approved home care partner", "approved_business_network", "Approved non-medical home care fallback."],
+      ["essentials", "local_partner", "Approved essentials partner", "approved_business_network", "Approved local essentials and supplies fallback."],
       ["errand", "local_partner", "Approved local partner", "approved_business_network", "Approved local support business fallback."],
       ["outdoor", "google_places", "Google Places Outdoor Discovery", "GOOGLE_MAPS_API_KEY", "Nearby parks, trails, gardens, and outdoor destinations. Results are discovery data and need senior-suitability review before referral."],
       ["outdoor", "alltrails_partner", "AllTrails Partner", "ALLTRAILS_CLIENT_ID/ALLTRAILS_CLIENT_SECRET", "Partner/API access required. Keep credential-gated until AllTrails approves access."],
@@ -2110,9 +2116,33 @@ function createProductionApi(pool) {
     return (await query(`SELECT * FROM support_order_provider_configs ORDER BY category, provider`)).rows;
   }
 
+  async function syncThirdPartyServiceConnectors() {
+    const tableExists = (await query(`SELECT to_regclass('public.third_party_service_connectors') AS table_name`)).rows[0]?.table_name;
+    if (!tableExists) return [];
+    const connectors = (await query(`SELECT * FROM third_party_service_connectors ORDER BY category, display_name`)).rows;
+    for (const connector of connectors) {
+      const keys = Array.isArray(connector.credential_env_keys) ? connector.credential_env_keys : [];
+      if (!keys.length || ["native_sdk", "internal_network", "manual"].includes(connector.provider_type)) continue;
+      const configured = keys.every(key => Boolean(process.env[key]));
+      await query(
+        `UPDATE third_party_service_connectors
+         SET status = CASE
+             WHEN status = 'disabled' THEN status
+             ELSE $1
+           END,
+           last_health_check_at = now(),
+           last_health_status = $2,
+           updated_at = now()
+         WHERE id = $3`,
+        [configured ? "enabled" : "credential_required", configured ? "credentials_present" : "credentials_missing", connector.id]
+      );
+    }
+    return (await query(`SELECT * FROM third_party_service_connectors ORDER BY category, display_name`)).rows;
+  }
+
   function allowedSupportCategory(category) {
     const value = String(category || "").trim().toLowerCase();
-    if (!["ride", "food", "grocery", "pharmacy", "errand", "outdoor"].includes(value)) {
+    if (!["ride", "food", "grocery", "pharmacy", "cleaning", "handyman", "home_care", "essentials", "errand", "outdoor"].includes(value)) {
       const error = new Error("Unsupported support order category");
       error.status = 400;
       throw error;
@@ -5003,6 +5033,25 @@ function createProductionApi(pool) {
       const providers = await ensureSupportOrderProviderConfigs();
       await audit(req, user, "support_order_provider_configs_viewed", "support_order_provider_config", null, { providers: providers.length }, "info");
       return { providers };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/service-connectors") {
+      requireRole(user, ["senior", "trusted_person", "business", "superadmin"]);
+      const connectors = await syncThirdPartyServiceConnectors();
+      const templatesTable = (await query(`SELECT to_regclass('public.service_request_intake_templates') AS table_name`)).rows[0]?.table_name;
+      const routesTable = (await query(`SELECT to_regclass('public.service_request_provider_routes') AS table_name`)).rows[0]?.table_name;
+      const templates = templatesTable
+        ? (await query(`SELECT * FROM service_request_intake_templates ORDER BY category`)).rows
+        : [];
+      const routes = routesTable
+        ? (await query(`SELECT * FROM service_request_provider_routes ORDER BY category, route_priority`)).rows
+        : [];
+      await audit(req, user, "service_connectors_viewed", "service_connector", null, {
+        connectors: connectors.length,
+        enabled: connectors.filter(item => item.status === "enabled").length,
+        credentialRequired: connectors.filter(item => item.status === "credential_required").length
+      }, "info");
+      return { connectors, intakeTemplates: templates, providerRoutes: routes };
     }
 
     if (req.method === "POST" && url.pathname === "/api/orders/pricing-quote") {

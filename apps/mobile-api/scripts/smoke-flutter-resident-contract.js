@@ -99,6 +99,16 @@ async function main() {
   const service = refreshedState.services.find(service => String(service.category || "").toLowerCase().includes("transport")) || refreshedState.services[0];
   assert.ok(service?.id, "ride/services screen needs a service id");
 
+  const connectors = await request("/api/service-connectors", { headers: auth(token) });
+  assert.ok(Array.isArray(connectors.connectors), "service connector catalog must be readable");
+  assert.ok(connectors.connectors.some(item => item.connector_key === "apple_healthkit"), "Apple HealthKit connector must be registered");
+  assert.ok(connectors.connectors.some(item => item.connector_key === "android_health_connect"), "Android Health Connect connector must be registered");
+  assert.ok(connectors.connectors.some(item => item.connector_key === "google_maps"), "Google Maps connector must be registered");
+  assert.ok(connectors.connectors.some(item => item.connector_key === "instacart"), "Grocery provider connector must be registered");
+  assert.ok(connectors.connectors.some(item => item.connector_key === "taskrabbit"), "Handyman provider connector must be registered");
+  assert.ok(connectors.intakeTemplates.some(item => item.category === "handyman"), "handyman request template must exist");
+  assert.ok(connectors.providerRoutes.some(item => item.category === "grocery"), "grocery provider routes must exist");
+
   const booking = await request("/api/bookings", {
     method: "POST",
     headers: auth(token),
@@ -125,6 +135,48 @@ async function main() {
   });
   const bookingId = booking.booking?.id || booking.bookings?.[0]?.id;
   assert.ok(bookingId, "ride booking must write a booking row");
+
+  const groceryOrder = await request("/api/orders", {
+    method: "POST",
+    headers: auth(token),
+    body: JSON.stringify({
+      category: "grocery",
+      provider: "manual_coordination",
+      providerBillCents: 4500,
+      label: "Flutter groceries",
+      fulfillmentMode: "manual_coordination",
+      paymentResponsibility: "senior",
+      orderIntake: {
+        recipientName: "Anita Sharma",
+        recipientPhone: "+13035550123",
+        deliveryAddress: "Park View Community",
+        contactPreference: "call_and_text",
+        items: ["milk", "bananas", "low sodium soup"]
+      }
+    })
+  });
+  assert.ok(groceryOrder.order?.id, "grocery service request must write support order");
+
+  const handymanOrder = await request("/api/orders", {
+    method: "POST",
+    headers: auth(token),
+    body: JSON.stringify({
+      category: "handyman",
+      provider: "local_partner",
+      providerBillCents: 8500,
+      label: "Flutter handyman",
+      fulfillmentMode: "local_partner",
+      paymentResponsibility: "senior",
+      orderIntake: {
+        recipientName: "Anita Sharma",
+        recipientPhone: "+13035550123",
+        deliveryAddress: "Park View Community",
+        contactPreference: "call_and_text",
+        taskDescription: "Install grab bar"
+      }
+    })
+  });
+  assert.ok(handymanOrder.order?.id, "handyman service request must write support order");
 
   const event = await request("/api/events/join", {
     method: "POST",

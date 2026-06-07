@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'api/tsg_api_client.dart';
+import 'services/native_health_service.dart';
 
 void main() {
   runApp(const TsgResidentApp());
@@ -471,6 +472,18 @@ String requireTransportServiceId(ResidentAppState? state) {
     );
   }
   return service.id;
+}
+
+int supportOrderEstimateCents(String category) {
+  return switch (category.toLowerCase()) {
+    'food' => 2200,
+    'grocery' => 4500,
+    'pharmacy' => 1200,
+    'cleaning' => 6500,
+    'handyman' => 8500,
+    'home_care' => 7000,
+    _ => 2500,
+  };
 }
 
 class PhoneFrame extends StatelessWidget {
@@ -2916,7 +2929,7 @@ class ServicesScreen extends StatelessWidget {
       ),
       (
         'HealthPlus Pharmacy',
-        'Medicine delivery',
+        'pharmacy',
         '4.7',
         'Fast delivery',
         CupertinoIcons.capsule,
@@ -2924,7 +2937,7 @@ class ServicesScreen extends StatelessWidget {
       ),
       (
         'Comfort Cleaning',
-        'Home care',
+        'cleaning',
         '4.9',
         'Today, 3 PM open',
         CupertinoIcons.sparkles,
@@ -2932,20 +2945,37 @@ class ServicesScreen extends StatelessWidget {
       ),
       (
         'Fresh Meals',
-        'Food delivery',
+        'food',
         '4.6',
         'Low sodium meals',
         CupertinoIcons.bag,
         const Color(0xFFFFF7DF),
+      ),
+      (
+        'Handyman Help',
+        'handyman',
+        '4.8',
+        'Home repairs and setup',
+        CupertinoIcons.hammer_fill,
+        const Color(0xFFEAF4FF),
+      ),
+      (
+        'Groceries',
+        'grocery',
+        '4.7',
+        'Essentials delivered',
+        CupertinoIcons.cart_fill,
+        const Color(0xFFEFF8ED),
       ),
     ];
     final categories = [
       (CupertinoIcons.car_detailed, 'Transport'),
       (CupertinoIcons.capsule, 'Medication'),
       (CupertinoIcons.bag, 'Food'),
+      (CupertinoIcons.cart_fill, 'Groceries'),
+      (CupertinoIcons.hammer_fill, 'Handyman'),
       (CupertinoIcons.house_fill, 'Home Care'),
       (CupertinoIcons.calendar, 'Events'),
-      (CupertinoIcons.ellipsis, 'More'),
     ];
     return ScreenScaffold(
       title: 'Services',
@@ -2995,7 +3025,11 @@ class ServicesScreen extends StatelessWidget {
                   return;
                 }
                 await runApi('Creating ${s.$2} order', (client, state) {
-                  return client.createSupportOrder(category: s.$2, label: s.$1);
+                  return client.createSupportOrder(
+                    category: s.$2,
+                    label: s.$1,
+                    providerBillCents: supportOrderEstimateCents(s.$2),
+                  );
                 });
               },
               child: Row(
@@ -3173,8 +3207,14 @@ class SafetyScreen extends StatelessWidget {
           'Vitals look stable',
           TsgColors.green,
           onTap: () {
-            runApi('Syncing health vitals', (client, state) {
-              return client.syncHealthConsentAndVitals();
+            runApi('Syncing wearable health data', (client, state) async {
+              final snapshot = await NativeHealthService()
+                  .collectRecentVitals();
+              return client.syncHealthConsentAndVitals(
+                source: snapshot.source,
+                readings: snapshot.readings,
+                dataTypes: snapshot.consentDataTypes,
+              );
             });
           },
         ),

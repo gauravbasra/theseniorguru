@@ -26,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>GoogleMapsApiKey</key>
+	<string>$(GOOGLE_MAPS_API_KEY)</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>TheSeniorGuru reads approved Apple Health and wearable data to update daily wellness, safety, and caregiver guidance.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>TheSeniorGuru may write approved wellness records only when you explicitly allow it.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TheSeniorGuru uses location to check safe zones, estimate transportation, and find nearby senior-friendly services.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
