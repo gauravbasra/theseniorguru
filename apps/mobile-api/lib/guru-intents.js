@@ -2,6 +2,15 @@ function taskTitleFromMessage(message) {
   return String(message || "").replace(/^(please\s+)?remind me to/i, "").trim() || String(message || "").trim();
 }
 
+function localCacheKey(message) {
+  return String(message || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+}
+
 function resolveGuruIntent(message, context = {}) {
   const normalized = String(message || "").toLowerCase();
   if (normalized.includes("remind me") || normalized.includes("task")) {
@@ -14,6 +23,25 @@ function resolveGuruIntent(message, context = {}) {
       intent: "medication",
       navigateTo: "residentHome",
       reply: due ? `${due.name} is scheduled for ${due.time}. You can confirm it from Today or ask me to request a refill.` : "I opened Today. You can confirm medication there, or add medications so I can track confirmations and refills."
+    };
+  }
+  if (normalized.includes("pollen") || normalized.includes("weather") || normalized.includes("snow") || normalized.includes("air quality") || normalized.includes("aqi") || normalized.includes("heat")) {
+    const guidance = context.contextIntelligence?.guidanceItems || [];
+    const environmentGuidance = guidance.find(item => ["environment", "transportation", "health"].includes(item.domain));
+    return {
+      intent: "environment",
+      navigateTo: "residentHome",
+      reply: environmentGuidance
+        ? `${environmentGuidance.title}. ${environmentGuidance.body || ""}`.trim()
+        : "I checked today's context. I can watch pollen, air quality, heat, snow, and travel risk for you."
+    };
+  }
+  if (normalized.includes("risk") || normalized.includes("am i okay") || normalized.includes("okay") || normalized.includes("status")) {
+    const status = context.dailyStatus?.status || context.contextIntelligence?.dailyStatus || "stable";
+    return {
+      intent: "daily_status",
+      navigateTo: "residentHome",
+      reply: `Today's status is ${String(status).replace(/_/g, " ")}. I am checking health, mobility, environment, social contact, medication, and safety signals.`
     };
   }
   if (normalized.includes("ride") || normalized.includes("doctor") || normalized.includes("transport")) return { intent: "ride", navigateTo: "residentHelp", reply: "I opened Help. Tell me pickup, destination, and time, and I will match transportation options." };
@@ -37,4 +65,22 @@ function resolveGuruIntent(message, context = {}) {
   return { intent: "general", navigateTo: null, reply: "I can help with medication, rides, services, loneliness, tasks, stories, music, scanning, or safety." };
 }
 
-module.exports = { resolveGuruIntent, taskTitleFromMessage };
+function isRoutineGuruIntent(intent) {
+  return [
+    "task",
+    "medication",
+    "ride",
+    "companion",
+    "services",
+    "safety",
+    "memory",
+    "calendar",
+    "story",
+    "music",
+    "scan",
+    "environment",
+    "daily_status"
+  ].includes(intent);
+}
+
+module.exports = { resolveGuruIntent, taskTitleFromMessage, isRoutineGuruIntent, localCacheKey };

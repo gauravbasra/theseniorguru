@@ -1,7 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { resolveGuruIntent } = require("./lib/guru-intents");
+const { resolveGuruIntent, isRoutineGuruIntent } = require("./lib/guru-intents");
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
 const { buildDailyJourney } = require("./lib/daily-journey");
 let productionApi = null;
@@ -1497,14 +1497,22 @@ function routeApi(req, res) {
         memories: state.guruMemories || [],
         calendarEvents: state.guruCalendarEvents || []
       });
-      let ai = { provider: "local", configured: false, text: null };
-      try {
-        ai = await callOpenAI({
-          system: buildSeniorGuruSystemPrompt({ resident: state.resident, medications: state.medications, memories: state.guruMemories, calendarEvents: state.guruCalendarEvents }),
-          messages: [{ role: "user", content: message }]
-        });
-      } catch (error) {
-        ai = { provider: "local", configured: false, text: null, error: error.message };
+      const allowRemoteFallback = process.env.GURU_ALLOW_REMOTE_AI === "1" || process.env.GURU_ALLOW_REMOTE_AI === "true";
+      let ai = {
+        provider: "local_small_language_model",
+        configured: false,
+        text: resolvedIntent.reply,
+        model: "tsg-local-intent-v1"
+      };
+      if (!isRoutineGuruIntent(resolvedIntent.intent) && allowRemoteFallback) {
+        try {
+          ai = await callOpenAI({
+            system: buildSeniorGuruSystemPrompt({ resident: state.resident, medications: state.medications, memories: state.guruMemories, calendarEvents: state.guruCalendarEvents }),
+            messages: [{ role: "user", content: message }]
+          });
+        } catch (error) {
+          ai = { provider: "local_small_language_model", configured: false, text: resolvedIntent.reply, error: error.message, model: "tsg-local-intent-v1" };
+        }
       }
       let task = null;
       if (resolvedIntent.intent === "task") {
@@ -1518,7 +1526,7 @@ function routeApi(req, res) {
         intent: resolvedIntent.intent,
         navigateTo: resolvedIntent.navigateTo,
         provider: ai.provider,
-        model: process.env.OPENAI_MODEL || null,
+        model: ai.model || process.env.OPENAI_MODEL || null,
         createdAt: new Date().toISOString()
       };
       state.guruConversations.unshift(event);

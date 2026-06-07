@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { resolveGuruIntent } = require("./lib/guru-intents");
+const { resolveGuruIntent, isRoutineGuruIntent, localCacheKey } = require("./lib/guru-intents");
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
 
 const FREE_YEARLY_LEADS = 5;
@@ -970,6 +970,114 @@ function createProductionApi(pool) {
     );
     await audit(req, user, "guru_risk_recalculated", "guru_risk_score", riskScore.id, { finalStatus, scoreFields }, finalStatus === "STABLE" ? "info" : "warning");
     return { riskScore, recommendations, explanation };
+  }
+
+  async function recordGuruModelInvocation(residentId, provider, intent, route, metadata = {}) {
+    try {
+      await query(
+        `INSERT INTO guru_model_invocations (
+           resident_id, provider, model, intent, route, used_remote_ai,
+           prompt_tokens, completion_tokens, estimated_cost_cents, cache_hit, metadata
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          residentId || null,
+          provider,
+          metadata.model || null,
+          intent || "general",
+          route,
+          provider === "openai",
+          metadata.promptTokens || 0,
+          metadata.completionTokens || 0,
+          metadata.estimatedCostCents || 0,
+          metadata.cacheHit === true,
+          JSON.stringify(metadata)
+        ]
+      );
+    } catch (error) {
+      console.warn("guru_model_invocation_failed", error.message);
+    }
+  }
+
+  async function cachedLocalGuruResponse(intent, message, resolvedIntent) {
+    const cacheKey = `${intent}:${localCacheKey(message)}`;
+    if (!cacheKey.split(":")[1]) {
+      return { reply: resolvedIntent.reply, cacheHit: false };
+    }
+    const cached = (await query(
+      `SELECT * FROM guru_response_cache WHERE cache_key = $1`,
+      [cacheKey]
+    )).rows[0];
+    if (cached) {
+      await query(`UPDATE guru_response_cache SET hit_count = hit_count + 1, updated_at = now() WHERE id = $1`, [cached.id]);
+      return { reply: cached.reply, navigateTo: cached.navigate_to, cacheHit: true };
+    }
+    await query(
+      `INSERT INTO guru_response_cache (cache_key, intent, reply, navigate_to, safety_level, metadata)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (cache_key) DO NOTHING`,
+      [cacheKey, intent, resolvedIntent.reply, resolvedIntent.navigateTo || null, intent === "safety" ? "elevated" : "normal", JSON.stringify({ source: "local_small_language_model" })]
+    );
+    return { reply: resolvedIntent.reply, navigateTo: resolvedIntent.navigateTo, cacheHit: false };
+  }
+
+  async function resolveGuruWithLocalFirst({ req, user, resident, message, context, route, screen }) {
+    const resolvedIntent = resolveGuruIntent(message, context);
+    const allowRemoteFallback = process.env.GURU_ALLOW_REMOTE_AI === "1" || process.env.GURU_ALLOW_REMOTE_AI === "true";
+    const routine = isRoutineGuruIntent(resolvedIntent.intent);
+    if (routine || !allowRemoteFallback) {
+      const cached = await cachedLocalGuruResponse(resolvedIntent.intent, message, resolvedIntent);
+      await recordGuruModelInvocation(resident?.id, "local_small_language_model", resolvedIntent.intent, route, {
+        screen,
+        cacheHit: cached.cacheHit,
+        remoteFallbackAllowed: allowRemoteFallback,
+        reason: routine ? "routine_intent" : "remote_fallback_disabled"
+      });
+      return {
+        resolvedIntent,
+        reply: cached.reply,
+        provider: "local_small_language_model",
+        model: "tsg-local-intent-v1",
+        configured: false,
+        navigateTo: cached.navigateTo || resolvedIntent.navigateTo,
+        cacheHit: cached.cacheHit
+      };
+    }
+    try {
+      const ai = await callOpenAI({
+        system: buildSeniorGuruSystemPrompt(context),
+        messages: [{ role: "user", content: message }]
+      });
+      await recordGuruModelInvocation(resident?.id, "openai", resolvedIntent.intent, route, {
+        screen,
+        model: process.env.OPENAI_MODEL || null,
+        remoteFallbackAllowed: true
+      });
+      return {
+        resolvedIntent,
+        reply: ai.text || resolvedIntent.reply,
+        provider: ai.provider,
+        model: process.env.OPENAI_MODEL || null,
+        configured: ai.configured,
+        navigateTo: resolvedIntent.navigateTo,
+        cacheHit: false
+      };
+    } catch (error) {
+      await recordGuruModelInvocation(resident?.id, "local_small_language_model", resolvedIntent.intent, route, {
+        screen,
+        remoteFallbackAllowed: true,
+        fallbackReason: error.message
+      });
+      return {
+        resolvedIntent,
+        reply: resolvedIntent.reply,
+        provider: "local_small_language_model",
+        model: "tsg-local-intent-v1",
+        configured: false,
+        navigateTo: resolvedIntent.navigateTo,
+        cacheHit: false,
+        error: error.message
+      };
+    }
   }
 
   async function buildResidentSurfaceState(resident, healthSummary = {}) {
@@ -5874,16 +5982,17 @@ function createProductionApi(pool) {
       }
       const memories = (await query(`SELECT * FROM guru_memories WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident?.id || null])).rows;
       const medications = (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident?.id || null])).rows;
-      const resolvedIntent = resolveGuruIntent(message, { medications, memories });
-      let ai = { provider: "local", configured: false, text: null };
-      try {
-        ai = await callOpenAI({
-          system: buildSeniorGuruSystemPrompt({ resident, medications, memories }),
-          messages: [{ role: "user", content: message }]
-        });
-      } catch (error) {
-        ai = { provider: "local", configured: false, text: null, error: error.message };
-      }
+      const contextIntelligence = resident ? await buildContextIntelligenceState(resident, evaluateHealthVitals([])) : {};
+      const guru = await resolveGuruWithLocalFirst({
+        req,
+        user,
+        resident,
+        message,
+        context: { resident, medications, memories, contextIntelligence },
+        route: "/api/guru/orchestrate",
+        screen: payload.screen || null
+      });
+      const resolvedIntent = guru.resolvedIntent;
       let task = null;
       if (resolvedIntent.intent === "task") {
         task = (await query(
@@ -5893,10 +6002,10 @@ function createProductionApi(pool) {
       }
       const event = (await query(
         `INSERT INTO guru_ai_sessions (resident_id, intent, user_message, assistant_reply, provider, model, safety_level, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [resident?.id || null, resolvedIntent.intent, message, ai.text || resolvedIntent.reply, ai.provider, process.env.OPENAI_MODEL || null, resolvedIntent.intent === "safety" ? "elevated" : "normal", JSON.stringify({ navigateTo: resolvedIntent.navigateTo, screen: payload.screen || null })]
+        [resident?.id || null, resolvedIntent.intent, message, guru.reply, guru.provider, guru.model || null, resolvedIntent.intent === "safety" ? "elevated" : "normal", JSON.stringify({ navigateTo: guru.navigateTo, screen: payload.screen || null, cacheHit: guru.cacheHit === true, remoteAiUsed: guru.provider === "openai" })]
       )).rows[0];
-      await audit(req, user, "guru_orchestrated", "resident", resident?.id || null, { intent: resolvedIntent.intent, provider: ai.provider }, resolvedIntent.intent === "safety" ? "security" : "info");
-      return { reply: event.assistant_reply, intent: resolvedIntent.intent, navigateTo: resolvedIntent.navigateTo, task, event, aiConfigured: ai.configured };
+      await audit(req, user, "guru_orchestrated", "resident", resident?.id || null, { intent: resolvedIntent.intent, provider: guru.provider, remoteAiUsed: guru.provider === "openai" }, resolvedIntent.intent === "safety" ? "security" : "info");
+      return { reply: event.assistant_reply, intent: resolvedIntent.intent, navigateTo: guru.navigateTo, task, event, aiConfigured: guru.configured };
     }
 
     if (req.method === "POST" && url.pathname === "/api/guru/voice-session") {
@@ -5914,10 +6023,21 @@ function createProductionApi(pool) {
       requireRole(user, ["senior"]);
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
       const message = String(payload.message || "").trim();
-      const resolvedIntent = resolveGuruIntent(message);
+      const medications = resident ? (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident.id])).rows : [];
+      const contextIntelligence = resident ? await buildContextIntelligenceState(resident, evaluateHealthVitals([])) : {};
+      const guru = await resolveGuruWithLocalFirst({
+        req,
+        user,
+        resident,
+        message,
+        context: { resident, medications, contextIntelligence },
+        route: "/api/guru/chat",
+        screen: payload.screen || null
+      });
+      const resolvedIntent = guru.resolvedIntent;
       let intent = resolvedIntent.intent;
-      let navigateTo = resolvedIntent.navigateTo;
-      let reply = resolvedIntent.reply;
+      let navigateTo = guru.navigateTo;
+      let reply = guru.reply;
       let task = null;
       if (intent === "task") {
         task = (await query(
@@ -5928,10 +6048,10 @@ function createProductionApi(pool) {
 
       const event = (await query(
         `INSERT INTO guru_conversations (resident_id, message, reply, intent, navigate_to, metadata) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [resident?.id || null, message, reply, intent, navigateTo, JSON.stringify({ screen: payload.screen || null })]
+        [resident?.id || null, message, reply, intent, navigateTo, JSON.stringify({ screen: payload.screen || null, provider: guru.provider, cacheHit: guru.cacheHit === true, remoteAiUsed: guru.provider === "openai" })]
       )).rows[0];
-      await audit(req, user, "guru_chat", "resident", resident?.id || null, { intent, navigateTo }, "info");
-      return { reply, intent, navigateTo, task, event };
+      await audit(req, user, "guru_chat", "resident", resident?.id || null, { intent, navigateTo, provider: guru.provider, remoteAiUsed: guru.provider === "openai" }, "info");
+      return { reply, intent, navigateTo, task, event, aiConfigured: guru.configured };
     }
 
     if (req.method === "POST" && url.pathname === "/api/guru/tasks") {
