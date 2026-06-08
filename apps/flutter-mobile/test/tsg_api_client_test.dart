@@ -105,6 +105,14 @@ void main() {
       await client.joinEvent('chair_yoga', 'Chair Yoga');
       await client.createPost('Beautiful morning walk with friends');
       await client.triggerSos();
+      await client.captureEvidence(
+        subjectRole: 'senior',
+        evidenceType: 'profile_photo',
+        localUri: 'file:///profile.jpg',
+        fileName: 'profile.jpg',
+        mimeType: 'image/jpeg',
+        base64Data: 'ZmFrZS1pbWFnZQ==',
+      );
       await client.startRoleSession('trusted_person', displayName: 'Rita');
       await client.completeTrustCircleOnboarding();
       await client.startRoleSession('business', displayName: 'Rohit');
@@ -125,6 +133,7 @@ void main() {
           '/api/events/join',
           '/api/posts',
           '/api/safety/voice-sos',
+          '/api/media/evidence',
           '/api/onboarding/trust-circle',
           '/api/onboarding/business',
           '/api/onboarding/senior',
@@ -149,13 +158,39 @@ void main() {
       }
 
       final seniorOnboarding = requestBody('/api/onboarding/senior');
-      expect(seniorOnboarding, isEmpty);
+      expect(seniorOnboarding['name'], 'Anita Sharma');
+      expect(seniorOnboarding['preferredName'], 'Anita');
+      expect(seniorOnboarding['phone'], isNotEmpty);
+      expect(seniorOnboarding['address'], contains('Greenview'));
+      expect(
+        seniorOnboarding['healthConcerns'],
+        contains('High Blood Pressure'),
+      );
+      expect(seniorOnboarding['medications'], contains('Lisinopril 10mg'));
+      expect(seniorOnboarding['devicePermissions'], contains('Location'));
+      expect(seniorOnboarding['wearableSources'], contains('Apple Health'));
 
       final trustOnboarding = requestBody('/api/onboarding/trust-circle');
-      expect(trustOnboarding, isEmpty);
+      expect(trustOnboarding['inviteCode'], 'RITA-ANITA');
+      expect(trustOnboarding['name'], 'Rita Sharma');
+      expect(trustOnboarding['relationship'], 'Daughter');
+      expect(trustOnboarding['phone'], isNotEmpty);
+      expect(trustOnboarding['email'], contains('@'));
+      expect(trustOnboarding['visibility'], contains('location'));
 
       final businessOnboarding = requestBody('/api/onboarding/business');
-      expect(businessOnboarding, isEmpty);
+      expect(businessOnboarding['legalName'], 'CareRide Mobility LLC');
+      expect(businessOnboarding['ownerName'], 'Rohit Mehta');
+      expect(businessOnboarding['phone'], isNotEmpty);
+      expect(businessOnboarding['email'], contains('@'));
+      expect(businessOnboarding['businessType'], 'Transportation');
+      expect(businessOnboarding['serviceCatalog'], isNotEmpty);
+      expect(businessOnboarding['leadRules']['maxLeadsPerDay'], 10);
+
+      final evidence = requestBody('/api/media/evidence');
+      expect(evidence['subjectRole'], 'senior');
+      expect(evidence['evidenceType'], 'profile_photo');
+      expect(evidence['base64Data'], 'ZmFrZS1pbWFnZQ==');
       expect(
         requests
             .where((item) => item['path'] != '/api/auth/device-session')

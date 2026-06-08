@@ -101,12 +101,8 @@ class ResidentAppState {
     final resident = mapValue(json['resident']);
     return ResidentAppState(
       residentId: stringValue(resident['id']),
-      residentName: stringValue(
-        resident['name'] ?? resident['display_name'],
-      ),
-      community: stringValue(
-        resident['community'],
-      ),
+      residentName: stringValue(resident['name'] ?? resident['display_name']),
+      community: stringValue(resident['community']),
       medications: listOfMaps(
         json['medications'],
       ).map(ResidentMedication.fromJson).toList(),
@@ -200,11 +196,7 @@ class TsgApiClient {
       'scheduledFor': DateTime.now()
           .add(const Duration(days: 1))
           .toIso8601String(),
-      'pickup': {
-        'label': pickupLabel,
-        'lat': 39.5447,
-        'lng': -104.9673,
-      },
+      'pickup': {'label': pickupLabel, 'lat': 39.5447, 'lng': -104.9673},
       'dropoff': {'label': label, 'lat': 39.5487, 'lng': -104.9897},
       'fulfillmentMode': 'manual_coordination',
       'paymentResponsibility': 'senior',
@@ -296,22 +288,61 @@ class TsgApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> captureEvidence({
+    required String subjectRole,
+    required String evidenceType,
+    required String localUri,
+    String captureMethod = 'camera',
+    String? fileName,
+    String? mimeType,
+    String? base64Data,
+    int? width,
+    int? height,
+    int? durationMs,
+    Map<String, dynamic> metadata = const {},
+  }) {
+    final body = <String, dynamic>{
+      'subjectRole': subjectRole,
+      'evidenceType': evidenceType,
+      'localUri': localUri,
+      'captureMethod': captureMethod,
+      'source': 'flutter-resident-app',
+      'metadata': metadata,
+    };
+    if (fileName != null) body['fileName'] = fileName;
+    if (mimeType != null) body['mimeType'] = mimeType;
+    if (base64Data != null) body['base64Data'] = base64Data;
+    if (width != null) body['width'] = width;
+    if (height != null) body['height'] = height;
+    if (durationMs != null) body['durationMs'] = durationMs;
+    return post('/api/media/evidence', body);
+  }
+
   Future<Map<String, dynamic>> completeSeniorOnboarding([
     Map<String, dynamic> payload = const {},
   ]) {
-    return post('/api/onboarding/senior', payload);
+    return post('/api/onboarding/senior', {
+      ...defaultSeniorOnboardingPayload(),
+      ...payload,
+    });
   }
 
   Future<Map<String, dynamic>> completeTrustCircleOnboarding({
     Map<String, dynamic> payload = const {},
   }) {
-    return post('/api/onboarding/trust-circle', payload);
+    return post('/api/onboarding/trust-circle', {
+      ...defaultTrustCircleOnboardingPayload(),
+      ...payload,
+    });
   }
 
   Future<Map<String, dynamic>> completeBusinessOnboarding([
     Map<String, dynamic> payload = const {},
   ]) {
-    return post('/api/onboarding/business', payload);
+    return post('/api/onboarding/business', {
+      ...defaultBusinessOnboardingPayload(),
+      ...payload,
+    });
   }
 
   Future<Map<String, dynamic>> syncHealthConsentAndVitals({
@@ -442,4 +473,91 @@ List<String> healthConsentDataTypes(List<Map<String, dynamic>> readings) {
     if (reading['stepsToday'] != null) types.add('steps');
   }
   return types.toList(growable: false);
+}
+
+Map<String, dynamic> defaultSeniorOnboardingPayload() {
+  return {
+    'name': 'Anita Sharma',
+    'preferredName': 'Anita',
+    'phone': '+13035550100',
+    'email': 'anita.sharma@example.com',
+    'dob': '1958-04-12',
+    'address': '123 Greenview Dr, Sunnyvale, CA 94086',
+    'livingType': 'independent_living',
+    'healthConcerns': [
+      'High Blood Pressure',
+      'Mobility Limitation',
+      'Memory Concerns',
+    ],
+    'allergies': 'Penicillin',
+    'mobility': 'Uses cane for longer walks; fall-aware transfers.',
+    'height': '5 ft 3 in',
+    'weight': '142 lb',
+    'bloodPressure': '128/78',
+    'heartRate': '72',
+    'medications': ['Lisinopril 10mg', 'Vitamin D'],
+    'wearableSources': ['Apple Health', 'Fitbit'],
+    'devicePermissions': ['Location', 'Notifications', 'Health data'],
+    'musicApps': ['Spotify', 'Apple Music'],
+    'musicPreferences': ['Old Hindi Songs', 'Bhajans'],
+    'healthSharing': true,
+    'locationSharing': true,
+    'sosOrder': ['Rita Sharma', '911', 'Community Staff'],
+  };
+}
+
+Map<String, dynamic> defaultTrustCircleOnboardingPayload() {
+  return {
+    'inviteCode': 'RITA-ANITA',
+    'name': 'Rita Sharma',
+    'relationship': 'Daughter',
+    'phone': '+13035550111',
+    'email': 'rita.sharma@example.com',
+    'timezone': 'America/Denver',
+    'roleType': 'family',
+    'escalationRole': 'primary_contact',
+    'routineWindow': '9:00 AM - 8:00 PM',
+    'quietHours': '8:00 PM - 8:00 AM',
+    'emergencyOverride': 'Yes',
+    'visibility': ['safety', 'sos', 'location', 'messages', 'medications'],
+    'alertTypes': [
+      'missed_check_in',
+      'medication',
+      'location',
+      'sos',
+      'health',
+    ],
+  };
+}
+
+Map<String, dynamic> defaultBusinessOnboardingPayload() {
+  return {
+    'legalName': 'CareRide Mobility LLC',
+    'dba': 'CareRide',
+    'ownerName': 'Rohit Mehta',
+    'phone': '+13035550222',
+    'email': 'operations@careride.example.com',
+    'website': 'https://careride.example.com',
+    'address': '8800 Mobility Way, Sunnyvale, CA 94086',
+    'businessType': 'Transportation',
+    'services': 'Local Ride, Doctor Appointment Ride, Shopping Trip',
+    'pricing': r'$25 appointment ride',
+    'serviceCatalog': [
+      {'name': 'Doctor Appointment Ride', 'price': r'$25 one way'},
+      {'name': 'Senior Shopping Trip', 'price': r'$20 local'},
+      {'name': 'Door-to-door Assisted Ride', 'price': r'$35 local'},
+    ],
+    'serviceRadius': '15',
+    'serviceZips': '80124,80126,80129,80202',
+    'serviceBoundary': '15 miles around Sunnyvale, CA',
+    'leadTypes': ['rides', 'appointments', 'shopping'],
+    'communication': ['sms', 'email', 'phone', 'app'],
+    'maxLeads': '10',
+    'leadRules': {
+      'maxLeadsPerDay': 10,
+      'acceptUrgentRequests': true,
+      'acceptRecurringRequests': true,
+    },
+    'verificationDocs': ['business_license', 'insurance', 'driver_license'],
+  };
 }

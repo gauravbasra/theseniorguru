@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'api/tsg_api_client.dart';
 import 'services/native_health_service.dart';
@@ -18,6 +21,7 @@ const defaultApiBase = String.fromEnvironment(
 );
 
 const initialScreenKey = String.fromEnvironment('TSG_INITIAL_SCREEN');
+const androidGoogleMapsKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
 
 typedef ApiRunner =
     Future<bool> Function(
@@ -129,6 +133,7 @@ enum Screen {
   risk,
   services,
   safety,
+  safetyMap,
   trustCircleMore,
   businessDashboard,
   businessLeads,
@@ -554,7 +559,11 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
       ),
       Screen.circle => CircleScreen(key: const ValueKey('circle'), go: go),
-      Screen.person => PersonDetail(key: const ValueKey('person'), go: go),
+      Screen.person => PersonDetail(
+        key: const ValueKey('person'),
+        go: go,
+        state: appState,
+      ),
       Screen.createPost => CreatePost(
         key: const ValueKey('createPost'),
         go: go,
@@ -595,6 +604,12 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('safety'),
         go: go,
         runApi: runApi,
+        state: appState,
+      ),
+      Screen.safetyMap => SafetyMapScreen(
+        key: const ValueKey('safety-map'),
+        go: go,
+        state: appState,
       ),
     };
   }
@@ -2868,18 +2883,25 @@ class CircleScreen extends StatelessWidget {
 }
 
 class PersonDetail extends StatelessWidget {
-  const PersonDetail({super.key, required this.go});
+  const PersonDetail({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
+  final ResidentAppState? state;
 
   @override
   Widget build(BuildContext context) {
+    final person = state?.people.isNotEmpty == true ? state!.people.first : null;
+    final name = person?.name.isNotEmpty == true ? person!.name : 'Rita Sharma';
+    final phone = person?.phone.isNotEmpty == true ? person!.phone : '+13035550102';
+    final initial = name.trim().isEmpty
+        ? 'R'
+        : name.trim().characters.first.toUpperCase();
     return ScreenScaffold(
-      title: 'Rita Sharma',
+      title: name,
       subtitle: 'Daughter',
       back: () => go(Screen.circle),
       children: [
-        const Center(
-          child: Avatar(size: 118, label: 'R', tone: Color(0xFFFFD8C8)),
+        Center(
+          child: Avatar(size: 118, label: initial, tone: const Color(0xFFFFD8C8)),
         ),
         const SizedBox(height: 22),
         Row(
@@ -2888,7 +2910,7 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Call',
                 icon: CupertinoIcons.phone_fill,
-                onTap: () => go(Screen.companionChat),
+                onTap: () => launchPhoneCall(phone),
               ),
             ),
             const SizedBox(width: 10),
@@ -2896,7 +2918,7 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Message',
                 icon: CupertinoIcons.chat_bubble_fill,
-                onTap: () => go(Screen.companionChat),
+                onTap: () => launchSms(phone),
               ),
             ),
             const SizedBox(width: 10),
@@ -2904,7 +2926,7 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Video',
                 icon: CupertinoIcons.video_camera_solid,
-                onTap: () => go(Screen.trustCircleSettings),
+                onTap: () => launchSms(phone, body: 'Can we start a video call?'),
               ),
             ),
           ],
@@ -4348,9 +4370,15 @@ class ServicesScreen extends StatelessWidget {
 }
 
 class SafetyScreen extends StatefulWidget {
-  const SafetyScreen({super.key, required this.go, required this.runApi});
+  const SafetyScreen({
+    super.key,
+    required this.go,
+    required this.runApi,
+    this.state,
+  });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
+  final ResidentAppState? state;
 
   @override
   State<SafetyScreen> createState() => _SafetyScreenState();
@@ -4435,6 +4463,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
         const SizedBox(height: 18),
         SoftCard(
           padding: const EdgeInsets.all(0),
+          onTap: () => widget.go(Screen.safetyMap),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(18),
             child: SizedBox(
@@ -4473,6 +4502,42 @@ class _SafetyScreenState extends State<SafetyScreen> {
                       myLocationButtonEnabled: false,
                       zoomControlsEnabled: false,
                       compassEnabled: false,
+                    ),
+                  ),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: GestureDetector(
+                      onTap: () => widget.go(Screen.safetyMap),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .94),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: TsgColors.line),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              CupertinoIcons.arrow_up_left_arrow_down_right,
+                              size: 16,
+                              color: TsgColors.purple,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'Open map',
+                              style: TextStyle(
+                                color: TsgColors.purple,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   Positioned(
@@ -4547,7 +4612,10 @@ class _SafetyScreenState extends State<SafetyScreen> {
           'Vitals look stable',
           TsgColors.green,
           onTap: () {
-            widget.runApi('Syncing wearable health data', (client, state) async {
+            widget.runApi('Syncing wearable health data', (
+              client,
+              state,
+            ) async {
               final snapshot = await NativeHealthService()
                   .collectRecentVitals();
               return client.syncHealthConsentAndVitals(
@@ -4722,6 +4790,168 @@ class _SafetyScreenState extends State<SafetyScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class SafetyMapScreen extends StatelessWidget {
+  const SafetyMapScreen({super.key, required this.go, this.state});
+  final ValueChanged<Screen> go;
+  final ResidentAppState? state;
+
+  @override
+  Widget build(BuildContext context) {
+    final telemetry = mapValue(mapValue(state?.raw['safety'])['latestTelemetry']);
+    final lat = doubleValue(telemetry['lat'], fallback: 37.3688);
+    final lng = doubleValue(telemetry['lng'], fallback: -122.0363);
+    final hasTelemetry = telemetry.isNotEmpty;
+    final center = LatLng(lat, lng);
+    final safeZone = surfaceText(telemetry['safe_zone_status'], 'Unknown');
+    final label = surfaceText(telemetry['location_label'], 'Current location');
+    return Scaffold(
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: center,
+                zoom: hasTelemetry ? 16 : 12,
+              ),
+              markers: {
+                Marker(
+                  markerId: const MarkerId('resident-location-full'),
+                  position: center,
+                  infoWindow: InfoWindow(title: label, snippet: safeZone),
+                ),
+              },
+              circles: {
+                Circle(
+                  circleId: const CircleId('resident-safe-zone-full'),
+                  center: center,
+                  radius: 300,
+                  strokeWidth: 3,
+                  strokeColor: TsgColors.green,
+                  fillColor: TsgColors.green.withValues(alpha: .12),
+                ),
+              },
+              myLocationEnabled: hasTelemetry,
+              myLocationButtonEnabled: true,
+              zoomControlsEnabled: false,
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => go(Screen.safety),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0x262D2038),
+                                blurRadius: 18,
+                                offset: Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(CupertinoIcons.chevron_left),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .94),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: TsgColors.line),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Live Safety Map',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 17,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                hasTelemetry
+                                    ? '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}'
+                                    : 'No safety telemetry synced yet',
+                                style: const TextStyle(
+                                  color: TsgColors.muted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .95),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: TsgColors.line),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x1E2D2038),
+                          blurRadius: 24,
+                          offset: Offset(0, 12),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          safeZone.toLowerCase() == 'inside'
+                              ? 'Inside safe zone'
+                              : 'Safe-zone status: $safeZone',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          androidGoogleMapsKey.isEmpty
+                              ? 'Google Maps Android key is missing in this APK build. Coordinates are synced, but map tiles may not render.'
+                              : 'Latest phone location is synced with the safety engine.',
+                          style: const TextStyle(
+                            color: TsgColors.muted,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4923,6 +5153,127 @@ class OnboardingStepSpec {
   final List<(IconData, String, String)> cards;
   final List<(String, bool)> toggles;
   final String primaryLabel;
+}
+
+enum EvidenceMediaKind { image, video }
+
+class EvidenceCaptureSpec {
+  const EvidenceCaptureSpec({
+    required this.subjectRole,
+    required this.evidenceType,
+    required this.mediaKind,
+    required this.captureMethod,
+  });
+
+  final String subjectRole;
+  final String evidenceType;
+  final EvidenceMediaKind mediaKind;
+  final String captureMethod;
+}
+
+EvidenceCaptureSpec? evidenceCaptureSpecForOption(
+  OnboardingStepSpec step,
+  String optionLabel,
+) {
+  final label = optionLabel.toLowerCase();
+  final flow = step.flow.toLowerCase();
+  final subjectRole = flow.contains('business')
+      ? 'business_owner'
+      : flow.contains('trust')
+      ? 'trust_circle'
+      : 'senior';
+  final isUpload =
+      label.contains('upload') ||
+      label.contains('license') ||
+      label.contains('certificate') ||
+      label.contains('government') ||
+      label.contains('insurance');
+  if (label.contains('take photo') ||
+      label.contains('upload photo') ||
+      label.contains('owner photo')) {
+    return EvidenceCaptureSpec(
+      subjectRole: subjectRole,
+      evidenceType: 'profile_photo',
+      mediaKind: EvidenceMediaKind.image,
+      captureMethod: isUpload ? 'upload' : 'camera',
+    );
+  }
+  if (label.contains('turn your head') ||
+      label.contains('blink') ||
+      label.contains('face match')) {
+    return EvidenceCaptureSpec(
+      subjectRole: subjectRole,
+      evidenceType: 'liveness_video',
+      mediaKind: EvidenceMediaKind.video,
+      captureMethod: 'camera',
+    );
+  }
+  if (label.contains('business license')) {
+    return EvidenceCaptureSpec(
+      subjectRole: subjectRole,
+      evidenceType: 'business_license',
+      mediaKind: EvidenceMediaKind.image,
+      captureMethod: 'upload',
+    );
+  }
+  if (label.contains('insurance')) {
+    return EvidenceCaptureSpec(
+      subjectRole: subjectRole,
+      evidenceType: 'insurance',
+      mediaKind: EvidenceMediaKind.image,
+      captureMethod: 'upload',
+    );
+  }
+  if (label.contains('government id')) {
+    return EvidenceCaptureSpec(
+      subjectRole: subjectRole,
+      evidenceType: 'government_id',
+      mediaKind: EvidenceMediaKind.image,
+      captureMethod: 'upload',
+    );
+  }
+  return null;
+}
+
+Future<void> captureOnboardingEvidence({
+  required OnboardingStepSpec step,
+  required String optionLabel,
+  required ApiRunner runApi,
+}) async {
+  final spec = evidenceCaptureSpecForOption(step, optionLabel);
+  if (spec == null) return;
+  final picker = ImagePicker();
+  final source = spec.captureMethod == 'upload'
+      ? ImageSource.gallery
+      : ImageSource.camera;
+  final picked = spec.mediaKind == EvidenceMediaKind.video
+      ? await picker.pickVideo(
+          source: source,
+          maxDuration: const Duration(seconds: 12),
+        )
+      : await picker.pickImage(
+          source: source,
+          imageQuality: 82,
+          maxWidth: 1400,
+        );
+  if (picked == null) return;
+  final bytes = await picked.readAsBytes();
+  await runApi('Saving ${optionLabel.toLowerCase()}', (client, state) {
+    return client.captureEvidence(
+      subjectRole: spec.subjectRole,
+      evidenceType: spec.evidenceType,
+      localUri: picked.path,
+      captureMethod: spec.captureMethod,
+      fileName: picked.name,
+      mimeType: picked.mimeType,
+      base64Data: base64Encode(bytes),
+      metadata: {
+        'onboardingFlow': step.flow,
+        'onboardingStep': step.step,
+        'optionLabel': optionLabel,
+      },
+    );
+  });
 }
 
 final seniorStepSpecs = <OnboardingStepSpec>[
@@ -5584,7 +5935,21 @@ class OnboardingSpecScreen extends StatelessWidget {
         if (step.cards.isNotEmpty) ...[
           const SizedBox(height: 18),
           ...step.cards.map(
-            (item) => OnboardingOptionCard(item: item, accent: step.accent),
+            (item) => OnboardingOptionCard(
+              item: item,
+              accent: step.accent,
+              onTap:
+                  runApi == null ||
+                      evidenceCaptureSpecForOption(step, item.$2) == null
+                  ? null
+                  : () {
+                      captureOnboardingEvidence(
+                        step: step,
+                        optionLabel: item.$2,
+                        runApi: runApi!,
+                      );
+                    },
+            ),
           ),
         ],
         if (step.toggles.isNotEmpty) ...[
@@ -5645,10 +6010,12 @@ class OnboardingOptionCard extends StatelessWidget {
     super.key,
     required this.item,
     required this.accent,
+    this.onTap,
   });
 
   final (IconData, String, String) item;
   final Color accent;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -5656,6 +6023,7 @@ class OnboardingOptionCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: SoftCard(
         padding: const EdgeInsets.all(13),
+        onTap: onTap,
         child: Row(
           children: [
             Avatar(
@@ -6127,6 +6495,29 @@ String surfaceText(Object? value, String fallback) {
   return text.isEmpty ? fallback : text;
 }
 
+double doubleValue(Object? value, {double fallback = 0}) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(stringValue(value)) ?? fallback;
+}
+
+Future<void> launchPhoneCall(String phone) async {
+  final uri = Uri(scheme: 'tel', path: phone);
+  if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    throw Exception('Phone call could not be opened');
+  }
+}
+
+Future<void> launchSms(String phone, {String body = ''}) async {
+  final uri = Uri(
+    scheme: 'sms',
+    path: phone,
+    queryParameters: body.isEmpty ? null : {'body': body},
+  );
+  if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    throw Exception('Message composer could not be opened');
+  }
+}
+
 Color contextSeverityColor(String severity) {
   final key = severity.toLowerCase();
   if (key.contains('high') || key.contains('emergency')) return TsgColors.red;
@@ -6331,14 +6722,146 @@ class ContextStatusGrid extends StatelessWidget {
   }
 }
 
-class WellnessScreen extends StatelessWidget {
+class HistoricalMissingCard extends StatelessWidget {
+  const HistoricalMissingCard({super.key, required this.title, required this.body});
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftCard(
+      color: const Color(0xFFFFFBF4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(CupertinoIcons.exclamationmark_triangle_fill, color: TsgColors.orange),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 5),
+                Text(body, style: const TextStyle(color: TsgColors.muted, height: 1.3)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HealthTrendPlaceholder extends StatelessWidget {
+  const HealthTrendPlaceholder({super.key, required this.range, this.readings = const []});
+  final String range;
+  final List<Map<String, dynamic>> readings;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = readings
+        .map((row) => doubleValue(
+              row['heart_rate'] ??
+                  row['heartRate'] ??
+                  row['resting_heart_rate'] ??
+                  row['value'],
+            ))
+        .where((value) => value > 0)
+        .toList(growable: false);
+    return SoftCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(CupertinoIcons.chart_bar_alt_fill, color: TsgColors.purple),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  range,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 92,
+            child: values.length >= 2
+                ? CustomPaint(
+                    painter: SimpleLineChartPainter(values: values),
+                    child: const SizedBox.expand(),
+                  )
+                : const Center(
+                    child: Text(
+                      'No chartable API history yet',
+                      style: TextStyle(color: TsgColors.muted),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SimpleLineChartPainter extends CustomPainter {
+  const SimpleLineChartPainter({required this.values});
+  final List<double> values;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final minValue = values.reduce(math.min);
+    final maxValue = values.reduce(math.max);
+    final span = math.max(1.0, maxValue - minValue);
+    final gridPaint = Paint()
+      ..color = TsgColors.line
+      ..strokeWidth = 1;
+    final linePaint = Paint()
+      ..color = TsgColors.purple
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    for (var i = 0; i < 4; i++) {
+      final y = size.height * i / 3;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+    final path = Path();
+    for (var i = 0; i < values.length; i++) {
+      final x = values.length == 1 ? 0.0 : size.width * i / (values.length - 1);
+      final y = size.height - ((values[i] - minValue) / span * size.height);
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(path, linePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant SimpleLineChartPainter oldDelegate) {
+    return oldDelegate.values != values;
+  }
+}
+
+class WellnessScreen extends StatefulWidget {
   const WellnessScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
   final ResidentAppState? state;
 
   @override
+  State<WellnessScreen> createState() => _WellnessScreenState();
+}
+
+class _WellnessScreenState extends State<WellnessScreen> {
+  int selectedRange = 0;
+  static const rangeLabels = ['Today', '7 Days', '30 Days', '90 Days'];
+
+  @override
   Widget build(BuildContext context) {
-    final wellness = residentSurfaceSection(state, 'wellness');
+    final wellness = residentSurfaceSection(widget.state, 'wellness');
     final scoreRow = mapValue(wellness['score']);
     final score = intValue(
       scoreRow['wellness_score'],
@@ -6355,24 +6878,42 @@ class WellnessScreen extends StatelessWidget {
     ];
     return ScreenScaffold(
       title: 'Wellness Contributors',
-      back: () => go(Screen.more),
+      back: () => widget.go(Screen.more),
       children: [
-        const Segmented(
-          labels: ['Today', '7 Days', '30 Days', '90 Days'],
-          selected: 0,
+        Segmented(
+          labels: rangeLabels,
+          selected: selectedRange,
+          onChanged: (index) => setState(() => selectedRange = index),
         ),
         const SizedBox(height: 22),
-        Center(
-          child: WellnessScoreGauge(score: score, label: label),
-        ),
-        const SizedBox(height: 20),
-        Center(
-          child: Text(
-            wellnessChangeText(change),
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 15, color: TsgColors.ink),
+        if (selectedRange == 0)
+          Center(
+            child: WellnessScoreGauge(score: score, label: label),
+          )
+        else
+          HistoricalMissingCard(
+            title: '${rangeLabels[selectedRange]} wellness history',
+            body:
+                'No API-backed wellness score snapshots were returned for this range yet.',
           ),
-        ),
+        const SizedBox(height: 20),
+        if (selectedRange == 0)
+          Center(
+            child: Text(
+              wellnessChangeText(change),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 15, color: TsgColors.ink),
+            ),
+          )
+        else
+          HealthTrendPlaceholder(range: rangeLabels[selectedRange]),
+        if (selectedRange != 0)
+          const SizedBox(height: 12),
+        if (selectedRange != 0)
+          const Text(
+            'Historical trend charts require saved daily wellness snapshots from the API.',
+            style: TextStyle(color: TsgColors.muted, height: 1.3),
+          ),
         const SizedBox(height: 22),
         const Text(
           "What's contributing to your score",
@@ -6520,16 +7061,25 @@ class WellnessRingPainter extends CustomPainter {
   }
 }
 
-class VitalsScreen extends StatelessWidget {
+class VitalsScreen extends StatefulWidget {
   const VitalsScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
   final ResidentAppState? state;
 
   @override
+  State<VitalsScreen> createState() => _VitalsScreenState();
+}
+
+class _VitalsScreenState extends State<VitalsScreen> {
+  int selectedRange = 0;
+  static const rangeLabels = ['Today', '7 Days', '30 Days', '90 Days'];
+
+  @override
   Widget build(BuildContext context) {
     final vitals = listOfMaps(
-      residentSurfaceSection(state, 'vitals')['monitor'],
+      residentSurfaceSection(widget.state, 'vitals')['monitor'],
     );
+    final readings = listOfMaps(mapValue(widget.state?.raw['healthVitals'])['readings']);
     final rows = vitals.isNotEmpty
         ? vitals
         : [
@@ -6584,12 +7134,26 @@ class VitalsScreen extends StatelessWidget {
           ];
     return ScreenScaffold(
       title: 'Vitals Monitor',
-      back: () => go(Screen.more),
+      back: () => widget.go(Screen.more),
       children: [
-        const Segmented(
-          labels: ['Today', '7 Days', '30 Days', '90 Days'],
-          selected: 0,
+        Segmented(
+          labels: rangeLabels,
+          selected: selectedRange,
+          onChanged: (index) => setState(() => selectedRange = index),
         ),
+        const SizedBox(height: 16),
+        if (selectedRange == 0)
+          HealthTrendPlaceholder(
+            range: readings.isEmpty ? 'No readings synced' : 'Latest readings',
+            readings: readings,
+          )
+        else
+          HistoricalMissingCard(
+            title: '${rangeLabels[selectedRange]} vitals history',
+            body: readings.isEmpty
+                ? 'No wearable or Health Connect readings were returned by the API.'
+                : 'Only ${readings.length} recent reading(s) were returned by the API. Historical range aggregation is not available yet.',
+          ),
         const SizedBox(height: 16),
         ...rows.map(
           (v) => Padding(
@@ -7066,9 +7630,15 @@ class RiskScreen extends StatelessWidget {
 }
 
 class Segmented extends StatelessWidget {
-  const Segmented({super.key, required this.labels, required this.selected});
+  const Segmented({
+    super.key,
+    required this.labels,
+    required this.selected,
+    this.onChanged,
+  });
   final List<String> labels;
   final int selected;
+  final ValueChanged<int>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -7084,20 +7654,29 @@ class Segmented extends StatelessWidget {
         children: List.generate(labels.length, (index) {
           final active = selected == index;
           return Expanded(
-            child: Container(
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: active ? TsgColors.lilac : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                labels[index],
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: active ? TsgColors.purple : TsgColors.muted,
-                  fontWeight: active ? FontWeight.w900 : FontWeight.w600,
+            child: Semantics(
+              button: onChanged != null,
+              selected: active,
+              label: labels[index],
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onChanged == null ? null : () => onChanged!(index),
+                child: Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: active ? TsgColors.lilac : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    labels[index],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: active ? TsgColors.purple : TsgColors.muted,
+                      fontWeight: active ? FontWeight.w900 : FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
