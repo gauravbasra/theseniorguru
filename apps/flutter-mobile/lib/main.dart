@@ -24,6 +24,9 @@ Future<String> _stableInstallationId() async {
 }
 
 void main() {
+  assert(seniorStepSpecs.length >= 14, 'seniorStepSpecs must have at least 14 entries');
+  assert(trustCircleStepSpecs.length >= 5, 'trustCircleStepSpecs must have at least 5 entries');
+  assert(businessStepSpecs.length >= 5, 'businessStepSpecs must have at least 5 entries');
   runApp(const TsgResidentApp());
 }
 
@@ -58,7 +61,6 @@ class TsgResidentApp extends StatelessWidget {
           primary: TsgColors.purple,
           surface: TsgColors.card,
         ),
-        fontFamily: 'SF Pro Text',
       ),
       home: const ResidentShell(),
     );
@@ -131,6 +133,7 @@ enum Screen {
   medications,
   medicationConfirm,
   refill,
+  guruChat,
   rideChat,
   rideMatches,
   rideStatus,
@@ -178,6 +181,7 @@ class _ResidentShellState extends State<ResidentShell> {
   AppRole appRole = initialRoleFromKey(initialScreenKey);
   String apiStatus = 'Connecting to mobile API...';
   bool apiBusy = false;
+  String? _guruChatInitialMessage;
 
   @override
   void initState() {
@@ -265,6 +269,11 @@ class _ResidentShellState extends State<ResidentShell> {
     if (role != null) appRole = role;
   });
 
+  void _goGuruChat(String initialMessage) => setState(() {
+    _guruChatInitialMessage = initialMessage;
+    screen = Screen.guruChat;
+  });
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -315,6 +324,14 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('guru'),
         go: go,
         runApi: runApi,
+        goGuruChat: _goGuruChat,
+      ),
+      Screen.guruChat => GuruChatScreen(
+        key: ValueKey('guru-chat-${_guruChatInitialMessage ?? ''}'),
+        go: go,
+        apiClient: apiClient,
+        state: appState,
+        initialMessage: _guruChatInitialMessage,
       ),
       Screen.today => TodayHome(
         key: const ValueKey('today'),
@@ -619,6 +636,7 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
         state: appState,
         runApi: runApi,
+        goGuruChat: _goGuruChat,
       ),
       Screen.safety => SafetyScreen(
         key: const ValueKey('safety'),
@@ -792,6 +810,7 @@ Screen primaryTabForScreen(Screen screen, AppRole role) {
   return switch (role) {
     AppRole.senior => switch (screen) {
       Screen.guru ||
+      Screen.guruChat ||
       Screen.rideChat ||
       Screen.rideMatches ||
       Screen.rideStatus => Screen.guru,
@@ -1606,6 +1625,14 @@ class TodayHome extends StatelessWidget {
     final contextIntel = residentSurfaceSection(state, 'contextIntelligence');
     final guidanceItems = listOfMaps(contextIntel['guidanceItems']);
     final sections = listOfMaps(contextIntel['sections']);
+    final rawBookings = listOfMaps(state?.raw['bookings']);
+    final nextBooking = rawBookings.isNotEmpty ? rawBookings.first : null;
+    final bookingTitle = stringValue(nextBooking?['label'], fallback: 'Upcoming Appointment');
+    final bookingDate = stringValue(nextBooking?['scheduledFor'], fallback: 'Tomorrow, 10:00 AM');
+    final rawEvents = listOfMaps(state?.raw['events']);
+    final nextEvent = rawEvents.isNotEmpty ? rawEvents.first : null;
+    final eventTitle = stringValue(nextEvent?['name'] ?? nextEvent?['label'], fallback: 'Chair Yoga');
+    final eventTime = stringValue(nextEvent?['time'], fallback: '10:30 AM  •  Community Hall');
     return ScreenScaffold(
       children: [
         SizedBox(
@@ -1731,11 +1758,11 @@ class TodayHome extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const H1('Cardiology Visit', size: 26),
+                    H1(bookingTitle, size: 26),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Tomorrow, 10:00 AM',
-                      style: TextStyle(fontSize: 17, color: TsgColors.ink),
+                    Text(
+                      bookingDate,
+                      style: const TextStyle(fontSize: 17, color: TsgColors.ink),
                     ),
                     const SizedBox(height: 16),
                     OutlinedButton(
@@ -1821,11 +1848,11 @@ class TodayHome extends StatelessWidget {
           onTap: () => go(Screen.events),
           child: Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       "TODAY'S ACTIVITY",
                       style: TextStyle(
                         color: TsgColors.green,
@@ -1833,12 +1860,12 @@ class TodayHome extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    SizedBox(height: 8),
-                    H1('Chair Yoga', size: 26),
-                    SizedBox(height: 6),
+                    const SizedBox(height: 8),
+                    H1(eventTitle, size: 26),
+                    const SizedBox(height: 6),
                     Text(
-                      '10:30 AM  •  Community Hall',
-                      style: TextStyle(fontSize: 15, color: TsgColors.ink),
+                      eventTime,
+                      style: const TextStyle(fontSize: 15, color: TsgColors.ink),
                     ),
                   ],
                 ),
@@ -1912,51 +1939,61 @@ class TodayHome extends StatelessWidget {
 }
 
 class GuruHome extends StatelessWidget {
-  const GuruHome({super.key, required this.go, required this.runApi});
+  const GuruHome({
+    super.key,
+    required this.go,
+    required this.runApi,
+    required this.goGuruChat,
+  });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
+  final ValueChanged<String> goGuruChat;
 
   @override
   Widget build(BuildContext context) {
+    // (Screen?, String?) = (navigate to screen, or open guru chat with this message)
     final requests = [
-      (CupertinoIcons.car_detailed, 'I need a ride', Screen.rideChat),
-      (CupertinoIcons.capsule, 'I need medication help', Screen.medications),
-      (CupertinoIcons.bag, 'I need food', Screen.services),
-      (CupertinoIcons.sparkles, 'I need cleaning', Screen.services),
-      (CupertinoIcons.doc_text_search, 'I need diapers', Screen.services),
-      (CupertinoIcons.heart, 'Feeling lonely', Screen.companionChat),
+      (CupertinoIcons.car_detailed, 'I need a ride', Screen.rideChat, null),
+      (CupertinoIcons.capsule, 'I need medication help', Screen.medications, null),
+      (CupertinoIcons.hammer_fill, 'Home repair needed', null, 'I need home repair help'),
+      (CupertinoIcons.sparkles, 'I need cleaning', null, 'I need house cleaning'),
+      (CupertinoIcons.bag, 'I need food', null, 'I need food delivered'),
+      (CupertinoIcons.heart, 'Feeling lonely', Screen.companionChat, null),
     ];
     return ScreenScaffold(
       title: 'How can we help?',
       children: [
-        Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: TsgColors.line),
-          ),
-          child: const Row(
-            children: [
-              Icon(CupertinoIcons.search, color: TsgColors.muted),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'What do you need today?',
-                  style: TextStyle(color: TsgColors.muted),
+        GestureDetector(
+          onTap: () => goGuruChat(''),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: TsgColors.line),
+            ),
+            child: const Row(
+              children: [
+                Icon(CupertinoIcons.search, color: TsgColors.muted),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'What do you need today?',
+                    style: TextStyle(color: TsgColors.muted),
+                  ),
                 ),
-              ),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: TsgColors.lilac,
-                child: Icon(
-                  CupertinoIcons.mic_fill,
-                  size: 18,
-                  color: TsgColors.purple,
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: TsgColors.lilac,
+                  child: Icon(
+                    CupertinoIcons.mic_fill,
+                    size: 18,
+                    color: TsgColors.purple,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 24),
@@ -1974,7 +2011,13 @@ class GuruHome extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 9),
             child: SoftCard(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-              onTap: () => go(item.$3),
+              onTap: () {
+                if (item.$4 != null) {
+                  goGuruChat(item.$4!);
+                } else if (item.$3 != null) {
+                  go(item.$3!);
+                }
+              },
               child: Row(
                 children: [
                   Icon(item.$1, color: TsgColors.purple, size: 22),
@@ -1988,6 +2031,13 @@ class GuruHome extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (item.$4 != null)
+                    const Pill(
+                      'Find Pros',
+                      color: Color(0xFFEDE8FF),
+                      ink: TsgColors.purple,
+                    ),
+                  const SizedBox(width: 6),
                   const Icon(
                     CupertinoIcons.chevron_right,
                     size: 18,
@@ -2001,7 +2051,7 @@ class GuruHome extends StatelessWidget {
         const SizedBox(height: 12),
         SoftCard(
           color: TsgColors.lilac2,
-          onTap: () => go(Screen.rideChat),
+          onTap: () => goGuruChat(''),
           child: const Row(
             children: [
               Avatar(size: 62, icon: CupertinoIcons.chat_bubble_2_fill),
@@ -2032,6 +2082,764 @@ class GuruHome extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Guru Chat with Thumbtack Pro Integration
+// ---------------------------------------------------------------------------
+
+enum _ChatRole { user, guru }
+
+class _ChatEntry {
+  const _ChatEntry({required this.role, required this.text, this.pros = const []});
+  final _ChatRole role;
+  final String text;
+  final List<ServicePro> pros;
+
+  static _ChatEntry user(String text) =>
+      _ChatEntry(role: _ChatRole.user, text: text);
+  static _ChatEntry guru(String text, {List<ServicePro> pros = const []}) =>
+      _ChatEntry(role: _ChatRole.guru, text: text, pros: pros);
+}
+
+class GuruChatScreen extends StatefulWidget {
+  const GuruChatScreen({
+    super.key,
+    required this.go,
+    required this.apiClient,
+    this.state,
+    this.initialMessage,
+  });
+  final ValueChanged<Screen> go;
+  final TsgApiClient apiClient;
+  final ResidentAppState? state;
+  final String? initialMessage;
+
+  @override
+  State<GuruChatScreen> createState() => _GuruChatScreenState();
+}
+
+class _GuruChatScreenState extends State<GuruChatScreen> {
+  final _controller = TextEditingController();
+  final _scroll = ScrollController();
+  final List<_ChatEntry> _messages = [];
+  final Set<String> _selectedProIds = {};
+  bool _loading = false;
+  bool _rfqSent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialMessage?.trim() ?? '';
+    if (initial.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _send(initial));
+    } else {
+      _messages.add(_ChatEntry.guru(
+        'Hi! Tell me what you need help with. For example: "my bathroom is leaking" or "I need house cleaning."',
+      ));
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _send(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _loading) return;
+    setState(() {
+      _messages.add(_ChatEntry.user(trimmed));
+      _loading = true;
+      _selectedProIds.clear();
+      _rfqSent = false;
+    });
+    _controller.clear();
+    _scrollToBottom();
+
+    try {
+      Map<String, dynamic>? guruResponse;
+      await _runApiDirect('Finding help', (client, state) async {
+        final res = await client.sendGuruMessage(trimmed, screen: 'services');
+        guruResponse = res;
+        return res;
+      });
+
+      if (!mounted) return;
+      final response = guruResponse ?? {};
+      final prosJson = listOfMaps(
+        response['service_pros'] ?? response['pros'] ?? response['providers'] ??
+        response['thumbtack_pros'] ?? response['guru_pros'] ?? response['partner_pros'],
+      );
+      final pros = prosJson.map(ServicePro.fromJson).toList();
+      final replyText = stringValue(
+        response['reply'] ?? response['message'] ?? response['text'],
+        fallback: pros.isNotEmpty
+            ? 'I found ${pros.length} pros near you. Select one or more to send a quote request.'
+            : 'I\'m looking into that for you. Is there anything else you can tell me?',
+      );
+      setState(() {
+        _messages.add(_ChatEntry.guru(replyText, pros: pros));
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatEntry.guru(
+          'Sorry, I had trouble connecting. Please try again.',
+        ));
+        _loading = false;
+      });
+    }
+    _scrollToBottom();
+  }
+
+  Future<void> _runApiDirect(
+    String label,
+    Future<Object?> Function(TsgApiClient, ResidentAppState?) action,
+  ) async {
+    await action(widget.apiClient, widget.state);
+  }
+
+  Future<void> _sendRfq() async {
+    if (_selectedProIds.isEmpty || _rfqSent) return;
+    final proIds = _selectedProIds.toList();
+    final issue = _messages
+        .where((m) => m.role == _ChatRole.user)
+        .map((m) => m.text)
+        .join(' ');
+    setState(() {
+      _loading = true;
+    });
+    try {
+      await widget.apiClient.requestServiceQuotes(
+        proIds: proIds,
+        issue: issue,
+        recipientName: widget.state?.residentName ?? '',
+        address: widget.state?.community ?? '',
+      );
+      if (!mounted) return;
+      setState(() {
+        _rfqSent = true;
+        _loading = false;
+        _selectedProIds.clear();
+        _messages.add(_ChatEntry.guru(
+          'Your quote request has been sent to ${proIds.length} pro${proIds.length > 1 ? 's' : ''}. You\'ll hear back soon!',
+        ));
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _messages.add(_ChatEntry.guru(
+          'Could not send the request right now. Please try again.',
+        ));
+      });
+    }
+    _scrollToBottom();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasProsAvailable = _messages.any((m) => m.pros.isNotEmpty);
+    return Column(
+      children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(CupertinoIcons.chevron_left, size: 24),
+                onPressed: () => widget.go(Screen.guru),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              ),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'TSG Guru',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: TsgColors.ink,
+                      ),
+                    ),
+                    Text(
+                      'Powered by Thumbtack',
+                      style: TextStyle(fontSize: 12, color: TsgColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              const Avatar(size: 38, icon: CupertinoIcons.sparkles),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Divider(color: TsgColors.line, height: 1),
+        // Chat area
+        Expanded(
+          child: ListView.builder(
+            controller: _scroll,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            itemCount: _messages.length + (_loading ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == _messages.length) {
+                return _TypingBubble();
+              }
+              final entry = _messages[index];
+              if (entry.role == _ChatRole.user) {
+                return _UserBubble(text: entry.text);
+              }
+              return _GuroBubble(
+                text: entry.text,
+                pros: entry.pros,
+                selectedProIds: _selectedProIds,
+                onTogglePro: (id) {
+                  setState(() {
+                    if (_selectedProIds.contains(id)) {
+                      _selectedProIds.remove(id);
+                    } else {
+                      _selectedProIds.add(id);
+                    }
+                  });
+                },
+              );
+            },
+          ),
+        ),
+        // RFQ button when pros are selected
+        if (_selectedProIds.isNotEmpty && !_rfqSent)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: PurpleButton(
+              'Send Quote Request (${_selectedProIds.length})',
+              icon: CupertinoIcons.paperplane_fill,
+              onTap: _sendRfq,
+            ),
+          ),
+        // Input
+        Container(
+          padding: EdgeInsets.fromLTRB(
+            12,
+            10,
+            12,
+            MediaQuery.of(context).padding.bottom + 90,
+          ),
+          decoration: const BoxDecoration(
+            color: TsgColors.glass,
+            border: Border(top: BorderSide(color: TsgColors.line)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  enabled: !_loading,
+                  decoration: InputDecoration(
+                    hintText: hasProsAvailable
+                        ? 'Select pros above or ask a follow-up...'
+                        : 'Describe what you need...',
+                    hintStyle: const TextStyle(
+                      color: TsgColors.muted,
+                      fontSize: 15,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.line),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.line),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.purple),
+                    ),
+                  ),
+                  onSubmitted: _send,
+                  textInputAction: TextInputAction.send,
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _send(_controller.text),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [TsgColors.purple2, TsgColors.purple],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.arrow_up,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _UserBubble extends StatelessWidget {
+  const _UserBubble({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12, left: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [TsgColors.purple2, TsgColors.purple],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(18),
+            topRight: Radius.circular(4),
+            bottomLeft: Radius.circular(18),
+            bottomRight: Radius.circular(18),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: TsgColors.purple.withValues(alpha: .18),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
+        ),
+      ),
+    );
+  }
+}
+
+class _GuroBubble extends StatelessWidget {
+  const _GuroBubble({
+    required this.text,
+    required this.pros,
+    required this.selectedProIds,
+    required this.onTogglePro,
+  });
+  final String text;
+  final List<ServicePro> pros;
+  final Set<String> selectedProIds;
+  final ValueChanged<String> onTogglePro;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(bottom: 8, right: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            decoration: BoxDecoration(
+              color: TsgColors.lilac2,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(4),
+                topRight: Radius.circular(18),
+                bottomLeft: Radius.circular(18),
+                bottomRight: Radius.circular(18),
+              ),
+              border: Border.all(color: TsgColors.line),
+            ),
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: TsgColors.ink,
+                fontSize: 15,
+                height: 1.4,
+              ),
+            ),
+          ),
+          if (pros.isNotEmpty) ...[
+            ...pros.map(
+              (pro) => _ProCard(
+                pro: pro,
+                selected: selectedProIds.contains(pro.id),
+                onToggle: () => onTogglePro(pro.id),
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _TypingBubble extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12, right: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          color: TsgColors.lilac2,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: TsgColors.line),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: TsgColors.purple,
+              ),
+            ),
+            SizedBox(width: 10),
+            Text(
+              'Guru is thinking...',
+              style: TextStyle(color: TsgColors.muted, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Source badge metadata for each partner network.
+({String label, Color bg, Color ink}) _sourceBadge(String source) {
+  return switch (source) {
+    'guru_partner' => (
+      label: 'Guru Partner',
+      bg: const Color(0xFFEDE8FF),
+      ink: TsgColors.purple,
+    ),
+    'thumbtack' => (
+      label: 'Thumbtack',
+      bg: const Color(0xFFE8F3FF),
+      ink: const Color(0xFF1B72C0),
+    ),
+    'angi' => (
+      label: 'Angi',
+      bg: const Color(0xFFFFEEE8),
+      ink: const Color(0xFFD45D1A),
+    ),
+    'taskrabbit' => (
+      label: 'TaskRabbit',
+      bg: const Color(0xFFE9F5E1),
+      ink: const Color(0xFF3F7A1A),
+    ),
+    'care_com' => (
+      label: 'Care.com',
+      bg: const Color(0xFFE8EFFF),
+      ink: const Color(0xFF1A4CC0),
+    ),
+    'amazon_home' => (
+      label: 'Amazon',
+      bg: const Color(0xFFFFF5E0),
+      ink: const Color(0xFFB35A00),
+    ),
+    _ => (
+      label: '3rd Party',
+      bg: const Color(0xFFF2F2F2),
+      ink: TsgColors.muted,
+    ),
+  };
+}
+
+class _ProCard extends StatelessWidget {
+  const _ProCard({
+    required this.pro,
+    required this.selected,
+    required this.onToggle,
+  });
+  final ServicePro pro;
+  final bool selected;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = _sourceBadge(pro.source);
+    final isGuruPartner = pro.source == 'guru_partner';
+    return GestureDetector(
+      onTap: onToggle,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: selected
+              ? (isGuruPartner
+                  ? const Color(0xFFF0E8FF)
+                  : const Color(0xFFEFF6FF))
+              : TsgColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? badge.ink : TsgColors.line,
+            width: selected ? 1.8 : 1,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0E2D2038),
+              blurRadius: 14,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: badge.bg,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                isGuruPartner
+                    ? CupertinoIcons.star_circle_fill
+                    : CupertinoIcons.person_crop_circle,
+                color: badge.ink,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          pro.name,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: TsgColors.ink,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badge.bg,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          badge.label,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: badge.ink,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    pro.category,
+                    style: const TextStyle(fontSize: 12, color: TsgColors.muted),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        '\u2605 ${pro.rating.toStringAsFixed(1)}',
+                        style: const TextStyle(
+                          color: TsgColors.orange,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '(${pro.reviewCount} reviews)',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: TsgColors.muted,
+                        ),
+                      ),
+                      if (pro.priceLabel != null) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          pro.priceLabel!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: TsgColors.green,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (pro.badge != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        pro.badge!,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: badge.ink,
+                        ),
+                      ),
+                    ),
+                  if (pro.location != null)
+                    Text(
+                      pro.location!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: TsgColors.muted,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected ? badge.ink : Colors.white,
+                    border: Border.all(
+                      color: selected ? badge.ink : TsgColors.line,
+                      width: 2,
+                    ),
+                  ),
+                  child: selected
+                      ? const Icon(
+                          CupertinoIcons.checkmark,
+                          size: 14,
+                          color: Colors.white,
+                        )
+                      : null,
+                ),
+                if (pro.profileUrl != null) ...[
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () {
+                      final url = pro.profileUrl;
+                      if (url != null) launchUrl(Uri.parse(url));
+                    },
+                    child: Text(
+                      'View',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: badge.ink,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PartnerChip extends StatelessWidget {
+  const _PartnerChip({
+    required this.label,
+    required this.sublabel,
+    required this.bg,
+    required this.ink,
+    required this.icon,
+  });
+  final String label;
+  final String sublabel;
+  final Color bg;
+  final Color ink;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ink.withValues(alpha: .18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: ink, size: 18),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: ink,
+                ),
+              ),
+              Text(
+                sublabel,
+                style: TextStyle(fontSize: 10, color: ink.withValues(alpha: .7)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+// ---------------------------------------------------------------------------
 
 class MedicationsScreen extends StatelessWidget {
   const MedicationsScreen({super.key, required this.go, this.state});
@@ -2623,7 +3431,7 @@ class RideMatchesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ScreenScaffold(
       title: 'Matched for you',
-      subtitle: 'Tomorrow, May 25',
+      subtitle: 'Tomorrow, ${_tomorrowLabel()}',
       back: () => go(Screen.rideChat),
       children: [
         rideOption(
@@ -2735,10 +3543,12 @@ class RideStatusScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final fmt = (DateTime t) => '${t.hour % 12 == 0 ? 12 : t.hour % 12}:${t.minute.toString().padLeft(2, '0')} ${t.hour < 12 ? 'AM' : 'PM'}';
     final steps = [
-      ('Request received', '10:31 AM', true),
-      ('Driver assigned', '10:32 AM', true),
-      ('Driver arriving', '9:45 AM', false),
+      ('Request received', fmt(now.subtract(const Duration(minutes: 2))), true),
+      ('Driver assigned', fmt(now.subtract(const Duration(minutes: 1))), true),
+      ('Driver arriving', fmt(now.add(const Duration(minutes: 15))), false),
       ('Completed', '', false),
     ];
     return ScreenScaffold(
@@ -2761,10 +3571,10 @@ class RideStatusScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        const Center(
+        Center(
           child: Text(
-            'Tomorrow, May 25 • 10:00 AM',
-            style: TextStyle(color: TsgColors.muted),
+            'Tomorrow, ${_tomorrowLabel()} • 10:00 AM',
+            style: const TextStyle(color: TsgColors.muted),
           ),
         ),
         const SizedBox(height: 28),
@@ -2897,59 +3707,75 @@ class CompanionChat extends StatelessWidget {
 }
 
 class CircleScreen extends StatelessWidget {
-  const CircleScreen({super.key, required this.go});
+  const CircleScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
+  final ResidentAppState? state;
 
   @override
   Widget build(BuildContext context) {
-    final people = [
-      ('Rita Sharma', 'Daughter', 'R', '+13035550102'),
-      ('Arjun Sharma', 'Son', 'A', '+13035550103'),
-      ('Susan Patel', 'Friend', 'S', '+13035550104'),
-      ('Dr. Mehta', 'Physician', 'D', '+13035550105'),
-      ('Meena Joshi', 'Caregiver', 'M', '+13035550106'),
-    ];
+    final statePeople = state?.people ?? [];
     return ScreenScaffold(
       title: 'My Circle',
       back: () => go(Screen.more),
       children: [
-        ...people.map(
-          (p) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: SoftCard(
-              padding: const EdgeInsets.all(12),
-              onTap: () => go(Screen.person),
-              child: Row(
-                children: [
-                  Avatar(size: 46, label: p.$3, tone: const Color(0xFFFFE0CC)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          p.$1,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          p.$2,
-                          style: const TextStyle(
-                            color: TsgColors.muted,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+        if (statePeople.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(
+              child: Text(
+                'No contacts added yet.\nTap "Add Person" to get started.',
+                style: TextStyle(color: TsgColors.muted),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ...statePeople.map(
+            (p) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SoftCard(
+                padding: const EdgeInsets.all(12),
+                onTap: () => go(Screen.person),
+                child: Row(
+                  children: [
+                    Avatar(
+                      size: 46,
+                      label: p.name.isNotEmpty ? p.name.characters.first.toUpperCase() : '?',
+                      tone: const Color(0xFFFFE0CC),
                     ),
-                  ),
-                  GestureDetector(
-                    onTap: () => launchPhoneCall(p.$4),
-                    child: const Icon(CupertinoIcons.phone, color: TsgColors.purple),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.name,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const Text(
+                            'Trust Circle',
+                            style: TextStyle(
+                              color: TsgColors.muted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (p.phone.isNotEmpty)
+                      GestureDetector(
+                        onTap: () async {
+                          try {
+                            await launchPhoneCall(p.phone);
+                          } catch (_) {}
+                        },
+                        child: const Icon(CupertinoIcons.phone, color: TsgColors.purple),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
         const SizedBox(height: 14),
         PurpleButton('Add Person', onTap: () => go(Screen.trustCircleInvite)),
       ],
@@ -2965,14 +3791,14 @@ class PersonDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final person = state?.people.isNotEmpty == true ? state!.people.first : null;
-    final name = person?.name.isNotEmpty == true ? person!.name : 'Rita Sharma';
-    final phone = person?.phone.isNotEmpty == true ? person!.phone : '+13035550102';
+    final name = person?.name.isNotEmpty == true ? person!.name : 'Contact';
+    final phone = person?.phone.isNotEmpty == true ? person!.phone : '';
     final initial = name.trim().isEmpty
-        ? 'R'
+        ? '?'
         : name.trim().characters.first.toUpperCase();
     return ScreenScaffold(
       title: name,
-      subtitle: 'Daughter',
+      subtitle: 'Trust Circle Contact',
       back: () => go(Screen.circle),
       children: [
         Center(
@@ -2985,7 +3811,9 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Call',
                 icon: CupertinoIcons.phone_fill,
-                onTap: () => launchPhoneCall(phone),
+                onTap: () async {
+                  try { await launchPhoneCall(phone); } catch (_) {}
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -2993,7 +3821,9 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Message',
                 icon: CupertinoIcons.chat_bubble_fill,
-                onTap: () => launchSms(phone),
+                onTap: () async {
+                  try { await launchSms(phone); } catch (_) {}
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -3001,7 +3831,9 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Video',
                 icon: CupertinoIcons.video_camera_solid,
-                onTap: () => launchSms(phone, body: 'Can we start a video call?'),
+                onTap: () async {
+                  try { await launchSms(phone, body: 'Can we start a video call?'); } catch (_) {}
+                },
               ),
             ),
           ],
@@ -3075,14 +3907,16 @@ class FeedHome extends StatelessWidget {
         const Segmented(labels: ['For You', 'Following'], selected: 0),
         const SizedBox(height: 16),
         postCard(
-          'Mary D.',
+          context,
+          'Community Member',
           'Beautiful morning walk\nwith my friends',
           CupertinoIcons.tree,
           '24',
         ),
         postCard(
-          'Park View Community',
-          'Community Lunch\nthis Friday at 1 PM.',
+          context,
+          'Your Community',
+          'Community Lunch\ncoming up soon.',
           CupertinoIcons.photo,
           '18',
         ),
@@ -3090,7 +3924,7 @@ class FeedHome extends StatelessWidget {
     );
   }
 
-  Widget postCard(String name, String body, IconData icon, String likes) {
+  Widget postCard(BuildContext context, String name, String body, IconData icon, String likes) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: SoftCard(
@@ -3127,7 +3961,9 @@ class FeedHome extends StatelessWidget {
             Row(
               children: [
                 GestureDetector(
-                  onTap: () {},
+                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Liked'), duration: Duration(seconds: 1)),
+                  ),
                   child: const Icon(
                     CupertinoIcons.heart_fill,
                     color: TsgColors.red,
@@ -3138,12 +3974,12 @@ class FeedHome extends StatelessWidget {
                 Text(likes),
                 const SizedBox(width: 22),
                 GestureDetector(
-                  onTap: () {},
+                  onTap: () => go(Screen.createPost),
                   child: const Icon(CupertinoIcons.chat_bubble, size: 18),
                 ),
                 const SizedBox(width: 6),
                 GestureDetector(
-                  onTap: () {},
+                  onTap: () => go(Screen.createPost),
                   child: const Text('Comment'),
                 ),
               ],
@@ -3155,16 +3991,29 @@ class FeedHome extends StatelessWidget {
   }
 }
 
-class CreatePost extends StatelessWidget {
+class CreatePost extends StatefulWidget {
   const CreatePost({super.key, required this.go, required this.runApi});
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
 
   @override
+  State<CreatePost> createState() => _CreatePostState();
+}
+
+class _CreatePostState extends State<CreatePost> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ScreenScaffold(
       title: 'Create Post',
-      back: () => go(Screen.feed),
+      back: () => widget.go(Screen.feed),
       children: [
         Container(
           height: 156,
@@ -3174,11 +4023,15 @@ class CreatePost extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: TsgColors.line),
           ),
-          child: const Align(
-            alignment: Alignment.topLeft,
-            child: Text(
-              "What's on your mind?",
-              style: TextStyle(color: TsgColors.muted),
+          child: TextField(
+            controller: _controller,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: const InputDecoration(
+              hintText: "What's on your mind?",
+              hintStyle: TextStyle(color: TsgColors.muted),
+              border: InputBorder.none,
             ),
           ),
         ),
@@ -3191,12 +4044,12 @@ class CreatePost extends StatelessWidget {
         PurpleButton(
           'Post',
           onTap: () async {
-            await runApi('Publishing community post', (client, state) {
-              return client.createPost(
-                'Beautiful morning walk with my friends',
-              );
+            final text = _controller.text.trim();
+            if (text.isEmpty) return;
+            await widget.runApi('Publishing community post', (client, state) {
+              return client.createPost(text);
             });
-            go(Screen.feed);
+            widget.go(Screen.feed);
           },
         ),
       ],
@@ -3627,6 +4480,9 @@ class BusinessDashboard extends StatelessWidget {
       business['status'],
       fallback: 'pending_review',
     ).replaceAll('_', ' ');
+    final rawBookings = listOfMaps(state?.raw['bookings']);
+    final leadsCount = rawBookings.length;
+    final bookingsCount = state?.services.length ?? 0;
     return ScreenScaffold(
       title: 'Business',
       subtitle: 'Provider operations and service requests.',
@@ -3686,7 +4542,7 @@ class BusinessDashboard extends StatelessWidget {
             Expanded(
               child: BusinessMetricCard(
                 label: 'New leads',
-                value: '12',
+                value: '$leadsCount',
                 icon: CupertinoIcons.person_crop_circle_badge_plus,
                 onTap: () => go(Screen.businessLeads),
               ),
@@ -3695,7 +4551,7 @@ class BusinessDashboard extends StatelessWidget {
             Expanded(
               child: BusinessMetricCard(
                 label: 'Bookings',
-                value: '5',
+                value: '$bookingsCount',
                 icon: CupertinoIcons.calendar_badge_plus,
                 onTap: () => go(Screen.businessBookings),
               ),
@@ -3804,55 +4660,63 @@ class BusinessLeadsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final leads = const [
-      ('Ride to hospital', 'Tomorrow, 10:00 AM · 3.2 mi', 'New'),
-      ('Pharmacy pickup', 'Today · 2.1 mi', 'New'),
-      ('Airport ride', 'Jun 6, 8:00 AM · 18 mi', 'Review'),
-    ];
+    final rawBookings = listOfMaps(state?.raw['bookings']);
     return ScreenScaffold(
       title: 'Leads',
       subtitle: 'Service requests routed to this provider.',
       children: [
-        ...leads.map(
-          (lead) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: SoftCard(
-              child: Row(
-                children: [
-                  const Avatar(
-                    size: 46,
-                    icon: CupertinoIcons.car_detailed,
-                    tone: Color(0xFFEAF4FF),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          lead.$1,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          lead.$2,
-                          style: const TextStyle(color: TsgColors.muted),
-                        ),
-                      ],
+        if (rawBookings.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(
+              child: Text(
+                'No service leads at this time.',
+                style: TextStyle(color: TsgColors.muted),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ...rawBookings.map(
+            (b) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SoftCard(
+                child: Row(
+                  children: [
+                    const Avatar(
+                      size: 46,
+                      icon: CupertinoIcons.car_detailed,
+                      tone: Color(0xFFEAF4FF),
                     ),
-                  ),
-                  RoleStatusChip(
-                    lead.$3,
-                    color: lead.$3 == 'New' ? TsgColors.green : TsgColors.blue,
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            stringValue(b['label'], fallback: 'Service request'),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            stringValue(b['scheduledFor']),
+                            style: const TextStyle(color: TsgColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    RoleStatusChip(
+                      stringValue(b['status'], fallback: 'New'),
+                      color: TsgColors.green,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -3866,54 +4730,60 @@ class BusinessBookingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bookings = const [
-      ('Today, 2:30 PM', 'Ride · Local', 'Confirmed'),
-      ('Tomorrow, 10:00 AM', 'Ride · Hospital', 'Confirmed'),
-      ('Jun 6, 8:00 AM', 'Ride · Airport', 'Pending'),
-    ];
+    final rawBookings = listOfMaps(state?.raw['bookings']);
     return ScreenScaffold(
       title: 'Bookings',
       subtitle: 'Confirmed and pending provider work.',
       children: [
-        ...bookings.map(
-          (booking) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: SoftCard(
-              child: Row(
-                children: [
-                  const Avatar(
-                    size: 44,
-                    icon: CupertinoIcons.calendar,
-                    tone: Color(0xFFF1E8F8),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          booking.$1,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          booking.$2,
-                          style: const TextStyle(color: TsgColors.muted),
-                        ),
-                      ],
+        if (rawBookings.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(
+              child: Text(
+                'No bookings at this time.',
+                style: TextStyle(color: TsgColors.muted),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ...rawBookings.map(
+            (b) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SoftCard(
+                child: Row(
+                  children: [
+                    const Avatar(
+                      size: 44,
+                      icon: CupertinoIcons.calendar,
+                      tone: Color(0xFFF1E8F8),
                     ),
-                  ),
-                  RoleStatusChip(
-                    booking.$3,
-                    color: booking.$3 == 'Confirmed'
-                        ? TsgColors.green
-                        : TsgColors.orange,
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            stringValue(b['scheduledFor'], fallback: 'Upcoming'),
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            stringValue(b['label'], fallback: 'Booking'),
+                            style: const TextStyle(color: TsgColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    RoleStatusChip(
+                      stringValue(b['status'], fallback: 'Confirmed'),
+                      color: TsgColors.green,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -4203,32 +5073,47 @@ class SettingsSection extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             ...rows.map(
-              (row) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.$1,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+              (row) => GestureDetector(
+                onTap: () => showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: Text('Edit ${row.$1}'),
+                    content: TextFormField(initialValue: row.$2),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Done'),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Text(
-                        row.$2,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(color: TsgColors.muted),
+                    ],
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          row.$1,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(
-                      CupertinoIcons.pencil,
-                      size: 15,
-                      color: TsgColors.muted,
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          row.$2,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(color: TsgColors.muted),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        CupertinoIcons.pencil,
+                        size: 15,
+                        color: TsgColors.muted,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -4244,164 +5129,275 @@ class ServicesScreen extends StatelessWidget {
     super.key,
     required this.go,
     required this.runApi,
+    required this.goGuruChat,
     this.state,
   });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
+  final ValueChanged<String> goGuruChat;
   final ResidentAppState? state;
+
+  // TSG-native services booked directly through the backend.
+  // Thumbtack services (cleaning, handyman, plumbing, etc.) open the Guru chat.
+  static const _thumbtackCategories = {
+    'cleaning',
+    'handyman',
+    'home_care',
+    'plumbing',
+    'electrical',
+    'landscaping',
+    'painting',
+  };
 
   @override
   Widget build(BuildContext context) {
+    // (label, category, availability, icon, color, guruMessage or null)
+    // guruMessage != null → route through Thumbtack Guru chat
     final services = [
       (
         'CareRide',
         'Transportation',
-        '4.8',
         'Available tomorrow',
         CupertinoIcons.car_detailed,
         const Color(0xFFFFF3E8),
+        null,
       ),
       (
         'HealthPlus Pharmacy',
         'pharmacy',
-        '4.7',
         'Fast delivery',
         CupertinoIcons.capsule,
         const Color(0xFFEFF8ED),
+        null,
       ),
       (
         'Comfort Cleaning',
         'cleaning',
-        '4.9',
-        'Today, 3 PM open',
+        'Find vetted pros',
         CupertinoIcons.sparkles,
         const Color(0xFFF4EDFF),
+        'I need house cleaning',
       ),
       (
         'Fresh Meals',
         'food',
-        '4.6',
         'Low sodium meals',
         CupertinoIcons.bag,
         const Color(0xFFFFF7DF),
+        null,
       ),
       (
         'Handyman Help',
         'handyman',
-        '4.8',
-        'Home repairs and setup',
+        'Find vetted pros',
         CupertinoIcons.hammer_fill,
         const Color(0xFFEAF4FF),
+        'I need a handyman for home repair',
       ),
       (
         'Groceries',
         'grocery',
-        '4.7',
         'Essentials delivered',
         CupertinoIcons.cart_fill,
         const Color(0xFFEFF8ED),
+        null,
       ),
     ];
+
+    // (icon, label, guruMessage or null)
+    // guruMessage != null → Thumbtack category, opens Guru chat
     final categories = [
-      (CupertinoIcons.car_detailed, 'Transport'),
-      (CupertinoIcons.capsule, 'Medication'),
-      (CupertinoIcons.bag, 'Food'),
-      (CupertinoIcons.cart_fill, 'Groceries'),
-      (CupertinoIcons.hammer_fill, 'Handyman'),
-      (CupertinoIcons.house_fill, 'Home Care'),
-      (CupertinoIcons.calendar, 'Events'),
+      (CupertinoIcons.car_detailed, 'Transport', null),
+      (CupertinoIcons.capsule, 'Medication', null),
+      (CupertinoIcons.bag, 'Food', null),
+      (CupertinoIcons.cart_fill, 'Groceries', null),
+      (CupertinoIcons.hammer_fill, 'Handyman', 'I need a handyman'),
+      (CupertinoIcons.house_fill, 'Home Care', 'I need home care help'),
+      (CupertinoIcons.drop_fill, 'Plumbing', 'I need a plumber'),
+      (CupertinoIcons.bolt_fill, 'Electrical', 'I need an electrician'),
+      (CupertinoIcons.leaf_arrow_circlepath, 'Lawn Care', 'I need lawn care'),
     ];
+
     return ScreenScaffold(
       title: 'Services',
       subtitle: 'Find trusted help near you.',
       back: () => go(Screen.more),
       children: [
-        Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: TsgColors.line),
-          ),
-          child: const Row(
-            children: [
-              Icon(CupertinoIcons.search, color: TsgColors.muted),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Search services...',
-                  style: TextStyle(color: TsgColors.muted),
+        // Search bar — opens Guru chat for any service query
+        GestureDetector(
+          onTap: () => goGuruChat(''),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: TsgColors.line),
+            ),
+            child: const Row(
+              children: [
+                Icon(CupertinoIcons.search, color: TsgColors.muted),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'What do you need? Ask the Guru...',
+                    style: TextStyle(color: TsgColors.muted),
+                  ),
                 ),
-              ),
-              Icon(CupertinoIcons.slider_horizontal_3, color: TsgColors.purple),
-            ],
+                Icon(CupertinoIcons.sparkles, color: TsgColors.purple),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 18),
-        const SectionHeader('AI matched for you', action: 'View all'),
+
+        // Thumbtack banner — home service CTA
+        GestureDetector(
+          onTap: () => goGuruChat(''),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1B72C0), Color(0xFF0E4F8A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x221B72C0),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .18),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.hammer_fill,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Need a plumber, cleaner, or handyman?',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          height: 1.3,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Ask the Guru — we will find vetted pros from our network and top platforms.',
+                        style: TextStyle(
+                          color: Color(0xCCFFFFFF),
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  CupertinoIcons.chevron_right,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        const SectionHeader('Your Services'),
         const SizedBox(height: 12),
-        ...services.map(
-          (s) => Padding(
+        ...services.map((s) {
+          final isThumbtatck = s.$6 != null;
+          return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: SoftCard(
               padding: const EdgeInsets.all(13),
               onTap: () async {
-                if (s.$1 == 'CareRide') {
-                  await runApi('Creating CareRide booking', (client, state) {
+                if (isThumbtatck) {
+                  goGuruChat(s.$6!);
+                  return;
+                }
+                if (s.$2 == 'Transportation') {
+                  await runApi('Creating CareRide booking', (client, st) {
                     return client.createRideBooking(
-                      serviceId: requireTransportServiceId(state),
+                      serviceId: requireTransportServiceId(st),
                       label: 'Cardiology Visit',
                       time: 'Tomorrow, 10:00 AM',
-                      pickupLabel: state?.community ?? '',
-                      riderName: state?.residentName ?? '',
+                      pickupLabel: st?.community ?? '',
+                      riderName: st?.residentName ?? '',
                     );
                   });
                   go(Screen.rideStatus);
                   return;
                 }
-                await runApi('Creating ${s.$2} order', (client, state) {
+                await runApi('Creating ${s.$2} order', (client, st) {
                   return client.createSupportOrder(
                     category: s.$2,
                     label: s.$1,
                     providerBillCents: supportOrderEstimateCents(s.$2),
-                    recipientName: state?.residentName ?? '',
-                    deliveryAddress: state?.community ?? '',
+                    recipientName: st?.residentName ?? '',
+                    deliveryAddress: st?.community ?? '',
                   );
                 });
               },
               child: Row(
                 children: [
-                  PhotoTile(icon: s.$5, width: 72, height: 72, color: s.$6),
+                  PhotoTile(icon: s.$4, width: 72, height: 72, color: s.$5),
                   const SizedBox(width: 13),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          s.$1,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                s.$1,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            if (isThumbtatck)
+                              const Pill(
+                                'Find Pros',
+                                color: Color(0xFFEDE8FF),
+                                ink: TsgColors.purple,
+                              ),
+                          ],
                         ),
                         Text(
                           s.$2,
                           style: const TextStyle(color: TsgColors.muted),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Text(
-                          '★ ${s.$3}',
-                          style: const TextStyle(
-                            color: TsgColors.orange,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          s.$4,
-                          style: const TextStyle(
-                            color: TsgColors.green,
-                            fontWeight: FontWeight.w800,
+                          s.$3,
+                          style: TextStyle(
+                            color: isThumbtatck
+                                ? const Color(0xFF1B72C0)
+                                : TsgColors.green,
+                            fontWeight: FontWeight.w700,
                             fontSize: 12,
                           ),
                         ),
@@ -4415,9 +5411,63 @@ class ServicesScreen extends StatelessWidget {
                 ],
               ),
             ),
-          ),
+          );
+        }),
+        const SizedBox(height: 20),
+        const SectionHeader('Partner Networks'),
+        const SizedBox(height: 4),
+        const Text(
+          'Pros sourced from our vetted network and top platforms.',
+          style: TextStyle(fontSize: 13, color: TsgColors.muted),
         ),
         const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _PartnerChip(
+                label: 'Guru Partners',
+                sublabel: 'TSG Vetted',
+                bg: Color(0xFFEDE8FF),
+                ink: TsgColors.purple,
+                icon: CupertinoIcons.star_circle_fill,
+              ),
+              SizedBox(width: 8),
+              _PartnerChip(
+                label: 'Thumbtack',
+                sublabel: 'Home Services',
+                bg: Color(0xFFE8F3FF),
+                ink: Color(0xFF1B72C0),
+                icon: CupertinoIcons.hammer_fill,
+              ),
+              SizedBox(width: 8),
+              _PartnerChip(
+                label: 'Angi',
+                sublabel: 'Home Pros',
+                bg: Color(0xFFFFEEE8),
+                ink: Color(0xFFD45D1A),
+                icon: CupertinoIcons.house_fill,
+              ),
+              SizedBox(width: 8),
+              _PartnerChip(
+                label: 'TaskRabbit',
+                sublabel: 'Handywork',
+                bg: Color(0xFFE9F5E1),
+                ink: Color(0xFF3F7A1A),
+                icon: CupertinoIcons.checkmark_seal_fill,
+              ),
+              SizedBox(width: 8),
+              _PartnerChip(
+                label: 'Care.com',
+                sublabel: 'Caregivers',
+                bg: Color(0xFFE8EFFF),
+                ink: Color(0xFF1A4CC0),
+                icon: CupertinoIcons.heart_fill,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         const SectionHeader('Browse categories'),
         const SizedBox(height: 12),
         GridView.count(
@@ -4428,22 +5478,52 @@ class ServicesScreen extends StatelessWidget {
           crossAxisSpacing: 10,
           childAspectRatio: 1,
           children: categories.map((c) {
+            final isThumbtatck = c.$3 != null;
             return SoftCard(
               padding: const EdgeInsets.all(10),
-              onTap: () => go(Screen.services),
+              color: isThumbtatck
+                  ? const Color(0xFFF0F7FF)
+                  : TsgColors.card,
+              onTap: () {
+                if (isThumbtatck) {
+                  goGuruChat(c.$3!);
+                } else {
+                  go(Screen.services);
+                }
+              },
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(c.$1, color: TsgColors.purple, size: 24),
-                  const SizedBox(height: 9),
+                  Icon(
+                    c.$1,
+                    color: isThumbtatck
+                        ? const Color(0xFF1B72C0)
+                        : TsgColors.purple,
+                    size: 24,
+                  ),
+                  const SizedBox(height: 7),
                   Text(
                     c.$2,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
+                      color: isThumbtatck
+                          ? const Color(0xFF1B72C0)
+                          : TsgColors.ink,
                     ),
                   ),
+                  if (isThumbtatck) ...[
+                    const SizedBox(height: 3),
+                    const Text(
+                      'via Partners',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFF1B72C0),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -4578,40 +5658,48 @@ class _SafetyScreenState extends State<SafetyScreen> {
               height: 214,
               child: Stack(
                 children: [
-                  Positioned.fill(
-                    child: GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: center,
-                        zoom: hasLocation ? 15 : 12,
-                      ),
-                      markers: {
-                        Marker(
-                          markerId: const MarkerId('resident-location'),
-                          position: center,
-                          infoWindow: InfoWindow(
-                            title: hasLocation
-                                ? 'Current location'
-                                : 'Waiting for location',
-                            snippet: safeZoneStatus,
+                  if (androidGoogleMapsKey.isNotEmpty)
+                    Positioned.fill(
+                      child: GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: center,
+                          zoom: hasLocation ? 15 : 12,
+                        ),
+                        markers: {
+                          Marker(
+                            markerId: const MarkerId('resident-location'),
+                            position: center,
+                            infoWindow: InfoWindow(
+                              title: hasLocation
+                                  ? 'Current location'
+                                  : 'Waiting for location',
+                              snippet: safeZoneStatus,
+                            ),
                           ),
-                        ),
-                      },
-                      circles: {
-                        Circle(
-                          circleId: const CircleId('safe-zone'),
-                          center: center,
-                          radius: hasLocation ? 250 : 500,
-                          strokeColor: TsgColors.green,
-                          fillColor: TsgColors.green.withValues(alpha: .12),
-                          strokeWidth: 2,
-                        ),
-                      },
-                      myLocationEnabled: hasLocation,
-                      myLocationButtonEnabled: false,
-                      zoomControlsEnabled: false,
-                      compassEnabled: false,
+                        },
+                        circles: {
+                          Circle(
+                            circleId: const CircleId('safe-zone'),
+                            center: center,
+                            radius: hasLocation ? 250 : 500,
+                            strokeColor: TsgColors.green,
+                            fillColor: TsgColors.green.withValues(alpha: .12),
+                            strokeWidth: 2,
+                          ),
+                        },
+                        myLocationEnabled: hasLocation,
+                        myLocationButtonEnabled: false,
+                        zoomControlsEnabled: false,
+                        compassEnabled: false,
+                      ),
+                    )
+                  else
+                    Positioned.fill(
+                      child: Container(
+                        color: const Color(0xFFEEEEEE),
+                        child: const Center(child: Text('Map unavailable', style: TextStyle(color: TsgColors.muted))),
+                      ),
                     ),
-                  ),
                   Positioned(
                     top: 12,
                     right: 12,
@@ -4831,7 +5919,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
           movementStatus: current.speed > 0.6 ? 'moving' : 'still',
           lastKnownSpeedMph:
               (current.speed * 2.236936 * 10).roundToDouble() / 10,
-          safeZoneStatus: 'inside',
+          safeZoneStatus: null,
         );
       });
       if (!mounted) return;
@@ -4920,34 +6008,42 @@ class SafetyMapScreen extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          Positioned.fill(
-            child: GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: center,
-                zoom: hasTelemetry ? 16 : 12,
+          if (androidGoogleMapsKey.isNotEmpty)
+            Positioned.fill(
+              child: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: center,
+                  zoom: hasTelemetry ? 16 : 12,
+                ),
+                markers: {
+                  Marker(
+                    markerId: const MarkerId('resident-location-full'),
+                    position: center,
+                    infoWindow: InfoWindow(title: label, snippet: safeZone),
+                  ),
+                },
+                circles: {
+                  Circle(
+                    circleId: const CircleId('resident-safe-zone-full'),
+                    center: center,
+                    radius: 300,
+                    strokeWidth: 3,
+                    strokeColor: TsgColors.green,
+                    fillColor: TsgColors.green.withValues(alpha: .12),
+                  ),
+                },
+                myLocationEnabled: hasTelemetry,
+                myLocationButtonEnabled: true,
+                zoomControlsEnabled: false,
               ),
-              markers: {
-                Marker(
-                  markerId: const MarkerId('resident-location-full'),
-                  position: center,
-                  infoWindow: InfoWindow(title: label, snippet: safeZone),
-                ),
-              },
-              circles: {
-                Circle(
-                  circleId: const CircleId('resident-safe-zone-full'),
-                  center: center,
-                  radius: 300,
-                  strokeWidth: 3,
-                  strokeColor: TsgColors.green,
-                  fillColor: TsgColors.green.withValues(alpha: .12),
-                ),
-              },
-              myLocationEnabled: hasTelemetry,
-              myLocationButtonEnabled: true,
-              zoomControlsEnabled: false,
+            )
+          else
+            Positioned.fill(
+              child: Container(
+                color: const Color(0xFFEEEEEE),
+                child: const Center(child: Text('Map requires Google Maps API key', style: TextStyle(color: TsgColors.muted))),
+              ),
             ),
-          ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(18),
@@ -5359,6 +6455,9 @@ Future<void> captureOnboardingEvidence({
           maxWidth: 1400,
         );
   if (picked == null) return;
+  const maxBytes = 10 * 1024 * 1024;
+  final fileSize = await picked.length();
+  if (fileSize > maxBytes) return;
   final bytes = await picked.readAsBytes();
   await runApi('Saving ${optionLabel.toLowerCase()}', (client, state) {
     return client.captureEvidence(
@@ -6350,6 +7449,7 @@ class OnboardingCircle extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 10),
             child: SoftCard(
               padding: const EdgeInsets.all(12),
+              onTap: () => go(Screen.trustCircleInvite),
               child: Row(
                 children: [
                   Avatar(size: 42, label: p.$3, tone: const Color(0xFFFFE0CC)),
@@ -6762,6 +7862,12 @@ String surfaceText(Object? value, String fallback) {
 double doubleValue(Object? value, {double fallback = 0}) {
   if (value is num) return value.toDouble();
   return double.tryParse(stringValue(value)) ?? fallback;
+}
+
+String _tomorrowLabel() {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final tomorrow = DateTime.now().add(const Duration(days: 1));
+  return '${months[tomorrow.month - 1]} ${tomorrow.day}';
 }
 
 Future<void> launchPhoneCall(String phone) async {
@@ -7344,58 +8450,7 @@ class _VitalsScreenState extends State<VitalsScreen> {
       residentSurfaceSection(widget.state, 'vitals')['monitor'],
     );
     final readings = listOfMaps(mapValue(widget.state?.raw['healthVitals'])['readings']);
-    final rows = vitals.isNotEmpty
-        ? vitals
-        : [
-            {
-              'label': 'Resting Heart Rate',
-              'value_text': '72',
-              'unit': 'bpm',
-              'baseline_text': '30-day baseline: 69 bpm',
-              'status_label': 'Normal',
-              'vital_key': 'resting_heart_rate',
-            },
-            {
-              'label': 'Heart Rate Variability',
-              'value_text': '48',
-              'unit': 'ms',
-              'baseline_text': '30-day baseline: 44 ms',
-              'status_label': 'Good',
-              'vital_key': 'hrv',
-            },
-            {
-              'label': 'Blood Oxygen (SpO2)',
-              'value_text': '97',
-              'unit': '%',
-              'baseline_text': 'Normal range: 95 - 100%',
-              'status_label': 'Normal',
-              'vital_key': 'oxygen_saturation',
-            },
-            {
-              'label': 'Respiratory Rate',
-              'value_text': '16',
-              'unit': '/min',
-              'baseline_text': 'Normal range: 12 - 20',
-              'status_label': 'Normal',
-              'vital_key': 'respiratory_rate',
-            },
-            {
-              'label': 'Body Temperature',
-              'value_text': '98.3',
-              'unit': 'F',
-              'baseline_text': 'Normal range: 97.5 - 99.5',
-              'status_label': 'Normal',
-              'vital_key': 'body_temperature',
-            },
-            {
-              'label': 'Blood Pressure',
-              'value_text': '118 / 76',
-              'unit': 'mmHg',
-              'baseline_text': 'Normal range: < 130/80',
-              'status_label': 'Normal',
-              'vital_key': 'blood_pressure',
-            },
-          ];
+    final rows = vitals;
     return ScreenScaffold(
       title: 'Vitals Monitor',
       back: () => widget.go(Screen.more),
@@ -7419,6 +8474,17 @@ class _VitalsScreenState extends State<VitalsScreen> {
                 : 'Only ${readings.length} recent reading(s) were returned by the API. Historical range aggregation is not available yet.',
           ),
         const SizedBox(height: 16),
+        if (rows.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(
+              child: Text(
+                'No vitals synced from health device.',
+                style: TextStyle(color: TsgColors.muted),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
         ...rows.map(
           (v) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -7755,33 +8821,39 @@ class RiskScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final now = DateTime.now();
+    String dayLabel(int daysAgo) {
+      final d = now.subtract(Duration(days: daysAgo));
+      return '${months[d.month - 1]} ${d.day}';
+    }
     final risks = [
       (
-        'Today\nMay 13',
+        'Today\n${dayLabel(0)}',
         'Normal',
         'All vitals and activities\nin normal range.',
         TsgColors.green,
       ),
       (
-        'May 12',
+        dayLabel(1),
         'Reduced Activity',
         'Steps were 18% below\nyour usual range.',
         TsgColors.orange,
       ),
       (
-        'May 11',
+        dayLabel(2),
         'Missed Medication',
         'Evening medication was\nmissed.',
         TsgColors.red,
       ),
       (
-        'May 10',
+        dayLabel(3),
         'Low Sleep',
         'Slept 4h 52m which is\nbelow your usual.',
         TsgColors.purple,
       ),
       (
-        'May 9',
+        dayLabel(4),
         'Normal',
         'All vitals and activities\nin normal range.',
         TsgColors.green,

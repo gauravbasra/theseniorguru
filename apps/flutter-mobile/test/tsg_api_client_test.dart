@@ -132,7 +132,7 @@ void main() {
           '/api/orders',
           '/api/events/join',
           '/api/posts',
-          '/api/safety/voice-sos',
+          '/api/safety/sos',
           '/api/media/evidence',
           '/api/onboarding/trust-circle',
           '/api/onboarding/business',

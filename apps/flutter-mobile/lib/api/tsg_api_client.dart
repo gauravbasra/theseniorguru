@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 typedef InstallationIdProvider = Future<String> Function();
 
@@ -37,6 +38,70 @@ class ResidentMedication {
     );
   }
 }
+
+// Source identifiers for service pro network partners.
+// 'guru_partner'  = TSG vetted provider network
+// 'thumbtack'     = Thumbtack marketplace
+// 'angi'          = Angi (formerly Angie's List)
+// 'taskrabbit'    = TaskRabbit
+// 'care_com'      = Care.com
+// 'amazon_home'   = Amazon Home Services
+// 'other'         = other 3rd-party platforms
+class ServicePro {
+  const ServicePro({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.source,
+    required this.rating,
+    required this.reviewCount,
+    this.imageUrl,
+    this.location,
+    this.profileUrl,
+    this.priceLabel,
+    this.badge,
+  });
+
+  final String id;
+  final String name;
+  final String category;
+  final String source;
+  final double rating;
+  final int reviewCount;
+  final String? imageUrl;
+  final String? location;
+  final String? profileUrl;
+  final String? priceLabel;
+  final String? badge;
+
+  factory ServicePro.fromJson(Map<String, dynamic> json) {
+    final rawRating = json['rating'] ?? json['averageRating'];
+    return ServicePro(
+      id: stringValue(json['id'] ?? json['proId']),
+      name: stringValue(json['name'] ?? json['businessName']),
+      category: stringValue(json['category'] ?? json['serviceCategory']),
+      source: stringValue(
+        json['source'] ?? json['network'] ?? json['platform'],
+        fallback: 'other',
+      ),
+      rating: rawRating is num
+          ? rawRating.toDouble()
+          : double.tryParse(rawRating?.toString() ?? '') ?? 0.0,
+      reviewCount: intValue(json['reviewCount'] ?? json['review_count']),
+      imageUrl: json['imageUrl'] as String? ?? json['image_url'] as String?,
+      location: json['location'] as String? ?? json['city'] as String?,
+      profileUrl: json['profileUrl'] as String? ??
+          json['thumbtackUrl'] as String? ??
+          json['url'] as String?,
+      priceLabel: json['priceLabel'] as String? ?? json['price'] as String?,
+      badge: json['badge'] as String? ?? json['tier'] as String?,
+    );
+  }
+}
+
+// Keep ThumbtatckPro as a factory alias for backward compatibility with
+// any existing backend responses that use this shape.
+typedef ThumbtatckPro = ServicePro;
 
 class ResidentService {
   const ResidentService({
@@ -99,8 +164,12 @@ class ResidentAppState {
 
   factory ResidentAppState.fromJson(Map<String, dynamic> json) {
     final resident = mapValue(json['resident']);
+    final residentId = stringValue(resident['id']);
+    if (residentId.isEmpty) {
+      throw const TsgApiException('API response missing resident id', 0);
+    }
     return ResidentAppState(
-      residentId: stringValue(resident['id']),
+      residentId: residentId,
       residentName: stringValue(resident['name'] ?? resident['display_name']),
       community: stringValue(resident['community']),
       medications: listOfMaps(
@@ -318,6 +387,34 @@ class TsgApiClient {
     return post('/api/media/evidence', body);
   }
 
+  Future<Map<String, dynamic>> requestServiceQuotes({
+    required List<String> proIds,
+    required String issue,
+    required String recipientName,
+    required String address,
+  }) {
+    return post('/api/services/rfq', {
+      'proIds': proIds,
+      'issue': issue,
+      'recipientName': recipientName,
+      'address': address,
+      'source': 'flutter_guru_chat',
+    });
+  }
+
+  // Backward-compat alias.
+  Future<Map<String, dynamic>> requestThumbtatckQuotes({
+    required List<String> proIds,
+    required String issue,
+    required String recipientName,
+    required String address,
+  }) => requestServiceQuotes(
+        proIds: proIds,
+        issue: issue,
+        recipientName: recipientName,
+        address: address,
+      );
+
   Future<Map<String, dynamic>> completeSeniorOnboarding([
     Map<String, dynamic> payload = const {},
   ]) {
@@ -388,6 +485,13 @@ class TsgApiClient {
   Future<void> _ensureSession({String? displayName}) async {
     if (_token != null) return;
     final installationId = await installationIdProvider();
+    final prefKey = 'tsg_token_${installationId}_$_role';
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString(prefKey);
+    if (cached != null && cached.isNotEmpty) {
+      _token = cached;
+      return;
+    }
     final session = await _send(
       'POST',
       '/api/auth/device-session',
@@ -401,6 +505,9 @@ class TsgApiClient {
     _token = stringValue(
       session['token'] ?? mapValue(session['session'])['token'],
     );
+    if (_token != null && _token!.isNotEmpty) {
+      await prefs.setString(prefKey, _token!);
+    }
   }
 
   Future<Map<String, dynamic>> _send(
