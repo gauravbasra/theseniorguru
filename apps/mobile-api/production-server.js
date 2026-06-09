@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { resolveGuruIntent, isRoutineGuruIntent, localCacheKey } = require("./lib/guru-intents");
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
+const { slmAvailable, slmChat, slmClassifyIntent, slmWellnessNarrative, slmSafetyRecommendation, slmWeatherAdvice, SLM_MODEL, SLM_PROVIDER } = require("./lib/slm-client");
 
 const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
@@ -11,6 +12,29 @@ const PAID_PLAN_INTERVAL = ["month", "year"].includes(process.env.STRIPE_GROWTH_
   : "year";
 const STRIPE_API_VERSION = "2026-02-25.clover";
 const RIDE_PLATFORM_MARGIN_BPS = 2000;
+
+// In-process token-bucket rate limiter for Guru endpoints.
+// Limits each user to 30 requests/min on Guru chat/orchestrate.
+const _guruRateBuckets = new Map();
+const GURU_RATE_LIMIT = Number(process.env.GURU_RATE_LIMIT_RPM || 30);
+const GURU_RATE_WINDOW_MS = 60_000;
+function checkGuruRateLimit(userId) {
+  const now = Date.now();
+  const key = String(userId || "anon");
+  const bucket = _guruRateBuckets.get(key) || { count: 0, windowStart: now };
+  if (now - bucket.windowStart > GURU_RATE_WINDOW_MS) {
+    bucket.count = 0;
+    bucket.windowStart = now;
+  }
+  bucket.count += 1;
+  _guruRateBuckets.set(key, bucket);
+  if (_guruRateBuckets.size > 5000) {
+    for (const [k, v] of _guruRateBuckets) {
+      if (now - v.windowStart > GURU_RATE_WINDOW_MS * 2) _guruRateBuckets.delete(k);
+    }
+  }
+  return bucket.count <= GURU_RATE_LIMIT;
+}
 
 function required(value, name) {
   if (value === undefined || value === null || value === "") {
@@ -819,18 +843,7 @@ function createProductionApi(pool) {
 
   async function buildContextIntelligenceState(resident, healthSummary = {}) {
     if (!resident) return defaultContextIntelligenceState(resident, healthSummary);
-    const [
-      guidance,
-      signals,
-      environment,
-      alerts,
-      mobility,
-      social,
-      places,
-      routines,
-      visits,
-      transport
-    ] = await Promise.all([
+    const ctxSettled = await Promise.allSettled([
       query(`SELECT * FROM guru_daily_guidance WHERE resident_id = $1 ORDER BY guidance_date DESC, created_at DESC LIMIT 1`, [resident.id]),
       query(`SELECT * FROM guru_context_signals WHERE resident_id = $1 AND suppressed = false ORDER BY signal_date DESC, created_at DESC LIMIT 12`, [resident.id]),
       query(`SELECT * FROM environment_observations WHERE resident_id = $1 OR resident_id IS NULL ORDER BY observed_at DESC LIMIT 1`, [resident.id]),
@@ -842,6 +855,23 @@ function createProductionApi(pool) {
       query(`SELECT * FROM resident_place_visits WHERE resident_id = $1 ORDER BY visit_started_at DESC LIMIT 20`, [resident.id]),
       query(`SELECT * FROM transportation_context_decisions WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id])
     ]);
+    const emptyCtx = { rows: [] };
+    const [
+      guidance,
+      signals,
+      environment,
+      alerts,
+      mobility,
+      social,
+      places,
+      routines,
+      visits,
+      transport
+    ] = ctxSettled.map((s, i) => {
+      if (s.status === "fulfilled") return s.value;
+      console.warn(`buildContextIntelligenceState query[${i}] failed:`, s.reason?.message);
+      return emptyCtx;
+    });
     const fallback = defaultContextIntelligenceState(resident, healthSummary);
     const guidanceRow = guidance.rows[0];
     const environmentRow = environment.rows[0];
@@ -1063,11 +1093,11 @@ function createProductionApi(pool) {
   }
 
   async function buildGuruBaselinesAndTrends(residentId, context = {}) {
-    const [healthRows, environmentRows, socialRows] = await Promise.all([
+    const [healthRows, environmentRows, socialRows] = (await Promise.allSettled([
       query(`SELECT * FROM health_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId]),
       query(`SELECT * FROM environmental_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId]),
       query(`SELECT * FROM social_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId])
-    ]);
+    ])).map(s => s.status === "fulfilled" ? s.value : { rows: [] });
     const baselineSpecs = [
       ["steps", "steps", healthRows.rows, row => row.steps],
       ["sleep_minutes", "minutes", healthRows.rows, row => row.sleep_minutes],
@@ -1204,7 +1234,7 @@ function createProductionApi(pool) {
       missed14,
       nextBooking,
       latestScore
-    ] = await Promise.all([
+    ] = (await Promise.allSettled([
       query(`SELECT * FROM health_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC, updated_at DESC LIMIT 1`, [resident.id]),
       query(`SELECT * FROM location_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC, updated_at DESC LIMIT 1`, [resident.id]),
       query(`SELECT * FROM environmental_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC, updated_at DESC LIMIT 1`, [resident.id]),
@@ -1215,7 +1245,7 @@ function createProductionApi(pool) {
       query(`SELECT count(*)::int AS count FROM medications WHERE resident_id = $1 AND status IN ('missed','skipped') AND updated_at >= now() - interval '14 days'`, [resident.id]),
       query(`SELECT * FROM bookings WHERE resident_id = $1 AND scheduled_for >= now() ORDER BY scheduled_for ASC LIMIT 1`, [resident.id]),
       query(`SELECT * FROM guru_risk_scores WHERE senior_id = $1 ORDER BY score_date DESC, updated_at DESC LIMIT 1`, [resident.id])
-    ]);
+    ])).map(s => s.status === "fulfilled" ? s.value : { rows: [{ count: 0 }] });
     return {
       health: health.rows[0] || null,
       location: location.rows[0] || null,
@@ -1569,127 +1599,179 @@ function createProductionApi(pool) {
 
   async function resolveGuruWithLocalFirst({ req, user, resident, message, context, route, screen, forcedIntent = null }) {
     const startedAt = Date.now();
-    const resolvedIntent = resolveGuruIntent(message, context);
+    const regexResolved = resolveGuruIntent(message, context);
     if (forcedIntent) {
-      resolvedIntent.intent = forcedIntent;
+      regexResolved.intent = forcedIntent;
       if (forcedIntent === "complex_reasoning") {
-        resolvedIntent.reply = "I can help think through this step by step. For now, I will use a careful local response and avoid remote AI unless policy and budget allow it.";
+        regexResolved.reply = "I can help think through this step by step. For now, I will use a careful local response and avoid remote AI unless policy and budget allow it.";
       }
       if (forcedIntent === "safety") {
-        resolvedIntent.reply = "Safety comes first. I can route SOS and trusted-circle actions without waiting on AI budget.";
-        resolvedIntent.navigateTo = "residentSafety";
+        regexResolved.reply = "Safety comes first. I can route SOS and trusted-circle actions without waiting on AI budget.";
+        regexResolved.navigateTo = "residentSafety";
       }
     }
+
+    // Tier 1: SLM (Ollama) — runs locally on VPS; skipped on Vercel (slmAvailable() returns false in ~2s)
+    const slmOn = await slmAvailable();
+    let resolvedIntent = regexResolved;
+    if (slmOn) {
+      try {
+        const classified = await slmClassifyIntent(message);
+        if (classified && classified.confidence >= 0.70) {
+          resolvedIntent = { ...regexResolved, intent: classified.intent };
+        }
+      } catch {}
+    }
+
     const policy = await aiRoutingPolicy(resolvedIntent.intent);
     const tenantId = tenantIdForResident(resident);
-    const localConfidence = localConfidenceForIntent(resolvedIntent.intent, message);
+    const localConfidence = slmOn ? 0.95 : localConfidenceForIntent(resolvedIntent.intent, message);
     const budget = await aiBudgetMode({ resident, tenantId, emergencyBypass: policy.emergency_bypass === true });
     const remoteGloballyEnabled = process.env.GURU_REMOTE_AI_ENABLED === "true" || process.env.GURU_ALLOW_REMOTE_AI === "true" || process.env.GURU_ALLOW_REMOTE_AI === "1";
-    const remoteEligible = policy.remote_allowed === true && remoteGloballyEnabled && localConfidence < Number(policy.min_local_confidence || 0.70) && !budget.blocked && !budget.throttled;
+    const remoteEligible = !slmOn && policy.remote_allowed === true && remoteGloballyEnabled && localConfidence < Number(policy.min_local_confidence || 0.70) && !budget.blocked && !budget.throttled;
     const routeReason = policy.emergency_bypass
       ? "emergency_bypass"
-      : remoteEligible
-        ? "remote_allowed_low_local_confidence"
-        : budget.blocked || budget.throttled
-          ? budget.reason
-          : policy.remote_allowed
-            ? "local_fallback_remote_disabled_or_confident"
-            : "policy_local_only";
-    if (!remoteEligible) {
-      const cached = await cachedLocalGuruResponse(resolvedIntent.intent, message, resolvedIntent, policy);
-      await recordGuruModelInvocation(resident?.id, "local_small_language_model", resolvedIntent.intent, route, {
-        tenantId,
-        screen,
-        modelName: "tsg-local-intent-v2",
-        cacheHit: cached.cacheHit,
-        routeReason,
-        localConfidence,
-        budgetMode: budget.mode,
-        blockedByBudget: budget.blocked,
-        latencyMs: Date.now() - startedAt
-      });
-      if ((policy.remote_allowed || budget.blocked || budget.throttled) && !policy.emergency_bypass) {
+      : slmOn
+        ? "slm_local"
+        : remoteEligible
+          ? "remote_allowed_low_local_confidence"
+          : budget.blocked || budget.throttled
+            ? budget.reason
+            : policy.remote_allowed
+              ? "local_fallback_remote_disabled_or_confident"
+              : "policy_local_only";
+
+    // Tier 1: SLM reply
+    if (slmOn) {
+      try {
+        const slmResult = await slmChat({ message, context, temperature: 0.45 });
+        await recordGuruModelInvocation(resident?.id, SLM_PROVIDER, resolvedIntent.intent, route, {
+          tenantId,
+          screen,
+          modelName: SLM_MODEL,
+          cacheHit: false,
+          routeReason,
+          localConfidence,
+          budgetMode: budget.mode,
+          promptTokens: slmResult.promptTokens,
+          completionTokens: slmResult.completionTokens,
+          latencyMs: Date.now() - startedAt
+        });
+        return {
+          resolvedIntent,
+          reply: slmResult.text || resolvedIntent.reply,
+          provider: SLM_PROVIDER,
+          model: SLM_MODEL,
+          configured: true,
+          navigateTo: resolvedIntent.navigateTo,
+          cacheHit: false,
+          decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: policy.emergency_bypass === true, usedRemoteAi: false }
+        };
+      } catch (slmError) {
+        console.warn("slm_chat_failed", slmError.message);
+        // fall through to OpenAI or regex
+      }
+    }
+
+    // Tier 2: OpenAI
+    if (remoteEligible) {
+      try {
+        const ai = await callOpenAI({
+          system: buildSeniorGuruSystemPrompt(context),
+          messages: [{ role: "user", content: message }]
+        });
+        const promptTokens = estimateTokensFromText(JSON.stringify(context)) + estimateTokensFromText(message);
+        const completionTokens = estimateTokensFromText(ai.text || "");
+        const estimatedCostUsd = estimateOpenAiCostUsd(promptTokens, completionTokens);
+        await incrementAiBudgetUsage(budget, estimatedCostUsd);
+        await recordGuruModelInvocation(resident?.id, "openai", resolvedIntent.intent, route, {
+          tenantId,
+          screen,
+          modelName: process.env.OPENAI_MODEL || null,
+          routeReason,
+          localConfidence,
+          promptTokens,
+          completionTokens,
+          estimatedCostUsd,
+          budgetMode: budget.mode,
+          latencyMs: Date.now() - startedAt
+        });
+        return {
+          resolvedIntent,
+          reply: ai.text || resolvedIntent.reply,
+          provider: ai.provider,
+          model: process.env.OPENAI_MODEL || null,
+          configured: ai.configured,
+          navigateTo: resolvedIntent.navigateTo,
+          cacheHit: false,
+          decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: false, usedRemoteAi: true }
+        };
+      } catch (openAiError) {
+        console.warn("openai_chat_failed", openAiError.message);
         await query(
           `INSERT INTO ai_fallback_events (senior_id, tenant_id, intent, requested_provider, actual_provider, route_reason, local_confidence, budget_mode, budget_scope, metadata)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-          [resident?.id || null, tenantId, resolvedIntent.intent, "openai", "local_small_language_model", routeReason, localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ screen })]
+           VALUES ($1,$2,$3,'openai','regex_templates',$4,$5,$6,$7,$8)`,
+          [resident?.id || null, tenantId, resolvedIntent.intent, "remote_error_regex_fallback", localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ error: openAiError.message, screen })]
         );
       }
-      return {
-        resolvedIntent,
-        reply: cached.reply,
-        provider: "local_small_language_model",
-        model: "tsg-local-intent-v2",
-        configured: false,
-        navigateTo: cached.navigateTo || resolvedIntent.navigateTo,
-        cacheHit: cached.cacheHit,
-        decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: budget.blocked, emergencyBypass: policy.emergency_bypass === true, usedRemoteAi: false }
-      };
     }
-    try {
-      const ai = await callOpenAI({
-        system: buildSeniorGuruSystemPrompt(context),
-        messages: [{ role: "user", content: message }]
-      });
-      const promptTokens = estimateTokensFromText(JSON.stringify(context)) + estimateTokensFromText(message);
-      const completionTokens = estimateTokensFromText(ai.text || "");
-      const estimatedCostUsd = estimateOpenAiCostUsd(promptTokens, completionTokens);
-      await incrementAiBudgetUsage(budget, estimatedCostUsd);
-      await recordGuruModelInvocation(resident?.id, "openai", resolvedIntent.intent, route, {
-        tenantId,
-        screen,
-        modelName: process.env.OPENAI_MODEL || null,
-        routeReason,
-        localConfidence,
-        promptTokens,
-        completionTokens,
-        estimatedCostUsd,
-        budgetMode: budget.mode,
-        latencyMs: Date.now() - startedAt
-      });
-      return {
-        resolvedIntent,
-        reply: ai.text || resolvedIntent.reply,
-        provider: ai.provider,
-        model: process.env.OPENAI_MODEL || null,
-        configured: ai.configured,
-        navigateTo: resolvedIntent.navigateTo,
-        cacheHit: false,
-        decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: false, usedRemoteAi: true }
-      };
-    } catch (error) {
-      await recordGuruModelInvocation(resident?.id, "local_small_language_model", resolvedIntent.intent, route, {
-        tenantId,
-        screen,
-        modelName: "tsg-local-intent-v2",
-        routeReason: "remote_error_local_fallback",
-        localConfidence,
-        fallbackReason: error.message,
-        budgetMode: budget.mode,
-        latencyMs: Date.now() - startedAt
-      });
+
+    // Tier 3: regex templates (always available)
+    const cached = await cachedLocalGuruResponse(resolvedIntent.intent, message, resolvedIntent, policy);
+    if (!remoteEligible && (policy.remote_allowed || budget.blocked || budget.throttled) && !policy.emergency_bypass) {
       await query(
         `INSERT INTO ai_fallback_events (senior_id, tenant_id, intent, requested_provider, actual_provider, route_reason, local_confidence, budget_mode, budget_scope, metadata)
-         VALUES ($1,$2,$3,'openai','local_small_language_model',$4,$5,$6,$7,$8)`,
-        [resident?.id || null, tenantId, resolvedIntent.intent, "remote_error_local_fallback", localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ error: error.message, screen })]
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [resident?.id || null, tenantId, resolvedIntent.intent, "openai", "regex_templates", routeReason, localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ screen })]
       );
-      return {
-        resolvedIntent,
-        reply: resolvedIntent.reply,
-        provider: "local_small_language_model",
-        model: "tsg-local-intent-v2",
-        configured: false,
-        navigateTo: resolvedIntent.navigateTo,
-        cacheHit: false,
-        error: error.message,
-        decision: { routeReason: "remote_error_local_fallback", localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: false, usedRemoteAi: false }
-      };
     }
+    await recordGuruModelInvocation(resident?.id, "regex_templates", resolvedIntent.intent, route, {
+      tenantId,
+      screen,
+      modelName: "tsg-local-intent-v2",
+      cacheHit: cached.cacheHit,
+      routeReason: remoteEligible ? "all_tiers_failed_regex_fallback" : routeReason,
+      localConfidence,
+      budgetMode: budget.mode,
+      blockedByBudget: budget.blocked,
+      latencyMs: Date.now() - startedAt
+    });
+    return {
+      resolvedIntent,
+      reply: cached.reply,
+      provider: "regex_templates",
+      model: "tsg-local-intent-v2",
+      configured: false,
+      navigateTo: cached.navigateTo || resolvedIntent.navigateTo,
+      cacheHit: cached.cacheHit,
+      decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: budget.blocked, emergencyBypass: policy.emergency_bypass === true, usedRemoteAi: false }
+    };
   }
 
   async function buildResidentSurfaceState(resident, healthSummary = {}) {
     if (!resident) {
       return { schemaVersion: 1 };
+    }
+    const settled = await Promise.allSettled([
+      query(`SELECT * FROM resident_daily_status_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM wellness_score_snapshots WHERE resident_id = $1 ORDER BY score_date DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM wellness_contributor_snapshots WHERE resident_id = $1 ORDER BY display_order, created_at DESC LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM vital_monitor_snapshots WHERE resident_id = $1 ORDER BY captured_at DESC LIMIT 24`, [resident.id]),
+      query(`SELECT * FROM family_health_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC, created_at DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM risk_assessments WHERE resident_id = $1 ORDER BY assessed_at DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM risk_timeline_events WHERE resident_id = $1 ORDER BY event_date DESC, display_order LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM community_events WHERE status = 'published' AND (community IS NULL OR community = $1) ORDER BY starts_at NULLS LAST, created_at DESC LIMIT 25`, [resident.community || null]),
+      query(`SELECT * FROM resident_service_matches WHERE resident_id = $1 AND status = 'active' ORDER BY match_score DESC NULLS LAST, created_at DESC LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM transportation_match_options WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id]),
+      buildContextIntelligenceState(resident, healthSummary),
+      query(`SELECT DISTINCT ON (screen_key) * FROM resident_screen_states WHERE resident_id = $1 ORDER BY screen_key, updated_at DESC LIMIT 50`, [resident.id])
+    ]);
+    const emptyResult = { rows: [] };
+    function settledValue(i) {
+      const s = settled[i];
+      if (s.status === "fulfilled") return s.value;
+      console.warn(`buildResidentSurfaceState query[${i}] failed:`, s.reason?.message);
+      return emptyResult;
     }
     const [
       dailyStatus,
@@ -1704,21 +1786,9 @@ function createProductionApi(pool) {
       transportMatches,
       contextIntelligence,
       screenStates
-    ] = await Promise.all([
-      query(`SELECT * FROM resident_daily_status_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC LIMIT 1`, [resident.id]),
-      query(`SELECT * FROM wellness_score_snapshots WHERE resident_id = $1 ORDER BY score_date DESC LIMIT 1`, [resident.id]),
-      query(`SELECT * FROM wellness_contributor_snapshots WHERE resident_id = $1 ORDER BY display_order, created_at DESC LIMIT 20`, [resident.id]),
-      query(`SELECT * FROM vital_monitor_snapshots WHERE resident_id = $1 ORDER BY captured_at DESC LIMIT 24`, [resident.id]),
-      query(`SELECT * FROM family_health_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC, created_at DESC LIMIT 1`, [resident.id]),
-      query(`SELECT * FROM risk_assessments WHERE resident_id = $1 ORDER BY assessed_at DESC LIMIT 1`, [resident.id]),
-      query(`SELECT * FROM risk_timeline_events WHERE resident_id = $1 ORDER BY event_date DESC, display_order LIMIT 20`, [resident.id]),
-      query(`SELECT * FROM community_events WHERE status = 'published' AND (community IS NULL OR community = $1) ORDER BY starts_at NULLS LAST, created_at DESC LIMIT 25`, [resident.community || null]),
-      query(`SELECT * FROM resident_service_matches WHERE resident_id = $1 AND status = 'active' ORDER BY match_score DESC NULLS LAST, created_at DESC LIMIT 20`, [resident.id]),
-      query(`SELECT * FROM transportation_match_options WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id]),
-      buildContextIntelligenceState(resident, healthSummary),
-      query(`SELECT DISTINCT ON (screen_key) * FROM resident_screen_states WHERE resident_id = $1 ORDER BY screen_key, updated_at DESC LIMIT 50`, [resident.id])
-    ]);
+    ] = [0,1,2,3,4,5,6,7,8,9,10,11].map(settledValue);
     const score = wellnessScore.rows[0] || {
+      _synthetic: true,
       wellness_score: 82,
       score_label: "Doing Well",
       change_from_prior: 6,
@@ -1726,6 +1796,7 @@ function createProductionApi(pool) {
       range_key: "today"
     };
     const family = familyHealth.rows[0] || {
+      _synthetic: true,
       stability_status: "stable",
       health_confidence_percent: 87,
       summary_items: [
@@ -1741,6 +1812,7 @@ function createProductionApi(pool) {
       guru_note: "Overall Anita is doing well. No immediate concerns."
     };
     const risk = riskAssessment.rows[0] || {
+      _synthetic: true,
       overall_level: healthSummary.riskLevel || "low",
       urgency_label: "No urgent concerns",
       risk_score: 12,
@@ -1748,10 +1820,10 @@ function createProductionApi(pool) {
       recommended_actions: []
     };
     const timeline = riskTimeline.rows.length ? riskTimeline.rows : [
-      { event_date: new Date().toISOString(), event_type: "normal", title: "Normal", body: "All vitals and activities in normal range.", severity: "normal", display_order: 1 },
-      { event_date: new Date(Date.now() - 86400000).toISOString(), event_type: "reduced_activity", title: "Reduced Activity", body: "Steps were 18% below your usual range.", severity: "watch", display_order: 2 },
-      { event_date: new Date(Date.now() - 172800000).toISOString(), event_type: "missed_medication", title: "Missed Medication", body: "Evening medication was missed.", severity: "high", display_order: 3 },
-      { event_date: new Date(Date.now() - 259200000).toISOString(), event_type: "low_sleep", title: "Low Sleep", body: "Sleep was below the usual range.", severity: "watch", display_order: 4 }
+      { _synthetic: true, event_date: new Date().toISOString(), event_type: "normal", title: "Normal", body: "All vitals and activities in normal range.", severity: "normal", display_order: 1 },
+      { _synthetic: true, event_date: new Date(Date.now() - 86400000).toISOString(), event_type: "reduced_activity", title: "Reduced Activity", body: "Steps were 18% below your usual range.", severity: "watch", display_order: 2 },
+      { _synthetic: true, event_date: new Date(Date.now() - 172800000).toISOString(), event_type: "missed_medication", title: "Missed Medication", body: "Evening medication was missed.", severity: "high", display_order: 3 },
+      { _synthetic: true, event_date: new Date(Date.now() - 259200000).toISOString(), event_type: "low_sleep", title: "Low Sleep", body: "Sleep was below the usual range.", severity: "watch", display_order: 4 }
     ];
     return {
       schemaVersion: 1,
@@ -2815,6 +2887,25 @@ function createProductionApi(pool) {
   }
 
   async function route(req, payload, url) {
+    req.requestId = req.headers["x-request-id"] || crypto.randomUUID();
+
+    if (req.method === "GET" && url.pathname === "/api/slm/status") {
+      const available = await slmAvailable();
+      return {
+        provider: SLM_PROVIDER,
+        model: SLM_MODEL,
+        available,
+        groqConfigured: Boolean(process.env.GROQ_API_KEY),
+        openAiConfigured: Boolean(process.env.OPENAI_API_KEY),
+        remoteAiEnabled: process.env.GURU_REMOTE_AI_ENABLED === "true" || process.env.GURU_ALLOW_REMOTE_AI === "true",
+        routing: available
+          ? `${SLM_PROVIDER} → openai (fallback) → regex`
+          : process.env.OPENAI_API_KEY
+            ? "openai → regex"
+            : "regex only"
+      };
+    }
+
     if (req.method === "GET" && url.pathname === "/api/billing/success") {
       return {
         ok: true,
@@ -4801,6 +4892,11 @@ function createProductionApi(pool) {
         );
       }
       await audit(req, user, "medication_confirmed", "medication", updated.id, { name: updated.name, remainingCount: updated.remaining_count });
+      // Invalidate any cached Guru responses about medications so the resident gets current info
+      await query(
+        `DELETE FROM ai_response_cache WHERE intent = 'medication' AND senior_id = $1`,
+        [resident.id]
+      ).catch(() => {});
       return { medication: updated, alreadyTaken: false };
     }
 
@@ -7435,6 +7531,11 @@ function createProductionApi(pool) {
 
     if (req.method === "POST" && url.pathname === "/api/guru/orchestrate") {
       requireRole(user, ["senior"]);
+      if (!checkGuruRateLimit(user.id)) {
+        const error = new Error("Too many requests. Please wait a moment before sending another message.");
+        error.status = 429;
+        throw error;
+      }
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
       const message = String(payload.message || "").trim();
       if (!message) {
@@ -7483,6 +7584,11 @@ function createProductionApi(pool) {
 
     if (req.method === "POST" && url.pathname === "/api/guru/chat") {
       requireRole(user, ["senior"]);
+      if (!checkGuruRateLimit(user.id)) {
+        const error = new Error("Too many requests. Please wait a moment before sending another message.");
+        error.status = 429;
+        throw error;
+      }
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
       const message = String(payload.message || "").trim();
       const medications = resident ? (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident.id])).rows : [];
