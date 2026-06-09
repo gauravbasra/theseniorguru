@@ -19,20 +19,27 @@ function isApiPath(pathname: string) {
   return pathname.startsWith("/api/");
 }
 
+const publicPaths = [
+  "/",
+  "/privacy",
+  "/terms",
+  "/favicon.ico",
+  "/favicon.svg",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/og-image.png",
+  "/site.webmanifest",
+  "/robots.txt",
+  "/sitemap.xml"
+];
+
+const publicPrefixes = ["/_next/", "/assets/", "/discover", "/senior-care", "/senior-living", "/seniors", "/providers", "/articles", "/operators", "/developers", "/login"];
+
 function isPublicAssetPath(pathname: string) {
   return (
-    pathname === "/" ||
-    pathname === "/favicon.ico" ||
-    pathname === "/favicon.svg" ||
-    pathname === "/apple-touch-icon.png" ||
-    pathname === "/icon-192.png" ||
-    pathname === "/icon-512.png" ||
-    pathname === "/og-image.png" ||
-    pathname === "/site.webmanifest" ||
-    pathname === "/robots.txt" ||
-    pathname === "/sitemap.xml" ||
-    pathname.startsWith("/_next/") ||
-    pathname.startsWith("/assets/")
+    publicPaths.includes(pathname) ||
+    publicPrefixes.some((prefix) => pathname.startsWith(prefix))
   );
 }
 
