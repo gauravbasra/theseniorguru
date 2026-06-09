@@ -5,13 +5,11 @@ Route::get('/_debug', function () {
     try {
         $conn = config('database.default');
         $host = config("database.connections.{$conn}.host");
-        $tableExists = \Illuminate\Support\Facades\Schema::hasTable('business_portal_users');
-        $userCount = $tableExists ? \Illuminate\Support\Facades\DB::table('business_portal_users')->count() : 0;
+        $tables = \Illuminate\Support\Facades\DB::select("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
         return response()->json([
             'connection' => $conn,
             'host' => $host,
-            'business_portal_users_exists' => $tableExists,
-            'user_count' => $userCount,
+            'tables' => array_column($tables, 'tablename'),
             'php' => PHP_VERSION,
         ]);
     } catch (\Throwable $e) {
