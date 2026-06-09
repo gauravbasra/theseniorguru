@@ -2126,6 +2126,11 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
   bool _loading = false;
   bool _rfqSent = false;
 
+  String get _firstName {
+    final full = widget.state?.residentName ?? '';
+    return full.isNotEmpty ? full.split(' ').first : 'there';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2134,7 +2139,8 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _send(initial));
     } else {
       _messages.add(_ChatEntry.guru(
-        'Hi! Tell me what you need help with. For example: "my bathroom is leaking" or "I need house cleaning."',
+        'Hi $_firstName! 😊 I\'m your Guru assistant — I\'m here to help with anything you need.\n\n'
+        'Whether it\'s a home repair, cleaning, lawn care, or just finding a trusted local pro — just tell me what\'s going on and I\'ll take care of the rest.',
       ));
     }
   }
@@ -2188,16 +2194,16 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
   };
 
   static String _intentAck(String intent) => switch (intent) {
-    'plumbing'     => 'Got it — you need plumbing help. Finding trusted plumbers near you...',
-    'cleaning'     => 'On it! Searching for top-rated cleaning pros in your area...',
-    'electrical'   => 'Understood. Looking for licensed electricians near you...',
-    'landscaping'  => 'Got it! Finding lawn care and landscaping pros nearby...',
-    'painting'     => 'On it — searching for painters near you...',
-    'pest_control' => 'Got it. Finding pest control specialists near you...',
-    'moving'       => 'On it! Searching for moving and hauling help...',
-    'home_care'    => 'Understood. Finding trusted home care providers near you...',
-    'handyman'     => 'Got it — searching for experienced handymen in your area...',
-    _              => 'Let me search our partner network for service pros near you...',
+    'plumbing'     => 'Oh no, a leak can be really stressful — don\'t worry, I\'ve got you! 🔧\nLet me find trusted plumbers near you right now...',
+    'cleaning'     => 'Great idea — a clean home makes such a difference! 🧹\nSearching for top-rated cleaning pros in your area...',
+    'electrical'   => 'Electrical issues can feel scary — you\'re right to get help quickly. ⚡\nLooking for licensed electricians near you...',
+    'landscaping'  => 'A beautiful yard is so important! 🌿\nFinding lawn care and landscaping pros in your area...',
+    'painting'     => 'A fresh coat of paint can totally transform a space! 🎨\nSearching for painters near you...',
+    'pest_control' => 'I completely understand — pests are no fun at all! 🐛\nFinding pest control specialists near you...',
+    'moving'       => 'Moving can be overwhelming — I\'m here to make it easier for you! 📦\nSearching for moving and hauling help nearby...',
+    'home_care'    => 'Finding the right care provider is so important — I want to help you find someone you can truly trust. 💙\nSearching for vetted home care providers near you...',
+    'handyman'     => 'Happy to help get that sorted! 🔨\nSearching for experienced handymen in your area...',
+    _              => 'Let me check our trusted partner network for pros near you... 🔍',
   };
 
   // Demo pros shown immediately when backend has no Thumbtack wired yet
@@ -2238,20 +2244,56 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
     ];
   }
 
+  // ── Emotional / greeting detection ───────────────────────────────────────
+
+  static bool _isGreeting(String m) =>
+      RegExp(r'^(hi|hello|hey|good morning|good afternoon|good evening|howdy)[\s!.,?]*$').hasMatch(m.toLowerCase().trim());
+
+  static bool _isEmotional(String m) =>
+      RegExp(r'stress|worried|scared|anxious|overwhelm|lonely|tired|pain|hurt|help me|don\'?t know').hasMatch(m.toLowerCase());
+
+  static String _emotionalReply(String firstName) =>
+      'I hear you, $firstName — and I\'m right here with you. 💙\n\n'
+      'You don\'t have to figure this out alone. Tell me a bit more about what\'s going on and I\'ll do everything I can to help.';
+
+  static String _greetingReply(String firstName) =>
+      'Hi $firstName! So great to hear from you 😊\n\n'
+      'What can I help you with today? You can ask me about home repairs, cleaning, lawn care, finding local services — anything really!';
+
+  static String _noIntentReply(String firstName) =>
+      'I want to make sure I help you with exactly the right thing, $firstName. 🤔\n\n'
+      'Could you tell me a bit more? For example:\n'
+      '• "My sink is leaking"\n'
+      '• "I need someone to clean my home"\n'
+      '• "My lights aren\'t working"\n\n'
+      'Or if you\'re looking for a specific type of service, just say so and I\'ll search for trusted pros near you!';
+
+  // ── Conversation history for API context ─────────────────────────────────
+
+  List<Map<String, String>> _buildHistory() {
+    return _messages.map((m) => {
+      'role': m.role == _ChatRole.user ? 'user' : 'assistant',
+      'content': m.text,
+    }).toList();
+  }
+
   // ── Core send logic ──────────────────────────────────────────────────────
 
   Future<void> _send(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _loading) return;
 
+    final m = trimmed.toLowerCase();
     final intent = _detectIntent(trimmed);
+    final isGreeting = _isGreeting(m);
+    final isEmotional = _isEmotional(m);
 
     setState(() {
       _messages.add(_ChatEntry.user(trimmed));
       _loading = true;
       _selectedProIds.clear();
       _rfqSent = false;
-      // Instant smart acknowledgment before any API responds
+      // Instant warm acknowledgment before any API responds
       if (intent != null) {
         _messages.add(_ChatEntry.guru(_intentAck(intent)));
       }
@@ -2259,16 +2301,43 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
     _controller.clear();
     _scrollToBottom();
 
+    // For greetings and emotional messages, respond locally without API round-trip
+    if (isGreeting && intent == null) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatEntry.guru(_greetingReply(_firstName)));
+        _loading = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
+    if (isEmotional && intent == null) {
+      await Future.delayed(const Duration(milliseconds: 700));
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatEntry.guru(_emotionalReply(_firstName)));
+        _loading = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
     try {
       Map<String, dynamic> guruResponse = {};
       List<ServicePro> fetchedPros = [];
+      final history = _buildHistory();
 
       await Future.wait([
-        // Guru conversational response
+        // Guru conversational response with full chat history
         widget.apiClient
             .post('/api/guru/chat', {
               'message': trimmed,
               'screen': 'services',
+              'residentName': widget.state?.residentName ?? '',
+              'community': widget.state?.community ?? '',
+              'history': history,
               if (intent != null) 'intent': intent,
               if (intent != null) 'serviceCategory': intent,
             })
@@ -2304,12 +2373,17 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
               ? fetchedPros
               : (intent != null ? _demoPros(intent) : <ServicePro>[]);
 
-      final replyText = stringValue(
+      // Build empathetic reply
+      final rawReply = stringValue(
         guruResponse['reply'] ?? guruResponse['message'] ?? guruResponse['text'],
-        fallback: finalPros.isNotEmpty
-            ? 'Here are ${finalPros.length} trusted pros near you. Select one or more to send a quote request.'
-            : 'Could you share your zip code so I can find the best pros near you?',
       );
+      final replyText = rawReply.isNotEmpty
+          ? rawReply
+          : finalPros.isNotEmpty
+              ? 'Great news, $_firstName! 🎉 I found ${finalPros.length} trusted pros near you.\n\nTap to select the one(s) you\'d like, then hit "Send Quote Request" and they\'ll reach out to you directly.'
+              : intent != null
+                  ? _noIntentReply(_firstName)
+                  : _noIntentReply(_firstName);
 
       setState(() {
         // Replace ack bubble with real reply + pro cards
@@ -2333,8 +2407,8 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
         }
         _messages.add(_ChatEntry.guru(
           fallback.isNotEmpty
-              ? 'Here are some pros I found. Select one or more to request a quote.'
-              : 'Sorry, I had trouble connecting. Please try again.',
+              ? 'I found some great pros near you, $_firstName! 🏠\n\nSelect the one(s) you\'d like and I\'ll send them your request right away.'
+              : 'I\'m having a little trouble connecting right now, $_firstName. Please try again in a moment — I\'ll be right here! 💙',
           pros: fallback,
         ));
         _loading = false;
@@ -2366,7 +2440,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
         _loading = false;
         _selectedProIds.clear();
         _messages.add(_ChatEntry.guru(
-          'Your quote request has been sent to ${proIds.length} pro${proIds.length > 1 ? 's' : ''}. You\'ll hear back soon!',
+          'Done, $_firstName! ✅ Your request has been sent to ${proIds.length} pro${proIds.length > 1 ? 's' : ''}.\n\nThey\'ll reach out to you soon. Is there anything else I can help you with?',
         ));
       });
     } catch (e) {

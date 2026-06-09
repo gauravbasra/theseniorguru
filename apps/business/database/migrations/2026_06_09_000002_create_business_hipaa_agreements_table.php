@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('business_hipaa_agreements', function (Blueprint $table): void {
+        Schema::create('bp_hipaa_agreements', function (Blueprint $table): void {
             $table->uuid('id')->primary()->default(\Illuminate\Support\Facades\DB::raw('gen_random_uuid()'));
             $table->uuid('business_profile_id')->index();
             $table->uuid('user_id');
@@ -29,6 +29,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('business_hipaa_agreements');
+        Schema::dropIfExists('bp_hipaa_agreements');
     }
 };

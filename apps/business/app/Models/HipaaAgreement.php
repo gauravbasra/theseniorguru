@@ -9,7 +9,7 @@ class HipaaAgreement extends Model
 {
     use HasUuids;
 
-    protected $table = 'business_hipaa_agreements';
+    protected $table = 'bp_hipaa_agreements';
 
     protected $fillable = [
         'business_profile_id', 'user_id', 'agreed_at', 'ip_address', 'user_agent',

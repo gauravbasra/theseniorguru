@@ -9,7 +9,7 @@ class ResidentMobileInvite extends Model
 {
     use HasUuids;
 
-    protected $table = 'resident_mobile_invites';
+    protected $table = 'bp_resident_invites';
 
     protected $fillable = [
         'resident_id', 'business_profile_id', 'community_id', 'import_batch_id',

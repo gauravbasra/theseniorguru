@@ -9,7 +9,7 @@ class BusinessVerificationDocument extends Model
 {
     use HasUuids;
 
-    protected $table = 'business_verification_documents';
+    protected $table = 'bp_verification_documents';
 
     protected $fillable = [
         'business_profile_id', 'uploaded_by', 'document_type', 'document_label',

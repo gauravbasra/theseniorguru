@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('resident_mobile_invites', function (Blueprint $table): void {
+        Schema::create('bp_resident_invites', function (Blueprint $table): void {
             $table->uuid('id')->primary()->default(\Illuminate\Support\Facades\DB::raw('gen_random_uuid()'));
             $table->uuid('resident_id')->index();
             $table->uuid('business_profile_id')->nullable()->index();
@@ -38,6 +38,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('resident_mobile_invites');
+        Schema::dropIfExists('bp_resident_invites');
     }
 };

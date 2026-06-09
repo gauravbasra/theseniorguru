@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('business_onboarding_profiles', function (Blueprint $table): void {
+        Schema::create('bp_onboarding_profiles', function (Blueprint $table): void {
             $table->uuid('id')->primary()->default(\Illuminate\Support\Facades\DB::raw('gen_random_uuid()'));
             $table->uuid('user_id')->index();
             $table->string('business_type')->comment('senior_living|insurance|day_care|provider');
@@ -43,6 +43,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('business_onboarding_profiles');
+        Schema::dropIfExists('bp_onboarding_profiles');
     }
 };

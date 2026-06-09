@@ -101,7 +101,10 @@ return [
 
         'shared_platform' => [
             'driver' => 'pgsql',
-            'url' => env('TSG_SHARED_DB_HOST') ? null : env('TSG_SHARED_DATABASE_URL', env('DB_URL')),
+            // Always prefer the full DATABASE_URL which includes channel_binding=require
+            // needed for Neon pooler SNI routing. Fall back to individual params only
+            // if no URL is available.
+            'url' => env('TSG_SHARED_DATABASE_URL', env('DB_URL')),
             'host' => env('TSG_SHARED_DB_HOST', env('DB_HOST', '127.0.0.1')),
             'port' => env('TSG_SHARED_DB_PORT', env('DB_PORT', '5432')),
             'database' => env('TSG_SHARED_DB_DATABASE', env('DB_DATABASE', 'laravel')),
@@ -112,10 +115,6 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('TSG_SHARED_DB_SSLMODE', env('DB_SSLMODE', 'require')),
-            'neon_endpoint' => env('TSG_SHARED_DB_NEON_ENDPOINT'),
-            'options' => extension_loaded('pdo_pgsql') ? [
-                \PDO::ATTR_EMULATE_PREPARES => true,
-            ] : [],
         ],
 
         'sqlsrv' => [

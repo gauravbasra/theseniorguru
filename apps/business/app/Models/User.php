@@ -24,6 +24,13 @@ class User extends Authenticatable
     protected $table = 'business_portal_users';
 
     /**
+     * UUID primary key — must disable auto-increment and set string key type
+     * so Laravel's session auth guard stores and retrieves the full UUID string.
+     */
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

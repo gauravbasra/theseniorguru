@@ -9,6 +9,8 @@ class BusinessOnboardingProfile extends Model
 {
     use HasUuids;
 
+    protected $table = 'bp_onboarding_profiles';
+
     protected $fillable = [
         'user_id', 'business_type', 'status', 'company_name', 'legal_name',
         'ein_tax_id', 'website', 'phone', 'address_line1', 'address_line2',
