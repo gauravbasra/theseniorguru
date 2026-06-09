@@ -1,23 +1,5 @@
 <?php
 
-// TEMP: diagnose login error
-Route::get('/_debug2', function () {
-    try {
-        $conn = config('database.default');
-        $host = config("database.connections.{$conn}.host");
-        $tableExists = \Illuminate\Support\Facades\Schema::hasTable('business_portal_users');
-        $user = $tableExists ? \Illuminate\Support\Facades\DB::table('business_portal_users')->where('email','smitchell@allegroliving.com')->first() : null;
-        return response()->json([
-            'db_host' => $host,
-            'table_exists' => $tableExists,
-            'user_found' => $user ? true : false,
-            'user_approval' => $user->approval_status ?? null,
-        ]);
-    } catch (\Throwable $e) {
-        return response()->json(['error' => $e->getMessage()]);
-    }
-});
-
 
 use App\Http\Controllers\BusinessPortalController;
 use App\Http\Controllers\AdminUserController;
