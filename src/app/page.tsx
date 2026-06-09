@@ -385,7 +385,13 @@ export default function HomePage() {
 
       <footer className="site-footer">
         <strong>The future of independent aging is connected.</strong>
-        <span>Request a demo, become a partner, or join early access.</span>
+        <div className="footer-links">
+          <span>Request a demo, become a partner, or join early access.</span>
+          <nav aria-label="Legal">
+            <Link href="/privacy">Privacy Policy</Link>
+            <Link href="/terms">Terms of Service</Link>
+          </nav>
+        </div>
       </footer>
     </main>
   );

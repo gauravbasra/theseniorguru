@@ -719,6 +719,137 @@ a {
   font-size: 26px;
 }
 
+.site-footer .footer-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.site-footer .footer-links nav {
+  display: flex;
+  gap: 20px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.site-footer .footer-links nav a {
+  color: var(--purple);
+  text-decoration: none;
+}
+
+.site-footer .footer-links nav a:hover {
+  text-decoration: underline;
+}
+
+.legal-page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 60px 24px 80px;
+}
+
+.legal-header {
+  margin-bottom: 56px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 36px;
+}
+
+.legal-header span {
+  display: inline-flex;
+  margin-bottom: 16px;
+  color: var(--purple);
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.legal-header h1 {
+  margin: 0 0 10px;
+  font-family: var(--serif);
+  font-size: clamp(40px, 6vw, 66px);
+  line-height: 1;
+}
+
+.legal-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.legal-body {
+  display: grid;
+  gap: 40px;
+}
+
+.legal-body section {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 28px 32px;
+}
+
+.legal-body h2 {
+  margin: 0 0 14px;
+  font-family: var(--serif);
+  font-size: 26px;
+}
+
+.legal-body h3 {
+  margin: 18px 0 8px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.legal-body p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 16px;
+}
+
+.legal-body p:last-child {
+  margin-bottom: 0;
+}
+
+.legal-body ul {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 16px;
+}
+
+.legal-body ul:last-child {
+  margin-bottom: 0;
+}
+
+.legal-body li {
+  margin-bottom: 8px;
+}
+
+.legal-body address {
+  font-style: normal;
+  color: var(--muted);
+  line-height: 1.8;
+  font-size: 16px;
+}
+
+.legal-body a {
+  color: var(--purple);
+  font-weight: 700;
+}
+
+.legal-body code {
+  background: var(--lavender);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 13px;
+  color: var(--purple-dark);
+  word-break: break-all;
+}
+
 @media (max-width: 920px) {
   .site-header {
     position: static;
