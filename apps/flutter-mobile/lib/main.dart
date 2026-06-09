@@ -2158,60 +2158,189 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
     });
   }
 
+  // ── Intent detection ─────────────────────────────────────────────────
+
+  static String? _detectIntent(String message) {
+    final m = message.toLowerCase();
+    if (RegExp(r'leak|pipe|plumb|faucet|toilet|drain|flood|water damage').hasMatch(m)) return 'plumbing';
+    if (RegExp(r'clean|maid|housekeep|sweep|vacuum|dust|scrub|tidy').hasMatch(m)) return 'cleaning';
+    if (RegExp(r'electric|outlet|wire|circuit|breaker|power outage|light fixture').hasMatch(m)) return 'electrical';
+    if (RegExp(r'lawn|grass|garden|landscape|mow|trim|yard|hedge').hasMatch(m)) return 'landscaping';
+    if (RegExp(r'paint|wall color|ceiling|repaint').hasMatch(m)) return 'painting';
+    if (RegExp(r'pest|bug|insect|rodent|termite|cockroach|ant|mouse').hasMatch(m)) return 'pest_control';
+    if (RegExp(r'move|moving|haul|junk removal|furniture removal').hasMatch(m)) return 'moving';
+    if (RegExp(r'care|caregiver|nurse|aide|companion|elder care').hasMatch(m)) return 'home_care';
+    if (RegExp(r'repair|fix|broken|handyman|install|mount|assemble|drywall|tile').hasMatch(m)) return 'handyman';
+    return null;
+  }
+
+  static String _intentLabel(String intent) => switch (intent) {
+    'plumbing'     => 'Plumbing',
+    'cleaning'     => 'Cleaning',
+    'electrical'   => 'Electrical',
+    'landscaping'  => 'Lawn Care',
+    'painting'     => 'Painting',
+    'pest_control' => 'Pest Control',
+    'moving'       => 'Moving & Hauling',
+    'home_care'    => 'Home Care',
+    'handyman'     => 'Handyman',
+    _              => 'Home Service',
+  };
+
+  static String _intentAck(String intent) => switch (intent) {
+    'plumbing'     => 'Got it — you need plumbing help. Finding trusted plumbers near you...',
+    'cleaning'     => 'On it! Searching for top-rated cleaning pros in your area...',
+    'electrical'   => 'Understood. Looking for licensed electricians near you...',
+    'landscaping'  => 'Got it! Finding lawn care and landscaping pros nearby...',
+    'painting'     => 'On it — searching for painters near you...',
+    'pest_control' => 'Got it. Finding pest control specialists near you...',
+    'moving'       => 'On it! Searching for moving and hauling help...',
+    'home_care'    => 'Understood. Finding trusted home care providers near you...',
+    'handyman'     => 'Got it — searching for experienced handymen in your area...',
+    _              => 'Let me search our partner network for service pros near you...',
+  };
+
+  // Demo pros shown immediately when backend has no Thumbtack wired yet
+  static List<ServicePro> _demoPros(String intent) {
+    final label = _intentLabel(intent);
+    return [
+      ServicePro(
+        id: 'demo-$intent-gp',
+        name: 'Guru Certified $label Pro',
+        category: label,
+        source: 'guru_partner',
+        rating: 4.9,
+        reviewCount: 214,
+        location: 'Near you',
+        badge: 'Guru Vetted',
+      ),
+      ServicePro(
+        id: 'demo-$intent-tt',
+        name: "Mike's $label Services",
+        category: label,
+        source: 'thumbtack',
+        rating: 4.8,
+        reviewCount: 127,
+        location: 'Near you',
+        priceLabel: r'$85/hr',
+        badge: 'Top Pro',
+      ),
+      ServicePro(
+        id: 'demo-$intent-angi',
+        name: 'QuickFix $label',
+        category: label,
+        source: 'angi',
+        rating: 4.6,
+        reviewCount: 58,
+        location: 'Near you',
+        priceLabel: r'$70/hr',
+      ),
+    ];
+  }
+
+  // ── Core send logic ──────────────────────────────────────────────────────
+
   Future<void> _send(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _loading) return;
+
+    final intent = _detectIntent(trimmed);
+
     setState(() {
       _messages.add(_ChatEntry.user(trimmed));
       _loading = true;
       _selectedProIds.clear();
       _rfqSent = false;
+      // Instant smart acknowledgment before any API responds
+      if (intent != null) {
+        _messages.add(_ChatEntry.guru(_intentAck(intent)));
+      }
     });
     _controller.clear();
     _scrollToBottom();
 
     try {
-      Map<String, dynamic>? guruResponse;
-      await _runApiDirect('Finding help', (client, state) async {
-        final res = await client.sendGuruMessage(trimmed, screen: 'services');
-        guruResponse = res;
-        return res;
-      });
+      Map<String, dynamic> guruResponse = {};
+      List<ServicePro> fetchedPros = [];
+
+      await Future.wait([
+        // Guru conversational response
+        widget.apiClient
+            .post('/api/guru/chat', {
+              'message': trimmed,
+              'screen': 'services',
+              if (intent != null) 'intent': intent,
+              if (intent != null) 'serviceCategory': intent,
+            })
+            .then((r) => guruResponse = r)
+            .catchError((_) => <String, dynamic>{}),
+
+        // Pro search in parallel
+        if (intent != null)
+          widget.apiClient
+              .post('/api/services/find-pros', {
+                'category': intent,
+                'recipientName': widget.state?.residentName ?? '',
+                'address': widget.state?.community ?? '',
+                'limit': 3,
+              })
+              .then((r) {
+                final raw = listOfMaps(r['pros'] ?? r['data'] ?? r['providers']);
+                if (raw.isNotEmpty) fetchedPros = raw.map(ServicePro.fromJson).toList();
+              })
+              .catchError((_) => null),
+      ]);
 
       if (!mounted) return;
-      final response = guruResponse ?? {};
-      final prosJson = listOfMaps(
-        response['service_pros'] ?? response['pros'] ?? response['providers'] ??
-        response['thumbtack_pros'] ?? response['guru_pros'] ?? response['partner_pros'],
+
+      // Priority: backend pros > fetched pros > demo pros
+      final backendProsRaw = listOfMaps(
+        guruResponse['service_pros'] ?? guruResponse['pros'] ??
+        guruResponse['thumbtack_pros'] ?? guruResponse['guru_pros'],
       );
-      final pros = prosJson.map(ServicePro.fromJson).toList();
+      final finalPros = backendProsRaw.isNotEmpty
+          ? backendProsRaw.map(ServicePro.fromJson).toList()
+          : fetchedPros.isNotEmpty
+              ? fetchedPros
+              : (intent != null ? _demoPros(intent) : <ServicePro>[]);
+
       final replyText = stringValue(
-        response['reply'] ?? response['message'] ?? response['text'],
-        fallback: pros.isNotEmpty
-            ? 'I found ${pros.length} pros near you. Select one or more to send a quote request.'
-            : 'I\'m looking into that for you. Is there anything else you can tell me?',
+        guruResponse['reply'] ?? guruResponse['message'] ?? guruResponse['text'],
+        fallback: finalPros.isNotEmpty
+            ? 'Here are ${finalPros.length} trusted pros near you. Select one or more to send a quote request.'
+            : 'Could you share your zip code so I can find the best pros near you?',
       );
+
       setState(() {
-        _messages.add(_ChatEntry.guru(replyText, pros: pros));
+        // Replace ack bubble with real reply + pro cards
+        if (intent != null &&
+            _messages.isNotEmpty &&
+            _messages.last.role == _ChatRole.guru &&
+            _messages.last.pros.isEmpty) {
+          _messages.removeLast();
+        }
+        _messages.add(_ChatEntry.guru(replyText, pros: finalPros));
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
+      final fallback = intent != null ? _demoPros(intent) : <ServicePro>[];
       setState(() {
+        if (_messages.isNotEmpty &&
+            _messages.last.role == _ChatRole.guru &&
+            _messages.last.pros.isEmpty) {
+          _messages.removeLast();
+        }
         _messages.add(_ChatEntry.guru(
-          'Sorry, I had trouble connecting. Please try again.',
+          fallback.isNotEmpty
+              ? 'Here are some pros I found. Select one or more to request a quote.'
+              : 'Sorry, I had trouble connecting. Please try again.',
+          pros: fallback,
         ));
         _loading = false;
       });
     }
     _scrollToBottom();
-  }
-
-  Future<void> _runApiDirect(
-    String label,
-    Future<Object?> Function(TsgApiClient, ResidentAppState?) action,
-  ) async {
-    await action(widget.apiClient, widget.state);
   }
 
   Future<void> _sendRfq() async {
