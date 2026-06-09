@@ -20,14 +20,49 @@ class ResidentMedication {
     required this.name,
     required this.status,
     required this.remainingCount,
+    this.frequency,
+    this.condition,
+    this.strength,
+    this.doseTime,
+    this.prescriber,
+    this.pharmacy,
+    this.daysSupplyRemaining,
+    this.refillNeeded = false,
+    this.beersCaution = false,
+    this.narrowTherapeuticIndex = false,
+    this.specialInstructions,
+    this.sideEffects = const [],
+    this.inventoryStatus,
+    this.latestRefillStatus,
   });
 
   final String id;
   final String name;
   final String status;
   final int remainingCount;
+  final String? frequency;
+  final String? condition;
+  final String? strength;
+  final String? doseTime;
+  final String? prescriber;
+  final String? pharmacy;
+  final int? daysSupplyRemaining;
+  final bool refillNeeded;
+  final bool beersCaution;
+  final bool narrowTherapeuticIndex;
+  final String? specialInstructions;
+  final List<String> sideEffects;
+  final String? inventoryStatus;   // sufficient | refill_soon | refill_needed | out_of_stock
+  final String? latestRefillStatus;
+
+  bool get isLowSupply => (daysSupplyRemaining ?? 999) <= 7;
+  bool get isCriticalSupply => (daysSupplyRemaining ?? 999) <= 2;
 
   factory ResidentMedication.fromJson(Map<String, dynamic> json) {
+    final rawSideEffects = json['side_effects'];
+    final sideEffects = rawSideEffects is List
+        ? rawSideEffects.map((e) => e.toString()).toList()
+        : <String>[];
     return ResidentMedication(
       id: stringValue(json['id']),
       name: stringValue(json['name']),
@@ -35,6 +70,25 @@ class ResidentMedication {
       remainingCount: intValue(
         json['remaining_count'] ?? json['remaining'] ?? json['remainingCount'],
       ),
+      frequency: json['frequency'] as String?,
+      condition: json['condition'] as String?,
+      strength: json['strength'] as String?,
+      doseTime: json['dose_time'] as String?,
+      prescriber: json['prescriber'] as String?,
+      pharmacy: json['pharmacy'] as String?,
+      daysSupplyRemaining: json['days_supply_remaining'] is int
+          ? json['days_supply_remaining'] as int
+          : null,
+      refillNeeded: json['refill_needed'] == true ||
+          json['refillNeeded'] == true ||
+          (json['inventory_status'] == 'refill_needed') ||
+          (json['inventory_status'] == 'out_of_stock'),
+      beersCaution: json['beers_list_caution'] == true,
+      narrowTherapeuticIndex: json['narrow_therapeutic_index'] == true,
+      specialInstructions: json['special_instructions'] as String?,
+      sideEffects: sideEffects,
+      inventoryStatus: json['inventory_status'] as String?,
+      latestRefillStatus: json['latest_refill_status'] as String?,
     );
   }
 }
@@ -60,6 +114,9 @@ class ServicePro {
     this.profileUrl,
     this.priceLabel,
     this.badge,
+    this.phone,
+    this.website,
+    this.isOpenNow,
   });
 
   final String id;
@@ -73,6 +130,9 @@ class ServicePro {
   final String? profileUrl;
   final String? priceLabel;
   final String? badge;
+  final String? phone;
+  final String? website;
+  final bool? isOpenNow;
 
   factory ServicePro.fromJson(Map<String, dynamic> json) {
     final rawRating = json['rating'] ?? json['averageRating'];
@@ -95,6 +155,9 @@ class ServicePro {
           json['url'] as String?,
       priceLabel: json['priceLabel'] as String? ?? json['price'] as String?,
       badge: json['badge'] as String? ?? json['tier'] as String?,
+      phone: json['phone'] as String? ?? json['formatted_phone_number'] as String?,
+      website: json['website'] as String?,
+      isOpenNow: json['isOpenNow'] as bool?,
     );
   }
 }
@@ -214,6 +277,71 @@ class TsgApiClient {
 
   Future<Map<String, dynamic>> confirmMedication(String medicationId) {
     return post('/api/medications/confirm', {'id': medicationId});
+  }
+
+  /// Smart medication dashboard — returns medications with days-supply,
+  /// interaction alerts, and refill status from the medication engine.
+  Future<Map<String, dynamic>> getMedicationDashboard() {
+    return get('/api/medications/dashboard');
+  }
+
+  /// Add a new medication with full smart-management fields.
+  Future<Map<String, dynamic>> addMedication({
+    required String name,
+    required String frequency,
+    String? condition,
+    String? strength,
+    String? prescriber,
+    String? pharmacy,
+    int remainingCount = 30,
+    int refillThreshold = 14,
+    int doseQuantityPerIntake = 1,
+  }) {
+    return post('/api/medications/add', {
+      'name': name,
+      'frequency': frequency,
+      if (condition != null) 'condition': condition,
+      if (strength != null) 'strength': strength,
+      if (prescriber != null) 'prescriber': prescriber,
+      if (pharmacy != null) 'pharmacy': pharmacy,
+      'remaining_count': remainingCount,
+      'refill_threshold': refillThreshold,
+      'dose_quantity_per_intake': doseQuantityPerIntake,
+    });
+  }
+
+  /// Check drug–drug interactions for a list of medication names.
+  Future<Map<String, dynamic>> checkMedicationInteractions(
+    List<String> medicationNames,
+  ) {
+    return post('/api/medications/check-interactions', {
+      'medications': medicationNames,
+    });
+  }
+
+  /// Ask the medication AI a question about the resident's medications.
+  Future<Map<String, dynamic>> askMedicationQuestion(String question) {
+    return post('/api/medications/ask', {'question': question});
+  }
+
+  /// Report a side effect for a medication.
+  Future<Map<String, dynamic>> reportSideEffect({
+    required String medicationId,
+    required String symptom,
+    String severity = 'mild',
+  }) {
+    return post('/api/medications/side-effects', {
+      'medicationId': medicationId,
+      'symptom': symptom,
+      'severity': severity,
+    });
+  }
+
+  /// Smart refill request — uses on-file provider or queues for staff.
+  Future<Map<String, dynamic>> requestSmartRefill(String medicationId) {
+    return post('/api/medications/refill-smart', {
+      'medicationId': medicationId,
+    });
   }
 
   Future<Map<String, dynamic>> remindMedicationLater(

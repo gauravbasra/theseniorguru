@@ -24,9 +24,15 @@ Future<String> _stableInstallationId() async {
 }
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   assert(seniorStepSpecs.length >= 14, 'seniorStepSpecs must have at least 14 entries');
   assert(trustCircleStepSpecs.length >= 5, 'trustCircleStepSpecs must have at least 5 entries');
   assert(businessStepSpecs.length >= 5, 'businessStepSpecs must have at least 5 entries');
+  // Catch Flutter framework errors and prevent blank white screen
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+  };
   runApp(const TsgResidentApp());
 }
 
@@ -182,6 +188,7 @@ class _ResidentShellState extends State<ResidentShell> {
   String apiStatus = 'Connecting to mobile API...';
   bool apiBusy = false;
   String? _guruChatInitialMessage;
+  String? _pendingConfirmMedId;
 
   @override
   void initState() {
@@ -272,6 +279,11 @@ class _ResidentShellState extends State<ResidentShell> {
   void _goGuruChat(String initialMessage) => setState(() {
     _guruChatInitialMessage = initialMessage;
     screen = Screen.guruChat;
+  });
+
+  void _goConfirmMed(String medicationId) => setState(() {
+    _pendingConfirmMedId = medicationId;
+    screen = Screen.medicationConfirm;
   });
 
   @override
@@ -562,11 +574,15 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.medications => MedicationsScreen(
         key: const ValueKey('meds'),
         go: go,
+        goConfirm: _goConfirmMed,
+        apiClient: apiClient,
         state: appState,
       ),
       Screen.medicationConfirm => MedicationConfirm(
-        key: const ValueKey('confirm'),
+        key: ValueKey('confirm-${_pendingConfirmMedId ?? 'none'}'),
         go: go,
+        apiClient: apiClient,
+        medicationId: _pendingConfirmMedId,
         state: appState,
         runApi: runApi,
       ),
@@ -2250,7 +2266,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
       RegExp(r'^(hi|hello|hey|good morning|good afternoon|good evening|howdy)[\s!.,?]*$').hasMatch(m.toLowerCase().trim());
 
   static bool _isEmotional(String m) =>
-      RegExp(r'stress|worried|scared|anxious|overwhelm|lonely|tired|pain|hurt|help me|don\'?t know').hasMatch(m.toLowerCase());
+      RegExp(r"stress|worried|scared|anxious|overwhelm|lonely|tired|pain|hurt|help me|don.t know").hasMatch(m.toLowerCase());
 
   static String _emotionalReply(String firstName) =>
       'I hear you, $firstName — and I\'m right here with you. 💙\n\n'
@@ -2380,7 +2396,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
       final replyText = rawReply.isNotEmpty
           ? rawReply
           : finalPros.isNotEmpty
-              ? 'Great news, $_firstName! 🎉 I found ${finalPros.length} trusted pros near you.\n\nTap to select the one(s) you\'d like, then hit "Send Quote Request" and they\'ll reach out to you directly.'
+              ? 'Great news, $_firstName! 🎉 I found ${finalPros.length} local pros near you from Google.\n\nJust tap **Call Now** on any card to reach them directly — no waiting!'
               : intent != null
                   ? _noIntentReply(_firstName)
                   : _noIntentReply(_firstName);
@@ -2407,7 +2423,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
         }
         _messages.add(_ChatEntry.guru(
           fallback.isNotEmpty
-              ? 'I found some great pros near you, $_firstName! 🏠\n\nSelect the one(s) you\'d like and I\'ll send them your request right away.'
+              ? 'Here are some pros near you, $_firstName! 🏠\n\nTap **Call Now** on any card to reach them directly.'
               : 'I\'m having a little trouble connecting right now, $_firstName. Please try again in a moment — I\'ll be right here! 💙',
           pros: fallback,
         ));
@@ -2527,16 +2543,6 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
             },
           ),
         ),
-        // RFQ button when pros are selected
-        if (_selectedProIds.isNotEmpty && !_rfqSent)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: PurpleButton(
-              'Send Quote Request (${_selectedProIds.length})',
-              icon: CupertinoIcons.paperplane_fill,
-              onTap: _sendRfq,
-            ),
-          ),
         // Input
         Container(
           padding: EdgeInsets.fromLTRB(
@@ -2800,193 +2806,243 @@ class _ProCard extends StatelessWidget {
   final bool selected;
   final VoidCallback onToggle;
 
+  void _call() {
+    if (pro.phone != null) {
+      launchUrl(Uri(scheme: 'tel', path: pro.phone!));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final badge = _sourceBadge(pro.source);
     final isGuruPartner = pro.source == 'guru_partner';
-    return GestureDetector(
-      onTap: onToggle,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: selected
-              ? (isGuruPartner
-                  ? const Color(0xFFF0E8FF)
-                  : const Color(0xFFEFF6FF))
-              : TsgColors.card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? badge.ink : TsgColors.line,
-            width: selected ? 1.8 : 1,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0E2D2038),
-              blurRadius: 14,
-              offset: Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: badge.bg,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                isGuruPartner
-                    ? CupertinoIcons.star_circle_fill
-                    : CupertinoIcons.person_crop_circle,
-                color: badge.ink,
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          pro.name,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: TsgColors.ink,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: badge.bg,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          badge.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: badge.ink,
-                          ),
-                        ),
-                      ),
-                    ],
+    final hasPhone = pro.phone != null && pro.phone!.isNotEmpty;
+    final isOpen = pro.isOpenNow;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: TsgColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: TsgColors.line, width: 1),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0E2D2038), blurRadius: 14, offset: Offset(0, 6)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // \u2500\u2500 Top row: avatar + info \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          Padding(
+            padding: const EdgeInsets.fromLTRB(13, 13, 13, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: badge.bg,
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  Text(
-                    pro.category,
-                    style: const TextStyle(fontSize: 12, color: TsgColors.muted),
+                  child: Icon(
+                    isGuruPartner
+                        ? CupertinoIcons.star_circle_fill
+                        : CupertinoIcons.building_2_fill,
+                    color: badge.ink,
+                    size: 26,
                   ),
-                  const SizedBox(height: 4),
-                  Row(
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '\u2605 ${pro.rating.toStringAsFixed(1)}',
+                        pro.name,
                         style: const TextStyle(
-                          color: TsgColors.orange,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: TsgColors.ink,
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '(${pro.reviewCount} reviews)',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: TsgColors.muted,
-                        ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (pro.rating > 0) ...[
+                            Text(
+                              '\u2605 ${pro.rating.toStringAsFixed(1)}',
+                              style: const TextStyle(
+                                color: TsgColors.orange,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                            if (pro.reviewCount > 0) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '(${pro.reviewCount})',
+                                style: const TextStyle(fontSize: 12, color: TsgColors.muted),
+                              ),
+                            ],
+                            const SizedBox(width: 8),
+                          ],
+                          if (isOpen != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isOpen
+                                    ? const Color(0xFFDCFCE7)
+                                    : const Color(0xFFFEE2E2),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                isOpen ? 'Open Now' : 'Closed',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: isOpen
+                                      ? const Color(0xFF16A34A)
+                                      : const Color(0xFFDC2626),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      if (pro.priceLabel != null) ...[
-                        const SizedBox(width: 6),
+                      if (pro.location != null) ...[
+                        const SizedBox(height: 2),
                         Text(
-                          pro.priceLabel!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: TsgColors.green,
-                            fontWeight: FontWeight.w700,
+                          pro.location!,
+                          style: const TextStyle(fontSize: 12, color: TsgColors.muted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      if (pro.badge != null) ...[
+                        const SizedBox(height: 3),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: badge.bg,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            pro.badge!,
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: badge.ink),
                           ),
                         ),
                       ],
                     ],
                   ),
-                  if (pro.badge != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        pro.badge!,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: badge.ink,
-                        ),
-                      ),
-                    ),
-                  if (pro.location != null)
-                    Text(
-                      pro.location!,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: TsgColors.muted,
-                      ),
-                    ),
+                ),
+              ],
+            ),
+          ),
+          // \u2500\u2500 Phone number display \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          if (hasPhone)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(13, 0, 13, 8),
+              child: Row(
+                children: [
+                  const Icon(CupertinoIcons.phone_fill, size: 13, color: TsgColors.muted),
+                  const SizedBox(width: 5),
+                  Text(
+                    pro.phone!,
+                    style: const TextStyle(fontSize: 13, color: TsgColors.muted, fontWeight: FontWeight.w600),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
+          // \u2500\u2500 Action buttons \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          Padding(
+            padding: const EdgeInsets.fromLTRB(13, 0, 13, 13),
+            child: Row(
               children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: selected ? badge.ink : Colors.white,
-                    border: Border.all(
-                      color: selected ? badge.ink : TsgColors.line,
-                      width: 2,
-                    ),
-                  ),
-                  child: selected
-                      ? const Icon(
-                          CupertinoIcons.checkmark,
-                          size: 14,
-                          color: Colors.white,
-                        )
-                      : null,
-                ),
-                if (pro.profileUrl != null) ...[
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () {
-                      final url = pro.profileUrl;
-                      if (url != null) launchUrl(Uri.parse(url));
-                    },
-                    child: Text(
-                      'View',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: badge.ink,
-                        fontWeight: FontWeight.w700,
+                if (hasPhone)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _call,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF16A34A),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.phone_fill, color: Colors.white, size: 16),
+                            SizedBox(width: 6),
+                            Text(
+                              'Call Now',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ],
+                if (hasPhone && pro.website != null) const SizedBox(width: 8),
+                if (pro.website != null)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => launchUrl(Uri.parse(pro.website!), mode: LaunchMode.externalApplication),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        decoration: BoxDecoration(
+                          color: badge.bg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: badge.ink.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.globe, color: badge.ink, size: 15),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Website',
+                              style: TextStyle(
+                                color: badge.ink,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (!hasPhone && pro.website == null)
+                  // Demo card \u2014 no real contact yet
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(CupertinoIcons.info_circle, color: TsgColors.muted, size: 15),
+                          SizedBox(width: 6),
+                          Text(
+                            'Contact info loading...',
+                            style: TextStyle(color: TsgColors.muted, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -3044,85 +3100,357 @@ class _PartnerChip extends StatelessWidget {
 }
 // ---------------------------------------------------------------------------
 
-class MedicationsScreen extends StatelessWidget {
-  const MedicationsScreen({super.key, required this.go, this.state});
+class MedicationsScreen extends StatefulWidget {
+  const MedicationsScreen({
+    super.key,
+    required this.go,
+    required this.goConfirm,
+    required this.apiClient,
+    this.state,
+  });
   final ValueChanged<Screen> go;
+  final ValueChanged<String> goConfirm;
+  final TsgApiClient apiClient;
   final ResidentAppState? state;
 
   @override
+  State<MedicationsScreen> createState() => _MedicationsScreenState();
+}
+
+class _MedicationsScreenState extends State<MedicationsScreen> {
+  List<ResidentMedication> _meds = [];
+  List<Map<String, dynamic>> _interactions = [];
+  bool _loading = true;
+  String _loadError = '';
+  bool _showAddForm = false;
+
+  // Add medication form fields
+  final _nameCtrl = TextEditingController();
+  final _freqCtrl = TextEditingController();
+  final _condCtrl = TextEditingController();
+  final _strengthCtrl = TextEditingController();
+  final _countCtrl = TextEditingController();
+  bool _addBusy = false;
+  String? _addError;
+  Map<String, dynamic>? _addInteractionWarning;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _freqCtrl.dispose();
+    _condCtrl.dispose();
+    _strengthCtrl.dispose();
+    _countCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _loadError = ''; });
+    try {
+      final data = await widget.apiClient.getMedicationDashboard();
+      final rawMeds = listOfMaps(data['medications'] ?? data['meds'] ?? []);
+      final rawAlerts = listOfMaps(data['interactions'] ?? data['alerts'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _meds = rawMeds.map(ResidentMedication.fromJson).toList();
+        _interactions = rawAlerts
+            .where((a) => a['acknowledged'] != true)
+            .toList();
+        _loading = false;
+      });
+    } catch (e) {
+      // Fall back to state from ResidentShell if API fails
+      final fallback = widget.state?.medications ?? const [];
+      if (!mounted) return;
+      setState(() {
+        _meds = fallback.isNotEmpty
+            ? fallback
+            : const [
+                ResidentMedication(
+                  id: 'demo-lisinopril',
+                  name: 'Lisinopril 10mg',
+                  status: 'confirmed',
+                  remainingCount: 14,
+                  frequency: 'once daily',
+                  condition: 'Blood Pressure',
+                ),
+                ResidentMedication(
+                  id: 'demo-metformin',
+                  name: 'Metformin 500mg',
+                  status: 'pending',
+                  remainingCount: 6,
+                  frequency: 'twice daily',
+                  condition: 'Diabetes',
+                ),
+              ];
+        _loading = false;
+        _loadError = fallback.isEmpty ? 'Could not load medications' : '';
+      });
+    }
+  }
+
+  Future<void> _addMedication() async {
+    final name = _nameCtrl.text.trim();
+    final freq = _freqCtrl.text.trim();
+    if (name.isEmpty || freq.isEmpty) {
+      setState(() => _addError = 'Name and frequency are required');
+      return;
+    }
+    setState(() { _addBusy = true; _addError = null; _addInteractionWarning = null; });
+    try {
+      final result = await widget.apiClient.addMedication(
+        name: name,
+        frequency: freq,
+        condition: _condCtrl.text.trim().isNotEmpty ? _condCtrl.text.trim() : null,
+        strength: _strengthCtrl.text.trim().isNotEmpty ? _strengthCtrl.text.trim() : null,
+        remainingCount: int.tryParse(_countCtrl.text.trim()) ?? 30,
+      );
+      final rawWarnings = listOfMaps(result['warnings'] ?? []);
+      if (!mounted) return;
+      if (rawWarnings.isNotEmpty) {
+        setState(() {
+          _addInteractionWarning = rawWarnings.first;
+          _addBusy = false;
+        });
+      } else {
+        _nameCtrl.clear(); _freqCtrl.clear();
+        _condCtrl.clear(); _strengthCtrl.clear(); _countCtrl.clear();
+        setState(() { _showAddForm = false; _addBusy = false; });
+        await _load();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _addError = e.toString(); _addBusy = false; });
+    }
+  }
+
+  String _medStatusLabel(ResidentMedication m) {
+    final s = m.status.toLowerCase();
+    if (s.contains('confirm') || s.contains('taken')) return 'Done';
+    if (s.contains('skip')) return 'Skipped';
+    if (s.contains('snooze')) return 'Later';
+    return 'Pending';
+  }
+
+  Color _medStatusColor(ResidentMedication m) {
+    final s = m.status.toLowerCase();
+    if (s.contains('confirm') || s.contains('taken')) return TsgColors.green;
+    if (s.contains('skip')) return TsgColors.muted;
+    return TsgColors.orange;
+  }
+
+  Color _inventoryColor(ResidentMedication m) {
+    if (m.isCriticalSupply) return const Color(0xFFE53935);
+    if (m.isLowSupply) return TsgColors.orange;
+    return TsgColors.green;
+  }
+
+  String _daysLabel(ResidentMedication m) {
+    final d = m.daysSupplyRemaining;
+    if (d == null) return '${m.remainingCount} left';
+    if (d <= 0) return 'Out of stock';
+    if (d == 1) return '1 day left';
+    return '$d days left';
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final medications = state?.medications;
-    final visibleMeds = medications == null || medications.isEmpty
-        ? const [
-            ResidentMedication(
-              id: 'demo-lisinopril',
-              name: 'Lisinopril 10mg',
-              status: 'confirmed',
-              remainingCount: 5,
-            ),
-            ResidentMedication(
-              id: 'demo-metformin',
-              name: 'Metformin 500mg',
-              status: 'pending',
-              remainingCount: 18,
-            ),
-            ResidentMedication(
-              id: 'demo-atorvastatin',
-              name: 'Atorvastatin 20mg',
-              status: 'pending',
-              remainingCount: 9,
-            ),
-          ]
-        : medications;
-    final first = visibleMeds[0];
-    final second = visibleMeds.length > 1 ? visibleMeds[1] : null;
-    final third = visibleMeds.length > 2 ? visibleMeds[2] : null;
     return ScreenScaffold(
       title: 'Medications',
-      back: () => go(Screen.today),
+      back: () => widget.go(Screen.today),
+      action: GestureDetector(
+        onTap: () => setState(() => _showAddForm = !_showAddForm),
+        child: Icon(
+          _showAddForm ? CupertinoIcons.xmark : CupertinoIcons.plus,
+          color: TsgColors.purple,
+        ),
+      ),
       children: [
-        Segmented(labels: const ['My meds', 'History'], selected: 0),
-        const SizedBox(height: 22),
-        medSection('Morning', '8:00 AM', [
-          medRow(
-            first.name,
-            'Blood Pressure',
-            TsgColors.green,
-            medStatus(first),
-            () => go(Screen.medicationConfirm),
+        // ── Interaction alerts ─────────────────────────────────────────
+        ..._interactions.map((alert) => _interactionBanner(alert)),
+
+        // ── Add medication form ────────────────────────────────────────
+        if (_showAddForm) ...[
+          _addMedicationForm(),
+          const SizedBox(height: 20),
+        ],
+
+        // ── Loading / error ────────────────────────────────────────────
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_meds.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Column(
+              children: [
+                const Icon(CupertinoIcons.capsule, size: 48, color: TsgColors.muted),
+                const SizedBox(height: 12),
+                const Text(
+                  'No medications yet',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _loadError.isNotEmpty ? _loadError : 'Tap + to add your first medication',
+                  style: const TextStyle(color: TsgColors.muted),
+                ),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(CupertinoIcons.refresh, color: TsgColors.purple),
+                  label: const Text('Refresh', style: TextStyle(color: TsgColors.purple)),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          // Group by dose time
+          ..._buildMedSections(),
+        ],
+      ],
+    );
+  }
+
+  Widget _interactionBanner(Map<String, dynamic> alert) {
+    final severity = stringValue(alert['severity'], fallback: 'MODERATE');
+    final isHigh = severity == 'HIGH';
+    final color = isHigh ? const Color(0xFFE53935) : TsgColors.orange;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(CupertinoIcons.exclamationmark_triangle_fill, color: color, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${stringValue(alert["drug_a"])} + ${stringValue(alert["drug_b"])}',
+                  style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  stringValue(alert['description'], fallback: 'Drug interaction detected'),
+                  style: const TextStyle(fontSize: 12, color: TsgColors.ink),
+                ),
+              ],
+            ),
           ),
-        ]),
-        if (second != null)
-          medSection('Afternoon', '2:00 PM', [
-            medRow(
-              second.name,
-              'Diabetes',
-              TsgColors.orange,
-              medStatus(second),
-              () => go(Screen.medicationConfirm),
+          Pill(severity, color: color.withValues(alpha: .12), ink: color),
+        ],
+      ),
+    );
+  }
+
+  Widget _addMedicationForm() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F4FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: TsgColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Add Medication',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+          const SizedBox(height: 12),
+          _field(_nameCtrl, 'Medication name *', 'e.g. Lisinopril 10mg'),
+          const SizedBox(height: 8),
+          _field(_strengthCtrl, 'Strength / dose', 'e.g. 10mg'),
+          const SizedBox(height: 8),
+          _field(_freqCtrl, 'Frequency *', 'e.g. once daily, twice daily'),
+          const SizedBox(height: 8),
+          _field(_condCtrl, 'Condition / reason', 'e.g. Blood Pressure'),
+          const SizedBox(height: 8),
+          _field(_countCtrl, 'Pills in hand', '30', numeric: true),
+          if (_addInteractionWarning != null) ...[
+            const SizedBox(height: 10),
+            _interactionBanner(_addInteractionWarning!),
+            const Text(
+              'Interaction detected — please consult your doctor. You can still add this medication.',
+              style: TextStyle(fontSize: 12, color: TsgColors.muted),
             ),
-          ]),
-        if (third != null)
-          medSection('Evening', '8:00 PM', [
-            medRow(
-              third.name,
-              'Cholesterol',
-              TsgColors.orange,
-              medStatus(third),
-              () => go(Screen.refill),
-            ),
-          ]),
-        const SizedBox(height: 18),
-        Center(
-          child: TextButton.icon(
-            onPressed: () => go(Screen.medications),
-            icon: const Icon(CupertinoIcons.plus, color: TsgColors.purple),
-            label: const Text(
-              'Add medication',
-              style: TextStyle(
-                color: TsgColors.purple,
-                fontWeight: FontWeight.w800,
+          ],
+          if (_addError != null) ...[
+            const SizedBox(height: 8),
+            Text(_addError!, style: const TextStyle(color: Color(0xFFE53935), fontSize: 12)),
+          ],
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: GestureDetector(
+              onTap: _addBusy ? null : _addMedication,
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: TsgColors.purple,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: _addBusy
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Text('Save Medication',
+                          style: TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.w800)),
+                ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _field(
+    TextEditingController ctrl,
+    String label,
+    String hint, {
+    bool numeric = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: TsgColors.line),
+          ),
+          child: TextField(
+            controller: ctrl,
+            keyboardType: numeric ? TextInputType.number : TextInputType.text,
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: TsgColors.muted, fontSize: 13),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              border: InputBorder.none,
             ),
           ),
         ),
@@ -3130,194 +3458,470 @@ class MedicationsScreen extends StatelessWidget {
     );
   }
 
-  Widget medSection(String title, String time, List<Widget> rows) {
+  List<Widget> _buildMedSections() {
+    // Group medications by dose time
+    final morning = <ResidentMedication>[];
+    final afternoon = <ResidentMedication>[];
+    final evening = <ResidentMedication>[];
+    final other = <ResidentMedication>[];
+
+    for (final m in _meds) {
+      final t = (m.doseTime ?? '').toLowerCase();
+      if (t.contains('morning') || t.contains('8:00 am') || t.contains('am')) {
+        morning.add(m);
+      } else if (t.contains('afternoon') || t.contains('noon') || t.contains('2:')) {
+        afternoon.add(m);
+      } else if (t.contains('evening') || t.contains('night') || t.contains('pm')) {
+        evening.add(m);
+      } else {
+        other.add(m);
+      }
+    }
+    // If no time info, show all under "Today"
+    if (morning.isEmpty && afternoon.isEmpty && evening.isEmpty) {
+      return [_medSection('Today', _meds)];
+    }
+    return [
+      if (morning.isNotEmpty) _medSection('Morning', morning, time: '8:00 AM'),
+      if (afternoon.isNotEmpty) _medSection('Afternoon', afternoon, time: '2:00 PM'),
+      if (evening.isNotEmpty) _medSection('Evening', evening, time: '8:00 PM'),
+      if (other.isNotEmpty) _medSection('Other', other),
+    ];
+  }
+
+  Widget _medSection(String title, List<ResidentMedication> meds, {String? time}) {
     return Column(
       children: [
         Row(
           children: [
             Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
+              child: Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
             ),
-            Text(
-              time,
-              style: const TextStyle(color: TsgColors.muted, fontSize: 12),
-            ),
+            if (time != null)
+              Text(time,
+                  style: const TextStyle(color: TsgColors.muted, fontSize: 12)),
           ],
         ),
         const SizedBox(height: 9),
-        ...rows,
+        ...meds.map(_medCard),
         const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget medRow(
-    String name,
-    String subtitle,
-    Color color,
-    String status,
-    VoidCallback onTap,
-  ) {
+  Widget _medCard(ResidentMedication m) {
+    final statusColor = _medStatusColor(m);
+    final invColor = _inventoryColor(m);
+    final daysLabel = _daysLabel(m);
+    final isDone = m.status.toLowerCase().contains('confirm') ||
+        m.status.toLowerCase().contains('taken');
     return SoftCard(
       padding: const EdgeInsets.all(14),
-      onTap: onTap,
+      onTap: isDone
+          ? null
+          : () => widget.goConfirm(m.id),
       child: Row(
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .13),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(CupertinoIcons.capsule, color: color, size: 18),
+          Stack(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(CupertinoIcons.capsule, color: statusColor, size: 20),
+              ),
+              if (m.beersCaution || m.narrowTherapeuticIndex)
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE53935),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(CupertinoIcons.exclamationmark,
+                        size: 9, color: Colors.white),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 12, color: TsgColors.muted),
+                Text(m.name,
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+                if (m.condition != null)
+                  Text(m.condition!,
+                      style: const TextStyle(
+                          fontSize: 12, color: TsgColors.muted)),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Icon(CupertinoIcons.capsule_fill,
+                        size: 11, color: invColor),
+                    const SizedBox(width: 3),
+                    Text(daysLabel,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: invColor,
+                            fontWeight: FontWeight.w600)),
+                    if (m.isLowSupply) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: invColor.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          m.isCriticalSupply ? 'Refill NOW' : 'Refill soon',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: invColor,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
           ),
-          Pill(status, color: color.withValues(alpha: .12), ink: color),
+          if (!isDone)
+            Pill(_medStatusLabel(m),
+                color: statusColor.withValues(alpha: .12), ink: statusColor)
+          else
+            const Icon(CupertinoIcons.checkmark_circle_fill,
+                color: TsgColors.green, size: 22),
         ],
       ),
     );
   }
-
-  String medStatus(ResidentMedication medication) {
-    final normalized = medication.status.toLowerCase();
-    if (normalized.contains('confirm') || normalized.contains('taken')) {
-      return 'Done';
-    }
-    if (normalized.contains('skip')) return 'Skipped';
-    if (normalized.contains('snooze')) return 'Later';
-    return 'Pending';
-  }
 }
 
-class MedicationConfirm extends StatelessWidget {
+class MedicationConfirm extends StatefulWidget {
   const MedicationConfirm({
     super.key,
     required this.go,
     required this.runApi,
+    required this.apiClient,
     this.state,
+    this.medicationId,
   });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
+  final TsgApiClient apiClient;
   final ResidentAppState? state;
+  final String? medicationId;
 
   @override
-  Widget build(BuildContext context) {
-    final medication = state?.medications.isNotEmpty == true
-        ? state!.medications.first
+  State<MedicationConfirm> createState() => _MedicationConfirmState();
+}
+
+class _MedicationConfirmState extends State<MedicationConfirm> {
+  bool _confirming = false;
+  String? _confirmResult;
+  int? _daysRemaining;
+  bool _refillNeeded = false;
+  bool _confirmed = false;
+
+  ResidentMedication get _medication {
+    final id = widget.medicationId;
+    if (id != null && id.isNotEmpty) {
+      final found = widget.state?.medications.where((m) => m.id == id).firstOrNull;
+      if (found != null) return found;
+    }
+    return widget.state?.medications.isNotEmpty == true
+        ? widget.state!.medications.first
         : const ResidentMedication(
             id: 'demo-lisinopril',
             name: 'Lisinopril 10mg',
             status: 'pending',
-            remainingCount: 5,
+            remainingCount: 14,
+            frequency: 'once daily',
+            condition: 'Blood Pressure',
           );
+  }
+
+  Future<void> _confirmDose() async {
+    setState(() => _confirming = true);
+    try {
+      final result = await widget.apiClient.confirmMedication(_medication.id);
+      if (!mounted) return;
+      final days = result['daysSupplyRemaining'] is int
+          ? result['daysSupplyRemaining'] as int
+          : null;
+      final refill = result['refillNeeded'] == true;
+      setState(() {
+        _confirming = false;
+        _confirmed = true;
+        _daysRemaining = days;
+        _refillNeeded = refill;
+        _confirmResult = 'Dose confirmed!';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _confirming = false;
+        _confirmResult = 'Error: ${e.toString()}';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final med = _medication;
+    final doseInfo = [
+      if (med.doseTime != null && med.doseTime!.isNotEmpty) med.doseTime!,
+      '1 tablet',
+      if (med.frequency != null && med.frequency!.isNotEmpty) med.frequency!,
+    ].join('  •  ');
+
     return ScreenScaffold(
       title: 'Confirm medication',
-      back: () => go(Screen.medications),
+      back: () => widget.go(Screen.medications),
       children: [
+        // Medication card
         SoftCard(
           color: const Color(0xFFFFFAF8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                medication.name,
-                style: const TextStyle(fontWeight: FontWeight.w900),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: TsgColors.lilac,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(CupertinoIcons.capsule,
+                    color: TsgColors.purple, size: 22),
               ),
-              const SizedBox(height: 4),
-              const Text(
-                '8:00 AM  •  1 tablet',
-                style: TextStyle(color: TsgColors.muted),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(med.name,
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                    if (doseInfo.isNotEmpty)
+                      Text(doseInfo,
+                          style: const TextStyle(
+                              color: TsgColors.muted, fontSize: 13)),
+                    if (med.condition != null)
+                      Text(med.condition!,
+                          style: const TextStyle(
+                              fontSize: 12, color: TsgColors.muted)),
+                  ],
+                ),
+              ),
+              // Days supply badge
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${med.remainingCount}',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: med.isLowSupply
+                          ? const Color(0xFFE53935)
+                          : TsgColors.ink,
+                    ),
+                  ),
+                  const Text('pills left',
+                      style: TextStyle(
+                          fontSize: 10, color: TsgColors.muted)),
+                ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 42),
-        const Center(
-          child: H1('Did you take your\nmedication?', size: 26, center: true),
-        ),
-        const SizedBox(height: 24),
-        const Center(
-          child: Avatar(
-            size: 74,
-            icon: CupertinoIcons.capsule,
-            tone: TsgColors.lilac,
-          ),
-        ),
-        const SizedBox(height: 38),
-        confirmButton(
-          'Yes, I took it',
-          CupertinoIcons.check_mark_circled,
-          const Color(0xFFE7F8EA),
-          TsgColors.green,
-          () async {
-            await runApi('Confirming medication dose', (client, state) {
-              return client.confirmMedication(requireMedicationId(state));
-            });
-            go(Screen.today);
-          },
-        ),
-        confirmButton(
-          'Remind me later',
-          CupertinoIcons.clock,
-          Colors.white,
-          TsgColors.ink,
-          () async {
-            await runApi('Snoozing medication reminder', (client, state) {
-              return client.remindMedicationLater(requireMedicationId(state));
-            });
-            go(Screen.today);
-          },
-        ),
-        confirmButton(
-          'Skip this dose',
-          CupertinoIcons.xmark_circle,
-          Colors.white,
-          TsgColors.ink,
-          () async {
-            await runApi('Skipping medication dose', (client, state) {
-              return client.skipMedication(requireMedicationId(state));
-            });
-            go(Screen.today);
-          },
-        ),
-        const SizedBox(height: 20),
-        Center(
-          child: TextButton.icon(
-            onPressed: () async {
-              await launchUrl(Uri.parse('mailto:support@theseniorguru.com?subject=Issue%20Report'));
-            },
-            icon: const Icon(
-              CupertinoIcons.exclamationmark_circle,
-              size: 17,
-              color: TsgColors.purple,
+
+        // Beers criteria or narrow-therapeutic warning
+        if (med.beersCaution || med.narrowTherapeuticIndex) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3E0),
+              borderRadius: BorderRadius.circular(10),
+              border:
+                  Border.all(color: TsgColors.orange.withValues(alpha: .4)),
             ),
-            label: const Text(
-              'Report an issue',
-              style: TextStyle(color: TsgColors.purple),
+            child: Row(
+              children: [
+                const Icon(CupertinoIcons.exclamationmark_triangle_fill,
+                    color: TsgColors.orange, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    med.narrowTherapeuticIndex
+                        ? 'Narrow therapeutic index — take exactly as prescribed. Do not skip doses.'
+                        : 'Beers Criteria medication — monitor for side effects.',
+                    style: const TextStyle(fontSize: 12, color: TsgColors.ink),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
+        ],
+
+        const SizedBox(height: 36),
+
+        if (_confirmed) ...[
+          // Confirmation success state
+          const Center(
+            child: Icon(CupertinoIcons.check_mark_circled_solid,
+                color: TsgColors.green, size: 72),
+          ),
+          const SizedBox(height: 16),
+          const Center(
+            child: Text('Dose recorded!',
+                style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: TsgColors.green)),
+          ),
+          if (_daysRemaining != null) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: Text(
+                '$_daysRemaining days of supply remaining',
+                style: TextStyle(
+                    color: _refillNeeded
+                        ? const Color(0xFFE53935)
+                        : TsgColors.muted),
+              ),
+            ),
+          ],
+          if (_refillNeeded) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: TsgColors.orange.withValues(alpha: .5)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(CupertinoIcons.bell_fill,
+                      color: TsgColors.orange, size: 18),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Running low — a refill request has been sent automatically.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 28),
+          _actionButton(
+            'Back to Today',
+            CupertinoIcons.house,
+            TsgColors.purple,
+            Colors.white,
+            () => widget.go(Screen.today),
+          ),
+          const SizedBox(height: 10),
+          _actionButton(
+            'View All Medications',
+            CupertinoIcons.capsule,
+            const Color(0xFFF1E8F8),
+            TsgColors.purple,
+            () => widget.go(Screen.medications),
+          ),
+        ] else ...[
+          // Confirm prompt
+          const Center(
+            child: H1('Did you take your\nmedication?', size: 26, center: true),
+          ),
+          const SizedBox(height: 24),
+          const Center(
+            child: Avatar(
+              size: 74,
+              icon: CupertinoIcons.capsule,
+              tone: TsgColors.lilac,
+            ),
+          ),
+          const SizedBox(height: 38),
+          if (_confirming)
+            const Center(child: CircularProgressIndicator())
+          else ...[
+            _actionButton(
+              'Yes, I took it',
+              CupertinoIcons.check_mark_circled,
+              const Color(0xFFE7F8EA),
+              TsgColors.green,
+              _confirmDose,
+            ),
+            _actionButton(
+              'Remind me later',
+              CupertinoIcons.clock,
+              Colors.white,
+              TsgColors.ink,
+              () async {
+                await widget.runApi('Snoozing medication reminder',
+                    (client, state) {
+                  return client.remindMedicationLater(_medication.id);
+                });
+                widget.go(Screen.today);
+              },
+            ),
+            _actionButton(
+              'Skip this dose',
+              CupertinoIcons.xmark_circle,
+              Colors.white,
+              TsgColors.ink,
+              () async {
+                await widget.runApi('Skipping medication dose',
+                    (client, state) {
+                  return client.skipMedication(_medication.id);
+                });
+                widget.go(Screen.today);
+              },
+            ),
+            if (_confirmResult != null && _confirmResult!.startsWith('Error')) ...[
+              const SizedBox(height: 8),
+              Center(
+                child: Text(_confirmResult!,
+                    style: const TextStyle(
+                        color: Color(0xFFE53935), fontSize: 12)),
+              ),
+            ],
+          ],
+          const SizedBox(height: 20),
+          Center(
+            child: TextButton.icon(
+              onPressed: () async {
+                await launchUrl(Uri.parse(
+                    'mailto:support@theseniorguru.com?subject=Issue%20Report'));
+              },
+              icon: const Icon(CupertinoIcons.exclamationmark_circle,
+                  size: 17, color: TsgColors.purple),
+              label: const Text('Report an issue',
+                  style: TextStyle(color: TsgColors.purple)),
+            ),
+          ),
+        ],
       ],
     );
   }
 
-  Widget confirmButton(
+  Widget _actionButton(
     String text,
     IconData icon,
     Color bg,
@@ -3340,10 +3944,8 @@ class MedicationConfirm extends StatelessWidget {
             children: [
               Icon(icon, color: ink, size: 18),
               const SizedBox(width: 8),
-              Text(
-                text,
-                style: TextStyle(color: ink, fontWeight: FontWeight.w800),
-              ),
+              Text(text,
+                  style: TextStyle(color: ink, fontWeight: FontWeight.w800)),
             ],
           ),
         ),

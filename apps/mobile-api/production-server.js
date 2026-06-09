@@ -8076,6 +8076,84 @@ function createProductionApi(pool) {
       return { reply, intent, navigateTo, task, event, aiConfigured: guru.configured };
     }
 
+    // ── Local service pro search via Google Places ────────────────────────
+    if (req.method === "POST" && url.pathname === "/api/services/find-pros") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const category = String(payload.category || "handyman").trim();
+      const address   = String(payload.address || payload.community || (resident?.community_name) || "").trim();
+      const limit     = Math.min(Number(payload.limit) || 3, 5);
+
+      // Map internal category slugs → human search terms
+      const categoryQuery = {
+        plumbing:     "plumbers near me",
+        cleaning:     "house cleaning services near me",
+        electrical:   "electricians near me",
+        landscaping:  "lawn care landscaping near me",
+        painting:     "house painters near me",
+        pest_control: "pest control exterminators near me",
+        moving:       "moving companies near me",
+        home_care:    "home care caregivers near me",
+        handyman:     "handyman services near me",
+      }[category] || `${category} services near me`;
+
+      const searchQuery = address ? `${categoryQuery} ${address}` : categoryQuery;
+
+      const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY || "";
+      if (!googleKey) {
+        return { pros: [], source: "none", message: "Google Maps not configured" };
+      }
+
+      // Step 1: Text Search to get place_ids + basic info
+      const textSearchParams = new URLSearchParams({
+        query: searchQuery,
+        type:  "establishment",
+        key:   googleKey,
+      });
+      const textRes  = await fetch(`https://maps.googleapis.com/maps/api/place/textsearch/json?${textSearchParams}`);
+      const textData = await textRes.json();
+
+      if (!textData.results || textData.results.length === 0) {
+        return { pros: [], source: "google_places", message: "No results found" };
+      }
+
+      // Step 2: Get phone numbers via Place Details (parallel for top N results)
+      const topPlaces = textData.results.slice(0, limit);
+      const details = await Promise.all(
+        topPlaces.map(async (place) => {
+          try {
+            const detailParams = new URLSearchParams({
+              place_id: place.place_id,
+              fields: "name,formatted_phone_number,rating,user_ratings_total,vicinity,website,opening_hours",
+              key: googleKey,
+            });
+            const detailRes  = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${detailParams}`);
+            const detailData = await detailRes.json();
+            return detailData.result || null;
+          } catch { return null; }
+        })
+      );
+
+      const pros = topPlaces.map((place, i) => {
+        const detail = details[i] || {};
+        return {
+          id:           place.place_id,
+          name:         place.name,
+          category:     category,
+          source:       "google_places",
+          rating:       detail.rating || place.rating || 0,
+          reviewCount:  detail.user_ratings_total || place.user_ratings_total || 0,
+          location:     detail.vicinity || place.formatted_address || address,
+          phone:        detail.formatted_phone_number || null,
+          website:      detail.website || null,
+          isOpenNow:    place.opening_hours?.open_now ?? null,
+          badge:        (detail.rating || place.rating || 0) >= 4.5 ? "Highly Rated" : null,
+        };
+      }).filter(p => p.phone); // Only show pros we have a phone number for
+
+      return { pros, source: "google_places", query: searchQuery };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/guru/tasks") {
       requireRole(user, ["senior"]);
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
