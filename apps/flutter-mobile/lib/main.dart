@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -3131,6 +3133,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
   final _strengthCtrl = TextEditingController();
   final _countCtrl = TextEditingController();
   bool _addBusy = false;
+  bool _scanBusy = false;
   String? _addError;
   Map<String, dynamic>? _addInteractionWarning;
 
@@ -3191,6 +3194,86 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
               ];
         _loading = false;
         _loadError = fallback.isEmpty ? 'Could not load medications' : '';
+      });
+    }
+  }
+
+  /// Opens camera, runs ML Kit OCR, sends text to Groq, pre-fills form fields.
+  Future<void> _scanLabel() async {
+    setState(() { _scanBusy = true; _addError = null; });
+    try {
+      // 1. Pick image from camera
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        preferredCameraDevice: CameraDevice.rear,
+      );
+      if (pickedFile == null) {
+        setState(() => _scanBusy = false);
+        return;
+      }
+
+      // 2. ML Kit on-device OCR
+      final inputImage = InputImage.fromFilePath(pickedFile.path);
+      final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final RecognizedText recognizedText =
+          await textRecognizer.processImage(inputImage);
+      await textRecognizer.close();
+
+      final rawOcr = recognizedText.text.trim();
+      if (rawOcr.isEmpty) {
+        setState(() {
+          _scanBusy = false;
+          _addError = 'Could not read text from image. Try better lighting or a flatter label.';
+        });
+        return;
+      }
+
+      // 3. Send to Groq for structured parsing
+      final result = await widget.apiClient.scanMedicationLabel(rawOcr);
+      final parsed = result['parsed'] as Map<String, dynamic>? ?? {};
+      final drugInfo = result['drugInfo'] as Map<String, dynamic>?;
+
+      if (!mounted) return;
+
+      // 4. Pre-fill the form fields
+      final name = stringValue(
+          parsed['name'] ?? parsed['genericName'], fallback: '');
+      final strength = stringValue(parsed['strength'], fallback: '');
+      final freq = stringValue(parsed['frequency'], fallback: '');
+      final condition = stringValue(
+          parsed['condition'] ?? drugInfo?['indication'], fallback: '');
+
+      setState(() {
+        _scanBusy = false;
+        _showAddForm = true;
+        if (name.isNotEmpty) _nameCtrl.text = name;
+        if (strength.isNotEmpty) _strengthCtrl.text = strength;
+        if (freq.isNotEmpty) _freqCtrl.text = freq;
+        if (condition.isNotEmpty) _condCtrl.text = condition;
+        if (_countCtrl.text.isEmpty) _countCtrl.text = '30';
+        // Show Beers/NTI info from drug reference
+        if (drugInfo != null &&
+            (drugInfo['beersListCaution'] == true ||
+                drugInfo['narrowTherapeuticIndex'] == true)) {
+          _addInteractionWarning = {
+            'drug_a': name,
+            'drug_b': 'reference check',
+            'severity': drugInfo['narrowTherapeuticIndex'] == true
+                ? 'HIGH'
+                : 'MODERATE',
+            'description': drugInfo['narrowTherapeuticIndex'] == true
+                ? 'Narrow therapeutic index — small dose changes have large effects. Monitor carefully.'
+                : 'This medication is on the Beers Criteria list for older adults. Use with caution.',
+          };
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _scanBusy = false;
+        _addError = 'Scan failed: ${e.toString()}';
       });
     }
   }
@@ -3370,9 +3453,49 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Add Medication',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Add Medication',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              ),
+              // Camera scan button
+              GestureDetector(
+                onTap: _scanBusy ? null : _scanLabel,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: TsgColors.purple.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: _scanBusy
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: TsgColors.purple))
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.camera, size: 15,
+                                color: TsgColors.purple),
+                            SizedBox(width: 5),
+                            Text('Scan Label',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: TsgColors.purple,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Point camera at your prescription label to auto-fill',
+            style: TextStyle(fontSize: 11, color: TsgColors.muted),
+          ),
+          const SizedBox(height: 10),
           _field(_nameCtrl, 'Medication name *', 'e.g. Lisinopril 10mg'),
           const SizedBox(height: 8),
           _field(_strengthCtrl, 'Strength / dose', 'e.g. 10mg'),

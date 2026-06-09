@@ -344,6 +344,12 @@ class TsgApiClient {
     });
   }
 
+  /// Send ML Kit OCR text to backend; Groq parses into structured medication fields.
+  /// Returns { parsed: {...}, drugInfo: {...} }
+  Future<Map<String, dynamic>> scanMedicationLabel(String ocrText) {
+    return post('/api/medications/scan-label', {'text': ocrText});
+  }
+
   Future<Map<String, dynamic>> remindMedicationLater(
     String medicationId, {
     int minutes = 30,

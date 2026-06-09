@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const { resolveGuruIntent, isRoutineGuruIntent, localCacheKey } = require("./lib/guru-intents");
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
-const { slmAvailable, slmChat, slmClassifyIntent, slmWellnessNarrative, slmSafetyRecommendation, slmWeatherAdvice, SLM_MODEL, SLM_PROVIDER } = require("./lib/slm-client");
+const { slmAvailable, callSLM, slmChat, slmClassifyIntent, slmWellnessNarrative, slmSafetyRecommendation, slmWeatherAdvice, SLM_MODEL, SLM_PROVIDER } = require("./lib/slm-client");
 const { lookupDrug, checkInteractions, getBeersCaution, daysOfSupplyRemaining, refillNeeded, askMedicationQuestion, DRUG_REFERENCE } = require("./lib/medication-engine");
 
 const FREE_YEARLY_LEADS = 5;
@@ -5301,6 +5301,70 @@ function createProductionApi(pool) {
       )).rows : [];
       const answer = await askMedicationQuestion(message, meds, resident?.name || null);
       return { question: message, answer: answer.text, provider: answer.provider, model: answer.model };
+    }
+
+    // POST /api/medications/scan-label  — OCR text → structured medication fields via Groq
+    // Receives raw OCR text from ML Kit on the device; Groq parses into structured fields.
+    if (req.method === "POST" && url.pathname === "/api/medications/scan-label") {
+      requireRole(user, ["senior"]);
+      const rawText = String(payload.text || payload.ocrText || "").trim();
+      if (!rawText || rawText.length < 10) {
+        const e = new Error("ocrText is required and must be at least 10 characters");
+        e.status = 400; throw e;
+      }
+
+      // Groq parses the label text into structured medication fields
+      let parsed = null;
+      const LABEL_SYSTEM_PROMPT = [
+        "You are a pharmacist assistant. Parse the following US prescription drug label text into JSON.",
+        "Return ONLY valid JSON with these fields (use null for missing values):",
+        '{"name":"full drug name with strength","genericName":"generic name","strength":"dose strength","frequency":"dosing schedule","condition":null,"prescriber":"doctor name or null","pharmacy":"pharmacy name or null","pharmacyPhone":"phone or null","rxNumber":"Rx number or null","remainingRefills":null,"quantity":null}',
+        "Examples:",
+        '  "LISINOPRIL 10MG TABLET" → {"name":"Lisinopril 10mg","genericName":"lisinopril","strength":"10mg","frequency":null,...}',
+        '  "TAKE 1 TABLET BY MOUTH TWICE DAILY" → {"frequency":"twice daily",...}',
+        "Use the full sig/directions line for frequency. Do not add any text outside the JSON object."
+      ].join("\n");
+
+      try {
+        const result = await callSLM({
+          system: LABEL_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: rawText.slice(0, 1500) }],
+          temperature: 0.05,
+          maxTokens: 300
+        });
+        // Extract JSON from response
+        const match = result.text.match(/\{[\s\S]*\}/);
+        if (match) {
+          try { parsed = JSON.parse(match[0]); } catch {}
+        }
+      } catch (err) {
+        console.error("scan-label Groq error:", err.message);
+        // Fall through — return null fields with warning
+      }
+
+      // Enrich with drug reference data if we got a name
+      let drugInfo = null;
+      if (parsed?.genericName) {
+        drugInfo = lookupDrug(parsed.genericName);
+      } else if (parsed?.name) {
+        drugInfo = lookupDrug(parsed.name);
+      }
+
+      return {
+        parsed: parsed || {},
+        drugInfo: drugInfo ? {
+          generic: drugInfo.generic,
+          brand: drugInfo.brand,
+          class: drugInfo.class,
+          indication: drugInfo.indication,
+          sideEffects: drugInfo.sideEffects,
+          beersListCaution: drugInfo.beersListCaution || false,
+          narrowTherapeuticIndex: drugInfo.narrowTherapeuticIndex || false,
+          renalCaution: drugInfo.renalCaution || false
+        } : null,
+        rawText: rawText.slice(0, 500),
+        provider: "groq"
+      };
     }
 
     // POST /api/medications/side-effects  — report a side effect
