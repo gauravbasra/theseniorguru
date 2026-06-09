@@ -18,6 +18,12 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     /**
+     * Use a dedicated business portal users table — kept separate from the
+     * shared mobile-app users table which has an incompatible schema.
+     */
+    protected $table = 'business_portal_users';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
