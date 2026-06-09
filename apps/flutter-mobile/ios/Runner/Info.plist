@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Theseniorguru Flutter Mobile</string>
+	<string>TheSeniorGuru</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>theseniorguru_flutter_mobile</string>
+	<string>TheSeniorGuru</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -34,6 +34,18 @@
 	<string>TheSeniorGuru may write approved wellness records only when you explicitly allow it.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>TheSeniorGuru uses location to check safe zones, estimate transportation, and find nearby senior-friendly services.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>TheSeniorGuru uses your location to monitor safe zones and alert your care circle if you leave a designated area.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>TheSeniorGuru uses background location to keep your care circle informed of your safety.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>TheSeniorGuru uses your camera to capture photos for your profile and onboarding verification.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TheSeniorGuru accesses your photo library so you can select profile photos and share memories with your care circle.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>TheSeniorGuru saves captured photos to your photo library.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TheSeniorGuru uses the microphone for voice check-ins and Guru voice commands.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -7,9 +7,21 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 import 'api/tsg_api_client.dart';
 import 'services/native_health_service.dart';
+
+Future<String> _stableInstallationId() async {
+  final prefs = await SharedPreferences.getInstance();
+  const key = 'tsg_installation_id';
+  final existing = prefs.getString(key);
+  if (existing != null && existing.isNotEmpty) return existing;
+  final newId = 'flutter-${const Uuid().v4()}';
+  await prefs.setString(key, newId);
+  return newId;
+}
 
 void main() {
   runApp(const TsgResidentApp());
@@ -173,10 +185,18 @@ class _ResidentShellState extends State<ResidentShell> {
     screen = initialScreenFromKey(initialScreenKey);
     apiClient = TsgApiClient(
       baseUrl: defaultApiBase,
-      installationIdProvider: () async =>
-          'flutter-resident-${DateTime.now().millisecondsSinceEpoch}',
+      installationIdProvider: _stableInstallationId,
     );
     _refreshState();
+    NativeHealthService().collectRecentVitals().then((snapshot) {
+      if (snapshot.available && snapshot.readings.isNotEmpty) {
+        apiClient.syncHealthConsentAndVitals(
+          source: snapshot.source,
+          readings: snapshot.readings,
+          dataTypes: snapshot.consentDataTypes,
+        );
+      }
+    }).catchError((_) {});
   }
 
   Future<void> _refreshState() async {
@@ -1528,9 +1548,10 @@ class SoftIllustrationPainter extends CustomPainter {
 }
 
 class SectionHeader extends StatelessWidget {
-  const SectionHeader(this.title, {super.key, this.action});
+  const SectionHeader(this.title, {super.key, this.action, this.onAction});
   final String title;
   final String? action;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -1547,11 +1568,14 @@ class SectionHeader extends StatelessWidget {
           ),
         ),
         if (action != null)
-          Text(
-            action!,
-            style: const TextStyle(
-              color: TsgColors.purple,
-              fontWeight: FontWeight.w800,
+          GestureDetector(
+            onTap: onAction,
+            child: Text(
+              action!,
+              style: const TextStyle(
+                color: TsgColors.purple,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
       ],
@@ -1607,7 +1631,16 @@ class TodayHome extends StatelessWidget {
                 right: 76,
                 top: 18,
                 child: IconButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    showCupertinoDialog(
+                      context: context,
+                      builder: (_) => CupertinoAlertDialog(
+                        title: const Text('Notifications'),
+                        content: const Text('No new notifications.'),
+                        actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+                      ),
+                    );
+                  },
                   icon: const Icon(CupertinoIcons.bell, size: 29),
                 ),
               ),
@@ -2071,7 +2104,7 @@ class MedicationsScreen extends StatelessWidget {
         const SizedBox(height: 18),
         Center(
           child: TextButton.icon(
-            onPressed: () {},
+            onPressed: () => go(Screen.medications),
             icon: const Icon(CupertinoIcons.plus, color: TsgColors.purple),
             label: const Text(
               'Add medication',
@@ -2255,7 +2288,9 @@ class MedicationConfirm extends StatelessWidget {
         const SizedBox(height: 20),
         Center(
           child: TextButton.icon(
-            onPressed: () {},
+            onPressed: () async {
+              await launchUrl(Uri.parse('mailto:support@theseniorguru.com?subject=Issue%20Report'));
+            },
             icon: const Icon(
               CupertinoIcons.exclamationmark_circle,
               size: 17,
@@ -2382,7 +2417,19 @@ class RefillScreen extends StatelessWidget {
         const SizedBox(height: 20),
         Center(
           child: TextButton(
-            onPressed: () {},
+            onPressed: () {
+              showCupertinoDialog(
+                context: context,
+                builder: (_) => CupertinoAlertDialog(
+                  title: const Text('Low Stock Reminder'),
+                  content: const Text('We\'ll remind you when your supply drops below a 7-day supply.'),
+                  actions: [
+                    CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: const Text('Not Now')),
+                    CupertinoDialogAction(isDefaultAction: true, onPressed: () { Navigator.pop(context); runApi('Setting reminder', (c, s) => c.post('/api/medications/low-stock-reminder', {})); }, child: const Text('Enable')),
+                  ],
+                ),
+              );
+            },
             child: const Text('Set low stock reminder'),
           ),
         ),
@@ -2402,7 +2449,18 @@ class RideChatScreen extends StatelessWidget {
       title: 'Help Assistant',
       back: () => go(Screen.guru),
       action: IconButton(
-        onPressed: () {},
+        onPressed: () {
+          showCupertinoModalPopup(
+            context: context,
+            builder: (_) => CupertinoActionSheet(
+              actions: [
+                CupertinoActionSheetAction(onPressed: () { Navigator.pop(context); go(Screen.today); }, child: const Text('Cancel ride')),
+                CupertinoActionSheetAction(onPressed: () => Navigator.pop(context), child: const Text('Contact support')),
+              ],
+              cancelButton: CupertinoActionSheetAction(onPressed: () => Navigator.pop(context), child: const Text('Dismiss')),
+            ),
+          );
+        },
         icon: const CircleAvatar(
           backgroundColor: TsgColors.purple,
           child: Icon(CupertinoIcons.ellipsis, color: Colors.white),
@@ -2509,29 +2567,43 @@ Widget chatBubble(String text, bool mine, String meta) {
   );
 }
 
-Widget inputBar() {
-  return Container(
-    height: 56,
-    padding: const EdgeInsets.only(left: 16, right: 8),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: TsgColors.line),
-    ),
-    child: const Row(
-      children: [
-        Expanded(
-          child: Text(
-            'Type or speak...',
-            style: TextStyle(color: TsgColors.muted, fontSize: 16),
+Widget inputBar({BuildContext? context}) {
+  return Builder(
+    builder: (ctx) => Container(
+      height: 56,
+      padding: const EdgeInsets.only(left: 16, right: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: TsgColors.line),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Type or speak...',
+              style: TextStyle(color: TsgColors.muted, fontSize: 16),
+            ),
           ),
-        ),
-        CircleAvatar(
-          radius: 20,
-          backgroundColor: TsgColors.purple,
-          child: Icon(CupertinoIcons.mic_fill, color: Colors.white, size: 18),
-        ),
-      ],
+          GestureDetector(
+            onTap: () {
+              showCupertinoDialog(
+                context: ctx,
+                builder: (_) => CupertinoAlertDialog(
+                  title: const Text('Voice Input'),
+                  content: const Text('Voice input is coming soon. Please type your request.'),
+                  actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+                ),
+              );
+            },
+            child: const CircleAvatar(
+              radius: 20,
+              backgroundColor: TsgColors.purple,
+              child: Icon(CupertinoIcons.mic_fill, color: Colors.white, size: 18),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -2721,7 +2793,7 @@ class RideStatusScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 26),
-        PurpleButton('View details', onTap: () => go(Screen.today)),
+        PurpleButton('View details', onTap: () => go(Screen.rideStatus)),
       ],
     );
   }
@@ -2747,7 +2819,7 @@ class CompanionHome extends StatelessWidget {
         const SizedBox(height: 22),
         const Center(
           child: Text(
-            'Good morning, Anita',
+            'Good morning',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
         ),
@@ -2831,11 +2903,11 @@ class CircleScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final people = [
-      ('Rita Sharma', 'Daughter', 'R'),
-      ('Arjun Sharma', 'Son', 'A'),
-      ('Susan Patel', 'Friend', 'S'),
-      ('Dr. Mehta', 'Physician', 'D'),
-      ('Meena Joshi', 'Caregiver', 'M'),
+      ('Rita Sharma', 'Daughter', 'R', '+13035550102'),
+      ('Arjun Sharma', 'Son', 'A', '+13035550103'),
+      ('Susan Patel', 'Friend', 'S', '+13035550104'),
+      ('Dr. Mehta', 'Physician', 'D', '+13035550105'),
+      ('Meena Joshi', 'Caregiver', 'M', '+13035550106'),
     ];
     return ScreenScaffold(
       title: 'My Circle',
@@ -2869,7 +2941,10 @@ class CircleScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const Icon(CupertinoIcons.phone, color: TsgColors.purple),
+                  GestureDetector(
+                    onTap: () => launchPhoneCall(p.$4),
+                    child: const Icon(CupertinoIcons.phone, color: TsgColors.purple),
+                  ),
                 ],
               ),
             ),
@@ -3051,17 +3126,26 @@ class FeedHome extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(
-                  CupertinoIcons.heart_fill,
-                  color: TsgColors.red,
-                  size: 18,
+                GestureDetector(
+                  onTap: () {},
+                  child: const Icon(
+                    CupertinoIcons.heart_fill,
+                    color: TsgColors.red,
+                    size: 18,
+                  ),
                 ),
                 const SizedBox(width: 6),
                 Text(likes),
                 const SizedBox(width: 22),
-                const Icon(CupertinoIcons.chat_bubble, size: 18),
+                GestureDetector(
+                  onTap: () {},
+                  child: const Icon(CupertinoIcons.chat_bubble, size: 18),
+                ),
                 const SizedBox(width: 6),
-                const Text('Comment'),
+                GestureDetector(
+                  onTap: () {},
+                  child: const Text('Comment'),
+                ),
               ],
             ),
           ],
@@ -3218,7 +3302,7 @@ class EventsScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
               ),
             ),
-            TextButton(onPressed: () {}, child: const Text('View all')),
+            TextButton(onPressed: () => go(Screen.events), child: const Text('View all')),
           ],
         ),
         ...events.map((e) => eventCard(e)),
@@ -3364,7 +3448,7 @@ class MoreHome extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Anita Sharma',
+                      'My Profile',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -3373,7 +3457,7 @@ class MoreHome extends StatelessWidget {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Park View Community',
+                      'TheSeniorGuru',
                       style: TextStyle(color: Colors.white70),
                     ),
                   ],
@@ -3484,7 +3568,7 @@ class TrustCircleMore extends StatelessWidget {
                     ),
                     SizedBox(height: 5),
                     Text(
-                      'Daughter · Approved visibility for Anita',
+                      'Daughter · Approved visibility',
                       style: TextStyle(color: TsgColors.muted),
                     ),
                   ],
@@ -3856,7 +3940,7 @@ class BusinessMessagesScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Anita Sharma',
+                      'Resident',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -4346,6 +4430,7 @@ class ServicesScreen extends StatelessWidget {
           children: categories.map((c) {
             return SoftCard(
               padding: const EdgeInsets.all(10),
+              onTap: () => go(Screen.services),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -4402,10 +4487,33 @@ class _SafetyScreenState extends State<SafetyScreen> {
       back: () => widget.go(Screen.more),
       children: [
         GestureDetector(
-          onTap: () {
-            widget.runApi('Triggering SOS event', (client, state) {
-              return client.triggerSos();
-            });
+          onTap: () async {
+            final confirmed = await showCupertinoDialog<bool>(
+              context: context,
+              builder: (_) => CupertinoAlertDialog(
+                title: const Text('Send SOS Alert?'),
+                content: const Text('This will immediately alert your care circle and emergency contacts.'),
+                actions: [
+                  CupertinoDialogAction(isDestructiveAction: true, onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                  CupertinoDialogAction(isDefaultAction: true, onPressed: () => Navigator.pop(context, true), child: const Text('Send SOS')),
+                ],
+              ),
+            );
+            if (confirmed != true) return;
+            try {
+              await widget.runApi('Sending SOS alert', (client, state) => client.triggerSos());
+            } catch (e) {
+              if (mounted) {
+                showCupertinoDialog(
+                  context: context,
+                  builder: (_) => CupertinoAlertDialog(
+                    title: const Text('SOS Failed'),
+                    content: Text('Could not send SOS: $e\n\nCall 911 directly if this is an emergency.'),
+                    actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+                  ),
+                );
+              }
+            }
           },
           child: Container(
             padding: const EdgeInsets.all(22),
@@ -4996,7 +5104,7 @@ class OnboardingWelcome extends StatelessWidget {
         const SizedBox(height: 18),
         Center(
           child: TextButton(
-            onPressed: () => go(Screen.today),
+            onPressed: () => go(Screen.onboardingRole),
             child: const Text('Sign In'),
           ),
         ),
@@ -5029,7 +5137,7 @@ class OnboardingRoleSelection extends StatelessWidget {
           color: const Color(0xFFFFF3E7),
           onTap: () async {
             await runApi('Starting senior onboarding', (client, state) {
-              return client.startRoleSession('senior', displayName: 'Anita');
+              return client.startRoleSession('senior');
             });
             go(Screen.onboardingWelcome);
           },
@@ -5042,10 +5150,7 @@ class OnboardingRoleSelection extends StatelessWidget {
           color: const Color(0xFFF1E8F8),
           onTap: () async {
             await runApi('Starting trusted circle onboarding', (client, state) {
-              return client.startRoleSession(
-                'trusted_person',
-                displayName: 'Rita Sharma',
-              );
+              return client.startRoleSession('trusted_person');
             });
             go(Screen.trustCircleInvite);
           },
@@ -5059,10 +5164,7 @@ class OnboardingRoleSelection extends StatelessWidget {
           color: const Color(0xFFEAF4FF),
           onTap: () async {
             await runApi('Starting business onboarding', (client, state) {
-              return client.startRoleSession(
-                'business',
-                displayName: 'Rohit Mehta',
-              );
+              return client.startRoleSession('business');
             });
             go(Screen.businessType);
           },
@@ -5281,7 +5383,7 @@ final seniorStepSpecs = <OnboardingStepSpec>[
     flow: 'Senior onboarding flow',
     step: 1,
     total: 14,
-    title: 'Hello Anita!',
+    title: 'Welcome!',
     subtitle:
         'I am Guru, your AI companion. I am here to make daily life easier, safer and more connected.',
     accent: TsgColors.purple,
@@ -5503,7 +5605,7 @@ final trustCircleStepSpecs = <OnboardingStepSpec>[
     step: 1,
     total: 8,
     title: 'Invite',
-    subtitle: 'Anita has invited you to her Trust Circle.',
+    subtitle: 'You have been invited to a Trust Circle.',
     accent: TsgColors.purple,
     next: Screen.trustCircleRelationship,
     heroIcon: CupertinoIcons.person_crop_circle_badge_checkmark,
@@ -5514,7 +5616,7 @@ final trustCircleStepSpecs = <OnboardingStepSpec>[
     step: 2,
     total: 8,
     title: 'Relationship',
-    subtitle: 'What is your relationship with Anita?',
+    subtitle: 'What is your relationship with this senior?',
     accent: TsgColors.purple,
     back: Screen.trustCircleInvite,
     next: Screen.trustCircleProfile,
@@ -5600,7 +5702,7 @@ final trustCircleStepSpecs = <OnboardingStepSpec>[
       ('Primary contact', true),
       ('I can call 911 if needed', true),
       ('I can contact community staff', true),
-      ('I can book services on behalf of Anita', false),
+      ('I can book services on behalf of this senior', false),
     ],
   ),
   OnboardingStepSpec(
@@ -5616,7 +5718,7 @@ final trustCircleStepSpecs = <OnboardingStepSpec>[
     cards: const [
       (
         CupertinoIcons.person_fill,
-        'Anita Sharma',
+        'Senior Member',
         'All good - checked in 2h ago',
       ),
       (CupertinoIcons.capsule_fill, 'Next Medication', 'Call 8 AM'),
@@ -6059,7 +6161,7 @@ class OnboardingOptionCard extends StatelessWidget {
   }
 }
 
-class OnboardingToggleRow extends StatelessWidget {
+class OnboardingToggleRow extends StatefulWidget {
   const OnboardingToggleRow({
     super.key,
     required this.item,
@@ -6068,6 +6170,19 @@ class OnboardingToggleRow extends StatelessWidget {
 
   final (String, bool) item;
   final Color accent;
+
+  @override
+  State<OnboardingToggleRow> createState() => _OnboardingToggleRowState();
+}
+
+class _OnboardingToggleRowState extends State<OnboardingToggleRow> {
+  late bool _value;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.item.$2;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -6079,14 +6194,14 @@ class OnboardingToggleRow extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                item.$1,
+                widget.item.$1,
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
             CupertinoSwitch(
-              value: item.$2,
-              activeTrackColor: accent,
-              onChanged: (_) {},
+              value: _value,
+              activeTrackColor: widget.accent,
+              onChanged: (v) => setState(() => _value = v),
             ),
           ],
         ),
@@ -6095,9 +6210,33 @@ class OnboardingToggleRow extends StatelessWidget {
   }
 }
 
-class OnboardingProfile extends StatelessWidget {
+class OnboardingProfile extends StatefulWidget {
   const OnboardingProfile({super.key, required this.go});
   final ValueChanged<Screen> go;
+
+  @override
+  State<OnboardingProfile> createState() => _OnboardingProfileState();
+}
+
+class _OnboardingProfileState extends State<OnboardingProfile> {
+  final _formKey = GlobalKey<FormState>();
+  final _fullName = TextEditingController();
+  final _age = TextEditingController();
+  final _phone = TextEditingController();
+  final _email = TextEditingController();
+  final _address = TextEditingController();
+  final _city = TextEditingController();
+  final _stateField = TextEditingController();
+  final _zip = TextEditingController();
+  final _careNeeds = TextEditingController();
+
+  @override
+  void dispose() {
+    _fullName.dispose(); _age.dispose(); _phone.dispose(); _email.dispose();
+    _address.dispose(); _city.dispose(); _stateField.dispose(); _zip.dispose();
+    _careNeeds.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -6111,15 +6250,77 @@ class OnboardingProfile extends StatelessWidget {
           style: TextStyle(color: TsgColors.muted, height: 1.3),
         ),
         const SizedBox(height: 22),
-        field('Full name', 'Anita Sharma'),
-        field('Age', '68'),
-        field('Community (optional)', 'Park View Community'),
-        field('Medical preferences', 'None selected'),
+        Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              formField('Full name', _fullName, required: true),
+              formField('Age', _age, keyboardType: TextInputType.number),
+              formField('Phone', _phone, keyboardType: TextInputType.phone),
+              formField('Email', _email, keyboardType: TextInputType.emailAddress),
+              formField('Address', _address),
+              formField('City', _city),
+              formField('State', _stateField),
+              formField('ZIP', _zip, keyboardType: TextInputType.number),
+              formField('Care needs', _careNeeds),
+            ],
+          ),
+        ),
         const SizedBox(height: 20),
-        PurpleButton('Continue', onTap: () => go(Screen.seniorAddress)),
+        PurpleButton('Continue', onTap: () {
+          if (_formKey.currentState?.validate() ?? true) {
+            widget.go(Screen.seniorAddress);
+          }
+        }),
       ],
     );
   }
+}
+
+Widget formField(
+  String label,
+  TextEditingController controller, {
+  bool required = false,
+  TextInputType? keyboardType,
+}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: TsgColors.muted,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          validator: required
+              ? (v) => (v == null || v.trim().isEmpty) ? 'Required' : null
+              : null,
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(11),
+              borderSide: const BorderSide(color: TsgColors.line),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(11),
+              borderSide: const BorderSide(color: TsgColors.line),
+            ),
+          ),
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ],
+    ),
+  );
 }
 
 class OnboardingCircle extends StatelessWidget {
@@ -6252,9 +6453,9 @@ class TrustCircleInviteScreen extends StatelessWidget {
         const SizedBox(height: 18),
         const H1('Enter invite\ncode', size: 30),
         const SizedBox(height: 12),
-        field('Invite code', 'RITA-ANITA'),
-        field('Senior', 'Anita Sharma'),
-        field('Requested role', 'Daughter / Primary contact'),
+        field('Invite code', ''),
+        field('Senior', ''),
+        field('Requested role', ''),
         const SizedBox(height: 14),
         SoftCard(
           color: const Color(0xFFF8F2FF),
@@ -6281,7 +6482,7 @@ class TrustCircleInviteScreen extends StatelessWidget {
   }
 }
 
-class TrustCircleProfileScreen extends StatelessWidget {
+class TrustCircleProfileScreen extends StatefulWidget {
   const TrustCircleProfileScreen({
     super.key,
     required this.go,
@@ -6292,28 +6493,58 @@ class TrustCircleProfileScreen extends StatelessWidget {
   final ApiRunner runApi;
 
   @override
+  State<TrustCircleProfileScreen> createState() => _TrustCircleProfileScreenState();
+}
+
+class _TrustCircleProfileScreenState extends State<TrustCircleProfileScreen> {
+  final _fullName = TextEditingController();
+  final _relationship = TextEditingController();
+  final _phone = TextEditingController();
+  final _email = TextEditingController();
+  final _inviteCode = TextEditingController();
+
+  @override
+  void dispose() {
+    _fullName.dispose(); _relationship.dispose(); _phone.dispose();
+    _email.dispose(); _inviteCode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ScreenScaffold(
       title: 'Your access',
       subtitle: 'Confirm contact, alerts, and emergency override.',
-      back: () => go(Screen.trustCircleInvite),
+      back: () => widget.go(Screen.trustCircleInvite),
       children: [
         const FlowNumber(2),
         const SizedBox(height: 18),
-        field('Full name', 'Rita Sharma'),
-        field('Relationship', 'Daughter'),
-        field('Phone', '+1 (303) 555-0102'),
-        field('Email', 'rita@theseniorguru.local'),
-        field('Visibility', 'Summary, safety, medications, rides'),
-        field('Alerts', 'SOS, falls, missed medication, daily status'),
+        formField('Full name', _fullName, required: true),
+        formField('Relationship', _relationship),
+        formField('Phone', _phone, keyboardType: TextInputType.phone),
+        formField('Email', _email, keyboardType: TextInputType.emailAddress),
+        formField('Invite code', _inviteCode),
         const SizedBox(height: 18),
-        PurpleButton('Continue', onTap: () => go(Screen.trustCircleMessaging)),
+        PurpleButton('Continue', onTap: () async {
+          await widget.runApi('Submitting trust circle profile', (client, state) {
+            return client.completeTrustCircleOnboarding(
+              payload: buildTrustCircleOnboardingPayload(
+                fullName: _fullName.text.trim(),
+                phone: _phone.text.trim(),
+                email: _email.text.trim(),
+                relationship: _relationship.text.trim(),
+                inviteCode: _inviteCode.text.trim(),
+              ),
+            );
+          });
+          widget.go(Screen.trustCircleMessaging);
+        }),
       ],
     );
   }
 }
 
-class BusinessProfileScreen extends StatelessWidget {
+class BusinessProfileScreen extends StatefulWidget {
   const BusinessProfileScreen({
     super.key,
     required this.go,
@@ -6324,22 +6555,55 @@ class BusinessProfileScreen extends StatelessWidget {
   final ApiRunner runApi;
 
   @override
+  State<BusinessProfileScreen> createState() => _BusinessProfileScreenState();
+}
+
+class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
+  final _businessName = TextEditingController();
+  final _ownerName = TextEditingController();
+  final _phone = TextEditingController();
+  final _email = TextEditingController();
+  final _address = TextEditingController();
+  final _serviceType = TextEditingController();
+
+  @override
+  void dispose() {
+    _businessName.dispose(); _ownerName.dispose(); _phone.dispose();
+    _email.dispose(); _address.dispose(); _serviceType.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ScreenScaffold(
       title: 'Business setup',
       subtitle: 'Create the provider profile before leads can route to you.',
-      back: () => go(Screen.onboardingRole),
+      back: () => widget.go(Screen.onboardingRole),
       children: [
         const FlowNumber(1),
         const SizedBox(height: 18),
-        field('Legal business name', 'CareRide Senior Transportation LLC'),
-        field('Display name', 'CareRide'),
-        field('Owner / manager', 'Rohit Mehta'),
-        field('Phone', '+1 (303) 555-0104'),
-        field('Email', 'rohit@careride.local'),
-        field('Business type', 'Transportation'),
+        formField('Business name', _businessName, required: true),
+        formField('Owner / manager', _ownerName),
+        formField('Phone', _phone, keyboardType: TextInputType.phone),
+        formField('Email', _email, keyboardType: TextInputType.emailAddress),
+        formField('Address', _address),
+        formField('Business / service type', _serviceType),
         const SizedBox(height: 18),
-        PurpleButton('Continue', onTap: () => go(Screen.businessVerification)),
+        PurpleButton('Continue', onTap: () async {
+          await widget.runApi('Submitting business profile', (client, state) {
+            return client.completeBusinessOnboarding(
+              buildBusinessOnboardingPayload(
+                businessName: _businessName.text.trim(),
+                ownerName: _ownerName.text.trim(),
+                phone: _phone.text.trim(),
+                email: _email.text.trim(),
+                address: _address.text.trim(),
+                serviceType: _serviceType.text.trim(),
+              ),
+            );
+          });
+          widget.go(Screen.businessVerification);
+        }),
       ],
     );
   }

@@ -251,10 +251,10 @@ class TsgApiClient {
   }
 
   Future<Map<String, dynamic>> triggerSos() {
-    return post('/api/safety/voice-sos', {
-      'command': 'Guru, call emergency',
-      'confirmed': true,
-      'source': 'flutter-resident-app',
+    return post('/api/safety/sos', {
+      'type': 'resident_sos',
+      'source': 'flutter_app',
+      'timestamp': DateTime.now().toUtc().toIso8601String(),
     });
   }
 
@@ -322,7 +322,7 @@ class TsgApiClient {
     Map<String, dynamic> payload = const {},
   ]) {
     return post('/api/onboarding/senior', {
-      ...defaultSeniorOnboardingPayload(),
+      'source': 'flutter_onboarding',
       ...payload,
     });
   }
@@ -331,7 +331,7 @@ class TsgApiClient {
     Map<String, dynamic> payload = const {},
   }) {
     return post('/api/onboarding/trust-circle', {
-      ...defaultTrustCircleOnboardingPayload(),
+      'source': 'flutter_onboarding',
       ...payload,
     });
   }
@@ -340,7 +340,7 @@ class TsgApiClient {
     Map<String, dynamic> payload = const {},
   ]) {
     return post('/api/onboarding/business', {
-      ...defaultBusinessOnboardingPayload(),
+      'source': 'flutter_onboarding',
       ...payload,
     });
   }
@@ -475,89 +475,67 @@ List<String> healthConsentDataTypes(List<Map<String, dynamic>> readings) {
   return types.toList(growable: false);
 }
 
-Map<String, dynamic> defaultSeniorOnboardingPayload() {
+Map<String, dynamic> buildSeniorOnboardingPayload({
+  required String fullName,
+  required String phone,
+  required String email,
+  required String address,
+  required String city,
+  required String state,
+  required String zip,
+  required int age,
+  required String careNeeds,
+  String? photoBase64,
+}) {
   return {
-    'name': 'Anita Sharma',
-    'preferredName': 'Anita',
-    'phone': '+13035550100',
-    'email': 'anita.sharma@example.com',
-    'dob': '1958-04-12',
-    'address': '123 Greenview Dr, Sunnyvale, CA 94086',
-    'livingType': 'independent_living',
-    'healthConcerns': [
-      'High Blood Pressure',
-      'Mobility Limitation',
-      'Memory Concerns',
-    ],
-    'allergies': 'Penicillin',
-    'mobility': 'Uses cane for longer walks; fall-aware transfers.',
-    'height': '5 ft 3 in',
-    'weight': '142 lb',
-    'bloodPressure': '128/78',
-    'heartRate': '72',
-    'medications': ['Lisinopril 10mg', 'Vitamin D'],
-    'wearableSources': ['Apple Health', 'Fitbit'],
-    'devicePermissions': ['Location', 'Notifications', 'Health data'],
-    'musicApps': ['Spotify', 'Apple Music'],
-    'musicPreferences': ['Old Hindi Songs', 'Bhajans'],
-    'healthSharing': true,
-    'locationSharing': true,
-    'sosOrder': ['Rita Sharma', '911', 'Community Staff'],
-  };
-}
-
-Map<String, dynamic> defaultTrustCircleOnboardingPayload() {
-  return {
-    'inviteCode': 'RITA-ANITA',
-    'name': 'Rita Sharma',
-    'relationship': 'Daughter',
-    'phone': '+13035550111',
-    'email': 'rita.sharma@example.com',
-    'timezone': 'America/Denver',
-    'roleType': 'family',
-    'escalationRole': 'primary_contact',
-    'routineWindow': '9:00 AM - 8:00 PM',
-    'quietHours': '8:00 PM - 8:00 AM',
-    'emergencyOverride': 'Yes',
-    'visibility': ['safety', 'sos', 'location', 'messages', 'medications'],
-    'alertTypes': [
-      'missed_check_in',
-      'medication',
-      'location',
-      'sos',
-      'health',
-    ],
-  };
-}
-
-Map<String, dynamic> defaultBusinessOnboardingPayload() {
-  return {
-    'legalName': 'CareRide Mobility LLC',
-    'dba': 'CareRide',
-    'ownerName': 'Rohit Mehta',
-    'phone': '+13035550222',
-    'email': 'operations@careride.example.com',
-    'website': 'https://careride.example.com',
-    'address': '8800 Mobility Way, Sunnyvale, CA 94086',
-    'businessType': 'Transportation',
-    'services': 'Local Ride, Doctor Appointment Ride, Shopping Trip',
-    'pricing': r'$25 appointment ride',
-    'serviceCatalog': [
-      {'name': 'Doctor Appointment Ride', 'price': r'$25 one way'},
-      {'name': 'Senior Shopping Trip', 'price': r'$20 local'},
-      {'name': 'Door-to-door Assisted Ride', 'price': r'$35 local'},
-    ],
-    'serviceRadius': '15',
-    'serviceZips': '80124,80126,80129,80202',
-    'serviceBoundary': '15 miles around Sunnyvale, CA',
-    'leadTypes': ['rides', 'appointments', 'shopping'],
-    'communication': ['sms', 'email', 'phone', 'app'],
-    'maxLeads': '10',
-    'leadRules': {
-      'maxLeadsPerDay': 10,
-      'acceptUrgentRequests': true,
-      'acceptRecurringRequests': true,
+    'resident': {
+      'fullName': fullName,
+      'phone': phone,
+      'email': email,
+      'address': address,
+      'city': city,
+      'state': state,
+      'zip': zip,
+      'age': age,
+      'careNeeds': careNeeds,
+      if (photoBase64 != null) 'photoBase64': photoBase64,
     },
-    'verificationDocs': ['business_license', 'insurance', 'driver_license'],
+    'source': 'flutter_onboarding',
+  };
+}
+
+Map<String, dynamic> buildTrustCircleOnboardingPayload({
+  required String fullName,
+  required String phone,
+  required String email,
+  required String relationship,
+  required String inviteCode,
+}) {
+  return {
+    'fullName': fullName,
+    'phone': phone,
+    'email': email,
+    'relationship': relationship,
+    'inviteCode': inviteCode,
+    'source': 'flutter_onboarding',
+  };
+}
+
+Map<String, dynamic> buildBusinessOnboardingPayload({
+  required String businessName,
+  required String ownerName,
+  required String phone,
+  required String email,
+  required String address,
+  required String serviceType,
+}) {
+  return {
+    'businessName': businessName,
+    'ownerName': ownerName,
+    'phone': phone,
+    'email': email,
+    'address': address,
+    'serviceType': serviceType,
+    'source': 'flutter_onboarding',
   };
 }
