@@ -174,10 +174,13 @@ class BusinessPortalController extends Controller
     public function operationalModule(string $module): View
     {
         $labels = [
-            'safety' => ['Safety Center', ['resident_safe_zones', 'location_events', 'incidents']],
-            'families' => ['Families', ['trusted_connections', 'conversations', 'messages']],
-            'billing' => ['Billing', ['generated_reports', 'exports']],
-            'settings' => ['Settings', ['tenants', 'tenant_locations', 'notification_rules']],
+            'safety'         => ['Safety Center',       ['resident_safe_zones', 'location_events', 'sos_incidents', 'incidents']],
+            'families'       => ['Families',             ['trusted_connections', 'conversations', 'messages']],
+            'billing'        => ['Billing & Payments',   ['subscriptions', 'invoices', 'payments', 'payouts']],
+            'settings'       => ['Settings',             ['tenants', 'tenant_locations', 'users', 'notification_rules', 'audit_logs']],
+            'calendar'       => ['Calendar',             ['bookings', 'staff_shifts', 'service_requests']],
+            'communications' => ['Communications',       ['conversations', 'messages', 'broadcasts', 'notification_logs']],
+            'marketing'      => ['Marketing Tools',      ['campaigns', 'placements', 'impressions', 'lead_events']],
         ];
 
         abort_unless(isset($labels[$module]), 404);
