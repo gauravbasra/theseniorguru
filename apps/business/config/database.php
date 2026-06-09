@@ -97,6 +97,10 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Neon SNI workaround for old libpq (e.g. Vercel PHP runtime).
+            // Set NEON_ENDPOINT_ID to the first segment of the Neon host,
+            // e.g. "ep-floral-wind-aqld35kf" — picked up by NeonAwarePostgresConnector.
+            'neon_endpoint' => env('NEON_ENDPOINT_ID'),
         ],
 
         'shared_platform' => [
@@ -115,6 +119,7 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('TSG_SHARED_DB_SSLMODE', env('DB_SSLMODE', 'require')),
+            'neon_endpoint' => env('NEON_ENDPOINT_ID'),
         ],
 
         'sqlsrv' => [
