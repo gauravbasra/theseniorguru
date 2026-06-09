@@ -6,6 +6,10 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BusinessOnboardingController;
 use App\Http\Controllers\BusinessOnboardingApiController;
 use App\Http\Controllers\BusinessPortalApiController;
+use App\Http\Controllers\OnboardingWizardController;
+use App\Http\Controllers\ResidentImportController;
+use App\Http\Controllers\ResidentInviteController;
+use App\Http\Controllers\BusinessApprovalController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function (): void {
@@ -18,6 +22,23 @@ Route::middleware('guest')->group(function (): void {
 Route::middleware('auth')->group(function (): void {
     Route::get('/approval-pending', [AuthController::class, 'pending'])->name('approval.pending');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+    // ── Onboarding Wizard (no 'approved' gate — this IS how you get approved) ──
+    Route::get('/onboarding', [OnboardingWizardController::class, 'start'])->name('onboarding.start');
+    Route::get('/onboarding/step1', [OnboardingWizardController::class, 'step1'])->name('onboarding.step1');
+    Route::post('/onboarding/step1', [OnboardingWizardController::class, 'step1Post'])->name('onboarding.step1.post');
+    Route::get('/onboarding/{profile}/step2', [OnboardingWizardController::class, 'step2'])->name('onboarding.step2');
+    Route::post('/onboarding/{profile}/step2', [OnboardingWizardController::class, 'step2Post'])->name('onboarding.step2.post');
+    Route::get('/onboarding/{profile}/step3', [OnboardingWizardController::class, 'step3'])->name('onboarding.step3');
+    Route::post('/onboarding/{profile}/step3', [OnboardingWizardController::class, 'step3Post'])->name('onboarding.step3.post');
+    Route::get('/onboarding/{profile}/step4', [OnboardingWizardController::class, 'step4'])->name('onboarding.step4');
+    Route::post('/onboarding/{profile}/step4', [OnboardingWizardController::class, 'step4Post'])->name('onboarding.step4.post');
+    Route::get('/onboarding/{profile}/step5', [OnboardingWizardController::class, 'step5'])->name('onboarding.step5');
+    Route::post('/onboarding/{profile}/step5', [OnboardingWizardController::class, 'step5Post'])->name('onboarding.step5.post');
+    Route::get('/onboarding/{profile}/step5/skip', [OnboardingWizardController::class, 'step5Skip'])->name('onboarding.step5.skip');
+    Route::get('/onboarding/{profile}/step6', [OnboardingWizardController::class, 'step6'])->name('onboarding.step6');
+    Route::post('/onboarding/{profile}/submit', [OnboardingWizardController::class, 'submit'])->name('onboarding.submit');
+    Route::get('/onboarding/{profile}/pending', [OnboardingWizardController::class, 'pending'])->name('onboarding.pending');
 
     Route::middleware('approved')->group(function (): void {
         Route::get('/', [BusinessPortalController::class, 'commandCenter'])->name('command-center');
@@ -37,8 +58,18 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/{module}', [BusinessPortalController::class, 'operationalModule'])
             ->whereIn('module', ['safety', 'families', 'billing', 'settings', 'calendar', 'communications', 'marketing'])
             ->name('business.modules.operational');
+        // Legacy single-step onboarding (kept for backwards compat)
         Route::get('/onboarding/senior-living', [BusinessOnboardingController::class, 'seniorLiving'])->name('business.onboarding.senior-living');
         Route::post('/onboarding/senior-living', [BusinessOnboardingController::class, 'storeSeniorLiving'])->name('business.onboarding.senior-living.store');
+
+        // ── Resident Import & Invites ────────────────────────────────────────
+        Route::get('/residents/import', [ResidentImportController::class, 'index'])->name('residents.import');
+        Route::post('/residents/import', [ResidentImportController::class, 'uploadCsv'])->name('residents.import.upload');
+        Route::get('/residents/import/template', [ResidentImportController::class, 'downloadTemplate'])->name('residents.import.template');
+        Route::get('/residents/invites', [ResidentInviteController::class, 'index'])->name('residents.invites');
+        Route::post('/residents/invites/send-all', [ResidentInviteController::class, 'sendAll'])->name('residents.invites.send-all');
+        Route::post('/residents/invites/{invite}/resend', [ResidentInviteController::class, 'resend'])->name('residents.invites.resend');
+        Route::post('/residents/invites/{invite}/mark-onboarded', [ResidentInviteController::class, 'markOnboarded'])->name('residents.invites.mark-onboarded');
 
         Route::prefix('portal-api/business/onboarding')
             ->name('api.business.onboarding.')
@@ -76,6 +107,13 @@ Route::middleware('auth')->group(function (): void {
         Route::middleware('super_admin')->group(function (): void {
             Route::get('/admin/users', [AdminUserController::class, 'index'])->name('admin.users.index');
             Route::post('/admin/users/{user}/decision', [AdminUserController::class, 'decide'])->name('admin.users.approve');
+
+            // ── Business Approval Queue ──────────────────────────────────────
+            Route::get('/admin/approvals', [BusinessApprovalController::class, 'index'])->name('admin.approvals');
+            Route::get('/admin/approvals/{profile}', [BusinessApprovalController::class, 'show'])->name('admin.approvals.detail');
+            Route::post('/admin/approvals/{profile}/approve', [BusinessApprovalController::class, 'approve'])->name('admin.approvals.approve');
+            Route::post('/admin/approvals/{profile}/reject', [BusinessApprovalController::class, 'reject'])->name('admin.approvals.reject');
+            Route::post('/admin/approvals/{profile}/under-review', [BusinessApprovalController::class, 'markUnderReview'])->name('admin.approvals.under-review');
         });
     });
 });
