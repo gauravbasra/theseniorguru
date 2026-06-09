@@ -1,5 +1,24 @@
 <?php
 
+// TEMP DEBUG ROUTE — remove after diagnosis
+Route::get('/_debug', function () {
+    try {
+        $conn = config('database.default');
+        $host = config("database.connections.{$conn}.host");
+        $tableExists = \Illuminate\Support\Facades\Schema::hasTable('business_portal_users');
+        $userCount = $tableExists ? \Illuminate\Support\Facades\DB::table('business_portal_users')->count() : 0;
+        return response()->json([
+            'connection' => $conn,
+            'host' => $host,
+            'business_portal_users_exists' => $tableExists,
+            'user_count' => $userCount,
+            'php' => PHP_VERSION,
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json(['error' => $e->getMessage(), 'class' => get_class($e)]);
+    }
+});
+
 use App\Http\Controllers\BusinessPortalController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AuthController;
