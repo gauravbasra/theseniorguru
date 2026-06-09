@@ -1,21 +1,5 @@
 <?php
 
-// TEMP DEBUG ROUTE — remove after diagnosis
-Route::get('/_debug', function () {
-    try {
-        $conn = config('database.default');
-        $host = config("database.connections.{$conn}.host");
-        $tables = \Illuminate\Support\Facades\DB::select("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
-        return response()->json([
-            'connection' => $conn,
-            'host' => $host,
-            'tables' => array_column($tables, 'tablename'),
-            'php' => PHP_VERSION,
-        ]);
-    } catch (\Throwable $e) {
-        return response()->json(['error' => $e->getMessage(), 'class' => get_class($e)]);
-    }
-});
 
 use App\Http\Controllers\BusinessPortalController;
 use App\Http\Controllers\AdminUserController;
