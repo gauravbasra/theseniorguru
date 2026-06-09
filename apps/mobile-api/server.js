@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { resolveGuruIntent, isRoutineGuruIntent } = require("./lib/guru-intents");
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
+const { slmAvailable, slmChat, slmClassifyIntent, SLM_MODEL, SLM_PROVIDER } = require("./lib/slm-client");
 const { buildDailyJourney } = require("./lib/daily-journey");
 let productionApi = null;
 if (process.env.DATABASE_URL) {
@@ -1600,28 +1601,44 @@ function routeApi(req, res) {
       state.guruTasks = state.guruTasks || [];
       const message = String(payload.message || "").trim();
       if (!message) return send(res, 400, { error: "Message is required" });
-      const resolvedIntent = resolveGuruIntent(message, {
+      const context = {
+        residentName: state.resident?.name,
+        community: state.resident?.community,
         medications: state.medications || [],
         memories: state.guruMemories || [],
-        calendarEvents: state.guruCalendarEvents || []
-      });
-      const allowRemoteFallback = process.env.GURU_ALLOW_REMOTE_AI === "1" || process.env.GURU_ALLOW_REMOTE_AI === "true";
-      let ai = {
-        provider: "local_small_language_model",
-        configured: false,
-        text: resolvedIntent.reply,
-        model: "tsg-local-intent-v1"
+        calendarEvents: state.guruCalendarEvents || [],
+        people: state.people || []
       };
-      if (!isRoutineGuruIntent(resolvedIntent.intent) && allowRemoteFallback) {
+      const resolvedIntent = resolveGuruIntent(message, context);
+      let ai = { provider: "regex_templates", configured: false, text: resolvedIntent.reply, model: "tsg-local-intent-v1" };
+
+      // Tier 1: Groq / SLM
+      const slmOn = await slmAvailable();
+      if (slmOn) {
         try {
-          ai = await callOpenAI({
-            system: buildSeniorGuruSystemPrompt({ resident: state.resident, medications: state.medications, memories: state.guruMemories, calendarEvents: state.guruCalendarEvents }),
-            messages: [{ role: "user", content: message }]
-          });
-        } catch (error) {
-          ai = { provider: "local_small_language_model", configured: false, text: resolvedIntent.reply, error: error.message, model: "tsg-local-intent-v1" };
+          const slmResult = await slmChat({ message, context });
+          ai = { provider: SLM_PROVIDER, configured: true, text: slmResult.text, model: SLM_MODEL };
+        } catch (slmErr) {
+          console.warn("slm_orchestrate_failed", slmErr.message);
         }
       }
+
+      // Tier 2: OpenAI fallback
+      if (!slmOn || !ai.configured) {
+        const allowRemote = process.env.GURU_ALLOW_REMOTE_AI === "1" || process.env.GURU_ALLOW_REMOTE_AI === "true" || process.env.GURU_REMOTE_AI_ENABLED === "true";
+        if (allowRemote) {
+          try {
+            const openAiResult = await callOpenAI({
+              system: buildSeniorGuruSystemPrompt(context),
+              messages: [{ role: "user", content: message }]
+            });
+            ai = { provider: openAiResult.provider, configured: openAiResult.configured, text: openAiResult.text, model: process.env.OPENAI_MODEL || "gpt-4o-mini" };
+          } catch (openAiErr) {
+            console.warn("openai_orchestrate_failed", openAiErr.message);
+          }
+        }
+      }
+
       let task = null;
       if (resolvedIntent.intent === "task") {
         task = { id: `guru_task_${Date.now()}`, title: resolvedIntent.taskTitle, status: "open", source: "guru_orchestrator", createdAt: new Date().toISOString() };
@@ -1634,7 +1651,7 @@ function routeApi(req, res) {
         intent: resolvedIntent.intent,
         navigateTo: resolvedIntent.navigateTo,
         provider: ai.provider,
-        model: ai.model || process.env.OPENAI_MODEL || null,
+        model: ai.model,
         createdAt: new Date().toISOString()
       };
       state.guruConversations.unshift(event);
@@ -1661,25 +1678,64 @@ function routeApi(req, res) {
       state.guruConversations = state.guruConversations || [];
       state.guruTasks = state.guruTasks || [];
       const message = String(payload.message || "").trim();
-      const resolvedIntent = resolveGuruIntent(message, {
+      if (!message) return send(res, 400, { error: "Message is required" });
+      const context = {
+        residentName: state.resident?.name,
+        community: state.resident?.community,
         medications: state.medications || [],
         memories: state.guruMemories || [],
-        calendarEvents: state.guruCalendarEvents || []
-      });
-      let intent = resolvedIntent.intent;
-      let navigateTo = resolvedIntent.navigateTo;
+        calendarEvents: state.guruCalendarEvents || [],
+        people: state.people || []
+      };
+      const resolvedIntent = resolveGuruIntent(message, context);
       let reply = resolvedIntent.reply;
-      let task = null;
+      let provider = "regex_templates";
+      let model = "tsg-local-intent-v1";
+      let aiConfigured = false;
 
-      if (intent === "task") {
+      // Tier 1: Groq / SLM
+      const slmOn = await slmAvailable();
+      if (slmOn) {
+        try {
+          const slmResult = await slmChat({ message, context });
+          reply = slmResult.text || reply;
+          provider = SLM_PROVIDER;
+          model = SLM_MODEL;
+          aiConfigured = true;
+        } catch (slmErr) {
+          console.warn("slm_chat_failed", slmErr.message);
+        }
+      }
+
+      // Tier 2: OpenAI fallback
+      if (!aiConfigured) {
+        const allowRemote = process.env.GURU_ALLOW_REMOTE_AI === "1" || process.env.GURU_ALLOW_REMOTE_AI === "true" || process.env.GURU_REMOTE_AI_ENABLED === "true";
+        if (allowRemote) {
+          try {
+            const openAiResult = await callOpenAI({
+              system: buildSeniorGuruSystemPrompt(context),
+              messages: [{ role: "user", content: message }]
+            });
+            reply = openAiResult.text || reply;
+            provider = openAiResult.provider;
+            model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+            aiConfigured = openAiResult.configured;
+          } catch (openAiErr) {
+            console.warn("openai_chat_failed", openAiErr.message);
+          }
+        }
+      }
+
+      let task = null;
+      if (resolvedIntent.intent === "task") {
         task = { id: `guru_task_${Date.now()}`, title: resolvedIntent.taskTitle, status: "open", source: "guru", createdAt: new Date().toISOString() };
         state.guruTasks.unshift(task);
       }
 
-      const event = { id: `guru_msg_${Date.now()}`, message, reply, intent, navigateTo, createdAt: new Date().toISOString() };
+      const event = { id: `guru_msg_${Date.now()}`, message, reply, intent: resolvedIntent.intent, navigateTo: resolvedIntent.navigateTo, provider, model, createdAt: new Date().toISOString() };
       state.guruConversations.unshift(event);
       writeState(state);
-      return send(res, 200, { reply, intent, navigateTo, task, event });
+      return send(res, 200, { reply, intent: resolvedIntent.intent, navigateTo: resolvedIntent.navigateTo, task, event, aiConfigured });
     }
 
     if (req.method === "POST" && url.pathname === "/api/guru/tasks") {
