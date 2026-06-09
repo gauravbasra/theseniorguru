@@ -1,5 +1,15 @@
 <?php
 
+Route::get('/_dbcheck', function () {
+    try {
+        $h = config('database.connections.pgsql.host');
+        $url = config('database.connections.pgsql.url');
+        $ok = \Illuminate\Support\Facades\Schema::hasTable('business_portal_users');
+        return response()->json(['host'=>$h,'url_set'=>(bool)$url,'table'=>$ok]);
+    } catch(\Throwable $e) {
+        return response()->json(['error'=>$e->getMessage(),'host'=>config('database.connections.pgsql.host'),'url_set'=>(bool)config('database.connections.pgsql.url')]);
+    }
+});
 
 use App\Http\Controllers\BusinessPortalController;
 use App\Http\Controllers\AdminUserController;
