@@ -149,14 +149,28 @@ function buildGuruChatPrompt(context = {}) {
     "Respond in 1-3 short, calm sentences. Never diagnose conditions.",
     "For emergencies (chest pain, breathing trouble, fall, severe pain) always say: call 911 or press SOS.",
     "When you cannot help, say so simply and suggest who can.",
+    "If the user asks about weather or conditions and live weather data is provided below, USE IT — do not say 'check the weather app'.",
   ];
-  const { residentName, community, medications = [], people = [], memories = [], calendarEvents = [] } = context;
+  const { residentName, community, medications = [], people = [], memories = [], calendarEvents = [], weatherSummary, liveWeather } = context;
   if (residentName) lines.push(`You are speaking with ${residentName}${community ? ` who lives at ${community}` : ""}.`);
   const pending = medications.filter(m => m.status !== "taken");
   if (pending.length) lines.push(`Pending medications today: ${pending.map(m => m.name).join(", ")}.`);
   if (people.length) lines.push(`Trusted circle: ${people.slice(0, 4).map(p => p.name).join(", ")}.`);
   if (memories.length) lines.push(`Memory notes: ${memories.slice(0, 3).map(m => m.value || m.title).filter(Boolean).join("; ")}.`);
   if (calendarEvents?.length) lines.push(`Next appointment: ${calendarEvents[0].title} at ${calendarEvents[0].startsAt}.`);
+  // Live weather — injected by weather-service.js when the query is weather-related
+  if (weatherSummary) {
+    lines.push("\n--- LIVE WEATHER DATA (use this to answer weather questions) ---");
+    lines.push(weatherSummary);
+    lines.push("--- END WEATHER DATA ---");
+  } else if (liveWeather) {
+    // Fallback: raw liveWeather object
+    const cur = liveWeather.current;
+    const loc = liveWeather.location;
+    if (cur && loc) {
+      lines.push(`\nLive weather for ${loc.city}, ${loc.stateAbbr}: ${cur.condition}, ${cur.tempF}°F (feels ${cur.feelsLikeF}°F), rain chance ${cur.precipChancePct}%, wind ${cur.windMph} mph.`);
+    }
+  }
   return lines.join("\n");
 }
 

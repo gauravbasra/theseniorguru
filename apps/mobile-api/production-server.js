@@ -3,6 +3,7 @@ const { resolveGuruIntent, isRoutineGuruIntent, localCacheKey } = require("./lib
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
 const { slmAvailable, callSLM, slmChat, slmClassifyIntent, slmWellnessNarrative, slmSafetyRecommendation, slmWeatherAdvice, SLM_MODEL, SLM_PROVIDER } = require("./lib/slm-client");
 const { lookupDrug, checkInteractions, getBeersCaution, daysOfSupplyRemaining, refillNeeded, askMedicationQuestion, DRUG_REFERENCE } = require("./lib/medication-engine");
+const { getWeatherForZip, getWeatherForLatLon, buildWeatherSummary, isWeatherQuery } = require("./lib/weather-service");
 
 const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
@@ -1600,6 +1601,33 @@ function createProductionApi(pool) {
 
   async function resolveGuruWithLocalFirst({ req, user, resident, message, context, route, screen, forcedIntent = null }) {
     const startedAt = Date.now();
+
+    // ── Live weather injection ──────────────────────────────────────────────
+    // When the message is weather-related and we have a zip or GPS, fetch real
+    // weather from Open-Meteo + Zippopotam.us and inject into context/system prompt.
+    let liveWeather = null;
+    if (isWeatherQuery(message)) {
+      try {
+        // Try zip from explicit payload, then resident address, then context
+        const zip = context?.zip || context?.resident?.zip || resident?.zip ||
+                    (resident?.address || "").match(/\b\d{5}\b/)?.[0] || null;
+        const lat = context?.lat || resident?.lat;
+        const lon = context?.lon || resident?.lng || resident?.lon;
+
+        if (zip) {
+          liveWeather = await getWeatherForZip(zip);
+        } else if (lat && lon) {
+          liveWeather = await getWeatherForLatLon(lat, lon);
+        }
+      } catch (wxErr) {
+        console.warn("weather_fetch_failed:", wxErr.message);
+      }
+      if (liveWeather) {
+        // Attach to context so slmChat/buildGuruChatPrompt can see it
+        context = { ...context, liveWeather };
+      }
+    }
+
     const regexResolved = resolveGuruIntent(message, context);
     if (forcedIntent) {
       regexResolved.intent = forcedIntent;
@@ -1645,7 +1673,12 @@ function createProductionApi(pool) {
     // Tier 1: SLM reply
     if (slmOn) {
       try {
-        const slmResult = await slmChat({ message, context, temperature: 0.45 });
+        // Inject live weather summary into context for slmChat system prompt
+        const weatherSummary = liveWeather ? buildWeatherSummary(liveWeather) : null;
+        const slmContext = weatherSummary
+          ? { ...context, weatherSummary }
+          : context;
+        const slmResult = await slmChat({ message, context: slmContext, temperature: 0.45 });
         await recordGuruModelInvocation(resident?.id, SLM_PROVIDER, resolvedIntent.intent, route, {
           tenantId,
           screen,
@@ -2889,6 +2922,27 @@ function createProductionApi(pool) {
 
   async function route(req, payload, url) {
     req.requestId = req.headers["x-request-id"] || crypto.randomUUID();
+
+    // GET /api/weather?zip=80126  OR  ?lat=39.55&lon=-104.97
+    if (req.method === "GET" && url.pathname === "/api/weather") {
+      const zip = url.searchParams.get("zip") || url.searchParams.get("zipCode") || null;
+      const lat = url.searchParams.get("lat") ? parseFloat(url.searchParams.get("lat")) : null;
+      const lon = url.searchParams.get("lon") || url.searchParams.get("lng");
+      const lonF = lon ? parseFloat(lon) : null;
+      let weatherData = null;
+      if (zip) {
+        weatherData = await getWeatherForZip(zip);
+      } else if (lat && lonF) {
+        const wx = await getWeatherForLatLon(lat, lonF);
+        weatherData = wx ? { location: null, ...wx } : null;
+      } else {
+        const e = new Error("Provide ?zip=XXXXX or ?lat=XX&lon=YY"); e.status = 400; throw e;
+      }
+      if (!weatherData) {
+        const e = new Error("Could not resolve location or fetch weather"); e.status = 404; throw e;
+      }
+      return weatherData;
+    }
 
     if (req.method === "GET" && url.pathname === "/api/slm/status") {
       const available = await slmAvailable();
@@ -8064,12 +8118,23 @@ function createProductionApi(pool) {
       const memories = (await query(`SELECT * FROM guru_memories WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident?.id || null])).rows;
       const medications = (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident?.id || null])).rows;
       const contextIntelligence = resident ? await buildContextIntelligenceState(resident, evaluateHealthVitals([])) : {};
+      const callerZipO = payload.zip || payload.zipCode || null;
       const guru = await resolveGuruWithLocalFirst({
         req,
         user,
         resident,
         message,
-        context: { resident, medications, memories, contextIntelligence },
+        context: {
+          resident,
+          medications,
+          memories,
+          contextIntelligence,
+          residentName: resident?.name || resident?.display_name || null,
+          community: resident?.community || null,
+          zip: callerZipO || resident?.zip || (resident?.address || "").match(/\b\d{5}\b/)?.[0] || null,
+          lat: payload.lat || resident?.lat || null,
+          lon: payload.lon || payload.lng || resident?.lng || null,
+        },
         route: "/api/guru/orchestrate",
         screen: payload.screen || null
       });
@@ -8111,12 +8176,25 @@ function createProductionApi(pool) {
       const message = String(payload.message || "").trim();
       const medications = resident ? (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident.id])).rows : [];
       const contextIntelligence = resident ? await buildContextIntelligenceState(resident, evaluateHealthVitals([])) : {};
+      // Allow caller to pass their zip code or GPS for weather-aware responses
+      const callerZip = payload.zip || payload.zipCode || null;
+      const callerLat = payload.lat || null;
+      const callerLon = payload.lon || payload.lng || null;
       const guru = await resolveGuruWithLocalFirst({
         req,
         user,
         resident,
         message,
-        context: { resident, medications, contextIntelligence },
+        context: {
+          resident,
+          medications,
+          contextIntelligence,
+          residentName: resident?.name || resident?.display_name || null,
+          community: resident?.community || null,
+          zip: callerZip || resident?.zip || (resident?.address || "").match(/\b\d{5}\b/)?.[0] || null,
+          lat: callerLat || resident?.lat || null,
+          lon: callerLon || resident?.lng || resident?.lon || null,
+        },
         route: "/api/guru/chat",
         screen: payload.screen || null
       });

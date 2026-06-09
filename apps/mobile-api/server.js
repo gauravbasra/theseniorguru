@@ -4,6 +4,7 @@ const path = require("path");
 const { resolveGuruIntent, isRoutineGuruIntent } = require("./lib/guru-intents");
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
 const { slmAvailable, slmChat, slmClassifyIntent, SLM_MODEL, SLM_PROVIDER } = require("./lib/slm-client");
+const { getWeatherForZip, buildWeatherSummary, isWeatherQuery } = require("./lib/weather-service");
 const { buildDailyJourney } = require("./lib/daily-journey");
 let productionApi = null;
 if (process.env.DATABASE_URL) {
@@ -1679,13 +1680,24 @@ function routeApi(req, res) {
       state.guruTasks = state.guruTasks || [];
       const message = String(payload.message || "").trim();
       if (!message) return send(res, 400, { error: "Message is required" });
+
+      // Resolve zip from payload or stored state
+      const chatZip = payload.zip || payload.zipCode || state.resident?.zip || null;
+
+      let liveWeather = null;
+      if (isWeatherQuery(message) && chatZip) {
+        try { liveWeather = await getWeatherForZip(chatZip); } catch {}
+      }
+
       const context = {
         residentName: state.resident?.name,
         community: state.resident?.community,
         medications: state.medications || [],
         memories: state.guruMemories || [],
         calendarEvents: state.guruCalendarEvents || [],
-        people: state.people || []
+        people: state.people || [],
+        weatherSummary: liveWeather ? buildWeatherSummary(liveWeather) : null,
+        liveWeather
       };
       const resolvedIntent = resolveGuruIntent(message, context);
       let reply = resolvedIntent.reply;

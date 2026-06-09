@@ -2356,6 +2356,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
               'residentName': widget.state?.residentName ?? '',
               'community': widget.state?.community ?? '',
               'history': history,
+              if (widget.state?.zip != null) 'zip': widget.state!.zip,
               if (intent != null) 'intent': intent,
               if (intent != null) 'serviceCategory': intent,
             })

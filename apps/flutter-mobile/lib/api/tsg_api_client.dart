@@ -215,6 +215,7 @@ class ResidentAppState {
     required this.services,
     required this.people,
     required this.raw,
+    this.zip,
   });
 
   final String residentId;
@@ -224,6 +225,8 @@ class ResidentAppState {
   final List<ResidentService> services;
   final List<ResidentPerson> people;
   final Map<String, dynamic> raw;
+  /// Zip code parsed from the resident address — used for live weather queries.
+  final String? zip;
 
   factory ResidentAppState.fromJson(Map<String, dynamic> json) {
     final resident = mapValue(json['resident']);
@@ -231,10 +234,17 @@ class ResidentAppState {
     if (residentId.isEmpty) {
       throw const TsgApiException('API response missing resident id', 0);
     }
+    // Extract zip from explicit field or parse from address string
+    final rawZip = stringValue(resident['zip'] ?? resident['zipCode'] ?? resident['postal_code']);
+    final addressStr = stringValue(resident['address'] ?? resident['full_address']);
+    final zipFromAddress = RegExp(r'\b(\d{5})\b').firstMatch(addressStr)?.group(1);
+    final resolvedZip = rawZip.isNotEmpty ? rawZip : zipFromAddress;
+
     return ResidentAppState(
       residentId: residentId,
       residentName: stringValue(resident['name'] ?? resident['display_name']),
       community: stringValue(resident['community']),
+      zip: resolvedZip,
       medications: listOfMaps(
         json['medications'],
       ).map(ResidentMedication.fromJson).toList(),
@@ -380,8 +390,22 @@ class TsgApiClient {
   Future<Map<String, dynamic>> sendGuruMessage(
     String message, {
     String screen = 'guru',
+    String? zip,
+    double? lat,
+    double? lon,
   }) {
-    return post('/api/guru/chat', {'message': message, 'screen': screen});
+    return post('/api/guru/chat', {
+      'message': message,
+      'screen': screen,
+      if (zip != null && zip.isNotEmpty) 'zip': zip,
+      if (lat != null) 'lat': lat,
+      if (lon != null) 'lon': lon,
+    });
+  }
+
+  /// Fetch live weather for a zip code. Returns current + 3-day forecast.
+  Future<Map<String, dynamic>> getWeather(String zip) {
+    return get('/api/weather?zip=$zip');
   }
 
   Future<Map<String, dynamic>> createRideBooking({
