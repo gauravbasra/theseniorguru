@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { resolveGuruIntent, isRoutineGuruIntent, localCacheKey } = require("./lib/guru-intents");
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
 const { slmAvailable, slmChat, slmClassifyIntent, slmWellnessNarrative, slmSafetyRecommendation, slmWeatherAdvice, SLM_MODEL, SLM_PROVIDER } = require("./lib/slm-client");
+const { lookupDrug, checkInteractions, getBeersCaution, daysOfSupplyRemaining, refillNeeded, askMedicationQuestion, DRUG_REFERENCE } = require("./lib/medication-engine");
 
 const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
@@ -4879,25 +4880,68 @@ function createProductionApi(pool) {
          RETURNING id, name, condition, strength, dose_quantity, dose_time, frequency, remaining_count, refill_threshold, prescriber, pharmacy, status, last_confirmed_at`,
         [medication.id, resident.id]
       )).rows[0];
+      // Log dose to medication_dose_log
+      await query(
+        `INSERT INTO medication_dose_log (medication_id, resident_id, dose_status, confirmed_at, quantity_taken, remaining_after, source)
+         VALUES ($1,$2,'taken',now(),1,$3,'resident_app')`,
+        [updated.id, resident.id, Number(updated.remaining_count)]
+      ).catch(() => {});
+
       await query(
         `INSERT INTO medication_inventory_events (medication_id, resident_id, event_type, quantity_delta, remaining_after, reason)
          VALUES ($1,$2,'dose_confirmed',-1,$3,'Resident confirmed medication dose')`,
         [updated.id, resident.id, Number(updated.remaining_count)]
-      );
-      if (Number(updated.remaining_count) <= Number(updated.refill_threshold)) {
-        await query(
-          `INSERT INTO notifications (user_id, channel, title, body, status)
-           VALUES ($1,'push','Medication refill needed',$2,'queued')`,
-          [user.id, `${updated.name} ${updated.strength || ""} is at ${updated.remaining_count} remaining. Please request a refill or confirm pharmacy support.`.trim()]
-        );
+      ).catch(() => {});
+
+      // Smart refill: calculate days of supply, alert at 7 days
+      const daysLeft = daysOfSupplyRemaining(Number(updated.remaining_count), updated.frequency);
+      if (daysLeft <= 7) {
+        // Only send reminder once per 24h
+        const alreadySent = (await query(
+          `SELECT id FROM medications WHERE id = $1 AND refill_reminder_sent_at > now() - interval '24 hours'`,
+          [updated.id]
+        )).rows[0];
+        if (!alreadySent) {
+          await query(
+            `UPDATE medications SET refill_reminder_sent_at = now() WHERE id = $1`, [updated.id]
+          );
+          const urgency = daysLeft <= 2 ? "🚨 URGENT:" : "⚠️";
+          await query(
+            `INSERT INTO notifications (user_id, channel, title, body, status)
+             VALUES ($1,'push',$2,$3,'queued')`,
+            [user.id,
+             `${urgency} Refill Needed — ${updated.name}`,
+             `${updated.name} ${updated.strength || ""} has ${updated.remaining_count} doses left — about ${daysLeft} day${daysLeft !== 1 ? "s" : ""}. Tap to request a refill.`]
+          );
+          // Auto-create a refill request if only 2 days left and no pending request
+          if (daysLeft <= 2) {
+            const pendingRefill = (await query(
+              `SELECT id FROM medication_refill_requests WHERE medication_id = $1 AND status NOT IN ('completed','cancelled','failed') LIMIT 1`,
+              [updated.id]
+            )).rows[0];
+            if (!pendingRefill) {
+              await query(
+                `INSERT INTO medication_refill_requests (medication_id, resident_id, quantity_requested, remaining_at_request, auto_triggered, status)
+                 VALUES ($1,$2,30,$3,TRUE,'requested')`,
+                [updated.id, resident.id, Number(updated.remaining_count)]
+              ).catch(() => {});
+            }
+          }
+        }
       }
-      await audit(req, user, "medication_confirmed", "medication", updated.id, { name: updated.name, remainingCount: updated.remaining_count });
-      // Invalidate any cached Guru responses about medications so the resident gets current info
+
+      await audit(req, user, "medication_confirmed", "medication", updated.id, { name: updated.name, remainingCount: updated.remaining_count, daysLeft });
+      // Invalidate cached Guru responses about medications
       await query(
         `DELETE FROM ai_response_cache WHERE intent = 'medication' AND senior_id = $1`,
         [resident.id]
       ).catch(() => {});
-      return { medication: updated, alreadyTaken: false };
+      return {
+        medication: { ...updated, daysSupplyRemaining: daysLeft },
+        alreadyTaken: false,
+        daysSupplyRemaining: daysLeft,
+        refillNeeded: daysLeft <= 7
+      };
     }
 
     if (req.method === "POST" && url.pathname === "/api/medications/remind-later") {
@@ -5012,6 +5056,416 @@ function createProductionApi(pool) {
       );
       await audit(req, user, "medication_refill_requested", "medication_refill_request", refill.id, { medicationId: medication.id, businessId: business?.id || null, remainingCount: medication.remaining_count }, "info");
       return { refillRequest: refill };
+    }
+
+    // -----------------------------------------------------------------------
+    // SMART MEDICATION MANAGEMENT ENDPOINTS
+    // -----------------------------------------------------------------------
+
+    // GET /api/medications/dashboard  — full medication dashboard for resident
+    if (req.method === "GET" && url.pathname === "/api/medications/dashboard") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+      const meds = (await query(
+        `SELECT m.*,
+                CASE WHEN m.remaining_count <= 0 THEN 'out_of_stock'
+                     WHEN m.remaining_count <= m.refill_threshold THEN 'refill_needed'
+                     WHEN m.remaining_count <= m.refill_threshold * 2 THEN 'refill_soon'
+                     ELSE 'sufficient' END AS inventory_status,
+                (SELECT status FROM medication_refill_requests r
+                 WHERE r.medication_id = m.id ORDER BY r.requested_at DESC LIMIT 1) AS latest_refill_status
+         FROM medications m
+         WHERE m.resident_id = $1 AND (m.is_active = TRUE OR m.is_active IS NULL)
+         ORDER BY m.dose_time NULLS LAST, m.name`,
+        [resident.id]
+      )).rows;
+
+      // Enrich each medication with drug reference data + interaction flags
+      const enriched = meds.map(m => {
+        const ref = lookupDrug(m.name);
+        const days = daysOfSupplyRemaining(m.remaining_count, m.frequency);
+        return {
+          ...m,
+          daysSupplyRemaining: days,
+          refillNeeded: refillNeeded(m.remaining_count, m.frequency),
+          drugInfo: ref ? {
+            drugClass: ref.class,
+            sideEffects: ref.sideEffects,
+            beersListCaution: ref.beersListCaution || false,
+            narrowTherapeuticIndex: ref.narrowTherapeuticIndex || false,
+            renalCaution: ref.renalCaution || false,
+            indication: ref.indication
+          } : null
+        };
+      });
+
+      // Check interactions across all active medications
+      const interactions = checkInteractions(meds.map(m => m.name));
+
+      // Active refill requests
+      const refillRequests = (await query(
+        `SELECT r.*, m.name AS medication_name, m.strength
+         FROM medication_refill_requests r
+         JOIN medications m ON m.id = r.medication_id
+         WHERE r.resident_id = $1 AND r.status NOT IN ('completed','cancelled')
+         ORDER BY r.requested_at DESC LIMIT 10`,
+        [resident.id]
+      )).rows;
+
+      // Unacknowledged interaction alerts
+      const interactionAlerts = (await query(
+        `SELECT * FROM medication_interaction_alerts
+         WHERE resident_id = $1 AND acknowledged = FALSE
+         ORDER BY severity DESC, created_at DESC`,
+        [resident.id]
+      )).rows;
+
+      // Recent dose log (last 7 days)
+      const doseLog = (await query(
+        `SELECT l.*, m.name AS medication_name
+         FROM medication_dose_log l
+         JOIN medications m ON m.id = l.medication_id
+         WHERE l.resident_id = $1 AND l.created_at >= now() - interval '7 days'
+         ORDER BY l.created_at DESC LIMIT 50`,
+        [resident.id]
+      )).rows;
+
+      // Today's adherence summary
+      const todayTaken = (await query(
+        `SELECT count(*)::int FROM medication_dose_log
+         WHERE resident_id = $1 AND dose_status = 'taken' AND created_at >= current_date`,
+        [resident.id]
+      )).rows[0].count;
+
+      return {
+        medications: enriched,
+        interactions,
+        interactionAlerts,
+        refillRequests,
+        doseLog,
+        summary: {
+          total: meds.length,
+          refillNeeded: enriched.filter(m => m.refillNeeded).length,
+          outOfStock: enriched.filter(m => m.inventory_status === "out_of_stock").length,
+          interactionWarnings: interactions.length,
+          todayTaken,
+          adherenceToday: meds.length > 0 ? Math.round((todayTaken / meds.length) * 100) : 100
+        }
+      };
+    }
+
+    // POST /api/medications/add  — add medication with auto drug-info enrichment + interaction check
+    if (req.method === "POST" && url.pathname === "/api/medications/add") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+
+      const name = String(payload.name || "").trim();
+      if (!name) { const e = new Error("Medication name is required"); e.status = 400; throw e; }
+
+      // Look up drug reference
+      const ref = lookupDrug(name);
+      const beersCaution = getBeersCaution(name);
+
+      // Upsert medication
+      const existing = (await query(
+        `SELECT id FROM medications WHERE resident_id = $1 AND lower(name) = lower($2) AND (is_active = TRUE OR is_active IS NULL) LIMIT 1`,
+        [resident.id, name]
+      )).rows[0];
+
+      let med;
+      if (existing) {
+        med = (await query(
+          `UPDATE medications SET
+             condition = COALESCE($1, condition), strength = COALESCE($2, strength),
+             dose_quantity = COALESCE($3, dose_quantity), dose_time = COALESCE($4, dose_time),
+             frequency = COALESCE($5, frequency), remaining_count = COALESCE($6, remaining_count),
+             refill_threshold = COALESCE($7, refill_threshold), prescriber = COALESCE($8, prescriber),
+             pharmacy = COALESCE($9, pharmacy), generic_name = COALESCE($10, generic_name),
+             drug_class = COALESCE($11, drug_class), side_effects = COALESCE($12, side_effects),
+             beers_list_caution = $13, special_instructions = COALESCE($14, special_instructions),
+             start_date = COALESCE($15, start_date), is_active = TRUE, updated_at = now()
+           WHERE id = $16 RETURNING *`,
+          [payload.condition, payload.strength, payload.doseQuantity, payload.time || payload.doseTime,
+           payload.frequency, payload.remaining ?? payload.remainingCount, payload.refillThreshold,
+           payload.prescriber, payload.pharmacy, ref?.generic || null, ref?.class || null,
+           ref?.sideEffects || null, beersCaution, payload.specialInstructions,
+           payload.startDate || null, existing.id]
+        )).rows[0];
+      } else {
+        med = (await query(
+          `INSERT INTO medications (resident_id, name, condition, strength, dose_quantity, dose_time,
+             frequency, remaining_count, refill_threshold, prescriber, pharmacy, generic_name,
+             drug_class, side_effects, beers_list_caution, special_instructions, start_date, status, is_active)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'pending',TRUE)
+           RETURNING *`,
+          [resident.id, name, payload.condition || ref?.indication || null,
+           payload.strength || null, payload.doseQuantity || 1, payload.time || payload.doseTime || null,
+           payload.frequency || "Once daily", payload.remaining ?? payload.remainingCount ?? 30,
+           payload.refillThreshold || 7, payload.prescriber || null, payload.pharmacy || null,
+           ref?.generic || null, ref?.class || null, ref?.sideEffects || null,
+           beersCaution, payload.specialInstructions || null, payload.startDate || null]
+        )).rows[0];
+      }
+
+      // Check interactions with existing medications
+      const allMeds = (await query(
+        `SELECT name FROM medications WHERE resident_id = $1 AND (is_active = TRUE OR is_active IS NULL) AND id != $2`,
+        [resident.id, med.id]
+      )).rows.map(r => r.name);
+
+      const interactions = checkInteractions([name, ...allMeds]);
+      const newInteractions = interactions.filter(i =>
+        i.drugA.toLowerCase().includes(name.toLowerCase()) ||
+        i.drugB.toLowerCase().includes(name.toLowerCase())
+      );
+
+      // Persist interaction alerts
+      for (const ix of newInteractions) {
+        await query(
+          `INSERT INTO medication_interaction_alerts (resident_id, drug_a, drug_b, severity, description)
+           VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+          [resident.id, ix.drugA.toLowerCase(), ix.drugB.toLowerCase(), ix.severity, ix.description]
+        ).catch(() => {});
+      }
+
+      // Notify for high-severity interactions
+      const highRisk = newInteractions.filter(i => i.severity === "HIGH");
+      if (highRisk.length) {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','⚠️ Drug Interaction Alert',$2,'queued')`,
+          [user.id, `${name} has a HIGH-risk interaction with: ${highRisk.map(i => i.drugA === name ? i.drugB : i.drugA).join(", ")}. Please review with your doctor.`]
+        );
+      }
+
+      // Beers list warning for seniors
+      if (beersCaution) {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','Medication Safety Note',$2,'queued')`,
+          [user.id, `${name} is on the Beers List — it may cause falls, confusion, or other serious effects in older adults. Ask your doctor if there's a safer alternative.`]
+        );
+      }
+
+      await audit(req, user, "medication_added", "medication", med.id, { name, interactions: newInteractions.length });
+      return {
+        medication: { ...med, daysSupplyRemaining: daysOfSupplyRemaining(med.remaining_count, med.frequency) },
+        drugInfo: ref ? { drugClass: ref.class, sideEffects: ref.sideEffects, indication: ref.indication, beersListCaution: beersCaution } : null,
+        interactions: newInteractions,
+        warnings: [
+          ...highRisk.map(i => ({ type: "drug_interaction", severity: "HIGH", message: `${i.drugA} + ${i.drugB}: ${i.description}` })),
+          ...(beersCaution ? [{ type: "beers_list", severity: "MODERATE", message: `${name} is on the Beers Criteria list for seniors. Discuss alternatives with your doctor.` }] : [])
+        ]
+      };
+    }
+
+    // GET /api/medications/lookup?name=lisinopril  — drug reference lookup
+    if (req.method === "GET" && url.pathname === "/api/medications/lookup") {
+      const name = url.searchParams.get("name") || "";
+      if (!name) { const e = new Error("name is required"); e.status = 400; throw e; }
+      const ref = lookupDrug(name);
+      if (!ref) return { found: false, name };
+      return {
+        found: true,
+        generic: ref.generic,
+        brandNames: ref.brand,
+        drugClass: ref.class,
+        indication: ref.indication,
+        sideEffects: ref.sideEffects,
+        knownInteractions: ref.interactions || [],
+        beersListCaution: ref.beersListCaution || false,
+        narrowTherapeuticIndex: ref.narrowTherapeuticIndex || false,
+        renalCaution: ref.renalCaution || false
+      };
+    }
+
+    // POST /api/medications/check-interactions  — check a list of drug names for interactions
+    if (req.method === "POST" && url.pathname === "/api/medications/check-interactions") {
+      const names = Array.isArray(payload.medications) ? payload.medications.map(String) : [];
+      if (names.length < 2) { const e = new Error("At least 2 medication names required"); e.status = 400; throw e; }
+      const interactions = checkInteractions(names);
+      return { medications: names, interactions, hasHighRisk: interactions.some(i => i.severity === "HIGH") };
+    }
+
+    // POST /api/medications/ask  — Groq-powered medication Q&A
+    if (req.method === "POST" && url.pathname === "/api/medications/ask") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const resident = await getResidentForUser(user);
+      const message = String(payload.message || payload.question || "").trim();
+      if (!message) { const e = new Error("message is required"); e.status = 400; throw e; }
+      const meds = resident ? (await query(
+        `SELECT name, strength, frequency FROM medications WHERE resident_id = $1 AND (is_active = TRUE OR is_active IS NULL)`,
+        [resident.id]
+      )).rows : [];
+      const answer = await askMedicationQuestion(message, meds, resident?.name || null);
+      return { question: message, answer: answer.text, provider: answer.provider, model: answer.model };
+    }
+
+    // POST /api/medications/side-effects  — report a side effect
+    if (req.method === "POST" && url.pathname === "/api/medications/side-effects") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+      const med = (await query(
+        `SELECT id, name FROM medications WHERE id = $1 AND resident_id = $2`,
+        [required(payload.medicationId, "medicationId"), resident.id]
+      )).rows[0];
+      if (!med) { const e = new Error("Medication not found"); e.status = 404; throw e; }
+      const report = (await query(
+        `INSERT INTO medication_side_effect_reports (medication_id, resident_id, symptom, severity, onset_date, notes)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [med.id, resident.id, required(payload.symptom, "symptom"), payload.severity || "mild",
+         payload.onsetDate || null, payload.notes || null]
+      )).rows[0];
+      // Notify care team for severe side effects
+      if (payload.severity === "severe") {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','⚠️ Severe Side Effect Reported',$2,'queued')`,
+          [user.id, `You reported a severe reaction to ${med.name}: ${payload.symptom}. Please contact your doctor immediately if this is serious.`]
+        );
+      }
+      await audit(req, user, "medication_side_effect_reported", "medication", med.id, { symptom: payload.symptom, severity: payload.severity });
+      return { report };
+    }
+
+    // PATCH /api/medications/interactions/:id/acknowledge
+    if (req.method === "PATCH" && url.pathname.match(/^\/api\/medications\/interactions\/[^/]+\/acknowledge$/)) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const alertId = url.pathname.split("/")[4];
+      const resident = await getResidentForUser(user);
+      await query(
+        `UPDATE medication_interaction_alerts SET acknowledged = TRUE, acknowledged_at = now()
+         WHERE id = $1 AND resident_id = $2`,
+        [alertId, resident?.id]
+      );
+      return { ok: true };
+    }
+
+    // GET /api/medications/refill-providers  — list available refill providers for community
+    if (req.method === "GET" && url.pathname === "/api/medications/refill-providers") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      const providers = (await query(
+        `SELECT id, name, type, phone, website, turnaround_days
+         FROM refill_providers
+         WHERE is_active = TRUE AND (community IS NULL OR community = $1)
+         ORDER BY type, name`,
+        [resident?.community || null]
+      )).rows;
+      // Also include pharmacy businesses registered in the platform
+      const pharmacyBiz = (await query(
+        `SELECT b.id, b.name, 'platform_pharmacy' AS type, b.phone, NULL AS website, 2 AS turnaround_days
+         FROM businesses b JOIN services s ON s.business_id = b.id
+         WHERE b.status = 'approved' AND s.status = 'approved'
+           AND (lower(s.category) LIKE '%pharm%' OR lower(s.name) LIKE '%pharm%' OR lower(s.name) LIKE '%med%')
+         LIMIT 5`
+      )).rows;
+      return { providers: [...providers, ...pharmacyBiz] };
+    }
+
+    // POST /api/medications/refill-smart  — smart refill with auto provider selection + 7-day trigger
+    if (req.method === "POST" && url.pathname === "/api/medications/refill-smart") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+      const medId = payload.medicationId;
+      const med = (await query(
+        `SELECT * FROM medications WHERE id = $1 AND resident_id = $2 AND (is_active = TRUE OR is_active IS NULL)`,
+        [required(medId, "medicationId"), resident.id]
+      )).rows[0];
+      if (!med) { const e = new Error("Medication not found"); e.status = 404; throw e; }
+
+      // Find best provider
+      let providerId = payload.providerId || null;
+      if (!providerId) {
+        const prov = (await query(
+          `SELECT id FROM refill_providers WHERE is_active = TRUE AND (community IS NULL OR community = $1) ORDER BY turnaround_days ASC LIMIT 1`,
+          [resident.community || null]
+        )).rows[0];
+        providerId = prov?.id || null;
+      }
+
+      const refill = (await query(
+        `INSERT INTO medication_refill_requests
+           (medication_id, resident_id, refill_provider_id, quantity_requested, days_supply, remaining_at_request, auto_triggered, notes, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'requested')
+         RETURNING *`,
+        [med.id, resident.id, providerId, payload.quantityRequested || 30, payload.daysSupply || 30,
+         med.remaining_count, payload.autoTriggered === true, payload.notes || null]
+      )).rows[0];
+
+      // Update medication refill_requested_at
+      await query(`UPDATE medications SET refill_requested_at = now(), updated_at = now() WHERE id = $1`, [med.id]);
+
+      // Notify resident
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1,'push','Refill Requested',$2,'queued')`,
+        [user.id, `Refill request created for ${med.name} ${med.strength || ""}. You have ${med.remaining_count} doses remaining.`]
+      );
+
+      // Notify provider if platform pharmacy
+      if (providerId) {
+        const providerBiz = (await query(`SELECT owner_user_id, name FROM businesses WHERE id = $1`, [providerId])).rows[0];
+        if (providerBiz?.owner_user_id) {
+          await query(
+            `INSERT INTO notifications (user_id, channel, title, body, status)
+             VALUES ($1,'push','New Refill Request',$2,'queued')`,
+            [providerBiz.owner_user_id, `${resident.name} needs a refill for ${med.name} ${med.strength || ""}. ${med.remaining_count} doses remaining.`]
+          );
+        }
+      }
+
+      await audit(req, user, "medication_refill_smart", "medication_refill_request", refill.id, { medicationId: med.id, remainingCount: med.remaining_count });
+      return {
+        refillRequest: refill,
+        daysRemaining: daysOfSupplyRemaining(med.remaining_count, med.frequency),
+        message: `Refill request sent for ${med.name}. You have approximately ${daysOfSupplyRemaining(med.remaining_count, med.frequency)} days of supply remaining.`
+      };
+    }
+
+    // GET /api/medications/reference  — search the drug reference database
+    if (req.method === "GET" && url.pathname === "/api/medications/reference") {
+      const q = (url.searchParams.get("q") || "").toLowerCase().trim();
+      const results = q
+        ? DRUG_REFERENCE.filter(d =>
+            d.generic.toLowerCase().includes(q) ||
+            d.brand.some(b => b.toLowerCase().includes(q)) ||
+            (d.class || "").toLowerCase().includes(q) ||
+            (d.indication || "").toLowerCase().includes(q)
+          ).slice(0, 20)
+        : DRUG_REFERENCE.slice(0, 50);
+      return {
+        results: results.map(d => ({
+          generic: d.generic, brand: d.brand, class: d.class, indication: d.indication,
+          sideEffects: d.sideEffects, beersListCaution: d.beersListCaution || false,
+          narrowTherapeuticIndex: d.narrowTherapeuticIndex || false, renalCaution: d.renalCaution || false
+        })),
+        total: results.length
+      };
+    }
+
+    // GET /api/medications/dose-log  — dose history for a resident
+    if (req.method === "GET" && url.pathname === "/api/medications/dose-log") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+      const days = Math.min(Number(url.searchParams.get("days") || 7), 90);
+      const log = (await query(
+        `SELECT l.*, m.name AS medication_name, m.strength, m.frequency
+         FROM medication_dose_log l
+         JOIN medications m ON m.id = l.medication_id
+         WHERE l.resident_id = $1 AND l.created_at >= now() - ($2 || ' days')::interval
+         ORDER BY l.created_at DESC`,
+        [resident.id, days]
+      )).rows;
+      const adherence = log.length > 0
+        ? Math.round((log.filter(r => r.dose_status === "taken").length / log.length) * 100)
+        : 100;
+      return { log, adherencePercent: adherence, days };
     }
 
     if (req.method === "PATCH" && url.pathname.startsWith("/api/business/refill-requests/")) {
