@@ -951,9 +951,16 @@ td:first-child {
 }
 
 .status.emergency,
-.status.critical {
+.status.critical,
+.status.high {
     background: #ffe9ec;
     color: var(--red);
+}
+
+.status.normal,
+.status.low {
+    background: #e9fbf0;
+    color: var(--green);
 }
 
 .status.no,

@@ -67,8 +67,9 @@ class BusinessPortalController extends Controller
 
         return view('business.alerts.index', [
             'alerts' => $this->portal->alerts($filters),
+            'staffOptions' => $this->portal->staffRoster($filters),
             'filters' => $filters,
-            'sourceTables' => ['health_alerts', 'alert_triage_events', 'incidents', 'incident_events'],
+            'sourceTables' => ['health_alerts', 'alert_triage_events', 'incidents', 'incident_events', 'staff_tasks', 'notifications'],
         ]);
     }
 
@@ -110,8 +111,8 @@ class BusinessPortalController extends Controller
     {
         abort_unless($this->portal->userCanViewHealth($request->user()), 403);
 
-        return $this->moduleView('Vitals Monitor', 'Live vitals captured from shared health ingestion tables.', ['health_vitals', 'residents'], [
-            ['heading' => 'Live readings', 'rows' => collect($this->portal->liveVitals($this->filters($request)))->map(fn ($row) => ['label' => $row->display_name ?? $row->resident_id, 'value' => ($row->heart_rate ?? 'N/A').' bpm', 'meta' => $row->captured_at ?? null])],
+        return $this->moduleView('Vitals Monitor', 'Live vitals captured from shared health ingestion tables.', ['health_vitals', 'residents', 'tenant_location_resident_assignments'], [
+            ['heading' => 'Live readings', 'rows' => collect($this->portal->liveVitals($this->filters($request)))->map(fn ($row) => ['label' => ($row->display_name ?? $row->resident_id).($row->room_number ? ' · Room '.$row->room_number : ''), 'value' => ($row->heart_rate ?? 'N/A').' bpm', 'meta' => $row->captured_at ?? null])],
         ]);
     }
 
@@ -166,9 +167,28 @@ class BusinessPortalController extends Controller
 
     public function staff(Request $request): View
     {
-        return $this->moduleView('Staff', 'Staff tasks and care operations work queue from shared PostgreSQL.', ['staff_profiles', 'staff_assignments', 'staff_tasks'], [
-            ['heading' => 'Open staff tasks', 'rows' => collect($this->portal->staffTasks($this->filters($request)))->map(fn ($row) => ['label' => $row->title ?? $row->id, 'value' => $row->status ?? 'open', 'meta' => $row->priority ?? null])],
+        $filters = $this->filters($request);
+
+        return view('business.staff.index', [
+            'roster' => $this->portal->staffRoster($filters),
+            'tasks' => $this->portal->staffWorkQueue($filters),
+            'filters' => $filters,
+            'sourceTables' => ['staff_profiles', 'staff_assignments', 'staff_tasks', 'notifications', 'incidents'],
         ]);
+    }
+
+    public function staffTaskAction(Request $request, string $task): RedirectResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'in:accept,resolve,snooze,escalate'],
+            'note' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $this->portal->staffTaskAction($task, $validated, $request->user()?->id);
+
+        return redirect()
+            ->route('business.staff.index')
+            ->with('status', 'Staff task updated in shared PostgreSQL.');
     }
 
     public function operationalModule(string $module): View

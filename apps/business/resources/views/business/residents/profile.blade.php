@@ -4,6 +4,8 @@
     $timeline = collect($profile['timeline'] ?? []);
     $latestRisk = $profile['latest_risk'] ?? null;
     $latestVitals = $profile['latest_vitals'] ?? null;
+    $escalationMatrix = collect($profile['escalation_matrix'] ?? []);
+    $activeAssignment = $assignments->firstWhere('status', 'active') ?? $assignments->first();
     $formatCareLevel = fn ($value) => \Illuminate\Support\Str::of((string) $value)->replace('_', ' ')->title();
 @endphp
 
@@ -25,7 +27,12 @@
             <span class="avatar">{{ strtoupper(substr($resident->display_name ?? 'R', 0, 2)) }}</span>
             <div>
                 <h2>{{ $resident->display_name ?? 'Resident' }}</h2>
-                <p>{{ $resident->age ?? '—' }} years old · {{ $resident->email ?? 'No email' }} · {{ $resident->phone ?? 'No phone' }}</p>
+                <p>
+                    {{ $resident->age ?? '—' }} years old
+                    · Room {{ $activeAssignment->room_number ?? '—' }}
+                    · {{ $resident->email ?? 'No email' }}
+                    · {{ $resident->phone ?? 'No phone' }}
+                </p>
             </div>
         </div>
         <div class="source-chip-row">
@@ -78,7 +85,7 @@
                 <div class="profile-row">
                     <span>{{ $latestVitals->captured_at ?? 'Latest reading' }}</span>
                     <strong>{{ $latestVitals->heart_rate ?? '—' }} bpm</strong>
-                    <small>SpO2 {{ $latestVitals->spo2 ?? '—' }}% · Steps {{ number_format($latestVitals->steps ?? 0) }}</small>
+                    <small>SpO2 {{ $latestVitals->oxygen_saturation ?? '—' }}% · Steps {{ number_format($latestVitals->steps_today ?? 0) }}</small>
                 </div>
             @elseif ($canViewHealth)
                 <p class="muted-line">No vitals have been captured for this resident.</p>
@@ -86,6 +93,31 @@
                 <p class="muted-line">Vitals are restricted for this role.</p>
             @endif
         </article>
+    </section>
+
+    <section class="panel module-panel">
+        <div class="panel-header">
+            <h2>Family Escalation Matrix</h2>
+            <span>{{ $escalationMatrix->count() }} contacts</span>
+        </div>
+        <p class="muted-line">Order in which trusted contacts are notified for an emergency that on-site staff cannot resolve.</p>
+        @forelse ($escalationMatrix as $i => $contact)
+            <div class="profile-row">
+                <span>#{{ $i + 1 }} · {{ \Illuminate\Support\Str::of((string) ($contact->connection_type ?? 'contact'))->replace('_', ' ')->title() }}</span>
+                <strong>{{ $contact->contact_name ?? 'Unnamed contact' }}</strong>
+                <small>
+                    {{ $contact->contact_phone ?? 'No phone' }} · {{ $contact->contact_email ?? 'No email' }}
+                    · status: {{ $contact->status ?? 'pending' }}
+                    · health access: {{ $contact->health_access_status ?? 'not_requested' }}
+                </small>
+            </div>
+        @empty
+            <div class="empty-state">
+                <strong>No trusted contacts are configured for this resident.</strong>
+                <span>Add a trusted family connection so emergencies can be escalated beyond on-site staff and NOC.</span>
+                <code>trusted_connections</code>
+            </div>
+        @endforelse
     </section>
 
     <section class="panel module-panel">

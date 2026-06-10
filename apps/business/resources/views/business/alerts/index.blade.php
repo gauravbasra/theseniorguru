@@ -51,7 +51,13 @@
                             <div>
                                 <h2>{{ $alert->title ?? 'Alert' }}</h2>
                                 <p>{{ $alert->body ?? 'No alert narrative was supplied.' }}</p>
-                                <small>{{ $alert->alert_type ?? 'alert' }} · {{ $alert->status ?? 'open' }} · {{ $alert->created_at ?? '' }}</small>
+                                <small>
+                                    {{ $alert->resident_name ?? 'Unknown resident' }}
+                                    @if ($alert->room_number)
+                                        · Room {{ $alert->room_number }}
+                                    @endif
+                                    · {{ $alert->alert_type ?? 'alert' }} · {{ $alert->status ?? 'open' }} · {{ $alert->created_at ?? '' }}
+                                </small>
                             </div>
                         </div>
 
@@ -62,12 +68,23 @@
                                 <select name="action" required>
                                     <option value="acknowledge">Acknowledge</option>
                                     <option value="assign">Assign to staff</option>
-                                    <option value="escalate">Escalate</option>
+                                    <option value="escalate">Escalate to NOC</option>
                                     <option value="resolve">Resolve</option>
                                     <option value="convert_to_incident">Convert to incident</option>
                                     <option value="comment">Comment only</option>
                                 </select>
                             </label>
+                            @if (! empty($staffOptions))
+                                <label>
+                                    Assign to (required for "Assign to staff")
+                                    <select name="assigned_to">
+                                        <option value="">— Select staff member —</option>
+                                        @foreach ($staffOptions as $staff)
+                                            <option value="{{ $staff->id }}">{{ $staff->display_name }} ({{ $staff->role_name }})</option>
+                                        @endforeach
+                                    </select>
+                                </label>
+                            @endif
                             <label>
                                 Note
                                 <textarea name="note" rows="2" maxlength="2000"></textarea>

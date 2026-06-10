@@ -55,6 +55,7 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/devices', [BusinessPortalController::class, 'devices'])->name('business.devices.index');
         Route::get('/reports', [BusinessPortalController::class, 'reports'])->name('business.reports.index');
         Route::get('/staff', [BusinessPortalController::class, 'staff'])->name('business.staff.index');
+        Route::post('/staff/tasks/{task}/action', [BusinessPortalController::class, 'staffTaskAction'])->name('business.staff.tasks.action');
         Route::get('/{module}', [BusinessPortalController::class, 'operationalModule'])
             ->whereIn('module', ['safety', 'families', 'billing', 'settings', 'calendar', 'communications', 'marketing'])
             ->name('business.modules.operational');

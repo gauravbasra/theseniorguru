@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class BusinessPortalPrdService
@@ -27,7 +28,7 @@ class BusinessPortalPrdService
         $residentAssignments = $this->assignedResidentsQuery($filters);
         $residentIds = $residentAssignments->pluck('resident_id')->all();
 
-        $activeAlerts = $this->healthAlertsQuery($residentIds)->where('status', '!=', 'resolved');
+        $activeAlerts = $this->healthAlertsQuery($residentIds)->where('health_alerts.status', '!=', 'resolved');
         $todayBookings = $this->bookingsQuery($residentIds)
             ->whereBetween('scheduled_for', [$now->startOfDay(), $now->endOfDay()]);
 
@@ -43,7 +44,7 @@ class BusinessPortalPrdService
                 'offline_devices' => $this->devicesQuery($residentIds)->whereIn('status', ['offline', 'battery_low', 'lost'])->count(),
             ],
             'alert_summary' => $this->severityCounts((clone $activeAlerts)->get()),
-            'recent_alerts' => (clone $activeAlerts)->orderByDesc('created_at')->limit(10)->get(),
+            'recent_alerts' => (clone $activeAlerts)->orderByDesc('health_alerts.created_at')->limit(10)->get(),
             'resident_watchlist' => $this->residentWatchlist($residentIds),
             'device_offline_list' => $this->devicesQuery($residentIds)->whereIn('status', ['offline', 'battery_low', 'lost'])->orderBy('last_seen_at')->limit(20)->get(),
             'staff_tasks_open' => $this->staffTasksQuery($filters)->whereIn('status', ['open', 'accepted', 'snoozed'])->count(),
@@ -130,6 +131,7 @@ class BusinessPortalPrdService
             'assignments' => $this->connection()->table('tenant_location_resident_assignments')->where('resident_id', $residentId)->get(),
             'safe_zones' => $this->connection()->table('resident_safe_zones')->where('resident_id', $residentId)->get(),
             'trusted_circle' => $this->connection()->table('trusted_connections')->where('resident_id', $residentId)->get(),
+            'escalation_matrix' => $this->familyEscalationMatrix($residentId),
             'timeline' => $this->residentTimeline($residentId, $includeHealth),
         ];
 
@@ -224,7 +226,9 @@ class BusinessPortalPrdService
             ]);
 
             $db->table('staff_tasks')->insert([
+                'id' => (string) Str::uuid(),
                 'tenant_id' => $this->tenantIdForResident($recommendation->senior_id),
+                'location_id' => $this->locationIdForResident($recommendation->senior_id),
                 'resident_id' => $recommendation->senior_id,
                 'source_type' => 'guru_recommendation',
                 'source_id' => $recommendationId,
@@ -232,7 +236,6 @@ class BusinessPortalPrdService
                 'title' => $recommendation->title,
                 'body' => $validated['note'] ?? $recommendation->body ?? null,
                 'status' => $validated['status'] === 'resolved' ? 'resolved' : 'open',
-                'metadata' => json_encode(['local_actor_id' => $actorId, 'guru_status' => $validated['status']]),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -250,8 +253,11 @@ class BusinessPortalPrdService
 
         return $this->connection()->table('health_vitals')
             ->leftJoin('residents', 'residents.id', '=', 'health_vitals.resident_id')
+            ->leftJoin('tenant_location_resident_assignments as tlra', function ($join): void {
+                $join->on('tlra.resident_id', '=', 'health_vitals.resident_id')->where('tlra.status', '=', 'active');
+            })
             ->whereIn('health_vitals.resident_id', $residentIds)
-            ->select('health_vitals.*', 'residents.display_name')
+            ->select('health_vitals.*', 'residents.display_name', 'tlra.room_number')
             ->orderByDesc('health_vitals.captured_at')
             ->limit(100)
             ->get()
@@ -266,8 +272,8 @@ class BusinessPortalPrdService
         $residentIds = $this->assignedResidentsQuery($filters)->pluck('resident_id')->all();
 
         return $this->healthAlertsQuery($residentIds)
-            ->orderByRaw("case severity::text when 'critical' then 1 when 'high' then 2 when 'medium' then 3 else 4 end")
-            ->orderByDesc('created_at')
+            ->orderByRaw("case health_alerts.severity::text when 'critical' then 1 when 'high' then 2 when 'medium' then 3 else 4 end")
+            ->orderByDesc('health_alerts.created_at')
             ->limit(200)
             ->get()
             ->all();
@@ -277,7 +283,7 @@ class BusinessPortalPrdService
     {
         $validated = validator($payload, [
             'action' => ['required', 'string', 'in:acknowledge,assign,escalate,resolve,convert_to_incident,comment'],
-            'assigned_to' => ['nullable', 'uuid'],
+            'assigned_to' => ['nullable', 'uuid', 'required_if:action,assign'],
             'note' => ['nullable', 'string', 'max:2000'],
         ])->validate();
 
@@ -301,6 +307,7 @@ class BusinessPortalPrdService
 
             if ($validated['action'] === 'acknowledge') {
                 $db->table('health_alerts')->where('id', $alertId)->update(['status' => 'acknowledged']);
+                $this->syncAlertStaffTask($alert, $alertId, ['status' => 'accepted']);
             }
 
             if ($validated['action'] === 'resolve') {
@@ -309,6 +316,48 @@ class BusinessPortalPrdService
                     'resolved_at' => now(),
                     'resolved_by' => null,
                 ]);
+                $this->syncAlertStaffTask($alert, $alertId, ['status' => 'resolved', 'resolved_at' => now()]);
+                $this->logResidentEvent($alert->senior_id, $this->tenantIdForResident($alert->senior_id), 'health_alert_resolved', 'Alert resolved', $validated['note'] ?? $alert->title);
+            }
+
+            if ($validated['action'] === 'assign') {
+                $task = $this->upsertAlertStaffTask($alert, $alertId, $validated['assigned_to']);
+                $db->table('health_alerts')->where('id', $alertId)->update(['status' => 'assigned']);
+
+                $staff = $db->table('staff_profiles')->where('id', $validated['assigned_to'])->first();
+                $this->notifyStaffProfile(
+                    $validated['assigned_to'],
+                    'New care task assigned: '.($alert->title ?? 'Health alert'),
+                    trim(($alert->body ?? 'A health alert needs follow-up.')." \n\nPriority: {$task->priority}".(! empty($validated['note']) ? "\nNote: {$validated['note']}" : ''))
+                );
+                $this->logResidentEvent($alert->senior_id, $this->tenantIdForResident($alert->senior_id), 'staff_task_assigned', 'Care task assigned', ($staff->display_name ?? 'A staff member')." was assigned to follow up on: {$alert->title}");
+            }
+
+            if ($validated['action'] === 'escalate') {
+                $tenantId = $this->tenantIdForResident($alert->senior_id);
+                $noc = $this->nocStaffProfile($tenantId);
+
+                $db->table('health_alerts')->where('id', $alertId)->update(['status' => 'escalated']);
+
+                $incident = $this->createIncident([
+                    'resident_id' => $alert->senior_id,
+                    'source_alert_id' => $alertId,
+                    'incident_type' => $alert->alert_type ?? 'health_alert',
+                    'severity' => 'critical',
+                    'title' => 'Escalated: '.($alert->title ?? 'Health alert'),
+                    'narrative' => $validated['note'] ?? $alert->body ?? null,
+                ], $actorId);
+
+                if ($noc !== null) {
+                    $task = $this->upsertAlertStaffTask($alert, $alertId, $noc->id, 'escalation', 'critical');
+                    $this->notifyStaffProfile(
+                        $noc->id,
+                        'NOC ESCALATION: '.($alert->title ?? 'Health alert'),
+                        trim(($alert->body ?? 'An alert was escalated to NOC.')."\n\nIncident: {$incident->id}".(! empty($validated['note']) ? "\nNote: {$validated['note']}" : ''))
+                    );
+                }
+
+                $this->logResidentEvent($alert->senior_id, $tenantId, 'alert_escalated', 'Alert escalated to NOC', $validated['note'] ?? $alert->title);
             }
 
             if ($validated['action'] === 'convert_to_incident') {
@@ -528,6 +577,137 @@ class BusinessPortalPrdService
     }
 
     /**
+     * @return array<int,mixed>
+     */
+    public function staffRoster(array $filters = []): array
+    {
+        $query = $this->connection()->table('staff_profiles')->where('status', 'active');
+
+        if (! empty($filters['tenant_id'])) {
+            $query->where('tenant_id', $filters['tenant_id']);
+        }
+
+        if (! empty($filters['location_id'])) {
+            $query->where('location_id', $filters['location_id']);
+        }
+
+        return $query->orderBy('display_name')->get()->all();
+    }
+
+    /**
+     * @return array<int,mixed>
+     */
+    public function staffWorkQueue(array $filters = []): array
+    {
+        return $this->staffTasksQuery($filters)
+            ->leftJoin('staff_profiles', 'staff_profiles.id', '=', 'staff_tasks.assigned_to')
+            ->leftJoin('residents', 'residents.id', '=', 'staff_tasks.resident_id')
+            ->leftJoin('tenant_location_resident_assignments as tlra', function ($join): void {
+                $join->on('tlra.resident_id', '=', 'staff_tasks.resident_id')->where('tlra.status', '=', 'active');
+            })
+            ->select(
+                'staff_tasks.*',
+                'staff_profiles.display_name as assignee_name',
+                'staff_profiles.role_name as assignee_role',
+                'residents.display_name as resident_name',
+                'tlra.room_number'
+            )
+            ->orderByRaw("case staff_tasks.status when 'open' then 1 when 'accepted' then 2 when 'snoozed' then 3 else 4 end")
+            ->orderByRaw("case staff_tasks.priority when 'critical' then 1 when 'high' then 2 when 'normal' then 3 else 4 end")
+            ->orderByDesc('staff_tasks.created_at')
+            ->limit(200)
+            ->get()
+            ->all();
+    }
+
+    /**
+     * Drives the staff task lifecycle: accept (acknowledge & start), resolve,
+     * snooze, or escalate to the on-call NOC team.
+     */
+    public function staffTaskAction(string $taskId, array $payload, ?int $actorId = null): object
+    {
+        $validated = validator($payload, [
+            'action' => ['required', 'string', 'in:accept,resolve,snooze,escalate'],
+            'note' => ['nullable', 'string', 'max:2000'],
+        ])->validate();
+
+        $db = $this->connection();
+        $task = $db->table('staff_tasks')->where('id', $taskId)->first();
+        if ($task === null) {
+            throw ValidationException::withMessages(['task_id' => 'Staff task was not found.']);
+        }
+
+        $db->transaction(function () use ($db, $task, $taskId, $validated, $actorId): void {
+            switch ($validated['action']) {
+                case 'accept':
+                    $db->table('staff_tasks')->where('id', $taskId)->update(['status' => 'accepted', 'updated_at' => now()]);
+                    $this->logResidentEvent($task->resident_id, $task->tenant_id, 'staff_task_accepted', 'Staff task accepted', $validated['note'] ?? ($task->title.' was acknowledged and is being worked on.'));
+                    $this->reflectTaskOnAlert($task, 'acknowledged', 'acknowledge', $validated['note'] ?? null, $actorId);
+                    break;
+
+                case 'resolve':
+                    $db->table('staff_tasks')->where('id', $taskId)->update(['status' => 'resolved', 'resolved_at' => now(), 'updated_at' => now()]);
+                    $this->logResidentEvent($task->resident_id, $task->tenant_id, 'staff_task_resolved', 'Staff task resolved', $validated['note'] ?? ($task->title.' was completed.'));
+                    $this->reflectTaskOnAlert($task, 'resolved', 'resolve', $validated['note'] ?? null, $actorId, true);
+                    break;
+
+                case 'snooze':
+                    $db->table('staff_tasks')->where('id', $taskId)->update([
+                        'status' => 'snoozed',
+                        'due_at' => now()->addHours(2),
+                        'updated_at' => now(),
+                    ]);
+                    $this->logResidentEvent($task->resident_id, $task->tenant_id, 'staff_task_snoozed', 'Staff task snoozed', $validated['note'] ?? ($task->title.' was snoozed for 2 hours.'));
+                    break;
+
+                case 'escalate':
+                    $db->table('staff_tasks')->where('id', $taskId)->update(['status' => 'cancelled', 'updated_at' => now()]);
+
+                    $noc = $this->nocStaffProfile($task->tenant_id);
+                    $incident = $this->createIncident([
+                        'resident_id' => $task->resident_id,
+                        'source_alert_id' => $task->source_type === 'health_alert' ? $task->source_id : null,
+                        'incident_type' => $task->source_type ?? 'staff_task',
+                        'severity' => 'critical',
+                        'title' => 'Escalated: '.$task->title,
+                        'narrative' => $validated['note'] ?? $task->body ?? null,
+                    ], $actorId);
+
+                    if ($noc !== null) {
+                        $db->table('staff_tasks')->insert([
+                            'id' => (string) Str::uuid(),
+                            'tenant_id' => $task->tenant_id,
+                            'location_id' => $task->location_id,
+                            'resident_id' => $task->resident_id,
+                            'assigned_to' => $noc->id,
+                            'source_type' => 'escalation',
+                            'source_id' => $task->id,
+                            'priority' => 'critical',
+                            'title' => 'NOC follow-up: '.$task->title,
+                            'body' => $validated['note'] ?? $task->body ?? null,
+                            'status' => 'open',
+                            'due_at' => now()->addMinutes(15),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+
+                        $this->notifyStaffProfile(
+                            $noc->id,
+                            'NOC ESCALATION: '.$task->title,
+                            trim(($task->body ?? 'A staff task was escalated to NOC.')."\n\nIncident: {$incident->id}".(! empty($validated['note']) ? "\nNote: {$validated['note']}" : ''))
+                        );
+                    }
+
+                    $this->reflectTaskOnAlert($task, 'escalated', 'escalate', $validated['note'] ?? null, $actorId);
+                    $this->logResidentEvent($task->resident_id, $task->tenant_id, 'staff_task_escalated', 'Staff task escalated to NOC', $validated['note'] ?? ($task->title.' was escalated to the NOC team.'));
+                    break;
+            }
+        });
+
+        return $db->table('staff_tasks')->where('id', $taskId)->first();
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public function reportsDashboard(array $filters = []): array
@@ -639,7 +819,13 @@ class BusinessPortalPrdService
 
     private function healthAlertsQuery(array $residentIds)
     {
-        return $this->connection()->table('health_alerts')->whereIn('senior_id', $residentIds);
+        return $this->connection()->table('health_alerts')
+            ->leftJoin('residents', 'residents.id', '=', 'health_alerts.senior_id')
+            ->leftJoin('tenant_location_resident_assignments as tlra', function ($join): void {
+                $join->on('tlra.resident_id', '=', 'health_alerts.senior_id')->where('tlra.status', '=', 'active');
+            })
+            ->whereIn('health_alerts.senior_id', $residentIds)
+            ->select('health_alerts.*', 'residents.display_name as resident_name', 'tlra.room_number');
     }
 
     private function serviceRequestsQuery(array $residentIds)
@@ -716,6 +902,256 @@ class BusinessPortalPrdService
             ->first();
 
         return $assignment?->tenant_id === null ? null : (string) $assignment->tenant_id;
+    }
+
+    /**
+     * The family/trusted-contact escalation order for a resident: who to
+     * notify, in what order, when an emergency alert can't be resolved by
+     * on-site staff. Ranks approved family contacts with health access first,
+     * then other approved trusted connections, then everyone else.
+     *
+     * @return array<int,mixed>
+     */
+    private function familyEscalationMatrix(string $residentId): array
+    {
+        return $this->connection()->table('trusted_connections')
+            ->leftJoin('users', 'users.id', '=', 'trusted_connections.trusted_user_id')
+            ->where('trusted_connections.resident_id', $residentId)
+            ->select(
+                'trusted_connections.*',
+                'users.display_name as contact_name',
+                'users.email as contact_email',
+                'users.phone as contact_phone'
+            )
+            ->orderByRaw("case when trusted_connections.status = 'approved' and trusted_connections.connection_type = 'family' and trusted_connections.health_access_status = 'granted' then 1
+                                when trusted_connections.status = 'approved' and trusted_connections.connection_type = 'family' then 2
+                                when trusted_connections.status = 'approved' then 3
+                                else 4 end")
+            ->orderBy('trusted_connections.created_at')
+            ->get()
+            ->all();
+    }
+
+    private function locationIdForResident(string $residentId): ?string
+    {
+        $assignment = $this->connection()->table('tenant_location_resident_assignments')
+            ->where('resident_id', $residentId)
+            ->where('status', 'active')
+            ->first();
+
+        return $assignment?->location_id === null ? null : (string) $assignment->location_id;
+    }
+
+    /**
+     * Maps a health_alerts.severity value onto the staff_tasks.priority vocabulary.
+     */
+    private function priorityFromSeverity(?string $severity): string
+    {
+        return match ($severity) {
+            'critical' => 'critical',
+            'high' => 'high',
+            'watch' => 'normal',
+            default => 'normal',
+        };
+    }
+
+    /**
+     * How quickly a staff task derived from an alert should be actioned, by severity.
+     */
+    private function dueAtForSeverity(?string $severity): \Illuminate\Support\Carbon
+    {
+        return match ($severity) {
+            'critical' => now()->addMinutes(15),
+            'high' => now()->addHour(),
+            'watch' => now()->addHours(4),
+            default => now()->addHours(24),
+        };
+    }
+
+    /**
+     * Find (or create) the staff_tasks row linked to a health alert and
+     * (re)assign it to the given staff profile.
+     */
+    private function upsertAlertStaffTask(object $alert, string $alertId, string $assignedTo, string $sourceType = 'health_alert', ?string $priorityOverride = null): object
+    {
+        $db = $this->connection();
+        $tenantId = $this->tenantIdForResident($alert->senior_id);
+        $locationId = $this->locationIdForResident($alert->senior_id);
+        $priority = $priorityOverride ?? $this->priorityFromSeverity((string) ($alert->severity ?? 'watch'));
+
+        $existing = $db->table('staff_tasks')
+            ->where('source_type', 'health_alert')
+            ->where('source_id', $alertId)
+            ->whereNotIn('status', ['resolved', 'cancelled'])
+            ->first();
+
+        if ($existing !== null) {
+            $db->table('staff_tasks')->where('id', $existing->id)->update([
+                'assigned_to' => $assignedTo,
+                'source_type' => $sourceType,
+                'priority' => $priority,
+                'status' => 'open',
+                'due_at' => $this->dueAtForSeverity((string) ($alert->severity ?? 'watch')),
+                'updated_at' => now(),
+            ]);
+
+            return $db->table('staff_tasks')->where('id', $existing->id)->first();
+        }
+
+        $id = (string) Str::uuid();
+        $db->table('staff_tasks')->insert([
+            'id' => $id,
+            'tenant_id' => $tenantId,
+            'location_id' => $locationId,
+            'resident_id' => $alert->senior_id,
+            'assigned_to' => $assignedTo,
+            'source_type' => $sourceType,
+            'source_id' => $alertId,
+            'priority' => $priority,
+            'title' => $alert->title ?? 'Health alert follow-up',
+            'body' => $alert->body ?? null,
+            'status' => 'open',
+            'due_at' => $this->dueAtForSeverity((string) ($alert->severity ?? 'watch')),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $db->table('staff_tasks')->where('id', $id)->first();
+    }
+
+    /**
+     * Keep the linked staff_tasks row (if any) in sync when an alert is
+     * acknowledged/resolved directly from the alert work queue.
+     *
+     * @param  array<string,mixed>  $updates
+     */
+    private function syncAlertStaffTask(object $alert, string $alertId, array $updates): void
+    {
+        $db = $this->connection();
+
+        $task = $db->table('staff_tasks')
+            ->where('source_type', 'health_alert')
+            ->where('source_id', $alertId)
+            ->whereNotIn('status', ['resolved', 'cancelled'])
+            ->first();
+
+        if ($task === null) {
+            return;
+        }
+
+        $db->table('staff_tasks')->where('id', $task->id)->update($updates + ['updated_at' => now()]);
+    }
+
+    /**
+     * When a staff task derived from a health alert moves through its
+     * lifecycle, mirror the state change back onto health_alerts and log a
+     * triage event so the alert work queue stays consistent.
+     */
+    private function reflectTaskOnAlert(object $task, string $alertStatus, string $triageAction, ?string $note, ?int $actorId, bool $resolved = false): void
+    {
+        if ($task->source_type !== 'health_alert' && $task->source_type !== 'escalation' || empty($task->source_id)) {
+            return;
+        }
+
+        $db = $this->connection();
+        $alertId = $task->source_type === 'escalation'
+            ? ($db->table('staff_tasks')->where('id', $task->source_id)->value('source_id') ?? $task->source_id)
+            : $task->source_id;
+
+        $alert = $db->table('health_alerts')->where('id', $alertId)->first();
+        if ($alert === null) {
+            return;
+        }
+
+        $update = ['status' => $alertStatus];
+        if ($resolved) {
+            $update['resolved_at'] = now();
+        }
+
+        $db->table('health_alerts')->where('id', $alertId)->update($update);
+
+        $db->table('alert_triage_events')->insert([
+            'alert_id' => $alertId,
+            'tenant_id' => $task->tenant_id,
+            'actor_user_id' => null,
+            'action' => $triageAction,
+            'assigned_to' => $task->assigned_to,
+            'note' => $note,
+            'metadata' => json_encode(['local_actor_id' => $actorId, 'via' => 'staff_task']),
+            'created_at' => now(),
+        ]);
+    }
+
+    /**
+     * Push a notification to the user account behind a staff profile, if any.
+     */
+    private function notifyStaffProfile(string $staffProfileId, string $title, string $body): void
+    {
+        $db = $this->connection();
+        $staff = $db->table('staff_profiles')->where('id', $staffProfileId)->first();
+
+        if ($staff === null || empty($staff->user_id)) {
+            return;
+        }
+
+        $db->table('notifications')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $staff->user_id,
+            'channel' => 'push',
+            'title' => $title,
+            'body' => $body,
+            'status' => 'queued',
+            'retry_count' => 0,
+            'created_at' => now(),
+        ]);
+    }
+
+    /**
+     * The on-call NOC staff profile for a tenant (falls back to any active NOC profile).
+     */
+    private function nocStaffProfile(?string $tenantId): ?object
+    {
+        $db = $this->connection();
+
+        if ($tenantId !== null) {
+            $scoped = $db->table('staff_profiles')
+                ->where('role_name', 'noc')
+                ->where('status', 'active')
+                ->where('tenant_id', $tenantId)
+                ->first();
+
+            if ($scoped !== null) {
+                return $scoped;
+            }
+        }
+
+        return $db->table('staff_profiles')
+            ->where('role_name', 'noc')
+            ->where('status', 'active')
+            ->first();
+    }
+
+    /**
+     * Append an entry to a resident's activity timeline.
+     */
+    private function logResidentEvent(?string $residentId, ?string $tenantId, string $eventType, string $title, ?string $body): void
+    {
+        if (empty($residentId)) {
+            return;
+        }
+
+        $this->connection()->table('resident_events')->insert([
+            'id' => (string) Str::uuid(),
+            'tenant_id' => $tenantId,
+            'location_id' => $this->locationIdForResident($residentId),
+            'resident_id' => $residentId,
+            'event_type' => $eventType,
+            'title' => $title,
+            'body' => $body,
+            'occurred_at' => now(),
+            'metadata' => json_encode([]),
+            'created_at' => now(),
+        ]);
     }
 
     private function priorityFromGuru(mixed $priority): string
