@@ -7,12 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "mobile:api": "cd apps/mobile-api && node server.js",
+    "mobile:android:debug": "cd apps/mobile/android && ./gradlew :app:assembleDebug",
+    "mobile:typecheck": "cd apps/mobile && npm run typecheck"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
+    "@types/pg": "^8.20.0",
     "lucide-react": "^0.468.0",
     "next": "^16.2.4",
+    "pg": "^8.21.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -25,4 +30,3 @@
     "typescript": "^5.7.2"
   }
 }
-

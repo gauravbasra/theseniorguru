@@ -1,0 +1,32 @@
+{
+  "name": "theseniorguru-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "db:schema": "psql \"$DATABASE_URL\" -f schema.sql",
+    "db:seed": "psql \"$DATABASE_URL\" -f seed.sql",
+    "smoke:launch-readiness": "node scripts/smoke-launch-readiness.js",
+    "smoke:critical-buttons": "node scripts/smoke-critical-buttons.js",
+    "smoke:resident-surface-schema": "node scripts/smoke-resident-surface-schema.js",
+    "smoke:context-intelligence-schema": "node scripts/smoke-context-intelligence-schema.js",
+    "smoke:guru-intelligence": "node scripts/smoke-guru-intelligence-layer.js",
+    "smoke:guru-phase2": "node scripts/smoke-guru-intelligence-phase2.js",
+    "smoke:ai-governance": "node scripts/smoke-ai-governance-v2.js",
+    "smoke:local-guru-model": "node scripts/smoke-local-guru-model.js",
+    "smoke:flutter-resident": "node scripts/smoke-flutter-resident-contract.js",
+    "smoke:auth-register-login": "node scripts/smoke-auth-register-login.js",
+    "smoke:senior-onboarding-v2": "node scripts/smoke-senior-onboarding-v2.js",
+    "smoke:role-onboarding": "node scripts/smoke-role-onboarding.js",
+    "smoke:role-settings": "node scripts/smoke-role-settings.js",
+    "smoke:social-viral": "node scripts/smoke-social-viral-permissions.js",
+    "audit:no-fake-data": "node scripts/audit-no-fake-data.js",
+    "audit:scale-hardening": "node scripts/audit-scale-hardening.js",
+    "worker:jobs": "node scripts/process-job-queue.js",
+    "retention:archive": "node scripts/run-retention-archive.js",
+    "load-test:production": "node scripts/load-test-mobile-api.js"
+  },
+  "dependencies": {
+    "pg": "^8.21.0"
+  }
+}

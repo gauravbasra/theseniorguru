@@ -3,9 +3,11 @@ import { getAdminSessionFromRequest } from "@/lib/auth/admin-session";
 
 const protectedPrefixes = [
   "/admin",
+  "/business",
   "/provider",
   "/workbench",
   "/api/v1/admin",
+  "/api/v1/business",
   "/api/v1/provider",
   "/api/v1/system",
   "/api/v1/openapi"
