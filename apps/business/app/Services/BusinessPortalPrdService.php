@@ -391,6 +391,7 @@ class BusinessPortalPrdService
             $residentId = $validated['resident_id'] ?? null;
             $incidentId = $db->table('incidents')->insertGetId([
                 'tenant_id' => $residentId ? $this->tenantIdForResident($residentId) : null,
+                'location_id' => $residentId ? $this->locationIdForResident($residentId) : null,
                 'resident_id' => $residentId,
                 'source_alert_id' => $validated['source_alert_id'] ?? null,
                 'incident_type' => $validated['incident_type'],
