@@ -6,6 +6,11 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
+  CREATE TYPE gender_identity AS ENUM ('female', 'male', 'non_binary', 'prefer_not_to_say', 'self_describe', 'unspecified');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
   CREATE TYPE approval_status AS ENUM ('draft', 'pending_review', 'approved', 'rejected', 'suspended');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
@@ -40,9 +45,11 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE,
   phone TEXT,
   display_name TEXT NOT NULL,
-  role app_role NOT NULL,
+  gender gender_identity NOT NULL DEFAULT 'unspecified',
+  role app_role,
   password_hash TEXT,
   status approval_status NOT NULL DEFAULT 'pending_review',
+  last_login_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -54,6 +61,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_lower_email_unique ON users (lower(email)) WHERE email IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS residents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

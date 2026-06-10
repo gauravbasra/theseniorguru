@@ -1,6 +1,14 @@
 const crypto = require("crypto");
 const { resolveGuruIntent, isRoutineGuruIntent, localCacheKey } = require("./lib/guru-intents");
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
+const { createAuthService, publicUser } = require("./lib/auth-service");
+const { onboardingStatusForUser } = require("./lib/onboarding-status");
+const {
+  completeSeniorOnboarding,
+  getSeniorOnboardingStatus,
+  saveSeniorOnboardingStep,
+  selectRole
+} = require("./lib/onboarding/senior-onboarding-service");
 
 const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
@@ -246,7 +254,9 @@ function createProductionApi(pool) {
     }
     const tokenHash = hashToken(token);
     const result = await query(
-      `SELECT u.* FROM sessions s
+      `SELECT u.id, u.email, u.phone, u.display_name, u.gender, u.role, u.status,
+              u.last_login_at, u.created_at, u.updated_at
+       FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = $1 AND s.expires_at > now()`,
       [tokenHash]
@@ -3050,6 +3060,14 @@ function createProductionApi(pool) {
       return { received: true };
     }
 
+    if (req.method === "POST" && url.pathname === "/api/auth/register") {
+      return createAuthService({ query, audit, req }).registerUser(payload);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/login") {
+      return createAuthService({ query, audit, req }).loginUser(payload);
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/device-session") {
       const installationId = required(payload.installationId, "installationId");
       const role = ["senior", "trusted_person", "business"].includes(payload.role) ? payload.role : "senior";
@@ -3168,7 +3186,13 @@ function createProductionApi(pool) {
     const user = await currentUser(req);
 
     if (req.method === "GET" && url.pathname === "/api/me") {
-      return { user };
+      const onboardingStatus = await onboardingStatusForUser(query, user);
+      return { user: publicUser(user), onboarding_status: onboardingStatus, nextStep: onboardingStatus.nextStep };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/select-role") {
+      const result = await selectRole({ query, transaction, audit, req, user, role: payload.role });
+      return { ...result, user: publicUser(result.user) };
     }
 
     if (req.method === "GET" && url.pathname === "/api/admin/ai-usage/summary") {
@@ -3839,74 +3863,16 @@ function createProductionApi(pool) {
       return { ok: true, settings: result };
     }
 
+    if (req.method === "GET" && url.pathname === "/api/onboarding/senior/status") {
+      return getSeniorOnboardingStatus({ query, user });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/onboarding/senior/step") {
+      return saveSeniorOnboardingStep({ query, audit, req, user, payload });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/onboarding/senior") {
-      const requiredFields = ["name"];
-      const missing = requiredFields.filter(field => !payload[field]);
-      if (missing.length) {
-        const error = new Error(`Missing senior onboarding fields: ${missing.join(", ")}`);
-        error.status = 400;
-        throw error;
-      }
-      const result = await transaction(async tx => {
-        const session = (await tx(
-          `INSERT INTO onboarding_sessions (role, account_id, status, current_step, payload, completed_at)
-           VALUES ('senior', $1, 'complete', 'complete', $2, now()) RETURNING *`,
-          [user.id, JSON.stringify(payload)]
-        )).rows[0];
-        const profile = (await tx(
-          `INSERT INTO senior_onboarding_profiles (onboarding_session_id, senior_account_id, full_name, preferred_name, phone, email, date_of_birth, address_line, living_type)
-           VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::date,$8,$9) RETURNING *`,
-          [session.id, user.id, payload.name, payload.preferredName || null, payload.phone, payload.email || null, payload.dob || null, payload.address || null, payload.livingType || null]
-        )).rows[0];
-        await tx(`UPDATE users SET display_name = $1, updated_at = now() WHERE id = $2`, [payload.preferredName || payload.name, user.id]);
-        await tx(
-          `INSERT INTO senior_health_onboarding (senior_profile_id, health_concerns, allergies, mobility_notes, baseline_metrics, wearable_sources, health_data_scopes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [profile.id, payload.healthConcerns || [], payload.allergies || null, payload.mobility || null, JSON.stringify({ height: payload.height, weight: payload.weight, bloodPressure: payload.bloodPressure, heartRate: payload.heartRate, medications: payload.medications }), payload.wearableSources || [], payload.devicePermissions || []]
-        );
-        const capturedEvidenceIds = [payload.profilePhotoEvidenceId, payload.livenessEvidenceId].filter(isUuid);
-        if (capturedEvidenceIds.length) {
-          await tx(
-            `UPDATE identity_evidence
-             SET onboarding_session_id = $1, subject_account_id = $2, metadata = metadata || $3::jsonb
-             WHERE id = ANY($4::uuid[])`,
-            [session.id, user.id, JSON.stringify({ linkedFrom: "senior_onboarding", linkedAt: new Date().toISOString() }), capturedEvidenceIds]
-          );
-        }
-        for (const permission of payload.devicePermissions || []) {
-          await tx(
-            `INSERT INTO device_permission_grants (onboarding_session_id, account_id, permission_name, requested_reason, grant_status, granted_at, metadata)
-             VALUES ($1,$2,$3,'onboarding', 'granted', now(), $4)`,
-            [session.id, user.id, String(permission).toLowerCase().replace(/\s+/g, '_'), JSON.stringify({ source: 'mobile_onboarding' })]
-          );
-        }
-        for (const provider of payload.musicApps || []) {
-          await tx(
-            `INSERT INTO music_connections (senior_profile_id, provider, connection_status, favorite_genres)
-             VALUES ($1,$2,'pending',$3)`,
-            [profile.id, String(provider).toLowerCase().replace(/\s+/g, '_'), payload.musicPreferences || []]
-          );
-        }
-        const consent = (await tx(
-          `INSERT INTO consent_records (subject_account_id, subject_role, consent_scope, consent_text, granted, source_ip, user_agent, metadata)
-           VALUES ($1,'senior','senior_onboarding_identity_health_wearables_music_location_sos','Senior onboarding consent captured in mobile app.',true,$2,$3,$4) RETURNING *`,
-          [user.id, req.socket?.remoteAddress || null, req.headers["user-agent"] || null, JSON.stringify({ healthSharing: payload.healthSharing, locationSharing: payload.locationSharing, sosOrder: payload.sosOrder })]
-        )).rows[0];
-        if (user.role === "senior") {
-          const resident = await getResidentForUser(user);
-          if (resident) await tx(
-            `UPDATE residents SET community = COALESCE($1, community), onboarding_complete = true, live_tracking_enabled = true, memory_support_enabled = true,
-              health_conditions = $2, allergies = $3, mobility_notes = $4, display_name = $5,
-              profile_photo_evidence_id = COALESCE(NULLIF($6,'')::uuid, profile_photo_evidence_id),
-              health_profile = health_profile || $7::jsonb, updated_at = now()
-             WHERE id = $8`,
-            [payload.address || null, payload.healthConcerns || [], payload.allergies ? [payload.allergies] : [], payload.mobility || null, payload.preferredName || payload.name, payload.profilePhotoEvidenceId || "", JSON.stringify({ onboarding: { profileId: profile.id, sessionId: session.id, consentId: consent.id, baselineMetrics: { height: payload.height, weight: payload.weight, bloodPressure: payload.bloodPressure, heartRate: payload.heartRate }, wearableSources: payload.wearableSources || [] } }), resident.id]
-          );
-        }
-        return { session, profile, consent };
-      });
-      await audit(req, user, "role_onboarding_senior_completed", "onboarding_session", result.session.id, { profileId: result.profile.id });
-      return { ok: true, onboarding: result };
+      return completeSeniorOnboarding({ query, transaction, audit, req, user, payload });
     }
 
     if (req.method === "POST" && url.pathname === "/api/onboarding/trust-circle") {
