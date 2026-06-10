@@ -638,6 +638,10 @@ class BusinessPortalPrdService
             throw ValidationException::withMessages(['task_id' => 'Staff task was not found.']);
         }
 
+        if (! in_array($task->status, ['open', 'accepted', 'snoozed'], true)) {
+            throw ValidationException::withMessages(['task_id' => 'This task is already '.$task->status.' and can no longer be updated.']);
+        }
+
         $db->transaction(function () use ($db, $task, $taskId, $validated, $actorId): void {
             switch ($validated['action']) {
                 case 'accept':
