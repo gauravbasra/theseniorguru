@@ -14,6 +14,33 @@ import 'package:uuid/uuid.dart';
 
 import 'api/tsg_api_client.dart';
 import 'services/native_health_service.dart';
+import 'services/location_service.dart';
+
+/// Holds form values captured across onboarding screens until the flow
+/// finishes and they're submitted together via completeSeniorOnboarding.
+class OnboardingDraft {
+  OnboardingDraft._();
+  static final OnboardingDraft instance = OnboardingDraft._();
+
+  String name = '';
+  String phone = '';
+  String address = '';
+  String city = '';
+  String state = '';
+  String zip = '';
+
+  Map<String, dynamic> toPayload() => {
+        // completeSeniorOnboarding requires "name" — fall back to a
+        // placeholder so the submission (and address/zip fields) aren't
+        // rejected if the resident skipped the name field.
+        'name': name.trim().isNotEmpty ? name.trim() : 'Resident',
+        if (phone.trim().isNotEmpty) 'phone': phone.trim(),
+        if (address.trim().isNotEmpty) 'address': address.trim(),
+        if (city.trim().isNotEmpty) 'city': city.trim(),
+        if (state.trim().isNotEmpty) 'state': state.trim(),
+        if (zip.trim().isNotEmpty) 'zip': zip.trim(),
+      };
+}
 
 Future<String> _stableInstallationId() async {
   final prefs = await SharedPreferences.getInstance();
@@ -698,6 +725,7 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.safetyMap => SafetyMapScreen(
         key: const ValueKey('safety-map'),
         go: go,
+        runApi: runApi,
         state: appState,
       ),
     };
@@ -2380,6 +2408,13 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
       List<ServicePro> fetchedPros = [];
       final history = _buildHistory();
 
+      // Always try the phone's live GPS first — the senior may be away from
+      // home, and "near me" answers (weather, local pros) should reflect
+      // where they actually are right now.
+      final liveLocation = await LocationService.instance.getCurrentLatLon();
+      final lat = liveLocation?.lat ?? widget.state?.homeLat;
+      final lon = liveLocation?.lon ?? widget.state?.homeLng;
+
       await Future.wait([
         // Guru conversational response with full chat history
         widget.apiClient
@@ -2390,6 +2425,8 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
               'community': widget.state?.community ?? '',
               'history': history,
               if (widget.state?.zip != null) 'zip': widget.state!.zip,
+              if (lat != null) 'lat': lat,
+              if (lon != null) 'lon': lon,
               if (intent != null) 'intent': intent,
               if (intent != null) 'serviceCategory': intent,
             })
@@ -2403,6 +2440,8 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
                 'category': intent,
                 'recipientName': widget.state?.residentName ?? '',
                 'address': widget.state?.community ?? '',
+                if (lat != null) 'lat': lat,
+                if (lon != null) 'lon': lon,
                 'limit': 3,
               })
               .then((r) {
@@ -7202,6 +7241,18 @@ class _SafetyScreenState extends State<SafetyScreen> {
                             fillColor: TsgColors.green.withValues(alpha: .12),
                             strokeWidth: 2,
                           ),
+                          for (final zone in listOfMaps(mapValue(widget.state?.raw['safety'])['safeZones']))
+                            Circle(
+                              circleId: CircleId('safe-zone-${surfaceText(zone['id'], zone.hashCode.toString())}'),
+                              center: LatLng(
+                                doubleValue(zone['center_lat'], fallback: center.latitude),
+                                doubleValue(zone['center_lng'], fallback: center.longitude),
+                              ),
+                              radius: doubleValue(zone['radius_meters'], fallback: 150),
+                              strokeColor: TsgColors.purple,
+                              fillColor: TsgColors.purple.withValues(alpha: .12),
+                              strokeWidth: 2,
+                            ),
                         },
                         myLocationEnabled: hasLocation,
                         myLocationButtonEnabled: false,
@@ -7507,20 +7558,101 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 }
 
-class SafetyMapScreen extends StatelessWidget {
-  const SafetyMapScreen({super.key, required this.go, this.state});
+class SafetyMapScreen extends StatefulWidget {
+  const SafetyMapScreen({super.key, required this.go, required this.runApi, this.state});
   final ValueChanged<Screen> go;
+  final ApiRunner runApi;
   final ResidentAppState? state;
 
   @override
+  State<SafetyMapScreen> createState() => _SafetyMapScreenState();
+}
+
+class _SafetyMapScreenState extends State<SafetyMapScreen> {
+  GoogleMapController? _mapController;
+  bool _placingZone = false;
+  LatLng? _draftCenter;
+  double _draftRadius = 150;
+  bool _saving = false;
+
+  static const _zoneColors = [
+    TsgColors.purple,
+    TsgColors.orange,
+    Color(0xFF2E9E6B),
+    Color(0xFF3B82F6),
+    Color(0xFFD83D55),
+  ];
+
+  @override
   Widget build(BuildContext context) {
-    final telemetry = mapValue(mapValue(state?.raw['safety'])['latestTelemetry']);
+    final telemetry = mapValue(mapValue(widget.state?.raw['safety'])['latestTelemetry']);
     final lat = doubleValue(telemetry['lat'], fallback: 37.3688);
     final lng = doubleValue(telemetry['lng'], fallback: -122.0363);
     final hasTelemetry = telemetry.isNotEmpty;
     final center = LatLng(lat, lng);
     final safeZone = surfaceText(telemetry['safe_zone_status'], 'Unknown');
     final label = surfaceText(telemetry['location_label'], 'Current location');
+    final zones = listOfMaps(mapValue(widget.state?.raw['safety'])['safeZones']);
+
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('resident-location-full'),
+        position: center,
+        infoWindow: InfoWindow(title: label, snippet: safeZone),
+      ),
+    };
+    final circles = <Circle>{
+      Circle(
+        circleId: const CircleId('resident-safe-zone-full'),
+        center: center,
+        radius: 300,
+        strokeWidth: 3,
+        strokeColor: TsgColors.green,
+        fillColor: TsgColors.green.withValues(alpha: .12),
+      ),
+    };
+    for (var i = 0; i < zones.length; i++) {
+      final zone = zones[i];
+      final zoneId = surfaceText(zone['id'], 'zone-$i');
+      final zoneLat = doubleValue(zone['center_lat'], fallback: lat);
+      final zoneLng = doubleValue(zone['center_lng'], fallback: lng);
+      final zoneRadius = doubleValue(zone['radius_meters'], fallback: 150);
+      final zoneCenter = LatLng(zoneLat, zoneLng);
+      final color = _zoneColors[i % _zoneColors.length];
+      circles.add(Circle(
+        circleId: CircleId('safe-zone-$zoneId'),
+        center: zoneCenter,
+        radius: zoneRadius,
+        strokeWidth: 2,
+        strokeColor: color,
+        fillColor: color.withValues(alpha: .14),
+      ));
+      markers.add(Marker(
+        markerId: MarkerId('safe-zone-marker-$zoneId'),
+        position: zoneCenter,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+        infoWindow: InfoWindow(
+          title: surfaceText(zone['name'], 'Safe zone'),
+          snippet: '${zoneRadius.round()} m radius',
+        ),
+      ));
+    }
+    if (_draftCenter != null) {
+      circles.add(Circle(
+        circleId: const CircleId('draft-safe-zone'),
+        center: _draftCenter!,
+        radius: _draftRadius,
+        strokeWidth: 2,
+        strokeColor: TsgColors.purple,
+        fillColor: TsgColors.purple.withValues(alpha: .18),
+      ));
+      markers.add(Marker(
+        markerId: const MarkerId('draft-safe-zone-marker'),
+        position: _draftCenter!,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+      ));
+    }
+
     return Scaffold(
       body: Stack(
         children: [
@@ -7531,23 +7663,13 @@ class SafetyMapScreen extends StatelessWidget {
                   target: center,
                   zoom: hasTelemetry ? 16 : 12,
                 ),
-                markers: {
-                  Marker(
-                    markerId: const MarkerId('resident-location-full'),
-                    position: center,
-                    infoWindow: InfoWindow(title: label, snippet: safeZone),
-                  ),
+                onMapCreated: (controller) => _mapController = controller,
+                onTap: (tapped) {
+                  if (!_placingZone) return;
+                  setState(() => _draftCenter = tapped);
                 },
-                circles: {
-                  Circle(
-                    circleId: const CircleId('resident-safe-zone-full'),
-                    center: center,
-                    radius: 300,
-                    strokeWidth: 3,
-                    strokeColor: TsgColors.green,
-                    fillColor: TsgColors.green.withValues(alpha: .12),
-                  ),
-                },
+                markers: markers,
+                circles: circles,
                 myLocationEnabled: hasTelemetry,
                 myLocationButtonEnabled: true,
                 zoomControlsEnabled: false,
@@ -7568,7 +7690,7 @@ class SafetyMapScreen extends StatelessWidget {
                   Row(
                     children: [
                       GestureDetector(
-                        onTap: () => go(Screen.safety),
+                        onTap: () => widget.go(Screen.safety),
                         child: Container(
                           width: 48,
                           height: 48,
@@ -7623,9 +7745,131 @@ class SafetyMapScreen extends StatelessWidget {
                           ),
                         ),
                       ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: _toggleAddZoneMode,
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: _placingZone ? TsgColors.purple : Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x262D2038),
+                                blurRadius: 18,
+                                offset: Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            _placingZone ? CupertinoIcons.xmark : CupertinoIcons.add_circled_solid,
+                            color: _placingZone ? Colors.white : TsgColors.purple,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
+                  if (_placingZone) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .95),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: TsgColors.line),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _draftCenter == null
+                                ? 'Tap on the map to place your safe zone'
+                                : 'Adjust the radius, then save',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          if (_draftCenter != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Text('Radius', style: TextStyle(color: TsgColors.muted)),
+                                Expanded(
+                                  child: Slider(
+                                    value: _draftRadius,
+                                    min: 50,
+                                    max: 2000,
+                                    divisions: 39,
+                                    activeColor: TsgColors.purple,
+                                    label: '${_draftRadius.round()} m',
+                                    onChanged: (v) => setState(() => _draftRadius = v),
+                                  ),
+                                ),
+                                Text('${_draftRadius.round()} m'),
+                              ],
+                            ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: ElevatedButton(
+                                onPressed: _saving ? null : _saveZone,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: TsgColors.purple,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: Text(_saving ? 'Saving...' : 'Save safe zone'),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                   const Spacer(),
+                  if (zones.isNotEmpty) ...[
+                    SizedBox(
+                      height: 64,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: zones.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          final zone = zones[i];
+                          final zoneId = surfaceText(zone['id'], '');
+                          final color = _zoneColors[i % _zoneColors.length];
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .95),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: TsgColors.line),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${surfaceText(zone['name'], 'Safe zone')} · ${doubleValue(zone['radius_meters'], fallback: 150).round()}m',
+                                  style: const TextStyle(fontWeight: FontWeight.w800),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: zoneId.isEmpty ? null : () => _deleteZone(zoneId),
+                                  child: const Icon(CupertinoIcons.delete, size: 18, color: TsgColors.muted),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -7657,8 +7901,10 @@ class SafetyMapScreen extends StatelessWidget {
                         const SizedBox(height: 8),
                         Text(
                           androidGoogleMapsKey.isEmpty
-                              ? 'Google Maps Android key is missing in this APK build. Coordinates are synced, but map tiles may not render.'
-                              : 'Latest phone location is synced with the safety engine.',
+                              ? 'Google Maps API key is missing in this build. Coordinates are synced, but map tiles may not render.'
+                              : zones.isEmpty
+                                  ? 'Tap the + button above to add your first safe zone with a custom radius.'
+                                  : 'Latest phone location is synced with the safety engine.',
                           style: const TextStyle(
                             color: TsgColors.muted,
                             height: 1.3,
@@ -7674,6 +7920,72 @@ class SafetyMapScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  void _toggleAddZoneMode() {
+    setState(() {
+      _placingZone = !_placingZone;
+      _draftCenter = null;
+      _draftRadius = 150;
+    });
+  }
+
+  Future<void> _saveZone() async {
+    final center = _draftCenter;
+    if (center == null) return;
+    final controller = TextEditingController(text: 'My Safe Zone');
+    final name = await showCupertinoDialog<String>(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: const Text('Name this safe zone'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(controller: controller, autofocus: true),
+        ),
+        actions: [
+          CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    setState(() => _saving = true);
+    final ok = await widget.runApi('Saving safe zone', (client, state) {
+      return client.addSafeZone(
+        name: name,
+        lat: center.latitude,
+        lng: center.longitude,
+        radiusMeters: _draftRadius.round(),
+      );
+    });
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (ok) {
+        _placingZone = false;
+        _draftCenter = null;
+      }
+    });
+  }
+
+  Future<void> _deleteZone(String zoneId) async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: const Text('Remove safe zone?'),
+        content: const Text('Your trusted circle will no longer be alerted based on this area.'),
+        actions: [
+          CupertinoDialogAction(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          CupertinoDialogAction(isDestructiveAction: true, onPressed: () => Navigator.pop(context, true), child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await widget.runApi('Removing safe zone', (client, state) => client.removeSafeZone(zoneId));
   }
 }
 
@@ -8545,7 +8857,7 @@ class SeniorStepScreen extends StatelessWidget {
       runApi: runApi,
       onFinish: (runner) async {
         await runner?.call('Completing senior onboarding', (client, state) {
-          return client.completeSeniorOnboarding();
+          return client.completeSeniorOnboarding(OnboardingDraft.instance.toPayload());
         });
       },
     );
@@ -8655,17 +8967,23 @@ class OnboardingSpecScreen extends StatelessWidget {
             (item) => OnboardingOptionCard(
               item: item,
               accent: step.accent,
-              onTap:
-                  runApi == null ||
-                      evidenceCaptureSpecForOption(step, item.$2) == null
-                  ? null
-                  : () {
-                      captureOnboardingEvidence(
-                        step: step,
-                        optionLabel: item.$2,
-                        runApi: runApi!,
-                      );
-                    },
+              onTap: step.title == 'Permissions' && item.$2 == 'Location'
+                  ? () {
+                      // Ask for live GPS access now, so Guru already has it
+                      // by the time the resident asks about weather or
+                      // nearby services.
+                      LocationService.instance.getCurrentLatLon();
+                    }
+                  : runApi == null ||
+                          evidenceCaptureSpecForOption(step, item.$2) == null
+                      ? null
+                      : () {
+                          captureOnboardingEvidence(
+                            step: step,
+                            optionLabel: item.$2,
+                            runApi: runApi!,
+                          );
+                        },
             ),
           ),
         ],
@@ -8884,6 +9202,13 @@ class _OnboardingProfileState extends State<OnboardingProfile> {
         const SizedBox(height: 20),
         PurpleButton('Continue', onTap: () {
           if (_formKey.currentState?.validate() ?? true) {
+            OnboardingDraft.instance
+              ..name = _fullName.text
+              ..phone = _phone.text
+              ..address = _address.text
+              ..city = _city.text
+              ..state = _stateField.text
+              ..zip = _zip.text;
             widget.go(Screen.seniorAddress);
           }
         }),
@@ -9038,7 +9363,7 @@ class OnboardingSafety extends StatelessWidget {
           'Finish Setup',
           onTap: () async {
             await runApi('Completing senior onboarding', (client, state) {
-              return client.completeSeniorOnboarding();
+              return client.completeSeniorOnboarding(OnboardingDraft.instance.toPayload());
             });
             go(Screen.today);
           },

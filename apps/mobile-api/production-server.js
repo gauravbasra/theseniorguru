@@ -3,7 +3,7 @@ const { resolveGuruIntent, isRoutineGuruIntent, localCacheKey } = require("./lib
 const { callOpenAI, buildSeniorGuruSystemPrompt } = require("./lib/ai-client");
 const { slmAvailable, callSLM, slmChat, slmClassifyIntent, slmWellnessNarrative, slmSafetyRecommendation, slmWeatherAdvice, SLM_MODEL, SLM_PROVIDER } = require("./lib/slm-client");
 const { lookupDrug, checkInteractions, getBeersCaution, daysOfSupplyRemaining, refillNeeded, askMedicationQuestion, DRUG_REFERENCE } = require("./lib/medication-engine");
-const { getWeatherForZip, getWeatherForLatLon, buildWeatherSummary, isWeatherQuery } = require("./lib/weather-service");
+const { getWeatherForZip, getWeatherForLatLon, buildWeatherSummary, isWeatherQuery, resolveZip, reverseGeocode } = require("./lib/weather-service");
 
 const FREE_YEARLY_LEADS = 5;
 const PAID_MONTHLY_LEADS = 5;
@@ -740,16 +740,38 @@ function createProductionApi(pool) {
     return summary;
   }
 
-  function defaultVitalMonitorRows(summary = {}) {
+  function trendSeries(readings, field, fallback, points = 5) {
+    const values = readings
+      .slice(0, points)
+      .map(item => item[field])
+      .filter(value => value !== null && value !== undefined)
+      .map(Number)
+      .reverse();
+    if (!values.length) {
+      return [fallback, fallback, fallback, fallback, fallback];
+    }
+    while (values.length < points) {
+      values.unshift(values[0]);
+    }
+    return values.slice(-points);
+  }
+
+  function defaultVitalMonitorRows(summary = {}, readings = []) {
     const heartRate = summary.heartRateAvg || 72;
     const hrv = summary.hrvAvg || 48;
     const oxygen = summary.oxygenAvg || 97;
     const respiratory = summary.respiratoryRateAvg || 16;
+    const isLive = readings.length > 0;
+    const hrTrend = trendSeries(readings, 'heart_rate', heartRate);
+    const hrvTrend = trendSeries(readings, 'hrv', hrv);
+    const oxygenTrend = trendSeries(readings, 'oxygen_saturation', oxygen);
+    const respiratoryTrend = trendSeries(readings, 'respiratory_rate', respiratory);
+    const sourceLabel = isLive ? `Synced from ${readings[0]?.source || 'wearable'}` : "Awaiting first sync from watch or phone";
     return [
-      { vital_key: "resting_heart_rate", label: "Resting Heart Rate", value_text: String(heartRate), numeric_value: heartRate, unit: "bpm", status_label: "Normal", baseline_text: "30-day baseline: 69 bpm", trend_points: [68, 70, 69, heartRate, 71], color_band_payload: { low: "green", mid: "yellow", high: "red" } },
-      { vital_key: "hrv", label: "Heart Rate Variability", value_text: String(hrv), numeric_value: hrv, unit: "ms", status_label: "Good", baseline_text: "30-day baseline: 44 ms", trend_points: [42, 43, 44, hrv, 45], color_band_payload: { low: "yellow", mid: "green", high: "green" } },
-      { vital_key: "oxygen_saturation", label: "Blood Oxygen (SpO2)", value_text: String(oxygen), numeric_value: oxygen, unit: "%", status_label: "Normal", baseline_text: "Normal range: 95 - 100%", trend_points: [96, 97, 96, oxygen, 98], color_band_payload: { low: "red", mid: "green", high: "green" } },
-      { vital_key: "respiratory_rate", label: "Respiratory Rate", value_text: String(respiratory), numeric_value: respiratory, unit: "/min", status_label: "Normal", baseline_text: "Normal range: 12 - 20", trend_points: [15, 16, 15, respiratory, 16], color_band_payload: { low: "green", mid: "green", high: "yellow" } },
+      { vital_key: "resting_heart_rate", label: "Resting Heart Rate", value_text: String(heartRate), numeric_value: heartRate, unit: "bpm", status_label: isLive ? "Synced" : "Awaiting sync", baseline_text: sourceLabel, trend_points: hrTrend, color_band_payload: { low: "green", mid: "yellow", high: "red" } },
+      { vital_key: "hrv", label: "Heart Rate Variability", value_text: String(hrv), numeric_value: hrv, unit: "ms", status_label: isLive ? "Synced" : "Awaiting sync", baseline_text: sourceLabel, trend_points: hrvTrend, color_band_payload: { low: "yellow", mid: "green", high: "green" } },
+      { vital_key: "oxygen_saturation", label: "Blood Oxygen (SpO2)", value_text: String(oxygen), numeric_value: oxygen, unit: "%", status_label: isLive ? "Synced" : "Awaiting sync", baseline_text: sourceLabel, trend_points: oxygenTrend, color_band_payload: { low: "red", mid: "green", high: "green" } },
+      { vital_key: "respiratory_rate", label: "Respiratory Rate", value_text: String(respiratory), numeric_value: respiratory, unit: "/min", status_label: isLive ? "Synced" : "Awaiting sync", baseline_text: sourceLabel, trend_points: respiratoryTrend, color_band_payload: { low: "green", mid: "green", high: "yellow" } },
       { vital_key: "body_temperature", label: "Body Temperature", value_text: "98.3", numeric_value: 98.3, unit: "F", status_label: "Normal", baseline_text: "Normal range: 97.5 - 99.5", trend_points: [98.1, 98.2, 98.0, 98.3, 98.2], color_band_payload: { low: "green", mid: "green", high: "red" } },
       { vital_key: "blood_pressure", label: "Blood Pressure", value_text: "118 / 76", numeric_value: 118, secondary_value: 76, unit: "mmHg", status_label: "Normal", baseline_text: "Normal range: < 130/80", trend_points: [116, 118, 117, 118, 119], color_band_payload: { low: "green", mid: "green", high: "red" } }
     ];
@@ -1608,16 +1630,17 @@ function createProductionApi(pool) {
     let liveWeather = null;
     if (isWeatherQuery(message)) {
       try {
-        // Try zip from explicit payload, then resident address, then context
-        const zip = context?.zip || context?.resident?.zip || resident?.zip ||
-                    (resident?.address || "").match(/\b\d{5}\b/)?.[0] || null;
-        const lat = context?.lat || resident?.lat;
-        const lon = context?.lon || resident?.lng || resident?.lon;
+        // Prefer live phone GPS (resident may be away from home), then home
+        // location captured at onboarding, then zip from payload/context.
+        const lat = context?.lat || resident?.home_lat || resident?.lat;
+        const lon = context?.lon || context?.lng || resident?.home_lng || resident?.lng || resident?.lon;
+        const zip = context?.zip || context?.resident?.zip || resident?.home_zip || resident?.zip ||
+                    (resident?.home_address || resident?.address || "").match(/\b\d{5}\b/)?.[0] || null;
 
-        if (zip) {
-          liveWeather = await getWeatherForZip(zip);
-        } else if (lat && lon) {
+        if (lat && lon) {
           liveWeather = await getWeatherForLatLon(lat, lon);
+        } else if (zip) {
+          liveWeather = await getWeatherForZip(zip);
         }
       } catch (wxErr) {
         console.warn("weather_fetch_failed:", wxErr.message);
@@ -1782,7 +1805,7 @@ function createProductionApi(pool) {
     };
   }
 
-  async function buildResidentSurfaceState(resident, healthSummary = {}) {
+  async function buildResidentSurfaceState(resident, healthSummary = {}, healthRows = []) {
     if (!resident) {
       return { schemaVersion: 1 };
     }
@@ -1872,7 +1895,7 @@ function createProductionApi(pool) {
         contributors: wellnessContributors.rows.length ? wellnessContributors.rows : defaultWellnessContributors()
       },
       vitals: {
-        monitor: vitalMonitor.rows.length ? vitalMonitor.rows : defaultVitalMonitorRows(healthSummary)
+        monitor: vitalMonitor.rows.length ? vitalMonitor.rows : defaultVitalMonitorRows(healthSummary, healthRows)
       },
       familyHealth: family,
       risk: {
@@ -3594,7 +3617,7 @@ function createProductionApi(pool) {
         const healthRows = resident ? (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [resident.id])).rows : [];
         const healthSummary = evaluateHealthVitals(healthRows);
         const latestHealthSummary = evaluateHealthVitals(healthRows.slice(0, 1));
-        const residentSurface = resident ? await buildResidentSurfaceState(resident, healthSummary) : { schemaVersion: 1 };
+        const residentSurface = resident ? await buildResidentSurfaceState(resident, healthSummary, healthRows) : { schemaVersion: 1 };
         const wearableDevices = resident ? (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [resident.id])).rows : [];
         const wearableRows = resident ? (await query(`SELECT * FROM wearable_telemetry WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id])).rows : [];
         const medications = resident ? (await query(
@@ -3633,6 +3656,13 @@ function createProductionApi(pool) {
         )).rows : [];
         const residentProfile = resident ? {
           ...resident,
+          // Home location captured during onboarding — fallback when live phone GPS is unavailable.
+          address: resident.home_address || null,
+          city: resident.home_city || null,
+          state: resident.home_state || null,
+          zip: resident.home_zip || null,
+          lat: resident.home_lat || null,
+          lng: resident.home_lng || null,
           healthProfile: resident.health_profile && Object.keys(resident.health_profile).length ? resident.health_profile : {
             primaryCondition: { name: (resident.health_conditions || [])[0] || "", status: "", severity: "", diagnosedWhen: "", symptomsToWatch: [], careTeamNotes: "" },
             allergyProfile: { allergen: (resident.allergies || [])[0] || "", reaction: "", severity: "", instructions: "" },
@@ -4040,14 +4070,37 @@ function createProductionApi(pool) {
         )).rows[0];
         if (user.role === "senior") {
           const resident = await getResidentForUser(user);
-          if (resident) await tx(
-            `UPDATE residents SET community = COALESCE($1, community), onboarding_complete = true, live_tracking_enabled = true, memory_support_enabled = true,
-              health_conditions = $2, allergies = $3, mobility_notes = $4, display_name = $5,
-              profile_photo_evidence_id = COALESCE(NULLIF($6,'')::uuid, profile_photo_evidence_id),
-              health_profile = health_profile || $7::jsonb, updated_at = now()
-             WHERE id = $8`,
-            [payload.address || null, payload.healthConcerns || [], payload.allergies ? [payload.allergies] : [], payload.mobility || null, payload.preferredName || payload.name, payload.profilePhotoEvidenceId || "", JSON.stringify({ onboarding: { profileId: profile.id, sessionId: session.id, consentId: consent.id, baselineMetrics: { height: payload.height, weight: payload.weight, bloodPressure: payload.bloodPressure, heartRate: payload.heartRate }, wearableSources: payload.wearableSources || [] } }), resident.id]
-          );
+          if (resident) {
+            // Geocode the home zip (if provided) so weather/services have a
+            // fallback location even when live phone GPS is unavailable.
+            const homeZip = String(payload.zip || "").replace(/\D/g, "").slice(0, 5) || null;
+            let homeLat = null;
+            let homeLng = null;
+            let homeState = payload.state || null;
+            if (homeZip) {
+              try {
+                const geo = await resolveZip(homeZip);
+                if (geo) {
+                  homeLat = geo.lat;
+                  homeLng = geo.lon;
+                  homeState = homeState || geo.stateAbbr || geo.state || null;
+                }
+              } catch {}
+            }
+            await tx(
+              `UPDATE residents SET community = COALESCE($1, community), onboarding_complete = true, live_tracking_enabled = true, memory_support_enabled = true,
+                health_conditions = $2, allergies = $3, mobility_notes = $4, display_name = $5,
+                profile_photo_evidence_id = COALESCE(NULLIF($6,'')::uuid, profile_photo_evidence_id),
+                health_profile = health_profile || $7::jsonb,
+                home_address = COALESCE($9, home_address), home_city = COALESCE($10, home_city),
+                home_state = COALESCE($11, home_state), home_zip = COALESCE($12, home_zip),
+                home_lat = COALESCE($13, home_lat), home_lng = COALESCE($14, home_lng),
+                updated_at = now()
+               WHERE id = $8`,
+              [payload.community || null, payload.healthConcerns || [], payload.allergies ? [payload.allergies] : [], payload.mobility || null, payload.preferredName || payload.name, payload.profilePhotoEvidenceId || "", JSON.stringify({ onboarding: { profileId: profile.id, sessionId: session.id, consentId: consent.id, baselineMetrics: { height: payload.height, weight: payload.weight, bloodPressure: payload.bloodPressure, heartRate: payload.heartRate }, wearableSources: payload.wearableSources || [] } }), resident.id,
+               payload.address || null, payload.city || null, homeState, homeZip, homeLat, homeLng]
+            );
+          }
         }
         return { session, profile, consent };
       });
@@ -7518,6 +7571,31 @@ function createProductionApi(pool) {
       return { safeZone };
     }
 
+    const safeZoneDeleteMatch = url.pathname.match(/^\/api\/safety\/safe-zones\/([^/]+)$/);
+    if (req.method === "DELETE" && safeZoneDeleteMatch) {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const zoneId = safeZoneDeleteMatch[1];
+      const updated = (await query(
+        `UPDATE resident_safe_zones SET status = 'inactive', updated_at = now()
+         WHERE id = $1 AND resident_id = $2 RETURNING *`,
+        [zoneId, resident.id]
+      )).rows[0];
+      if (!updated) {
+        const error = new Error("Safe zone not found");
+        error.status = 404;
+        throw error;
+      }
+      await query(`UPDATE safe_zones SET status = 'inactive' WHERE resident_safe_zone_id = $1`, [zoneId]);
+      await audit(req, user, "resident_safe_zone_removed", "resident_safe_zone", zoneId, { residentId: resident.id }, "info");
+      return { safeZone: updated };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/context/observations") {
       requireRole(user, ["senior"]);
       const resident = await getResidentForUser(user);
@@ -8191,9 +8269,9 @@ function createProductionApi(pool) {
           contextIntelligence,
           residentName: resident?.name || resident?.display_name || null,
           community: resident?.community || null,
-          zip: callerZip || resident?.zip || (resident?.address || "").match(/\b\d{5}\b/)?.[0] || null,
-          lat: callerLat || resident?.lat || null,
-          lon: callerLon || resident?.lng || resident?.lon || null,
+          zip: callerZip || resident?.home_zip || resident?.zip || (resident?.home_address || resident?.address || "").match(/\b\d{5}\b/)?.[0] || null,
+          lat: callerLat || resident?.home_lat || resident?.lat || null,
+          lon: callerLon || resident?.home_lng || resident?.lng || resident?.lon || null,
         },
         route: "/api/guru/chat",
         screen: payload.screen || null
@@ -8223,8 +8301,31 @@ function createProductionApi(pool) {
       requireRole(user, ["senior"]);
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
       const category = String(payload.category || "handyman").trim();
-      const address   = String(payload.address || payload.community || (resident?.community_name) || "").trim();
       const limit     = Math.min(Number(payload.limit) || 3, 5);
+
+      // Resolve the resident's current location: live phone GPS first (the
+      // resident may be away from home), then their onboarding home address.
+      let lat = Number(payload.lat) || null;
+      let lon = Number(payload.lon ?? payload.lng) || null;
+      let stateAbbr = null;
+
+      if (lat && lon) {
+        const geo = await reverseGeocode(lat, lon);
+        stateAbbr = geo?.stateAbbr || null;
+      } else if (resident?.home_lat && resident?.home_lng) {
+        lat = resident.home_lat;
+        lon = resident.home_lng;
+        stateAbbr = resident.home_state || null;
+      } else if (resident?.home_zip) {
+        const geo = await resolveZip(resident.home_zip);
+        if (geo) {
+          lat = geo.lat;
+          lon = geo.lon;
+          stateAbbr = geo.stateAbbr;
+        }
+      }
+
+      const address = String(payload.address || payload.community || (resident?.community_name) || "").trim();
 
       // Map internal category slugs → human search terms
       const categoryQuery = {
@@ -8239,7 +8340,9 @@ function createProductionApi(pool) {
         handyman:     "handyman services near me",
       }[category] || `${category} services near me`;
 
-      const searchQuery = address ? `${categoryQuery} ${address}` : categoryQuery;
+      // When we have GPS coordinates, locationBias does the geographic work
+      // and "near me" is enough. Otherwise fall back to a text address hint.
+      const searchQuery = (!lat && address) ? `${categoryQuery} ${address}` : categoryQuery;
 
       const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY || "";
       if (!googleKey) {
@@ -8264,7 +8367,15 @@ function createProductionApi(pool) {
             "places.currentOpeningHours.openNow",
           ].join(","),
         },
-        body: JSON.stringify({ textQuery: searchQuery, pageSize: Math.max(limit * 2, 5) }),
+        body: JSON.stringify({
+          textQuery: searchQuery,
+          pageSize: Math.max(limit * 2, 5),
+          ...(lat && lon ? {
+            locationBias: {
+              circle: { center: { latitude: lat, longitude: lon }, radius: 40000 } // ~25 miles
+            }
+          } : {}),
+        }),
       });
       const searchData = await searchRes.json();
 
@@ -8272,9 +8383,17 @@ function createProductionApi(pool) {
         return { pros: [], source: "google_places", message: searchData.error.message || "Places search failed" };
       }
 
-      const places = searchData.places || [];
+      let places = searchData.places || [];
       if (places.length === 0) {
         return { pros: [], source: "google_places", message: "No results found" };
+      }
+
+      // Keep the resident's results in their own state — locationBias alone
+      // can still surface results across a nearby state border.
+      if (stateAbbr) {
+        const stateMatch = new RegExp(`\\b${stateAbbr}\\b`);
+        const inState = places.filter(p => stateMatch.test(p.formattedAddress || ""));
+        if (inState.length > 0) places = inState;
       }
 
       const pros = places.map((place) => {

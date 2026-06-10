@@ -1,0 +1,5 @@
+// Copy this file to Maps.xcconfig (gitignored) and fill in the real key,
+// or export GOOGLE_MAPS_API_KEY and pass it via:
+//   flutter build ios --release --dart-define=GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY
+// Xcode also reads this file directly when building from Xcode.
+GOOGLE_MAPS_API_KEY = your-google-maps-api-key-here

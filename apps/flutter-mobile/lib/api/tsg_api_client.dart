@@ -216,6 +216,8 @@ class ResidentAppState {
     required this.people,
     required this.raw,
     this.zip,
+    this.homeLat,
+    this.homeLng,
   });
 
   final String residentId;
@@ -225,8 +227,11 @@ class ResidentAppState {
   final List<ResidentService> services;
   final List<ResidentPerson> people;
   final Map<String, dynamic> raw;
-  /// Zip code parsed from the resident address — used for live weather queries.
+  /// Zip code from the resident's home address (onboarding) — fallback for weather/services.
   final String? zip;
+  /// Home location captured at onboarding — fallback when live phone GPS is unavailable.
+  final double? homeLat;
+  final double? homeLng;
 
   factory ResidentAppState.fromJson(Map<String, dynamic> json) {
     final resident = mapValue(json['resident']);
@@ -240,11 +245,15 @@ class ResidentAppState {
     final zipFromAddress = RegExp(r'\b(\d{5})\b').firstMatch(addressStr)?.group(1);
     final resolvedZip = rawZip.isNotEmpty ? rawZip : zipFromAddress;
 
+    double? toDouble(dynamic v) => v == null ? null : double.tryParse(v.toString());
+
     return ResidentAppState(
       residentId: residentId,
       residentName: stringValue(resident['name'] ?? resident['display_name']),
       community: stringValue(resident['community']),
       zip: resolvedZip,
+      homeLat: toDouble(resident['lat']),
+      homeLng: toDouble(resident['lng']),
       medications: listOfMaps(
         json['medications'],
       ).map(ResidentMedication.fromJson).toList(),
@@ -630,6 +639,28 @@ class TsgApiClient {
       _request('POST', path, body: body);
   Future<Map<String, dynamic>> patch(String path, Map<String, dynamic> body) =>
       _request('PATCH', path, body: body);
+  Future<Map<String, dynamic>> delete(String path) =>
+      _request('DELETE', path);
+
+  Future<Map<String, dynamic>> addSafeZone({
+    required String name,
+    required double lat,
+    required double lng,
+    required int radiusMeters,
+    String type = 'OTHER',
+  }) {
+    return post('/api/safety/safe-zones', {
+      'name': name,
+      'lat': lat,
+      'lng': lng,
+      'radiusMeters': radiusMeters,
+      'type': type,
+    });
+  }
+
+  Future<Map<String, dynamic>> removeSafeZone(String id) {
+    return delete('/api/safety/safe-zones/$id');
+  }
 
   Future<Map<String, dynamic>> _request(
     String method,
