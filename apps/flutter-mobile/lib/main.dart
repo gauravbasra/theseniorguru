@@ -9,6 +9,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 
 import 'api/tsg_api_client.dart';
@@ -4366,15 +4367,38 @@ class _InputBarState extends State<_InputBar> {
     setState(() {});
   }
 
+  Future<void> _openVoice() async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => const _VoiceListenSheet(),
+    );
+    if (result == null) return;
+    final text = result.trim();
+    if (text.isEmpty) return;
+    if (widget.onSend != null) {
+      widget.onSend!(text);
+      _controller.clear();
+      setState(() {});
+    } else {
+      _controller.text = text;
+      setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasText = widget.onSend != null && _controller.text.trim().isNotEmpty;
     return Container(
-      height: 56,
+      height: 64,
       padding: const EdgeInsets.only(left: 16, right: 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: TsgColors.line),
       ),
       child: Row(
@@ -4399,30 +4423,254 @@ class _InputBarState extends State<_InputBar> {
                     style: const TextStyle(color: TsgColors.muted, fontSize: 16),
                   ),
           ),
-          GestureDetector(
-            onTap: () {
-              if (hasText) {
-                _submit();
-                return;
-              }
-              showCupertinoDialog(
-                context: context,
-                builder: (_) => CupertinoAlertDialog(
-                  title: const Text('Voice Input'),
-                  content: const Text('Voice input is coming soon. Please type your request.'),
-                  actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+          if (hasText)
+            GestureDetector(
+              onTap: _submit,
+              child: const CircleAvatar(
+                radius: 24,
+                backgroundColor: TsgColors.purple,
+                child: Icon(CupertinoIcons.arrow_up, color: Colors.white, size: 22),
+              ),
+            )
+          else
+            // Big mic button — primary input affordance for seniors.
+            GestureDetector(
+              onTap: _openVoice,
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [TsgColors.purple2, TsgColors.purple],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: TsgColors.purple.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              );
-            },
-            child: CircleAvatar(
-              radius: 20,
-              backgroundColor: TsgColors.purple,
-              child: Icon(
-                hasText ? CupertinoIcons.arrow_up : CupertinoIcons.mic_fill,
-                color: Colors.white,
-                size: 18,
+                child: const Icon(CupertinoIcons.mic_fill, color: Colors.white, size: 26),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Full-screen-ish "big mic" voice input sheet. Listens via the device's
+/// speech recognizer, shows a large pulsing mic with a live transcript, and
+/// returns the recognized text when the senior taps "Use this".
+class _VoiceListenSheet extends StatefulWidget {
+  const _VoiceListenSheet();
+
+  @override
+  State<_VoiceListenSheet> createState() => _VoiceListenSheetState();
+}
+
+class _VoiceListenSheetState extends State<_VoiceListenSheet>
+    with SingleTickerProviderStateMixin {
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  late final AnimationController _pulse;
+  String _text = '';
+  String _status = 'Getting ready...';
+  bool _listening = false;
+  bool _available = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _init();
+  }
+
+  Future<void> _init() async {
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (!mounted) return;
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _listening = false);
+        }
+      },
+      onError: (error) {
+        if (!mounted) return;
+        setState(() {
+          _listening = false;
+          _status = "Sorry, I didn't catch that. Tap the mic to try again.";
+        });
+      },
+    );
+    if (!mounted) return;
+    setState(() => _available = available);
+    if (available) {
+      _listen();
+    } else {
+      setState(() {
+        _status = 'Voice input is not available on this device.\nPlease type your message instead.';
+      });
+    }
+  }
+
+  void _listen() {
+    setState(() {
+      _listening = true;
+      _status = "I'm listening... go ahead";
+    });
+    _speech.listen(
+      onResult: (result) {
+        if (!mounted) return;
+        setState(() => _text = result.recognizedWords);
+      },
+      listenOptions: stt.SpeechListenOptions(
+        listenMode: stt.ListenMode.confirmation,
+        partialResults: true,
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _speech.stop();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  void _toggleListening() {
+    if (_listening) {
+      _speech.stop();
+      setState(() => _listening = false);
+    } else {
+      _listen();
+    }
+  }
+
+  void _useText() {
+    _speech.stop();
+    Navigator.pop(context, _text);
+  }
+
+  void _cancel() {
+    _speech.stop();
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        28,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 28,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: _available ? _toggleListening : null,
+            child: AnimatedBuilder(
+              animation: _pulse,
+              builder: (context, child) {
+                final scale = _listening ? 1.0 + (_pulse.value * 0.15) : 1.0;
+                return Transform.scale(scale: scale, child: child);
+              },
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [TsgColors.purple2, TsgColors.purple],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: TsgColors.purple.withValues(alpha: 0.35),
+                      blurRadius: _listening ? 32 : 16,
+                      spreadRadius: _listening ? 6 : 0,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  _listening ? CupertinoIcons.stop_fill : CupertinoIcons.mic_fill,
+                  color: Colors.white,
+                  size: 52,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            _status,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: TsgColors.ink,
+            ),
+          ),
+          if (_text.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: TsgColors.lilac2,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: TsgColors.line),
+              ),
+              child: Text(
+                _text,
+                style: const TextStyle(fontSize: 18, height: 1.4, color: TsgColors.ink),
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _cancel,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: const BorderSide(color: TsgColors.line),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: TsgColors.ink),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: _text.trim().isEmpty ? null : _useText,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: TsgColors.purple,
+                    disabledBackgroundColor: TsgColors.purple.withValues(alpha: 0.35),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text(
+                    'Use this',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -4806,6 +5054,20 @@ class _CompanionChatState extends State<CompanionChat> {
     _scrollToBottom();
   }
 
+  Future<void> _openVoice() async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => const _VoiceListenSheet(),
+    );
+    final text = result?.trim() ?? '';
+    if (text.isNotEmpty) _send(text);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -4902,29 +5164,56 @@ class _CompanionChatState extends State<CompanionChat> {
                   ),
                   onSubmitted: _send,
                   textInputAction: TextInputAction.send,
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _send(_controller.text),
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [TsgColors.purple2, TsgColors.purple],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+              if (_controller.text.trim().isNotEmpty)
+                GestureDetector(
+                  onTap: () => _send(_controller.text),
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [TsgColors.purple2, TsgColors.purple],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
                     ),
-                    shape: BoxShape.circle,
+                    child: const Icon(
+                      CupertinoIcons.arrow_up,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                   ),
-                  child: const Icon(
-                    CupertinoIcons.arrow_up,
-                    color: Colors.white,
-                    size: 20,
+                )
+              else
+                // Big mic button — primary input affordance for seniors.
+                GestureDetector(
+                  onTap: _loading ? null : _openVoice,
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [TsgColors.purple2, TsgColors.purple],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: TsgColors.purple.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(CupertinoIcons.mic_fill, color: Colors.white, size: 26),
                   ),
                 ),
-              ),
             ],
           ),
         ),

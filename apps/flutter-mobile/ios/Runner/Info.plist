@@ -46,6 +46,8 @@
 	<string>TheSeniorGuru saves captured photos to your photo library.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>TheSeniorGuru uses the microphone for voice check-ins and Guru voice commands.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>TheSeniorGuru uses speech recognition to turn your voice into text for Guru and chat.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
