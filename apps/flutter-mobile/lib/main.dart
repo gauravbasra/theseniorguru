@@ -4336,9 +4336,40 @@ Widget chatBubble(String text, bool mine, String meta) {
   );
 }
 
-Widget inputBar({BuildContext? context}) {
-  return Builder(
-    builder: (ctx) => Container(
+Widget inputBar({BuildContext? context, ValueChanged<String>? onSend, String hint = 'Type or speak...'}) {
+  return _InputBar(onSend: onSend, hint: hint);
+}
+
+class _InputBar extends StatefulWidget {
+  const _InputBar({this.onSend, this.hint = 'Type or speak...'});
+  final ValueChanged<String>? onSend;
+  final String hint;
+
+  @override
+  State<_InputBar> createState() => _InputBarState();
+}
+
+class _InputBarState extends State<_InputBar> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final text = _controller.text.trim();
+    if (text.isEmpty || widget.onSend == null) return;
+    widget.onSend!(text);
+    _controller.clear();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasText = widget.onSend != null && _controller.text.trim().isNotEmpty;
+    return Container(
       height: 56,
       padding: const EdgeInsets.only(left: 16, right: 8),
       decoration: BoxDecoration(
@@ -4348,33 +4379,55 @@ Widget inputBar({BuildContext? context}) {
       ),
       child: Row(
         children: [
-          const Expanded(
-            child: Text(
-              'Type or speak...',
-              style: TextStyle(color: TsgColors.muted, fontSize: 16),
-            ),
+          Expanded(
+            child: widget.onSend != null
+                ? TextField(
+                    controller: _controller,
+                    decoration: InputDecoration(
+                      hintText: widget.hint,
+                      hintStyle: const TextStyle(color: TsgColors.muted, fontSize: 16),
+                      border: InputBorder.none,
+                      isCollapsed: true,
+                    ),
+                    style: const TextStyle(fontSize: 16, color: TsgColors.ink),
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _submit(),
+                    onChanged: (_) => setState(() {}),
+                  )
+                : Text(
+                    widget.hint,
+                    style: const TextStyle(color: TsgColors.muted, fontSize: 16),
+                  ),
           ),
           GestureDetector(
             onTap: () {
+              if (hasText) {
+                _submit();
+                return;
+              }
               showCupertinoDialog(
-                context: ctx,
+                context: context,
                 builder: (_) => CupertinoAlertDialog(
                   title: const Text('Voice Input'),
                   content: const Text('Voice input is coming soon. Please type your request.'),
-                  actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+                  actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
                 ),
               );
             },
-            child: const CircleAvatar(
+            child: CircleAvatar(
               radius: 20,
               backgroundColor: TsgColors.purple,
-              child: Icon(CupertinoIcons.mic_fill, color: Colors.white, size: 18),
+              child: Icon(
+                hasText ? CupertinoIcons.arrow_up : CupertinoIcons.mic_fill,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 class RideMatchesScreen extends StatelessWidget {
@@ -4633,7 +4686,7 @@ class CompanionHome extends StatelessWidget {
           }).toList(),
         ),
         const SizedBox(height: 24),
-        inputBar(),
+        inputBar(onSend: goCompanionChat, hint: "Type how you're feeling..."),
       ],
     );
   }
