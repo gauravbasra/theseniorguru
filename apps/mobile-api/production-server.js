@@ -8246,52 +8246,53 @@ function createProductionApi(pool) {
         return { pros: [], source: "none", message: "Google Maps not configured" };
       }
 
-      // Step 1: Text Search to get place_ids + basic info
-      const textSearchParams = new URLSearchParams({
-        query: searchQuery,
-        type:  "establishment",
-        key:   googleKey,
+      // Places API (New) - Text Search returns everything we need in one call
+      const searchRes = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": googleKey,
+          "X-Goog-FieldMask": [
+            "places.id",
+            "places.displayName",
+            "places.rating",
+            "places.userRatingCount",
+            "places.formattedAddress",
+            "places.nationalPhoneNumber",
+            "places.internationalPhoneNumber",
+            "places.websiteUri",
+            "places.currentOpeningHours.openNow",
+          ].join(","),
+        },
+        body: JSON.stringify({ textQuery: searchQuery, pageSize: Math.max(limit * 2, 5) }),
       });
-      const textRes  = await fetch(`https://maps.googleapis.com/maps/api/place/textsearch/json?${textSearchParams}`);
-      const textData = await textRes.json();
+      const searchData = await searchRes.json();
 
-      if (!textData.results || textData.results.length === 0) {
+      if (searchData.error) {
+        return { pros: [], source: "google_places", message: searchData.error.message || "Places search failed" };
+      }
+
+      const places = searchData.places || [];
+      if (places.length === 0) {
         return { pros: [], source: "google_places", message: "No results found" };
       }
 
-      // Step 2: Get phone numbers via Place Details (parallel for top N results)
-      const topPlaces = textData.results.slice(0, limit);
-      const details = await Promise.all(
-        topPlaces.map(async (place) => {
-          try {
-            const detailParams = new URLSearchParams({
-              place_id: place.place_id,
-              fields: "name,formatted_phone_number,rating,user_ratings_total,vicinity,website,opening_hours",
-              key: googleKey,
-            });
-            const detailRes  = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${detailParams}`);
-            const detailData = await detailRes.json();
-            return detailData.result || null;
-          } catch { return null; }
-        })
-      );
-
-      const pros = topPlaces.map((place, i) => {
-        const detail = details[i] || {};
+      const pros = places.map((place) => {
+        const rating = place.rating || 0;
         return {
-          id:           place.place_id,
-          name:         place.name,
+          id:           place.id,
+          name:         place.displayName?.text || "Unknown",
           category:     category,
           source:       "google_places",
-          rating:       detail.rating || place.rating || 0,
-          reviewCount:  detail.user_ratings_total || place.user_ratings_total || 0,
-          location:     detail.vicinity || place.formatted_address || address,
-          phone:        detail.formatted_phone_number || null,
-          website:      detail.website || null,
-          isOpenNow:    place.opening_hours?.open_now ?? null,
-          badge:        (detail.rating || place.rating || 0) >= 4.5 ? "Highly Rated" : null,
+          rating:       rating,
+          reviewCount:  place.userRatingCount || 0,
+          location:     place.formattedAddress || address,
+          phone:        place.nationalPhoneNumber || place.internationalPhoneNumber || null,
+          website:      place.websiteUri || null,
+          isOpenNow:    place.currentOpeningHours?.openNow ?? null,
+          badge:        rating >= 4.5 ? "Highly Rated" : null,
         };
-      }).filter(p => p.phone); // Only show pros we have a phone number for
+      }).filter(p => p.phone).slice(0, limit); // Only show pros we have a phone number for
 
       return { pros, source: "google_places", query: searchQuery };
     }

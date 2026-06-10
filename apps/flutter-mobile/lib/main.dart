@@ -189,6 +189,7 @@ class _ResidentShellState extends State<ResidentShell> {
   String apiStatus = 'Connecting to mobile API...';
   bool apiBusy = false;
   String? _guruChatInitialMessage;
+  String? _companionChatInitialMessage;
   String? _pendingConfirmMedId;
 
   @override
@@ -282,6 +283,11 @@ class _ResidentShellState extends State<ResidentShell> {
     screen = Screen.guruChat;
   });
 
+  void _goCompanionChat(String initialMessage) => setState(() {
+    _companionChatInitialMessage = initialMessage;
+    screen = Screen.companionChat;
+  });
+
   void _goConfirmMed(String medicationId) => setState(() {
     _pendingConfirmMedId = medicationId;
     screen = Screen.medicationConfirm;
@@ -354,6 +360,7 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.companion => CompanionHome(
         key: const ValueKey('companion'),
         go: go,
+        goCompanionChat: _goCompanionChat,
       ),
       Screen.feed => FeedHome(key: const ValueKey('feed'), go: go),
       Screen.more => MoreHome(key: const ValueKey('more'), go: go),
@@ -609,8 +616,11 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
       ),
       Screen.companionChat => CompanionChat(
-        key: const ValueKey('companionChat'),
+        key: ValueKey('companion-chat-${_companionChatInitialMessage ?? ''}'),
         go: go,
+        apiClient: apiClient,
+        state: appState,
+        initialMessage: _companionChatInitialMessage,
       ),
       Screen.circle => CircleScreen(key: const ValueKey('circle'), go: go),
       Screen.person => PersonDetail(
@@ -4538,8 +4548,9 @@ class RideStatusScreen extends StatelessWidget {
 }
 
 class CompanionHome extends StatelessWidget {
-  const CompanionHome({super.key, required this.go});
+  const CompanionHome({super.key, required this.go, required this.goCompanionChat});
   final ValueChanged<Screen> go;
+  final ValueChanged<String> goCompanionChat;
 
   @override
   Widget build(BuildContext context) {
@@ -4580,7 +4591,7 @@ class CompanionHome extends StatelessWidget {
           children: ['Great', 'Okay', 'Lonely', 'Worried'].map((mood) {
             return SoftCard(
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              onTap: () => go(Screen.companionChat),
+              onTap: () => goCompanionChat("I'm feeling $mood today."),
               child: Row(
                 children: [
                   const Icon(
@@ -4605,30 +4616,242 @@ class CompanionHome extends StatelessWidget {
   }
 }
 
-class CompanionChat extends StatelessWidget {
-  const CompanionChat({super.key, required this.go});
+class CompanionChat extends StatefulWidget {
+  const CompanionChat({
+    super.key,
+    required this.go,
+    required this.apiClient,
+    this.state,
+    this.initialMessage,
+  });
   final ValueChanged<Screen> go;
+  final TsgApiClient apiClient;
+  final ResidentAppState? state;
+  final String? initialMessage;
+
+  @override
+  State<CompanionChat> createState() => _CompanionChatState();
+}
+
+class _CompanionChatState extends State<CompanionChat> {
+  final _controller = TextEditingController();
+  final _scroll = ScrollController();
+  final List<_ChatEntry> _messages = [];
+  bool _loading = false;
+
+  String get _firstName {
+    final full = widget.state?.residentName ?? '';
+    return full.isNotEmpty ? full.split(' ').first : 'there';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialMessage?.trim() ?? '';
+    if (initial.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _send(initial));
+    } else {
+      _messages.add(_ChatEntry.guru(
+        "Hi $_firstName! 😊 I'm Guru, your companion.\n\n"
+        "How are you feeling today? I'm here to listen.",
+      ));
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  List<Map<String, String>> _buildHistory() {
+    return _messages.map((m) => {
+      'role': m.role == _ChatRole.user ? 'user' : 'assistant',
+      'content': m.text,
+    }).toList();
+  }
+
+  Future<void> _send(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _loading) return;
+
+    setState(() {
+      _messages.add(_ChatEntry.user(trimmed));
+      _loading = true;
+    });
+    _controller.clear();
+    _scrollToBottom();
+
+    try {
+      final history = _buildHistory();
+      final response = await widget.apiClient.post('/api/guru/chat', {
+        'message': trimmed,
+        'screen': 'companion',
+        'residentName': widget.state?.residentName ?? '',
+        'community': widget.state?.community ?? '',
+        'history': history,
+      });
+
+      if (!mounted) return;
+      final reply = stringValue(
+        response['reply'] ?? response['message'] ?? response['text'],
+      );
+      setState(() {
+        _messages.add(_ChatEntry.guru(
+          reply.isNotEmpty
+              ? reply
+              : "I'm here for you, $_firstName. Tell me more about how you're feeling.",
+        ));
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatEntry.guru(
+          "I'm having a little trouble connecting right now, $_firstName. "
+          "I'm still here with you — please try again in a moment. 💙",
+        ));
+        _loading = false;
+      });
+    }
+    _scrollToBottom();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ScreenScaffold(
-      title: 'Chat with Guru',
-      back: () => go(Screen.companion),
+    return Column(
       children: [
-        chatBubble("I didn't sleep well\nlast night.", true, 'You • 8:15 AM'),
-        chatBubble(
-          'I’m sorry to hear that. Want to talk about what kept you awake?',
-          false,
-          'Guru • 8:15 AM',
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(CupertinoIcons.chevron_left, size: 24),
+                onPressed: () => widget.go(Screen.companion),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              ),
+              const Expanded(
+                child: Text(
+                  'Chat with Guru',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: TsgColors.ink,
+                  ),
+                ),
+              ),
+              const Avatar(size: 38, icon: CupertinoIcons.smiley_fill, tone: TsgColors.lilac),
+            ],
+          ),
         ),
-        chatBubble('Just too many\nthoughts.', true, 'You • 8:16 AM'),
-        chatBubble(
-          'I understand. Take a deep breath with me.',
-          false,
-          'Guru • 8:16 AM',
+        const SizedBox(height: 8),
+        const Divider(color: TsgColors.line, height: 1),
+        Expanded(
+          child: ListView.builder(
+            controller: _scroll,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            itemCount: _messages.length + (_loading ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == _messages.length) {
+                return _TypingBubble();
+              }
+              final entry = _messages[index];
+              if (entry.role == _ChatRole.user) {
+                return _UserBubble(text: entry.text);
+              }
+              return _GuroBubble(
+                text: entry.text,
+                pros: const [],
+                selectedProIds: const {},
+                onTogglePro: (_) {},
+              );
+            },
+          ),
         ),
-        const SizedBox(height: 120),
-        inputBar(),
+        Container(
+          padding: EdgeInsets.fromLTRB(
+            12,
+            10,
+            12,
+            MediaQuery.of(context).padding.bottom + 90,
+          ),
+          decoration: const BoxDecoration(
+            color: TsgColors.glass,
+            border: Border(top: BorderSide(color: TsgColors.line)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  enabled: !_loading,
+                  decoration: InputDecoration(
+                    hintText: 'Type how you\'re feeling...',
+                    hintStyle: const TextStyle(
+                      color: TsgColors.muted,
+                      fontSize: 15,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.line),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.line),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.purple),
+                    ),
+                  ),
+                  onSubmitted: _send,
+                  textInputAction: TextInputAction.send,
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _send(_controller.text),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [TsgColors.purple2, TsgColors.purple],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.arrow_up,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
