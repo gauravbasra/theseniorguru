@@ -204,7 +204,7 @@ function buildWeatherSummary(weatherData) {
 
   if (current) {
     lines.push(
-      `Current: ${current.icon} ${current.condition}, ${current.tempF}°F (feels ${current.feelsLikeF}°F), ` +
+      `Right now (current temperature, NOT today's high): ${current.icon} ${current.condition}, ${current.tempF}°F (feels ${current.feelsLikeF}°F), ` +
       `humidity ${current.humidity}%, wind ${current.windMph} mph, ` +
       `rain chance ${current.precipChancePct}%` +
       (current.precipitationIn > 0 ? `, ${current.precipitationIn}" precipitation` : "")
@@ -212,10 +212,11 @@ function buildWeatherSummary(weatherData) {
   }
 
   if (forecast?.length) {
-    const days = forecast.slice(0, 3).map(d =>
-      `${d.date} ${d.icon} ${d.condition} ${d.highF}°/${d.lowF}°F rain ${d.precipChancePct}%`
-    );
-    lines.push(`3-day forecast: ${days.join(" | ")}`);
+    const days = forecast.slice(0, 3).map((d, i) => {
+      const label = i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.date;
+      return `${label}: ${d.icon} ${d.condition}, high ${d.highF}°F / low ${d.lowF}°F, rain chance ${d.precipChancePct}%`;
+    });
+    lines.push(`Forecast (use these highs/lows when asked about "today's high" or future days):\n${days.join("\n")}`);
   }
 
   return lines.join("\n");
