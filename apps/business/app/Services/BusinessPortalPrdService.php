@@ -205,7 +205,7 @@ class BusinessPortalPrdService
             ->all();
     }
 
-    public function updateGuruRecommendation(string $recommendationId, array $payload, ?int $actorId = null): object
+    public function updateGuruRecommendation(string $recommendationId, array $payload, ?string $actorId = null): object
     {
         $validated = validator($payload, [
             'status' => ['required', 'string', 'in:active,accepted,assigned,snoozed,resolved,dismissed'],
@@ -279,7 +279,7 @@ class BusinessPortalPrdService
             ->all();
     }
 
-    public function triageAlert(string $alertId, array $payload, ?int $actorId = null): object
+    public function triageAlert(string $alertId, array $payload, ?string $actorId = null): object
     {
         $validated = validator($payload, [
             'action' => ['required', 'string', 'in:acknowledge,assign,escalate,resolve,convert_to_incident,comment'],
@@ -375,7 +375,7 @@ class BusinessPortalPrdService
         return $db->table('health_alerts')->where('id', $alertId)->first();
     }
 
-    public function createIncident(array $payload, ?int $actorId = null): object
+    public function createIncident(array $payload, ?string $actorId = null): object
     {
         $validated = validator($payload, [
             'resident_id' => ['nullable', 'uuid'],
@@ -625,7 +625,7 @@ class BusinessPortalPrdService
      * Drives the staff task lifecycle: accept (acknowledge & start), resolve,
      * snooze, or escalate to the on-call NOC team.
      */
-    public function staffTaskAction(string $taskId, array $payload, ?int $actorId = null): object
+    public function staffTaskAction(string $taskId, array $payload, ?string $actorId = null): object
     {
         $validated = validator($payload, [
             'action' => ['required', 'string', 'in:accept,resolve,snooze,escalate'],
@@ -767,7 +767,7 @@ class BusinessPortalPrdService
         ];
     }
 
-    public function createReport(array $payload, ?int $actorId = null): object
+    public function createReport(array $payload, ?string $actorId = null): object
     {
         $validated = validator($payload, [
             'report_type' => ['required', 'string', 'max:120'],
@@ -1048,7 +1048,7 @@ class BusinessPortalPrdService
      * lifecycle, mirror the state change back onto health_alerts and log a
      * triage event so the alert work queue stays consistent.
      */
-    private function reflectTaskOnAlert(object $task, string $alertStatus, string $triageAction, ?string $note, ?int $actorId, bool $resolved = false): void
+    private function reflectTaskOnAlert(object $task, string $alertStatus, string $triageAction, ?string $note, ?string $actorId, bool $resolved = false): void
     {
         if ($task->source_type !== 'health_alert' && $task->source_type !== 'escalation' || empty($task->source_id)) {
             return;
