@@ -405,11 +405,13 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('senior-photo'),
         step: seniorStepSpecs[1],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorVerify => SeniorStepScreen(
         key: const ValueKey('senior-verify'),
         step: seniorStepSpecs[2],
         go: go,
+        runApi: runApi,
       ),
       Screen.onboardingProfile => OnboardingProfile(
         key: const ValueKey('onboard2'),
@@ -419,31 +421,37 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('senior-address'),
         step: seniorStepSpecs[4],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorHealth => SeniorStepScreen(
         key: const ValueKey('senior-health'),
         step: seniorStepSpecs[5],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorMedications => SeniorStepScreen(
         key: const ValueKey('senior-meds'),
         step: seniorStepSpecs[6],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorDevices => SeniorStepScreen(
         key: const ValueKey('senior-devices'),
         step: seniorStepSpecs[7],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorPermissions => SeniorStepScreen(
         key: const ValueKey('senior-permissions'),
         step: seniorStepSpecs[8],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorMusic => SeniorStepScreen(
         key: const ValueKey('senior-music'),
         step: seniorStepSpecs[9],
         go: go,
+        runApi: runApi,
       ),
       Screen.onboardingCircle => OnboardingCircle(
         key: const ValueKey('onboard3'),
@@ -453,11 +461,13 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('senior-privacy'),
         step: seniorStepSpecs[11],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorSos => SeniorStepScreen(
         key: const ValueKey('senior-sos'),
         step: seniorStepSpecs[12],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorRoutine => SeniorStepScreen(
         key: const ValueKey('senior-routine'),
@@ -479,6 +489,7 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('trust-relationship'),
         step: trustCircleStepSpecs[1],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCircleProfile => TrustCircleProfileScreen(
         key: const ValueKey('trust-profile'),
@@ -489,21 +500,25 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('trust-messaging'),
         step: trustCircleStepSpecs[3],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCircleAlerts => TrustCircleStepScreen(
         key: const ValueKey('trust-alerts'),
         step: trustCircleStepSpecs[4],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCircleVisibility => TrustCircleStepScreen(
         key: const ValueKey('trust-visibility'),
         step: trustCircleStepSpecs[5],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCircleEmergency => TrustCircleStepScreen(
         key: const ValueKey('trust-emergency'),
         step: trustCircleStepSpecs[6],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCirclePreview => TrustCircleStepScreen(
         key: const ValueKey('trust-preview'),
@@ -519,6 +534,7 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('business-type'),
         step: businessStepSpecs[0],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessProfile => BusinessProfileScreen(
         key: const ValueKey('business-profile'),
@@ -529,11 +545,13 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('business-verification'),
         step: businessStepSpecs[2],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessOwnerVerify => BusinessStepScreen(
         key: const ValueKey('business-owner'),
         step: businessStepSpecs[3],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessServices => BusinessServicesScreen(
         key: const ValueKey('business-services'),
@@ -544,26 +562,31 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('business-pricing'),
         step: businessStepSpecs[5],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessAvailability => BusinessStepScreen(
         key: const ValueKey('business-availability'),
         step: businessStepSpecs[6],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessServiceArea => BusinessStepScreen(
         key: const ValueKey('business-area'),
         step: businessStepSpecs[7],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessLeadRules => BusinessStepScreen(
         key: const ValueKey('business-leads-rules'),
         step: businessStepSpecs[8],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessCommunication => BusinessStepScreen(
         key: const ValueKey('business-comm'),
         step: businessStepSpecs[9],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessReview => BusinessStepScreen(
         key: const ValueKey('business-review'),
