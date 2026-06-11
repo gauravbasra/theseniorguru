@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:theseniorguru_flutter_mobile/main.dart';
+import 'package:theseniorguru_mobile/main_old.dart';
+
 
 void main() {
   testWidgets('resident app opens with TSG Guru first', (tester) async {
