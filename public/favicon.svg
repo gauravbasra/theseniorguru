@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="TheSeniorGuru logo">
+  <rect width="64" height="64" rx="18" fill="#4f2d78"/>
+  <circle cx="45" cy="19" r="10" fill="#efe7f7"/>
+  <path d="M17 41c2.7 4.3 7.4 7 13 7s10.3-2.7 13-7" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M20 24c0-3.9 3.1-7 7-7h10" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+  <text x="32" y="38" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="21" font-weight="700" fill="#ffffff">SG</text>
+</svg>

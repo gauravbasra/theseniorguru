@@ -21,15 +21,57 @@ function isApiPath(pathname: string) {
   return pathname.startsWith("/api/");
 }
 
+const publicPaths = [
+  "/",
+  "/privacy",
+  "/terms",
+  "/favicon.ico",
+  "/favicon.svg",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/og-image.png",
+  "/site.webmanifest",
+  "/robots.txt",
+  "/sitemap.xml"
+];
+
+const publicPrefixes = ["/_next/", "/assets/", "/discover", "/senior-care", "/senior-living", "/seniors", "/providers", "/articles", "/operators", "/developers", "/login"];
+
+function isPublicAssetPath(pathname: string) {
+  return (
+    publicPaths.includes(pathname) ||
+    publicPrefixes.some((prefix) => pathname.startsWith(prefix))
+  );
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+  const hostname = request.nextUrl.hostname.toLowerCase();
+
+  if (hostname.endsWith(".vercel.app") || hostname === "www.theseniorguru.com") {
+    const canonicalUrl = request.nextUrl.clone();
+    canonicalUrl.hostname = "theseniorguru.com";
+    canonicalUrl.protocol = "https:";
+    return NextResponse.redirect(canonicalUrl, 308);
+  }
+
+  if (isPublicAssetPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  if (!isApiPath(pathname)) {
+    const homeUrl = request.nextUrl.clone();
+    homeUrl.pathname = "/";
+    homeUrl.search = "";
+    return NextResponse.redirect(homeUrl, 307);
+  }
 
   if (!isProtectedPath(pathname)) {
     return NextResponse.next();
   }
 
   const session = await getAdminSessionFromRequest(request);
-
   if (session) {
     return NextResponse.next();
   }
@@ -53,14 +95,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/admin/:path*",
-    "/business/:path*",
-    "/provider/:path*",
-    "/workbench/:path*",
-    "/api/v1/admin/:path*",
-    "/api/v1/business/:path*",
-    "/api/v1/provider/:path*",
-    "/api/v1/system/:path*",
-    "/api/v1/openapi"
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|assets).*)"
   ]
 };
