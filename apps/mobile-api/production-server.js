@@ -20,6 +20,29 @@ const PAID_PLAN_INTERVAL = ["month", "year"].includes(process.env.STRIPE_GROWTH_
 const STRIPE_API_VERSION = "2026-02-25.clover";
 const RIDE_PLATFORM_MARGIN_BPS = 2000;
 
+// In-process token-bucket rate limiter for Guru endpoints.
+// Limits each user to 30 requests/min on Guru chat/orchestrate.
+const _guruRateBuckets = new Map();
+const GURU_RATE_LIMIT = Number(process.env.GURU_RATE_LIMIT_RPM || 30);
+const GURU_RATE_WINDOW_MS = 60_000;
+function checkGuruRateLimit(userId) {
+  const now = Date.now();
+  const key = String(userId || "anon");
+  const bucket = _guruRateBuckets.get(key) || { count: 0, windowStart: now };
+  if (now - bucket.windowStart > GURU_RATE_WINDOW_MS) {
+    bucket.count = 0;
+    bucket.windowStart = now;
+  }
+  bucket.count += 1;
+  _guruRateBuckets.set(key, bucket);
+  if (_guruRateBuckets.size > 5000) {
+    for (const [k, v] of _guruRateBuckets) {
+      if (now - v.windowStart > GURU_RATE_WINDOW_MS * 2) _guruRateBuckets.delete(k);
+    }
+  }
+  return bucket.count <= GURU_RATE_LIMIT;
+}
+
 function required(value, name) {
   if (value === undefined || value === null || value === "") {
     const error = new Error(`${name} is required`);
@@ -724,16 +747,38 @@ function createProductionApi(pool) {
     return summary;
   }
 
-  function defaultVitalMonitorRows(summary = {}) {
+  function trendSeries(readings, field, fallback, points = 5) {
+    const values = readings
+      .slice(0, points)
+      .map(item => item[field])
+      .filter(value => value !== null && value !== undefined)
+      .map(Number)
+      .reverse();
+    if (!values.length) {
+      return [fallback, fallback, fallback, fallback, fallback];
+    }
+    while (values.length < points) {
+      values.unshift(values[0]);
+    }
+    return values.slice(-points);
+  }
+
+  function defaultVitalMonitorRows(summary = {}, readings = []) {
     const heartRate = summary.heartRateAvg || 72;
     const hrv = summary.hrvAvg || 48;
     const oxygen = summary.oxygenAvg || 97;
     const respiratory = summary.respiratoryRateAvg || 16;
+    const isLive = readings.length > 0;
+    const hrTrend = trendSeries(readings, 'heart_rate', heartRate);
+    const hrvTrend = trendSeries(readings, 'hrv', hrv);
+    const oxygenTrend = trendSeries(readings, 'oxygen_saturation', oxygen);
+    const respiratoryTrend = trendSeries(readings, 'respiratory_rate', respiratory);
+    const sourceLabel = isLive ? `Synced from ${readings[0]?.source || 'wearable'}` : "Awaiting first sync from watch or phone";
     return [
-      { vital_key: "resting_heart_rate", label: "Resting Heart Rate", value_text: String(heartRate), numeric_value: heartRate, unit: "bpm", status_label: "Normal", baseline_text: "30-day baseline: 69 bpm", trend_points: [68, 70, 69, heartRate, 71], color_band_payload: { low: "green", mid: "yellow", high: "red" } },
-      { vital_key: "hrv", label: "Heart Rate Variability", value_text: String(hrv), numeric_value: hrv, unit: "ms", status_label: "Good", baseline_text: "30-day baseline: 44 ms", trend_points: [42, 43, 44, hrv, 45], color_band_payload: { low: "yellow", mid: "green", high: "green" } },
-      { vital_key: "oxygen_saturation", label: "Blood Oxygen (SpO2)", value_text: String(oxygen), numeric_value: oxygen, unit: "%", status_label: "Normal", baseline_text: "Normal range: 95 - 100%", trend_points: [96, 97, 96, oxygen, 98], color_band_payload: { low: "red", mid: "green", high: "green" } },
-      { vital_key: "respiratory_rate", label: "Respiratory Rate", value_text: String(respiratory), numeric_value: respiratory, unit: "/min", status_label: "Normal", baseline_text: "Normal range: 12 - 20", trend_points: [15, 16, 15, respiratory, 16], color_band_payload: { low: "green", mid: "green", high: "yellow" } },
+      { vital_key: "resting_heart_rate", label: "Resting Heart Rate", value_text: String(heartRate), numeric_value: heartRate, unit: "bpm", status_label: isLive ? "Synced" : "Awaiting sync", baseline_text: sourceLabel, trend_points: hrTrend, color_band_payload: { low: "green", mid: "yellow", high: "red" } },
+      { vital_key: "hrv", label: "Heart Rate Variability", value_text: String(hrv), numeric_value: hrv, unit: "ms", status_label: isLive ? "Synced" : "Awaiting sync", baseline_text: sourceLabel, trend_points: hrvTrend, color_band_payload: { low: "yellow", mid: "green", high: "green" } },
+      { vital_key: "oxygen_saturation", label: "Blood Oxygen (SpO2)", value_text: String(oxygen), numeric_value: oxygen, unit: "%", status_label: isLive ? "Synced" : "Awaiting sync", baseline_text: sourceLabel, trend_points: oxygenTrend, color_band_payload: { low: "red", mid: "green", high: "green" } },
+      { vital_key: "respiratory_rate", label: "Respiratory Rate", value_text: String(respiratory), numeric_value: respiratory, unit: "/min", status_label: isLive ? "Synced" : "Awaiting sync", baseline_text: sourceLabel, trend_points: respiratoryTrend, color_band_payload: { low: "green", mid: "green", high: "yellow" } },
       { vital_key: "body_temperature", label: "Body Temperature", value_text: "98.3", numeric_value: 98.3, unit: "F", status_label: "Normal", baseline_text: "Normal range: 97.5 - 99.5", trend_points: [98.1, 98.2, 98.0, 98.3, 98.2], color_band_payload: { low: "green", mid: "green", high: "red" } },
       { vital_key: "blood_pressure", label: "Blood Pressure", value_text: "118 / 76", numeric_value: 118, secondary_value: 76, unit: "mmHg", status_label: "Normal", baseline_text: "Normal range: < 130/80", trend_points: [116, 118, 117, 118, 119], color_band_payload: { low: "green", mid: "green", high: "red" } }
     ];
@@ -829,18 +874,7 @@ function createProductionApi(pool) {
 
   async function buildContextIntelligenceState(resident, healthSummary = {}) {
     if (!resident) return defaultContextIntelligenceState(resident, healthSummary);
-    const [
-      guidance,
-      signals,
-      environment,
-      alerts,
-      mobility,
-      social,
-      places,
-      routines,
-      visits,
-      transport
-    ] = await Promise.all([
+    const ctxSettled = await Promise.allSettled([
       query(`SELECT * FROM guru_daily_guidance WHERE resident_id = $1 ORDER BY guidance_date DESC, created_at DESC LIMIT 1`, [resident.id]),
       query(`SELECT * FROM guru_context_signals WHERE resident_id = $1 AND suppressed = false ORDER BY signal_date DESC, created_at DESC LIMIT 12`, [resident.id]),
       query(`SELECT * FROM environment_observations WHERE resident_id = $1 OR resident_id IS NULL ORDER BY observed_at DESC LIMIT 1`, [resident.id]),
@@ -852,6 +886,23 @@ function createProductionApi(pool) {
       query(`SELECT * FROM resident_place_visits WHERE resident_id = $1 ORDER BY visit_started_at DESC LIMIT 20`, [resident.id]),
       query(`SELECT * FROM transportation_context_decisions WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id])
     ]);
+    const emptyCtx = { rows: [] };
+    const [
+      guidance,
+      signals,
+      environment,
+      alerts,
+      mobility,
+      social,
+      places,
+      routines,
+      visits,
+      transport
+    ] = ctxSettled.map((s, i) => {
+      if (s.status === "fulfilled") return s.value;
+      console.warn(`buildContextIntelligenceState query[${i}] failed:`, s.reason?.message);
+      return emptyCtx;
+    });
     const fallback = defaultContextIntelligenceState(resident, healthSummary);
     const guidanceRow = guidance.rows[0];
     const environmentRow = environment.rows[0];
@@ -1073,11 +1124,11 @@ function createProductionApi(pool) {
   }
 
   async function buildGuruBaselinesAndTrends(residentId, context = {}) {
-    const [healthRows, environmentRows, socialRows] = await Promise.all([
+    const [healthRows, environmentRows, socialRows] = (await Promise.allSettled([
       query(`SELECT * FROM health_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId]),
       query(`SELECT * FROM environmental_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId]),
       query(`SELECT * FROM social_daily_metrics WHERE senior_id = $1 AND metric_date >= current_date - interval '30 days' ORDER BY metric_date DESC`, [residentId])
-    ]);
+    ])).map(s => s.status === "fulfilled" ? s.value : { rows: [] });
     const baselineSpecs = [
       ["steps", "steps", healthRows.rows, row => row.steps],
       ["sleep_minutes", "minutes", healthRows.rows, row => row.sleep_minutes],
@@ -1214,7 +1265,7 @@ function createProductionApi(pool) {
       missed14,
       nextBooking,
       latestScore
-    ] = await Promise.all([
+    ] = (await Promise.allSettled([
       query(`SELECT * FROM health_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC, updated_at DESC LIMIT 1`, [resident.id]),
       query(`SELECT * FROM location_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC, updated_at DESC LIMIT 1`, [resident.id]),
       query(`SELECT * FROM environmental_daily_metrics WHERE senior_id = $1 ORDER BY metric_date DESC, updated_at DESC LIMIT 1`, [resident.id]),
@@ -1225,7 +1276,7 @@ function createProductionApi(pool) {
       query(`SELECT count(*)::int AS count FROM medications WHERE resident_id = $1 AND status IN ('missed','skipped') AND updated_at >= now() - interval '14 days'`, [resident.id]),
       query(`SELECT * FROM bookings WHERE resident_id = $1 AND scheduled_for >= now() ORDER BY scheduled_for ASC LIMIT 1`, [resident.id]),
       query(`SELECT * FROM guru_risk_scores WHERE senior_id = $1 ORDER BY score_date DESC, updated_at DESC LIMIT 1`, [resident.id])
-    ]);
+    ])).map(s => s.status === "fulfilled" ? s.value : { rows: [{ count: 0 }] });
     return {
       health: health.rows[0] || null,
       location: location.rows[0] || null,
@@ -1579,127 +1630,212 @@ function createProductionApi(pool) {
 
   async function resolveGuruWithLocalFirst({ req, user, resident, message, context, route, screen, forcedIntent = null }) {
     const startedAt = Date.now();
-    const resolvedIntent = resolveGuruIntent(message, context);
+
+    // ── Live weather injection ──────────────────────────────────────────────
+    // When the message is weather-related and we have a zip or GPS, fetch real
+    // weather from Open-Meteo + Zippopotam.us and inject into context/system prompt.
+    let liveWeather = null;
+    if (isWeatherQuery(message)) {
+      try {
+        // Prefer live phone GPS (resident may be away from home), then home
+        // location captured at onboarding, then zip from payload/context.
+        const lat = context?.lat || resident?.home_lat || resident?.lat;
+        const lon = context?.lon || context?.lng || resident?.home_lng || resident?.lng || resident?.lon;
+        const zip = context?.zip || context?.resident?.zip || resident?.home_zip || resident?.zip ||
+                    (resident?.home_address || resident?.address || "").match(/\b\d{5}\b/)?.[0] || null;
+
+        if (lat && lon) {
+          liveWeather = await getWeatherForLatLon(lat, lon);
+        } else if (zip) {
+          liveWeather = await getWeatherForZip(zip);
+        }
+      } catch (wxErr) {
+        console.warn("weather_fetch_failed:", wxErr.message);
+      }
+      if (liveWeather) {
+        // Attach to context so slmChat/buildGuruChatPrompt can see it
+        context = { ...context, liveWeather };
+      }
+    }
+
+    const regexResolved = resolveGuruIntent(message, context);
     if (forcedIntent) {
-      resolvedIntent.intent = forcedIntent;
+      regexResolved.intent = forcedIntent;
       if (forcedIntent === "complex_reasoning") {
-        resolvedIntent.reply = "I can help think through this step by step. For now, I will use a careful local response and avoid remote AI unless policy and budget allow it.";
+        regexResolved.reply = "I can help think through this step by step. For now, I will use a careful local response and avoid remote AI unless policy and budget allow it.";
       }
       if (forcedIntent === "safety") {
-        resolvedIntent.reply = "Safety comes first. I can route SOS and trusted-circle actions without waiting on AI budget.";
-        resolvedIntent.navigateTo = "residentSafety";
+        regexResolved.reply = "Safety comes first. I can route SOS and trusted-circle actions without waiting on AI budget.";
+        regexResolved.navigateTo = "residentSafety";
       }
     }
+
+    // Tier 1: SLM (Ollama) — runs locally on VPS; skipped on Vercel (slmAvailable() returns false in ~2s)
+    const slmOn = await slmAvailable();
+    let resolvedIntent = regexResolved;
+    if (slmOn) {
+      try {
+        const classified = await slmClassifyIntent(message);
+        if (classified && classified.confidence >= 0.70) {
+          resolvedIntent = { ...regexResolved, intent: classified.intent };
+        }
+      } catch {}
+    }
+
     const policy = await aiRoutingPolicy(resolvedIntent.intent);
     const tenantId = tenantIdForResident(resident);
-    const localConfidence = localConfidenceForIntent(resolvedIntent.intent, message);
+    const localConfidence = slmOn ? 0.95 : localConfidenceForIntent(resolvedIntent.intent, message);
     const budget = await aiBudgetMode({ resident, tenantId, emergencyBypass: policy.emergency_bypass === true });
     const remoteGloballyEnabled = process.env.GURU_REMOTE_AI_ENABLED === "true" || process.env.GURU_ALLOW_REMOTE_AI === "true" || process.env.GURU_ALLOW_REMOTE_AI === "1";
-    const remoteEligible = policy.remote_allowed === true && remoteGloballyEnabled && localConfidence < Number(policy.min_local_confidence || 0.70) && !budget.blocked && !budget.throttled;
+    const remoteEligible = !slmOn && policy.remote_allowed === true && remoteGloballyEnabled && localConfidence < Number(policy.min_local_confidence || 0.70) && !budget.blocked && !budget.throttled;
     const routeReason = policy.emergency_bypass
       ? "emergency_bypass"
-      : remoteEligible
-        ? "remote_allowed_low_local_confidence"
-        : budget.blocked || budget.throttled
-          ? budget.reason
-          : policy.remote_allowed
-            ? "local_fallback_remote_disabled_or_confident"
-            : "policy_local_only";
-    if (!remoteEligible) {
-      const cached = await cachedLocalGuruResponse(resolvedIntent.intent, message, resolvedIntent, policy);
-      await recordGuruModelInvocation(resident?.id, "local_small_language_model", resolvedIntent.intent, route, {
-        tenantId,
-        screen,
-        modelName: "tsg-local-intent-v2",
-        cacheHit: cached.cacheHit,
-        routeReason,
-        localConfidence,
-        budgetMode: budget.mode,
-        blockedByBudget: budget.blocked,
-        latencyMs: Date.now() - startedAt
-      });
-      if ((policy.remote_allowed || budget.blocked || budget.throttled) && !policy.emergency_bypass) {
+      : slmOn
+        ? "slm_local"
+        : remoteEligible
+          ? "remote_allowed_low_local_confidence"
+          : budget.blocked || budget.throttled
+            ? budget.reason
+            : policy.remote_allowed
+              ? "local_fallback_remote_disabled_or_confident"
+              : "policy_local_only";
+
+    // Tier 1: SLM reply
+    if (slmOn) {
+      try {
+        // Inject live weather summary into context for slmChat system prompt
+        const weatherSummary = liveWeather ? buildWeatherSummary(liveWeather) : null;
+        const slmContext = weatherSummary
+          ? { ...context, weatherSummary }
+          : context;
+        const slmResult = await slmChat({ message, context: slmContext, temperature: 0.45 });
+        await recordGuruModelInvocation(resident?.id, SLM_PROVIDER, resolvedIntent.intent, route, {
+          tenantId,
+          screen,
+          modelName: SLM_MODEL,
+          cacheHit: false,
+          routeReason,
+          localConfidence,
+          budgetMode: budget.mode,
+          promptTokens: slmResult.promptTokens,
+          completionTokens: slmResult.completionTokens,
+          latencyMs: Date.now() - startedAt
+        });
+        return {
+          resolvedIntent,
+          reply: slmResult.text || resolvedIntent.reply,
+          provider: SLM_PROVIDER,
+          model: SLM_MODEL,
+          configured: true,
+          navigateTo: resolvedIntent.navigateTo,
+          cacheHit: false,
+          decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: policy.emergency_bypass === true, usedRemoteAi: false }
+        };
+      } catch (slmError) {
+        console.warn("slm_chat_failed", slmError.message);
+        // fall through to OpenAI or regex
+      }
+    }
+
+    // Tier 2: OpenAI
+    if (remoteEligible) {
+      try {
+        const ai = await callOpenAI({
+          system: buildSeniorGuruSystemPrompt(context),
+          messages: [{ role: "user", content: message }]
+        });
+        const promptTokens = estimateTokensFromText(JSON.stringify(context)) + estimateTokensFromText(message);
+        const completionTokens = estimateTokensFromText(ai.text || "");
+        const estimatedCostUsd = estimateOpenAiCostUsd(promptTokens, completionTokens);
+        await incrementAiBudgetUsage(budget, estimatedCostUsd);
+        await recordGuruModelInvocation(resident?.id, "openai", resolvedIntent.intent, route, {
+          tenantId,
+          screen,
+          modelName: process.env.OPENAI_MODEL || null,
+          routeReason,
+          localConfidence,
+          promptTokens,
+          completionTokens,
+          estimatedCostUsd,
+          budgetMode: budget.mode,
+          latencyMs: Date.now() - startedAt
+        });
+        return {
+          resolvedIntent,
+          reply: ai.text || resolvedIntent.reply,
+          provider: ai.provider,
+          model: process.env.OPENAI_MODEL || null,
+          configured: ai.configured,
+          navigateTo: resolvedIntent.navigateTo,
+          cacheHit: false,
+          decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: false, usedRemoteAi: true }
+        };
+      } catch (openAiError) {
+        console.warn("openai_chat_failed", openAiError.message);
         await query(
           `INSERT INTO ai_fallback_events (senior_id, tenant_id, intent, requested_provider, actual_provider, route_reason, local_confidence, budget_mode, budget_scope, metadata)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-          [resident?.id || null, tenantId, resolvedIntent.intent, "openai", "local_small_language_model", routeReason, localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ screen })]
+           VALUES ($1,$2,$3,'openai','regex_templates',$4,$5,$6,$7,$8)`,
+          [resident?.id || null, tenantId, resolvedIntent.intent, "remote_error_regex_fallback", localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ error: openAiError.message, screen })]
         );
       }
-      return {
-        resolvedIntent,
-        reply: cached.reply,
-        provider: "local_small_language_model",
-        model: "tsg-local-intent-v2",
-        configured: false,
-        navigateTo: cached.navigateTo || resolvedIntent.navigateTo,
-        cacheHit: cached.cacheHit,
-        decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: budget.blocked, emergencyBypass: policy.emergency_bypass === true, usedRemoteAi: false }
-      };
     }
-    try {
-      const ai = await callOpenAI({
-        system: buildSeniorGuruSystemPrompt(context),
-        messages: [{ role: "user", content: message }]
-      });
-      const promptTokens = estimateTokensFromText(JSON.stringify(context)) + estimateTokensFromText(message);
-      const completionTokens = estimateTokensFromText(ai.text || "");
-      const estimatedCostUsd = estimateOpenAiCostUsd(promptTokens, completionTokens);
-      await incrementAiBudgetUsage(budget, estimatedCostUsd);
-      await recordGuruModelInvocation(resident?.id, "openai", resolvedIntent.intent, route, {
-        tenantId,
-        screen,
-        modelName: process.env.OPENAI_MODEL || null,
-        routeReason,
-        localConfidence,
-        promptTokens,
-        completionTokens,
-        estimatedCostUsd,
-        budgetMode: budget.mode,
-        latencyMs: Date.now() - startedAt
-      });
-      return {
-        resolvedIntent,
-        reply: ai.text || resolvedIntent.reply,
-        provider: ai.provider,
-        model: process.env.OPENAI_MODEL || null,
-        configured: ai.configured,
-        navigateTo: resolvedIntent.navigateTo,
-        cacheHit: false,
-        decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: false, usedRemoteAi: true }
-      };
-    } catch (error) {
-      await recordGuruModelInvocation(resident?.id, "local_small_language_model", resolvedIntent.intent, route, {
-        tenantId,
-        screen,
-        modelName: "tsg-local-intent-v2",
-        routeReason: "remote_error_local_fallback",
-        localConfidence,
-        fallbackReason: error.message,
-        budgetMode: budget.mode,
-        latencyMs: Date.now() - startedAt
-      });
+
+    // Tier 3: regex templates (always available)
+    const cached = await cachedLocalGuruResponse(resolvedIntent.intent, message, resolvedIntent, policy);
+    if (!remoteEligible && (policy.remote_allowed || budget.blocked || budget.throttled) && !policy.emergency_bypass) {
       await query(
         `INSERT INTO ai_fallback_events (senior_id, tenant_id, intent, requested_provider, actual_provider, route_reason, local_confidence, budget_mode, budget_scope, metadata)
-         VALUES ($1,$2,$3,'openai','local_small_language_model',$4,$5,$6,$7,$8)`,
-        [resident?.id || null, tenantId, resolvedIntent.intent, "remote_error_local_fallback", localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ error: error.message, screen })]
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [resident?.id || null, tenantId, resolvedIntent.intent, "openai", "regex_templates", routeReason, localConfidence, budget.mode, budget.window?.scope_key || null, JSON.stringify({ screen })]
       );
-      return {
-        resolvedIntent,
-        reply: resolvedIntent.reply,
-        provider: "local_small_language_model",
-        model: "tsg-local-intent-v2",
-        configured: false,
-        navigateTo: resolvedIntent.navigateTo,
-        cacheHit: false,
-        error: error.message,
-        decision: { routeReason: "remote_error_local_fallback", localConfidence, budgetMode: budget.mode, blockedByBudget: false, emergencyBypass: false, usedRemoteAi: false }
-      };
     }
+    await recordGuruModelInvocation(resident?.id, "regex_templates", resolvedIntent.intent, route, {
+      tenantId,
+      screen,
+      modelName: "tsg-local-intent-v2",
+      cacheHit: cached.cacheHit,
+      routeReason: remoteEligible ? "all_tiers_failed_regex_fallback" : routeReason,
+      localConfidence,
+      budgetMode: budget.mode,
+      blockedByBudget: budget.blocked,
+      latencyMs: Date.now() - startedAt
+    });
+    return {
+      resolvedIntent,
+      reply: cached.reply,
+      provider: "regex_templates",
+      model: "tsg-local-intent-v2",
+      configured: false,
+      navigateTo: cached.navigateTo || resolvedIntent.navigateTo,
+      cacheHit: cached.cacheHit,
+      decision: { routeReason, localConfidence, budgetMode: budget.mode, blockedByBudget: budget.blocked, emergencyBypass: policy.emergency_bypass === true, usedRemoteAi: false }
+    };
   }
 
-  async function buildResidentSurfaceState(resident, healthSummary = {}) {
+  async function buildResidentSurfaceState(resident, healthSummary = {}, healthRows = []) {
     if (!resident) {
       return { schemaVersion: 1 };
+    }
+    const settled = await Promise.allSettled([
+      query(`SELECT * FROM resident_daily_status_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM wellness_score_snapshots WHERE resident_id = $1 ORDER BY score_date DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM wellness_contributor_snapshots WHERE resident_id = $1 ORDER BY display_order, created_at DESC LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM vital_monitor_snapshots WHERE resident_id = $1 ORDER BY captured_at DESC LIMIT 24`, [resident.id]),
+      query(`SELECT * FROM family_health_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC, created_at DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM risk_assessments WHERE resident_id = $1 ORDER BY assessed_at DESC LIMIT 1`, [resident.id]),
+      query(`SELECT * FROM risk_timeline_events WHERE resident_id = $1 ORDER BY event_date DESC, display_order LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM community_events WHERE status = 'published' AND (community IS NULL OR community = $1) ORDER BY starts_at NULLS LAST, created_at DESC LIMIT 25`, [resident.community || null]),
+      query(`SELECT * FROM resident_service_matches WHERE resident_id = $1 AND status = 'active' ORDER BY match_score DESC NULLS LAST, created_at DESC LIMIT 20`, [resident.id]),
+      query(`SELECT * FROM transportation_match_options WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id]),
+      buildContextIntelligenceState(resident, healthSummary),
+      query(`SELECT DISTINCT ON (screen_key) * FROM resident_screen_states WHERE resident_id = $1 ORDER BY screen_key, updated_at DESC LIMIT 50`, [resident.id])
+    ]);
+    const emptyResult = { rows: [] };
+    function settledValue(i) {
+      const s = settled[i];
+      if (s.status === "fulfilled") return s.value;
+      console.warn(`buildResidentSurfaceState query[${i}] failed:`, s.reason?.message);
+      return emptyResult;
     }
     const [
       dailyStatus,
@@ -1714,21 +1850,9 @@ function createProductionApi(pool) {
       transportMatches,
       contextIntelligence,
       screenStates
-    ] = await Promise.all([
-      query(`SELECT * FROM resident_daily_status_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC LIMIT 1`, [resident.id]),
-      query(`SELECT * FROM wellness_score_snapshots WHERE resident_id = $1 ORDER BY score_date DESC LIMIT 1`, [resident.id]),
-      query(`SELECT * FROM wellness_contributor_snapshots WHERE resident_id = $1 ORDER BY display_order, created_at DESC LIMIT 20`, [resident.id]),
-      query(`SELECT * FROM vital_monitor_snapshots WHERE resident_id = $1 ORDER BY captured_at DESC LIMIT 24`, [resident.id]),
-      query(`SELECT * FROM family_health_snapshots WHERE resident_id = $1 ORDER BY snapshot_date DESC, created_at DESC LIMIT 1`, [resident.id]),
-      query(`SELECT * FROM risk_assessments WHERE resident_id = $1 ORDER BY assessed_at DESC LIMIT 1`, [resident.id]),
-      query(`SELECT * FROM risk_timeline_events WHERE resident_id = $1 ORDER BY event_date DESC, display_order LIMIT 20`, [resident.id]),
-      query(`SELECT * FROM community_events WHERE status = 'published' AND (community IS NULL OR community = $1) ORDER BY starts_at NULLS LAST, created_at DESC LIMIT 25`, [resident.community || null]),
-      query(`SELECT * FROM resident_service_matches WHERE resident_id = $1 AND status = 'active' ORDER BY match_score DESC NULLS LAST, created_at DESC LIMIT 20`, [resident.id]),
-      query(`SELECT * FROM transportation_match_options WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id]),
-      buildContextIntelligenceState(resident, healthSummary),
-      query(`SELECT DISTINCT ON (screen_key) * FROM resident_screen_states WHERE resident_id = $1 ORDER BY screen_key, updated_at DESC LIMIT 50`, [resident.id])
-    ]);
+    ] = [0,1,2,3,4,5,6,7,8,9,10,11].map(settledValue);
     const score = wellnessScore.rows[0] || {
+      _synthetic: true,
       wellness_score: 82,
       score_label: "Doing Well",
       change_from_prior: 6,
@@ -1736,6 +1860,7 @@ function createProductionApi(pool) {
       range_key: "today"
     };
     const family = familyHealth.rows[0] || {
+      _synthetic: true,
       stability_status: "stable",
       health_confidence_percent: 87,
       summary_items: [
@@ -1751,6 +1876,7 @@ function createProductionApi(pool) {
       guru_note: "Overall Anita is doing well. No immediate concerns."
     };
     const risk = riskAssessment.rows[0] || {
+      _synthetic: true,
       overall_level: healthSummary.riskLevel || "low",
       urgency_label: "No urgent concerns",
       risk_score: 12,
@@ -1758,10 +1884,10 @@ function createProductionApi(pool) {
       recommended_actions: []
     };
     const timeline = riskTimeline.rows.length ? riskTimeline.rows : [
-      { event_date: new Date().toISOString(), event_type: "normal", title: "Normal", body: "All vitals and activities in normal range.", severity: "normal", display_order: 1 },
-      { event_date: new Date(Date.now() - 86400000).toISOString(), event_type: "reduced_activity", title: "Reduced Activity", body: "Steps were 18% below your usual range.", severity: "watch", display_order: 2 },
-      { event_date: new Date(Date.now() - 172800000).toISOString(), event_type: "missed_medication", title: "Missed Medication", body: "Evening medication was missed.", severity: "high", display_order: 3 },
-      { event_date: new Date(Date.now() - 259200000).toISOString(), event_type: "low_sleep", title: "Low Sleep", body: "Sleep was below the usual range.", severity: "watch", display_order: 4 }
+      { _synthetic: true, event_date: new Date().toISOString(), event_type: "normal", title: "Normal", body: "All vitals and activities in normal range.", severity: "normal", display_order: 1 },
+      { _synthetic: true, event_date: new Date(Date.now() - 86400000).toISOString(), event_type: "reduced_activity", title: "Reduced Activity", body: "Steps were 18% below your usual range.", severity: "watch", display_order: 2 },
+      { _synthetic: true, event_date: new Date(Date.now() - 172800000).toISOString(), event_type: "missed_medication", title: "Missed Medication", body: "Evening medication was missed.", severity: "high", display_order: 3 },
+      { _synthetic: true, event_date: new Date(Date.now() - 259200000).toISOString(), event_type: "low_sleep", title: "Low Sleep", body: "Sleep was below the usual range.", severity: "watch", display_order: 4 }
     ];
     return {
       schemaVersion: 1,
@@ -1776,7 +1902,7 @@ function createProductionApi(pool) {
         contributors: wellnessContributors.rows.length ? wellnessContributors.rows : defaultWellnessContributors()
       },
       vitals: {
-        monitor: vitalMonitor.rows.length ? vitalMonitor.rows : defaultVitalMonitorRows(healthSummary)
+        monitor: vitalMonitor.rows.length ? vitalMonitor.rows : defaultVitalMonitorRows(healthSummary, healthRows)
       },
       familyHealth: family,
       risk: {
@@ -2825,6 +2951,46 @@ function createProductionApi(pool) {
   }
 
   async function route(req, payload, url) {
+    req.requestId = req.headers["x-request-id"] || crypto.randomUUID();
+
+    // GET /api/weather?zip=80126  OR  ?lat=39.55&lon=-104.97
+    if (req.method === "GET" && url.pathname === "/api/weather") {
+      const zip = url.searchParams.get("zip") || url.searchParams.get("zipCode") || null;
+      const lat = url.searchParams.get("lat") ? parseFloat(url.searchParams.get("lat")) : null;
+      const lon = url.searchParams.get("lon") || url.searchParams.get("lng");
+      const lonF = lon ? parseFloat(lon) : null;
+      let weatherData = null;
+      if (zip) {
+        weatherData = await getWeatherForZip(zip);
+      } else if (lat && lonF) {
+        const wx = await getWeatherForLatLon(lat, lonF);
+        weatherData = wx ? { location: null, ...wx } : null;
+      } else {
+        const e = new Error("Provide ?zip=XXXXX or ?lat=XX&lon=YY"); e.status = 400; throw e;
+      }
+      if (!weatherData) {
+        const e = new Error("Could not resolve location or fetch weather"); e.status = 404; throw e;
+      }
+      return weatherData;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/slm/status") {
+      const available = await slmAvailable();
+      return {
+        provider: SLM_PROVIDER,
+        model: SLM_MODEL,
+        available,
+        groqConfigured: Boolean(process.env.GROQ_API_KEY),
+        openAiConfigured: Boolean(process.env.OPENAI_API_KEY),
+        remoteAiEnabled: process.env.GURU_REMOTE_AI_ENABLED === "true" || process.env.GURU_ALLOW_REMOTE_AI === "true",
+        routing: available
+          ? `${SLM_PROVIDER} → openai (fallback) → regex`
+          : process.env.OPENAI_API_KEY
+            ? "openai → regex"
+            : "regex only"
+      };
+    }
+
     if (req.method === "GET" && url.pathname === "/api/billing/success") {
       return {
         ok: true,
@@ -3472,7 +3638,7 @@ function createProductionApi(pool) {
         const healthRows = resident ? (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [resident.id])).rows : [];
         const healthSummary = evaluateHealthVitals(healthRows);
         const latestHealthSummary = evaluateHealthVitals(healthRows.slice(0, 1));
-        const residentSurface = resident ? await buildResidentSurfaceState(resident, healthSummary) : { schemaVersion: 1 };
+        const residentSurface = resident ? await buildResidentSurfaceState(resident, healthSummary, healthRows) : { schemaVersion: 1 };
         const wearableDevices = resident ? (await query(`SELECT * FROM wearable_devices WHERE resident_id = $1 ORDER BY updated_at DESC`, [resident.id])).rows : [];
         const wearableRows = resident ? (await query(`SELECT * FROM wearable_telemetry WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 10`, [resident.id])).rows : [];
         const medications = resident ? (await query(
@@ -3511,6 +3677,13 @@ function createProductionApi(pool) {
         )).rows : [];
         const residentProfile = resident ? {
           ...resident,
+          // Home location captured during onboarding — fallback when live phone GPS is unavailable.
+          address: resident.home_address || null,
+          city: resident.home_city || null,
+          state: resident.home_state || null,
+          zip: resident.home_zip || null,
+          lat: resident.home_lat || null,
+          lng: resident.home_lng || null,
           healthProfile: resident.health_profile && Object.keys(resident.health_profile).length ? resident.health_profile : {
             primaryCondition: { name: (resident.health_conditions || [])[0] || "", status: "", severity: "", diagnosedWhen: "", symptomsToWatch: [], careTeamNotes: "" },
             allergyProfile: { allergen: (resident.allergies || [])[0] || "", reaction: "", severity: "", instructions: "" },
@@ -4754,20 +4927,68 @@ function createProductionApi(pool) {
          RETURNING id, name, condition, strength, dose_quantity, dose_time, frequency, remaining_count, refill_threshold, prescriber, pharmacy, status, last_confirmed_at`,
         [medication.id, resident.id]
       )).rows[0];
+      // Log dose to medication_dose_log
+      await query(
+        `INSERT INTO medication_dose_log (medication_id, resident_id, dose_status, confirmed_at, quantity_taken, remaining_after, source)
+         VALUES ($1,$2,'taken',now(),1,$3,'resident_app')`,
+        [updated.id, resident.id, Number(updated.remaining_count)]
+      ).catch(() => {});
+
       await query(
         `INSERT INTO medication_inventory_events (medication_id, resident_id, event_type, quantity_delta, remaining_after, reason)
          VALUES ($1,$2,'dose_confirmed',-1,$3,'Resident confirmed medication dose')`,
         [updated.id, resident.id, Number(updated.remaining_count)]
-      );
-      if (Number(updated.remaining_count) <= Number(updated.refill_threshold)) {
-        await query(
-          `INSERT INTO notifications (user_id, channel, title, body, status)
-           VALUES ($1,'push','Medication refill needed',$2,'queued')`,
-          [user.id, `${updated.name} ${updated.strength || ""} is at ${updated.remaining_count} remaining. Please request a refill or confirm pharmacy support.`.trim()]
-        );
+      ).catch(() => {});
+
+      // Smart refill: calculate days of supply, alert at 7 days
+      const daysLeft = daysOfSupplyRemaining(Number(updated.remaining_count), updated.frequency);
+      if (daysLeft <= 7) {
+        // Only send reminder once per 24h
+        const alreadySent = (await query(
+          `SELECT id FROM medications WHERE id = $1 AND refill_reminder_sent_at > now() - interval '24 hours'`,
+          [updated.id]
+        )).rows[0];
+        if (!alreadySent) {
+          await query(
+            `UPDATE medications SET refill_reminder_sent_at = now() WHERE id = $1`, [updated.id]
+          );
+          const urgency = daysLeft <= 2 ? "🚨 URGENT:" : "⚠️";
+          await query(
+            `INSERT INTO notifications (user_id, channel, title, body, status)
+             VALUES ($1,'push',$2,$3,'queued')`,
+            [user.id,
+             `${urgency} Refill Needed — ${updated.name}`,
+             `${updated.name} ${updated.strength || ""} has ${updated.remaining_count} doses left — about ${daysLeft} day${daysLeft !== 1 ? "s" : ""}. Tap to request a refill.`]
+          );
+          // Auto-create a refill request if only 2 days left and no pending request
+          if (daysLeft <= 2) {
+            const pendingRefill = (await query(
+              `SELECT id FROM medication_refill_requests WHERE medication_id = $1 AND status NOT IN ('completed','cancelled','failed') LIMIT 1`,
+              [updated.id]
+            )).rows[0];
+            if (!pendingRefill) {
+              await query(
+                `INSERT INTO medication_refill_requests (medication_id, resident_id, quantity_requested, remaining_at_request, auto_triggered, status)
+                 VALUES ($1,$2,30,$3,TRUE,'requested')`,
+                [updated.id, resident.id, Number(updated.remaining_count)]
+              ).catch(() => {});
+            }
+          }
+        }
       }
-      await audit(req, user, "medication_confirmed", "medication", updated.id, { name: updated.name, remainingCount: updated.remaining_count });
-      return { medication: updated, alreadyTaken: false };
+
+      await audit(req, user, "medication_confirmed", "medication", updated.id, { name: updated.name, remainingCount: updated.remaining_count, daysLeft });
+      // Invalidate cached Guru responses about medications
+      await query(
+        `DELETE FROM ai_response_cache WHERE intent = 'medication' AND senior_id = $1`,
+        [resident.id]
+      ).catch(() => {});
+      return {
+        medication: { ...updated, daysSupplyRemaining: daysLeft },
+        alreadyTaken: false,
+        daysSupplyRemaining: daysLeft,
+        refillNeeded: daysLeft <= 7
+      };
     }
 
     if (req.method === "POST" && url.pathname === "/api/medications/remind-later") {
@@ -4882,6 +5103,480 @@ function createProductionApi(pool) {
       );
       await audit(req, user, "medication_refill_requested", "medication_refill_request", refill.id, { medicationId: medication.id, businessId: business?.id || null, remainingCount: medication.remaining_count }, "info");
       return { refillRequest: refill };
+    }
+
+    // -----------------------------------------------------------------------
+    // SMART MEDICATION MANAGEMENT ENDPOINTS
+    // -----------------------------------------------------------------------
+
+    // GET /api/medications/dashboard  — full medication dashboard for resident
+    if (req.method === "GET" && url.pathname === "/api/medications/dashboard") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+      const meds = (await query(
+        `SELECT m.*,
+                CASE WHEN m.remaining_count <= 0 THEN 'out_of_stock'
+                     WHEN m.remaining_count <= m.refill_threshold THEN 'refill_needed'
+                     WHEN m.remaining_count <= m.refill_threshold * 2 THEN 'refill_soon'
+                     ELSE 'sufficient' END AS inventory_status,
+                (SELECT status FROM medication_refill_requests r
+                 WHERE r.medication_id = m.id ORDER BY r.requested_at DESC LIMIT 1) AS latest_refill_status
+         FROM medications m
+         WHERE m.resident_id = $1 AND (m.is_active = TRUE OR m.is_active IS NULL)
+         ORDER BY m.dose_time NULLS LAST, m.name`,
+        [resident.id]
+      )).rows;
+
+      // Enrich each medication with drug reference data + interaction flags
+      const enriched = meds.map(m => {
+        const ref = lookupDrug(m.name);
+        const days = daysOfSupplyRemaining(m.remaining_count, m.frequency);
+        return {
+          ...m,
+          daysSupplyRemaining: days,
+          refillNeeded: refillNeeded(m.remaining_count, m.frequency),
+          drugInfo: ref ? {
+            drugClass: ref.class,
+            sideEffects: ref.sideEffects,
+            beersListCaution: ref.beersListCaution || false,
+            narrowTherapeuticIndex: ref.narrowTherapeuticIndex || false,
+            renalCaution: ref.renalCaution || false,
+            indication: ref.indication
+          } : null
+        };
+      });
+
+      // Check interactions across all active medications
+      const interactions = checkInteractions(meds.map(m => m.name));
+
+      // Active refill requests
+      const refillRequests = (await query(
+        `SELECT r.*, m.name AS medication_name, m.strength
+         FROM medication_refill_requests r
+         JOIN medications m ON m.id = r.medication_id
+         WHERE r.resident_id = $1 AND r.status NOT IN ('completed','cancelled')
+         ORDER BY r.requested_at DESC LIMIT 10`,
+        [resident.id]
+      )).rows;
+
+      // Unacknowledged interaction alerts
+      const interactionAlerts = (await query(
+        `SELECT * FROM medication_interaction_alerts
+         WHERE resident_id = $1 AND acknowledged = FALSE
+         ORDER BY severity DESC, created_at DESC`,
+        [resident.id]
+      )).rows;
+
+      // Recent dose log (last 7 days)
+      const doseLog = (await query(
+        `SELECT l.*, m.name AS medication_name
+         FROM medication_dose_log l
+         JOIN medications m ON m.id = l.medication_id
+         WHERE l.resident_id = $1 AND l.created_at >= now() - interval '7 days'
+         ORDER BY l.created_at DESC LIMIT 50`,
+        [resident.id]
+      )).rows;
+
+      // Today's adherence summary
+      const todayTaken = (await query(
+        `SELECT count(*)::int FROM medication_dose_log
+         WHERE resident_id = $1 AND dose_status = 'taken' AND created_at >= current_date`,
+        [resident.id]
+      )).rows[0].count;
+
+      return {
+        medications: enriched,
+        interactions,
+        interactionAlerts,
+        refillRequests,
+        doseLog,
+        summary: {
+          total: meds.length,
+          refillNeeded: enriched.filter(m => m.refillNeeded).length,
+          outOfStock: enriched.filter(m => m.inventory_status === "out_of_stock").length,
+          interactionWarnings: interactions.length,
+          todayTaken,
+          adherenceToday: meds.length > 0 ? Math.round((todayTaken / meds.length) * 100) : 100
+        }
+      };
+    }
+
+    // POST /api/medications/add  — add medication with auto drug-info enrichment + interaction check
+    if (req.method === "POST" && url.pathname === "/api/medications/add") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+
+      const name = String(payload.name || "").trim();
+      if (!name) { const e = new Error("Medication name is required"); e.status = 400; throw e; }
+
+      // Look up drug reference
+      const ref = lookupDrug(name);
+      const beersCaution = getBeersCaution(name);
+
+      // Upsert medication
+      const existing = (await query(
+        `SELECT id FROM medications WHERE resident_id = $1 AND lower(name) = lower($2) AND (is_active = TRUE OR is_active IS NULL) LIMIT 1`,
+        [resident.id, name]
+      )).rows[0];
+
+      let med;
+      if (existing) {
+        med = (await query(
+          `UPDATE medications SET
+             condition = COALESCE($1, condition), strength = COALESCE($2, strength),
+             dose_quantity = COALESCE($3, dose_quantity), dose_time = COALESCE($4, dose_time),
+             frequency = COALESCE($5, frequency), remaining_count = COALESCE($6, remaining_count),
+             refill_threshold = COALESCE($7, refill_threshold), prescriber = COALESCE($8, prescriber),
+             pharmacy = COALESCE($9, pharmacy), generic_name = COALESCE($10, generic_name),
+             drug_class = COALESCE($11, drug_class), side_effects = COALESCE($12, side_effects),
+             beers_list_caution = $13, special_instructions = COALESCE($14, special_instructions),
+             start_date = COALESCE($15, start_date), is_active = TRUE, updated_at = now()
+           WHERE id = $16 RETURNING *`,
+          [payload.condition, payload.strength, payload.doseQuantity, payload.time || payload.doseTime,
+           payload.frequency, payload.remaining ?? payload.remainingCount, payload.refillThreshold,
+           payload.prescriber, payload.pharmacy, ref?.generic || null, ref?.class || null,
+           ref?.sideEffects || null, beersCaution, payload.specialInstructions,
+           payload.startDate || null, existing.id]
+        )).rows[0];
+      } else {
+        med = (await query(
+          `INSERT INTO medications (resident_id, name, condition, strength, dose_quantity, dose_time,
+             frequency, remaining_count, refill_threshold, prescriber, pharmacy, generic_name,
+             drug_class, side_effects, beers_list_caution, special_instructions, start_date, status, is_active)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'pending',TRUE)
+           RETURNING *`,
+          [resident.id, name, payload.condition || ref?.indication || null,
+           payload.strength || null, payload.doseQuantity || 1, payload.time || payload.doseTime || null,
+           payload.frequency || "Once daily", payload.remaining ?? payload.remainingCount ?? 30,
+           payload.refillThreshold || 7, payload.prescriber || null, payload.pharmacy || null,
+           ref?.generic || null, ref?.class || null, ref?.sideEffects || null,
+           beersCaution, payload.specialInstructions || null, payload.startDate || null]
+        )).rows[0];
+      }
+
+      // Check interactions with existing medications
+      const allMeds = (await query(
+        `SELECT name FROM medications WHERE resident_id = $1 AND (is_active = TRUE OR is_active IS NULL) AND id != $2`,
+        [resident.id, med.id]
+      )).rows.map(r => r.name);
+
+      const interactions = checkInteractions([name, ...allMeds]);
+      const newInteractions = interactions.filter(i =>
+        i.drugA.toLowerCase().includes(name.toLowerCase()) ||
+        i.drugB.toLowerCase().includes(name.toLowerCase())
+      );
+
+      // Persist interaction alerts
+      for (const ix of newInteractions) {
+        await query(
+          `INSERT INTO medication_interaction_alerts (resident_id, drug_a, drug_b, severity, description)
+           VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+          [resident.id, ix.drugA.toLowerCase(), ix.drugB.toLowerCase(), ix.severity, ix.description]
+        ).catch(() => {});
+      }
+
+      // Notify for high-severity interactions
+      const highRisk = newInteractions.filter(i => i.severity === "HIGH");
+      if (highRisk.length) {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','⚠️ Drug Interaction Alert',$2,'queued')`,
+          [user.id, `${name} has a HIGH-risk interaction with: ${highRisk.map(i => i.drugA === name ? i.drugB : i.drugA).join(", ")}. Please review with your doctor.`]
+        );
+      }
+
+      // Beers list warning for seniors
+      if (beersCaution) {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','Medication Safety Note',$2,'queued')`,
+          [user.id, `${name} is on the Beers List — it may cause falls, confusion, or other serious effects in older adults. Ask your doctor if there's a safer alternative.`]
+        );
+      }
+
+      await audit(req, user, "medication_added", "medication", med.id, { name, interactions: newInteractions.length });
+      return {
+        medication: { ...med, daysSupplyRemaining: daysOfSupplyRemaining(med.remaining_count, med.frequency) },
+        drugInfo: ref ? { drugClass: ref.class, sideEffects: ref.sideEffects, indication: ref.indication, beersListCaution: beersCaution } : null,
+        interactions: newInteractions,
+        warnings: [
+          ...highRisk.map(i => ({ type: "drug_interaction", severity: "HIGH", message: `${i.drugA} + ${i.drugB}: ${i.description}` })),
+          ...(beersCaution ? [{ type: "beers_list", severity: "MODERATE", message: `${name} is on the Beers Criteria list for seniors. Discuss alternatives with your doctor.` }] : [])
+        ]
+      };
+    }
+
+    // GET /api/medications/lookup?name=lisinopril  — drug reference lookup
+    if (req.method === "GET" && url.pathname === "/api/medications/lookup") {
+      const name = url.searchParams.get("name") || "";
+      if (!name) { const e = new Error("name is required"); e.status = 400; throw e; }
+      const ref = lookupDrug(name);
+      if (!ref) return { found: false, name };
+      return {
+        found: true,
+        generic: ref.generic,
+        brandNames: ref.brand,
+        drugClass: ref.class,
+        indication: ref.indication,
+        sideEffects: ref.sideEffects,
+        knownInteractions: ref.interactions || [],
+        beersListCaution: ref.beersListCaution || false,
+        narrowTherapeuticIndex: ref.narrowTherapeuticIndex || false,
+        renalCaution: ref.renalCaution || false
+      };
+    }
+
+    // POST /api/medications/check-interactions  — check a list of drug names for interactions
+    if (req.method === "POST" && url.pathname === "/api/medications/check-interactions") {
+      const names = Array.isArray(payload.medications) ? payload.medications.map(String) : [];
+      if (names.length < 2) { const e = new Error("At least 2 medication names required"); e.status = 400; throw e; }
+      const interactions = checkInteractions(names);
+      return { medications: names, interactions, hasHighRisk: interactions.some(i => i.severity === "HIGH") };
+    }
+
+    // POST /api/medications/ask  — Groq-powered medication Q&A
+    if (req.method === "POST" && url.pathname === "/api/medications/ask") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const resident = await getResidentForUser(user);
+      const message = String(payload.message || payload.question || "").trim();
+      if (!message) { const e = new Error("message is required"); e.status = 400; throw e; }
+      const meds = resident ? (await query(
+        `SELECT name, strength, frequency FROM medications WHERE resident_id = $1 AND (is_active = TRUE OR is_active IS NULL)`,
+        [resident.id]
+      )).rows : [];
+      const answer = await askMedicationQuestion(message, meds, resident?.name || null);
+      return { question: message, answer: answer.text, provider: answer.provider, model: answer.model };
+    }
+
+    // POST /api/medications/scan-label  — OCR text → structured medication fields via Groq
+    // Receives raw OCR text from ML Kit on the device; Groq parses into structured fields.
+    if (req.method === "POST" && url.pathname === "/api/medications/scan-label") {
+      requireRole(user, ["senior"]);
+      const rawText = String(payload.text || payload.ocrText || "").trim();
+      if (!rawText || rawText.length < 10) {
+        const e = new Error("ocrText is required and must be at least 10 characters");
+        e.status = 400; throw e;
+      }
+
+      // Groq parses the label text into structured medication fields
+      let parsed = null;
+      const LABEL_SYSTEM_PROMPT = [
+        "You are a pharmacist assistant. Parse the following US prescription drug label text into JSON.",
+        "Return ONLY valid JSON with these fields (use null for missing values):",
+        '{"name":"full drug name with strength","genericName":"generic name","strength":"dose strength","frequency":"dosing schedule","condition":null,"prescriber":"doctor name or null","pharmacy":"pharmacy name or null","pharmacyPhone":"phone or null","rxNumber":"Rx number or null","remainingRefills":null,"quantity":null}',
+        "Examples:",
+        '  "LISINOPRIL 10MG TABLET" → {"name":"Lisinopril 10mg","genericName":"lisinopril","strength":"10mg","frequency":null,...}',
+        '  "TAKE 1 TABLET BY MOUTH TWICE DAILY" → {"frequency":"twice daily",...}',
+        "Use the full sig/directions line for frequency. Do not add any text outside the JSON object."
+      ].join("\n");
+
+      try {
+        const result = await callSLM({
+          system: LABEL_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: rawText.slice(0, 1500) }],
+          temperature: 0.05,
+          maxTokens: 300
+        });
+        // Extract JSON from response
+        const match = result.text.match(/\{[\s\S]*\}/);
+        if (match) {
+          try { parsed = JSON.parse(match[0]); } catch {}
+        }
+      } catch (err) {
+        console.error("scan-label Groq error:", err.message);
+        // Fall through — return null fields with warning
+      }
+
+      // Enrich with drug reference data if we got a name
+      let drugInfo = null;
+      if (parsed?.genericName) {
+        drugInfo = lookupDrug(parsed.genericName);
+      } else if (parsed?.name) {
+        drugInfo = lookupDrug(parsed.name);
+      }
+
+      return {
+        parsed: parsed || {},
+        drugInfo: drugInfo ? {
+          generic: drugInfo.generic,
+          brand: drugInfo.brand,
+          class: drugInfo.class,
+          indication: drugInfo.indication,
+          sideEffects: drugInfo.sideEffects,
+          beersListCaution: drugInfo.beersListCaution || false,
+          narrowTherapeuticIndex: drugInfo.narrowTherapeuticIndex || false,
+          renalCaution: drugInfo.renalCaution || false
+        } : null,
+        rawText: rawText.slice(0, 500),
+        provider: "groq"
+      };
+    }
+
+    // POST /api/medications/side-effects  — report a side effect
+    if (req.method === "POST" && url.pathname === "/api/medications/side-effects") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+      const med = (await query(
+        `SELECT id, name FROM medications WHERE id = $1 AND resident_id = $2`,
+        [required(payload.medicationId, "medicationId"), resident.id]
+      )).rows[0];
+      if (!med) { const e = new Error("Medication not found"); e.status = 404; throw e; }
+      const report = (await query(
+        `INSERT INTO medication_side_effect_reports (medication_id, resident_id, symptom, severity, onset_date, notes)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [med.id, resident.id, required(payload.symptom, "symptom"), payload.severity || "mild",
+         payload.onsetDate || null, payload.notes || null]
+      )).rows[0];
+      // Notify care team for severe side effects
+      if (payload.severity === "severe") {
+        await query(
+          `INSERT INTO notifications (user_id, channel, title, body, status)
+           VALUES ($1,'push','⚠️ Severe Side Effect Reported',$2,'queued')`,
+          [user.id, `You reported a severe reaction to ${med.name}: ${payload.symptom}. Please contact your doctor immediately if this is serious.`]
+        );
+      }
+      await audit(req, user, "medication_side_effect_reported", "medication", med.id, { symptom: payload.symptom, severity: payload.severity });
+      return { report };
+    }
+
+    // PATCH /api/medications/interactions/:id/acknowledge
+    if (req.method === "PATCH" && url.pathname.match(/^\/api\/medications\/interactions\/[^/]+\/acknowledge$/)) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const alertId = url.pathname.split("/")[4];
+      const resident = await getResidentForUser(user);
+      await query(
+        `UPDATE medication_interaction_alerts SET acknowledged = TRUE, acknowledged_at = now()
+         WHERE id = $1 AND resident_id = $2`,
+        [alertId, resident?.id]
+      );
+      return { ok: true };
+    }
+
+    // GET /api/medications/refill-providers  — list available refill providers for community
+    if (req.method === "GET" && url.pathname === "/api/medications/refill-providers") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      const providers = (await query(
+        `SELECT id, name, type, phone, website, turnaround_days
+         FROM refill_providers
+         WHERE is_active = TRUE AND (community IS NULL OR community = $1)
+         ORDER BY type, name`,
+        [resident?.community || null]
+      )).rows;
+      // Also include pharmacy businesses registered in the platform
+      const pharmacyBiz = (await query(
+        `SELECT b.id, b.name, 'platform_pharmacy' AS type, b.phone, NULL AS website, 2 AS turnaround_days
+         FROM businesses b JOIN services s ON s.business_id = b.id
+         WHERE b.status = 'approved' AND s.status = 'approved'
+           AND (lower(s.category) LIKE '%pharm%' OR lower(s.name) LIKE '%pharm%' OR lower(s.name) LIKE '%med%')
+         LIMIT 5`
+      )).rows;
+      return { providers: [...providers, ...pharmacyBiz] };
+    }
+
+    // POST /api/medications/refill-smart  — smart refill with auto provider selection + 7-day trigger
+    if (req.method === "POST" && url.pathname === "/api/medications/refill-smart") {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+      const medId = payload.medicationId;
+      const med = (await query(
+        `SELECT * FROM medications WHERE id = $1 AND resident_id = $2 AND (is_active = TRUE OR is_active IS NULL)`,
+        [required(medId, "medicationId"), resident.id]
+      )).rows[0];
+      if (!med) { const e = new Error("Medication not found"); e.status = 404; throw e; }
+
+      // Find best provider
+      let providerId = payload.providerId || null;
+      if (!providerId) {
+        const prov = (await query(
+          `SELECT id FROM refill_providers WHERE is_active = TRUE AND (community IS NULL OR community = $1) ORDER BY turnaround_days ASC LIMIT 1`,
+          [resident.community || null]
+        )).rows[0];
+        providerId = prov?.id || null;
+      }
+
+      const refill = (await query(
+        `INSERT INTO medication_refill_requests
+           (medication_id, resident_id, refill_provider_id, quantity_requested, days_supply, remaining_at_request, auto_triggered, notes, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'requested')
+         RETURNING *`,
+        [med.id, resident.id, providerId, payload.quantityRequested || 30, payload.daysSupply || 30,
+         med.remaining_count, payload.autoTriggered === true, payload.notes || null]
+      )).rows[0];
+
+      // Update medication refill_requested_at
+      await query(`UPDATE medications SET refill_requested_at = now(), updated_at = now() WHERE id = $1`, [med.id]);
+
+      // Notify resident
+      await query(
+        `INSERT INTO notifications (user_id, channel, title, body, status)
+         VALUES ($1,'push','Refill Requested',$2,'queued')`,
+        [user.id, `Refill request created for ${med.name} ${med.strength || ""}. You have ${med.remaining_count} doses remaining.`]
+      );
+
+      // Notify provider if platform pharmacy
+      if (providerId) {
+        const providerBiz = (await query(`SELECT owner_user_id, name FROM businesses WHERE id = $1`, [providerId])).rows[0];
+        if (providerBiz?.owner_user_id) {
+          await query(
+            `INSERT INTO notifications (user_id, channel, title, body, status)
+             VALUES ($1,'push','New Refill Request',$2,'queued')`,
+            [providerBiz.owner_user_id, `${resident.name} needs a refill for ${med.name} ${med.strength || ""}. ${med.remaining_count} doses remaining.`]
+          );
+        }
+      }
+
+      await audit(req, user, "medication_refill_smart", "medication_refill_request", refill.id, { medicationId: med.id, remainingCount: med.remaining_count });
+      return {
+        refillRequest: refill,
+        daysRemaining: daysOfSupplyRemaining(med.remaining_count, med.frequency),
+        message: `Refill request sent for ${med.name}. You have approximately ${daysOfSupplyRemaining(med.remaining_count, med.frequency)} days of supply remaining.`
+      };
+    }
+
+    // GET /api/medications/reference  — search the drug reference database
+    if (req.method === "GET" && url.pathname === "/api/medications/reference") {
+      const q = (url.searchParams.get("q") || "").toLowerCase().trim();
+      const results = q
+        ? DRUG_REFERENCE.filter(d =>
+            d.generic.toLowerCase().includes(q) ||
+            d.brand.some(b => b.toLowerCase().includes(q)) ||
+            (d.class || "").toLowerCase().includes(q) ||
+            (d.indication || "").toLowerCase().includes(q)
+          ).slice(0, 20)
+        : DRUG_REFERENCE.slice(0, 50);
+      return {
+        results: results.map(d => ({
+          generic: d.generic, brand: d.brand, class: d.class, indication: d.indication,
+          sideEffects: d.sideEffects, beersListCaution: d.beersListCaution || false,
+          narrowTherapeuticIndex: d.narrowTherapeuticIndex || false, renalCaution: d.renalCaution || false
+        })),
+        total: results.length
+      };
+    }
+
+    // GET /api/medications/dose-log  — dose history for a resident
+    if (req.method === "GET" && url.pathname === "/api/medications/dose-log") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) { const e = new Error("Resident not found"); e.status = 404; throw e; }
+      const days = Math.min(Number(url.searchParams.get("days") || 7), 90);
+      const log = (await query(
+        `SELECT l.*, m.name AS medication_name, m.strength, m.frequency
+         FROM medication_dose_log l
+         JOIN medications m ON m.id = l.medication_id
+         WHERE l.resident_id = $1 AND l.created_at >= now() - ($2 || ' days')::interval
+         ORDER BY l.created_at DESC`,
+        [resident.id, days]
+      )).rows;
+      const adherence = log.length > 0
+        ? Math.round((log.filter(r => r.dose_status === "taken").length / log.length) * 100)
+        : 100;
+      return { log, adherencePercent: adherence, days };
     }
 
     if (req.method === "PATCH" && url.pathname.startsWith("/api/business/refill-requests/")) {
@@ -6816,6 +7511,31 @@ function createProductionApi(pool) {
       return { safeZone };
     }
 
+    const safeZoneDeleteMatch = url.pathname.match(/^\/api\/safety\/safe-zones\/([^/]+)$/);
+    if (req.method === "DELETE" && safeZoneDeleteMatch) {
+      requireRole(user, ["senior"]);
+      const resident = await getResidentForUser(user);
+      if (!resident) {
+        const error = new Error("Resident profile not found");
+        error.status = 404;
+        throw error;
+      }
+      const zoneId = safeZoneDeleteMatch[1];
+      const updated = (await query(
+        `UPDATE resident_safe_zones SET status = 'inactive', updated_at = now()
+         WHERE id = $1 AND resident_id = $2 RETURNING *`,
+        [zoneId, resident.id]
+      )).rows[0];
+      if (!updated) {
+        const error = new Error("Safe zone not found");
+        error.status = 404;
+        throw error;
+      }
+      await query(`UPDATE safe_zones SET status = 'inactive' WHERE resident_safe_zone_id = $1`, [zoneId]);
+      await audit(req, user, "resident_safe_zone_removed", "resident_safe_zone", zoneId, { residentId: resident.id }, "info");
+      return { safeZone: updated };
+    }
+
     if (req.method === "POST" && url.pathname === "/api/context/observations") {
       requireRole(user, ["senior"]);
       const resident = await getResidentForUser(user);
@@ -7401,6 +8121,11 @@ function createProductionApi(pool) {
 
     if (req.method === "POST" && url.pathname === "/api/guru/orchestrate") {
       requireRole(user, ["senior"]);
+      if (!checkGuruRateLimit(user.id)) {
+        const error = new Error("Too many requests. Please wait a moment before sending another message.");
+        error.status = 429;
+        throw error;
+      }
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
       const message = String(payload.message || "").trim();
       if (!message) {
@@ -7411,12 +8136,23 @@ function createProductionApi(pool) {
       const memories = (await query(`SELECT * FROM guru_memories WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident?.id || null])).rows;
       const medications = (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident?.id || null])).rows;
       const contextIntelligence = resident ? await buildContextIntelligenceState(resident, evaluateHealthVitals([])) : {};
+      const callerZipO = payload.zip || payload.zipCode || null;
       const guru = await resolveGuruWithLocalFirst({
         req,
         user,
         resident,
         message,
-        context: { resident, medications, memories, contextIntelligence },
+        context: {
+          resident,
+          medications,
+          memories,
+          contextIntelligence,
+          residentName: resident?.name || resident?.display_name || null,
+          community: resident?.community || null,
+          zip: callerZipO || resident?.zip || (resident?.address || "").match(/\b\d{5}\b/)?.[0] || null,
+          lat: payload.lat || resident?.lat || null,
+          lon: payload.lon || payload.lng || resident?.lng || null,
+        },
         route: "/api/guru/orchestrate",
         screen: payload.screen || null
       });
@@ -7449,16 +8185,34 @@ function createProductionApi(pool) {
 
     if (req.method === "POST" && url.pathname === "/api/guru/chat") {
       requireRole(user, ["senior"]);
+      if (!checkGuruRateLimit(user.id)) {
+        const error = new Error("Too many requests. Please wait a moment before sending another message.");
+        error.status = 429;
+        throw error;
+      }
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
       const message = String(payload.message || "").trim();
       const medications = resident ? (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident.id])).rows : [];
       const contextIntelligence = resident ? await buildContextIntelligenceState(resident, evaluateHealthVitals([])) : {};
+      // Allow caller to pass their zip code or GPS for weather-aware responses
+      const callerZip = payload.zip || payload.zipCode || null;
+      const callerLat = payload.lat || null;
+      const callerLon = payload.lon || payload.lng || null;
       const guru = await resolveGuruWithLocalFirst({
         req,
         user,
         resident,
         message,
-        context: { resident, medications, contextIntelligence },
+        context: {
+          resident,
+          medications,
+          contextIntelligence,
+          residentName: resident?.name || resident?.display_name || null,
+          community: resident?.community || null,
+          zip: callerZip || resident?.home_zip || resident?.zip || (resident?.home_address || resident?.address || "").match(/\b\d{5}\b/)?.[0] || null,
+          lat: callerLat || resident?.home_lat || resident?.lat || null,
+          lon: callerLon || resident?.home_lng || resident?.lng || resident?.lon || null,
+        },
         route: "/api/guru/chat",
         screen: payload.screen || null
       });
@@ -7480,6 +8234,126 @@ function createProductionApi(pool) {
       )).rows[0];
       await audit(req, user, "guru_chat", "resident", resident?.id || null, { intent, navigateTo, provider: guru.provider, remoteAiUsed: guru.provider === "openai" }, "info");
       return { reply, intent, navigateTo, task, event, aiConfigured: guru.configured };
+    }
+
+    // ── Local service pro search via Google Places ────────────────────────
+    if (req.method === "POST" && url.pathname === "/api/services/find-pros") {
+      requireRole(user, ["senior"]);
+      const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
+      const category = String(payload.category || "handyman").trim();
+      const limit     = Math.min(Number(payload.limit) || 3, 5);
+
+      // Resolve the resident's current location: live phone GPS first (the
+      // resident may be away from home), then their onboarding home address.
+      let lat = Number(payload.lat) || null;
+      let lon = Number(payload.lon ?? payload.lng) || null;
+      let stateAbbr = null;
+
+      if (lat && lon) {
+        const geo = await reverseGeocode(lat, lon);
+        stateAbbr = geo?.stateAbbr || null;
+      } else if (resident?.home_lat && resident?.home_lng) {
+        lat = resident.home_lat;
+        lon = resident.home_lng;
+        stateAbbr = resident.home_state || null;
+      } else if (resident?.home_zip) {
+        const geo = await resolveZip(resident.home_zip);
+        if (geo) {
+          lat = geo.lat;
+          lon = geo.lon;
+          stateAbbr = geo.stateAbbr;
+        }
+      }
+
+      const address = String(payload.address || payload.community || (resident?.community_name) || "").trim();
+
+      // Map internal category slugs → human search terms
+      const categoryQuery = {
+        plumbing:     "plumbers near me",
+        cleaning:     "house cleaning services near me",
+        electrical:   "electricians near me",
+        landscaping:  "lawn care landscaping near me",
+        painting:     "house painters near me",
+        pest_control: "pest control exterminators near me",
+        moving:       "moving companies near me",
+        home_care:    "home care caregivers near me",
+        handyman:     "handyman services near me",
+      }[category] || `${category} services near me`;
+
+      // When we have GPS coordinates, locationBias does the geographic work
+      // and "near me" is enough. Otherwise fall back to a text address hint.
+      const searchQuery = (!lat && address) ? `${categoryQuery} ${address}` : categoryQuery;
+
+      const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY || "";
+      if (!googleKey) {
+        return { pros: [], source: "none", message: "Google Maps not configured" };
+      }
+
+      // Places API (New) - Text Search returns everything we need in one call
+      const searchRes = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": googleKey,
+          "X-Goog-FieldMask": [
+            "places.id",
+            "places.displayName",
+            "places.rating",
+            "places.userRatingCount",
+            "places.formattedAddress",
+            "places.nationalPhoneNumber",
+            "places.internationalPhoneNumber",
+            "places.websiteUri",
+            "places.currentOpeningHours.openNow",
+          ].join(","),
+        },
+        body: JSON.stringify({
+          textQuery: searchQuery,
+          pageSize: Math.max(limit * 2, 5),
+          ...(lat && lon ? {
+            locationBias: {
+              circle: { center: { latitude: lat, longitude: lon }, radius: 40000 } // ~25 miles
+            }
+          } : {}),
+        }),
+      });
+      const searchData = await searchRes.json();
+
+      if (searchData.error) {
+        return { pros: [], source: "google_places", message: searchData.error.message || "Places search failed" };
+      }
+
+      let places = searchData.places || [];
+      if (places.length === 0) {
+        return { pros: [], source: "google_places", message: "No results found" };
+      }
+
+      // Keep the resident's results in their own state — locationBias alone
+      // can still surface results across a nearby state border.
+      if (stateAbbr) {
+        const stateMatch = new RegExp(`\\b${stateAbbr}\\b`);
+        const inState = places.filter(p => stateMatch.test(p.formattedAddress || ""));
+        if (inState.length > 0) places = inState;
+      }
+
+      const pros = places.map((place) => {
+        const rating = place.rating || 0;
+        return {
+          id:           place.id,
+          name:         place.displayName?.text || "Unknown",
+          category:     category,
+          source:       "google_places",
+          rating:       rating,
+          reviewCount:  place.userRatingCount || 0,
+          location:     place.formattedAddress || address,
+          phone:        place.nationalPhoneNumber || place.internationalPhoneNumber || null,
+          website:      place.websiteUri || null,
+          isOpenNow:    place.currentOpeningHours?.openNow ?? null,
+          badge:        rating >= 4.5 ? "Highly Rated" : null,
+        };
+      }).filter(p => p.phone).slice(0, limit); // Only show pros we have a phone number for
+
+      return { pros, source: "google_places", query: searchQuery };
     }
 
     if (req.method === "POST" && url.pathname === "/api/guru/tasks") {

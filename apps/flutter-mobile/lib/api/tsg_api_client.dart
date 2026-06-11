@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 typedef InstallationIdProvider = Future<String> Function();
 
@@ -19,14 +20,49 @@ class ResidentMedication {
     required this.name,
     required this.status,
     required this.remainingCount,
+    this.frequency,
+    this.condition,
+    this.strength,
+    this.doseTime,
+    this.prescriber,
+    this.pharmacy,
+    this.daysSupplyRemaining,
+    this.refillNeeded = false,
+    this.beersCaution = false,
+    this.narrowTherapeuticIndex = false,
+    this.specialInstructions,
+    this.sideEffects = const [],
+    this.inventoryStatus,
+    this.latestRefillStatus,
   });
 
   final String id;
   final String name;
   final String status;
   final int remainingCount;
+  final String? frequency;
+  final String? condition;
+  final String? strength;
+  final String? doseTime;
+  final String? prescriber;
+  final String? pharmacy;
+  final int? daysSupplyRemaining;
+  final bool refillNeeded;
+  final bool beersCaution;
+  final bool narrowTherapeuticIndex;
+  final String? specialInstructions;
+  final List<String> sideEffects;
+  final String? inventoryStatus;   // sufficient | refill_soon | refill_needed | out_of_stock
+  final String? latestRefillStatus;
+
+  bool get isLowSupply => (daysSupplyRemaining ?? 999) <= 7;
+  bool get isCriticalSupply => (daysSupplyRemaining ?? 999) <= 2;
 
   factory ResidentMedication.fromJson(Map<String, dynamic> json) {
+    final rawSideEffects = json['side_effects'];
+    final sideEffects = rawSideEffects is List
+        ? rawSideEffects.map((e) => e.toString()).toList()
+        : <String>[];
     return ResidentMedication(
       id: stringValue(json['id']),
       name: stringValue(json['name']),
@@ -34,9 +70,101 @@ class ResidentMedication {
       remainingCount: intValue(
         json['remaining_count'] ?? json['remaining'] ?? json['remainingCount'],
       ),
+      frequency: json['frequency'] as String?,
+      condition: json['condition'] as String?,
+      strength: json['strength'] as String?,
+      doseTime: json['dose_time'] as String?,
+      prescriber: json['prescriber'] as String?,
+      pharmacy: json['pharmacy'] as String?,
+      daysSupplyRemaining: json['days_supply_remaining'] is int
+          ? json['days_supply_remaining'] as int
+          : null,
+      refillNeeded: json['refill_needed'] == true ||
+          json['refillNeeded'] == true ||
+          (json['inventory_status'] == 'refill_needed') ||
+          (json['inventory_status'] == 'out_of_stock'),
+      beersCaution: json['beers_list_caution'] == true,
+      narrowTherapeuticIndex: json['narrow_therapeutic_index'] == true,
+      specialInstructions: json['special_instructions'] as String?,
+      sideEffects: sideEffects,
+      inventoryStatus: json['inventory_status'] as String?,
+      latestRefillStatus: json['latest_refill_status'] as String?,
     );
   }
 }
+
+// Source identifiers for service pro network partners.
+// 'guru_partner'  = TSG vetted provider network
+// 'thumbtack'     = Thumbtack marketplace
+// 'angi'          = Angi (formerly Angie's List)
+// 'taskrabbit'    = TaskRabbit
+// 'care_com'      = Care.com
+// 'amazon_home'   = Amazon Home Services
+// 'other'         = other 3rd-party platforms
+class ServicePro {
+  const ServicePro({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.source,
+    required this.rating,
+    required this.reviewCount,
+    this.imageUrl,
+    this.location,
+    this.profileUrl,
+    this.priceLabel,
+    this.badge,
+    this.phone,
+    this.website,
+    this.isOpenNow,
+  });
+
+  final String id;
+  final String name;
+  final String category;
+  final String source;
+  final double rating;
+  final int reviewCount;
+  final String? imageUrl;
+  final String? location;
+  final String? profileUrl;
+  final String? priceLabel;
+  final String? badge;
+  final String? phone;
+  final String? website;
+  final bool? isOpenNow;
+
+  factory ServicePro.fromJson(Map<String, dynamic> json) {
+    final rawRating = json['rating'] ?? json['averageRating'];
+    return ServicePro(
+      id: stringValue(json['id'] ?? json['proId']),
+      name: stringValue(json['name'] ?? json['businessName']),
+      category: stringValue(json['category'] ?? json['serviceCategory']),
+      source: stringValue(
+        json['source'] ?? json['network'] ?? json['platform'],
+        fallback: 'other',
+      ),
+      rating: rawRating is num
+          ? rawRating.toDouble()
+          : double.tryParse(rawRating?.toString() ?? '') ?? 0.0,
+      reviewCount: intValue(json['reviewCount'] ?? json['review_count']),
+      imageUrl: json['imageUrl'] as String? ?? json['image_url'] as String?,
+      location: json['location'] as String? ?? json['city'] as String?,
+      profileUrl: json['profileUrl'] as String? ??
+          json['thumbtackUrl'] as String? ??
+          json['url'] as String?,
+      priceLabel: json['priceLabel'] as String? ?? json['price'] as String?,
+      badge: json['badge'] as String? ?? json['tier'] as String?,
+      phone: json['phone'] as String? ?? json['formatted_phone_number'] as String?,
+      website: json['website'] as String?,
+      isOpenNow: json['isOpenNow'] as bool?,
+    );
+  }
+}
+
+// Keep ThumbtatckPro as a factory alias for backward compatibility with
+// any existing backend responses that use this shape.
+typedef ThumbtatckPro = ServicePro;
 
 class ResidentService {
   const ResidentService({
@@ -87,6 +215,9 @@ class ResidentAppState {
     required this.services,
     required this.people,
     required this.raw,
+    this.zip,
+    this.homeLat,
+    this.homeLng,
   });
 
   final String residentId;
@@ -96,13 +227,33 @@ class ResidentAppState {
   final List<ResidentService> services;
   final List<ResidentPerson> people;
   final Map<String, dynamic> raw;
+  /// Zip code from the resident's home address (onboarding) — fallback for weather/services.
+  final String? zip;
+  /// Home location captured at onboarding — fallback when live phone GPS is unavailable.
+  final double? homeLat;
+  final double? homeLng;
 
   factory ResidentAppState.fromJson(Map<String, dynamic> json) {
     final resident = mapValue(json['resident']);
+    final residentId = stringValue(resident['id']);
+    if (residentId.isEmpty) {
+      throw const TsgApiException('API response missing resident id', 0);
+    }
+    // Extract zip from explicit field or parse from address string
+    final rawZip = stringValue(resident['zip'] ?? resident['zipCode'] ?? resident['postal_code']);
+    final addressStr = stringValue(resident['address'] ?? resident['full_address']);
+    final zipFromAddress = RegExp(r'\b(\d{5})\b').firstMatch(addressStr)?.group(1);
+    final resolvedZip = rawZip.isNotEmpty ? rawZip : zipFromAddress;
+
+    double? toDouble(dynamic v) => v == null ? null : double.tryParse(v.toString());
+
     return ResidentAppState(
-      residentId: stringValue(resident['id']),
+      residentId: residentId,
       residentName: stringValue(resident['name'] ?? resident['display_name']),
       community: stringValue(resident['community']),
+      zip: resolvedZip,
+      homeLat: toDouble(resident['lat']),
+      homeLng: toDouble(resident['lng']),
       medications: listOfMaps(
         json['medications'],
       ).map(ResidentMedication.fromJson).toList(),
@@ -147,6 +298,77 @@ class TsgApiClient {
     return post('/api/medications/confirm', {'id': medicationId});
   }
 
+  /// Smart medication dashboard — returns medications with days-supply,
+  /// interaction alerts, and refill status from the medication engine.
+  Future<Map<String, dynamic>> getMedicationDashboard() {
+    return get('/api/medications/dashboard');
+  }
+
+  /// Add a new medication with full smart-management fields.
+  Future<Map<String, dynamic>> addMedication({
+    required String name,
+    required String frequency,
+    String? condition,
+    String? strength,
+    String? prescriber,
+    String? pharmacy,
+    int remainingCount = 30,
+    int refillThreshold = 14,
+    int doseQuantityPerIntake = 1,
+  }) {
+    return post('/api/medications/add', {
+      'name': name,
+      'frequency': frequency,
+      if (condition != null) 'condition': condition,
+      if (strength != null) 'strength': strength,
+      if (prescriber != null) 'prescriber': prescriber,
+      if (pharmacy != null) 'pharmacy': pharmacy,
+      'remaining_count': remainingCount,
+      'refill_threshold': refillThreshold,
+      'dose_quantity_per_intake': doseQuantityPerIntake,
+    });
+  }
+
+  /// Check drug–drug interactions for a list of medication names.
+  Future<Map<String, dynamic>> checkMedicationInteractions(
+    List<String> medicationNames,
+  ) {
+    return post('/api/medications/check-interactions', {
+      'medications': medicationNames,
+    });
+  }
+
+  /// Ask the medication AI a question about the resident's medications.
+  Future<Map<String, dynamic>> askMedicationQuestion(String question) {
+    return post('/api/medications/ask', {'question': question});
+  }
+
+  /// Report a side effect for a medication.
+  Future<Map<String, dynamic>> reportSideEffect({
+    required String medicationId,
+    required String symptom,
+    String severity = 'mild',
+  }) {
+    return post('/api/medications/side-effects', {
+      'medicationId': medicationId,
+      'symptom': symptom,
+      'severity': severity,
+    });
+  }
+
+  /// Smart refill request — uses on-file provider or queues for staff.
+  Future<Map<String, dynamic>> requestSmartRefill(String medicationId) {
+    return post('/api/medications/refill-smart', {
+      'medicationId': medicationId,
+    });
+  }
+
+  /// Send ML Kit OCR text to backend; Groq parses into structured medication fields.
+  /// Returns { parsed: {...}, drugInfo: {...} }
+  Future<Map<String, dynamic>> scanMedicationLabel(String ocrText) {
+    return post('/api/medications/scan-label', {'text': ocrText});
+  }
+
   Future<Map<String, dynamic>> remindMedicationLater(
     String medicationId, {
     int minutes = 30,
@@ -177,8 +399,22 @@ class TsgApiClient {
   Future<Map<String, dynamic>> sendGuruMessage(
     String message, {
     String screen = 'guru',
+    String? zip,
+    double? lat,
+    double? lon,
   }) {
-    return post('/api/guru/chat', {'message': message, 'screen': screen});
+    return post('/api/guru/chat', {
+      'message': message,
+      'screen': screen,
+      if (zip != null && zip.isNotEmpty) 'zip': zip,
+      if (lat != null) 'lat': lat,
+      if (lon != null) 'lon': lon,
+    });
+  }
+
+  /// Fetch live weather for a zip code. Returns current + 3-day forecast.
+  Future<Map<String, dynamic>> getWeather(String zip) {
+    return get('/api/weather?zip=$zip');
   }
 
   Future<Map<String, dynamic>> createRideBooking({
@@ -318,6 +554,34 @@ class TsgApiClient {
     return post('/api/media/evidence', body);
   }
 
+  Future<Map<String, dynamic>> requestServiceQuotes({
+    required List<String> proIds,
+    required String issue,
+    required String recipientName,
+    required String address,
+  }) {
+    return post('/api/services/rfq', {
+      'proIds': proIds,
+      'issue': issue,
+      'recipientName': recipientName,
+      'address': address,
+      'source': 'flutter_guru_chat',
+    });
+  }
+
+  // Backward-compat alias.
+  Future<Map<String, dynamic>> requestThumbtatckQuotes({
+    required List<String> proIds,
+    required String issue,
+    required String recipientName,
+    required String address,
+  }) => requestServiceQuotes(
+        proIds: proIds,
+        issue: issue,
+        recipientName: recipientName,
+        address: address,
+      );
+
   Future<Map<String, dynamic>> completeSeniorOnboarding([
     Map<String, dynamic> payload = const {},
   ]) {
@@ -375,6 +639,28 @@ class TsgApiClient {
       _request('POST', path, body: body);
   Future<Map<String, dynamic>> patch(String path, Map<String, dynamic> body) =>
       _request('PATCH', path, body: body);
+  Future<Map<String, dynamic>> delete(String path) =>
+      _request('DELETE', path);
+
+  Future<Map<String, dynamic>> addSafeZone({
+    required String name,
+    required double lat,
+    required double lng,
+    required int radiusMeters,
+    String type = 'OTHER',
+  }) {
+    return post('/api/safety/safe-zones', {
+      'name': name,
+      'lat': lat,
+      'lng': lng,
+      'radiusMeters': radiusMeters,
+      'type': type,
+    });
+  }
+
+  Future<Map<String, dynamic>> removeSafeZone(String id) {
+    return delete('/api/safety/safe-zones/$id');
+  }
 
   Future<Map<String, dynamic>> _request(
     String method,
@@ -388,6 +674,13 @@ class TsgApiClient {
   Future<void> _ensureSession({String? displayName}) async {
     if (_token != null) return;
     final installationId = await installationIdProvider();
+    final prefKey = 'tsg_token_${installationId}_$_role';
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString(prefKey);
+    if (cached != null && cached.isNotEmpty) {
+      _token = cached;
+      return;
+    }
     final session = await _send(
       'POST',
       '/api/auth/device-session',
@@ -401,6 +694,9 @@ class TsgApiClient {
     _token = stringValue(
       session['token'] ?? mapValue(session['session'])['token'],
     );
+    if (_token != null && _token!.isNotEmpty) {
+      await prefs.setString(prefKey, _token!);
+    }
   }
 
   Future<Map<String, dynamic>> _send(

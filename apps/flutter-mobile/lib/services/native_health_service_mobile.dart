@@ -28,6 +28,9 @@ class NativeHealthService {
       HealthDataType.BLOOD_OXYGEN,
       HealthDataType.RESPIRATORY_RATE,
       HealthDataType.HEART_RATE_VARIABILITY_SDNN,
+      HealthDataType.BLOOD_PRESSURE_SYSTOLIC,
+      HealthDataType.BLOOD_PRESSURE_DIASTOLIC,
+      HealthDataType.BODY_TEMPERATURE,
       HealthDataType.STEPS,
       HealthDataType.ACTIVE_ENERGY_BURNED,
       HealthDataType.SLEEP_ASLEEP,
@@ -45,8 +48,9 @@ class NativeHealthService {
       if (!authorized) {
         return NativeHealthSnapshot(
           source: source,
+          available: false,
           readings: const [],
-          message: 'Health permission was not granted.',
+          message: 'Health data permission was denied. Please enable access in device Settings to sync vitals.',
         );
       }
 
@@ -76,11 +80,16 @@ class NativeHealthService {
   Map<String, dynamic> _normalize(List<HealthDataPoint> points, DateTime now) {
     final latest = <HealthDataType, HealthDataPoint>{};
     var sleepMinutes = 0;
+    var stepsTotal = 0;
     for (final point in points) {
       final value = _numericValue(point);
       if (value == null) continue;
       if (_sleepTypes.contains(point.type)) {
         sleepMinutes += value.round();
+        continue;
+      }
+      if (point.type == HealthDataType.STEPS) {
+        stepsTotal += value.round();
         continue;
       }
       final existing = latest[point.type];
@@ -112,8 +121,7 @@ class NativeHealthService {
         'hrv': _latestNumber(latest, [
           HealthDataType.HEART_RATE_VARIABILITY_SDNN,
         ])!.round(),
-      if (_latestNumber(latest, [HealthDataType.STEPS]) != null)
-        'stepsToday': _latestNumber(latest, [HealthDataType.STEPS])!.round(),
+      if (stepsTotal > 0) 'stepsToday': stepsTotal,
       if (_latestNumber(latest, [HealthDataType.ACTIVE_ENERGY_BURNED]) != null)
         'caloriesToday': _latestNumber(latest, [
           HealthDataType.ACTIVE_ENERGY_BURNED,

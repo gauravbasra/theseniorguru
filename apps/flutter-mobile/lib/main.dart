@@ -5,13 +5,42 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 
 import 'api/tsg_api_client.dart';
 import 'services/native_health_service.dart';
+import 'services/location_service.dart';
+
+/// Holds form values captured across onboarding screens until the flow
+/// finishes and they're submitted together via completeSeniorOnboarding.
+class OnboardingDraft {
+  OnboardingDraft._();
+  static final OnboardingDraft instance = OnboardingDraft._();
+
+  String name = '';
+  String phone = '';
+  String address = '';
+  String city = '';
+  String state = '';
+  String zip = '';
+
+  Map<String, dynamic> toPayload() => {
+        // completeSeniorOnboarding requires "name" — fall back to a
+        // placeholder so the submission (and address/zip fields) aren't
+        // rejected if the resident skipped the name field.
+        'name': name.trim().isNotEmpty ? name.trim() : 'Resident',
+        if (phone.trim().isNotEmpty) 'phone': phone.trim(),
+        if (address.trim().isNotEmpty) 'address': address.trim(),
+        if (city.trim().isNotEmpty) 'city': city.trim(),
+        if (state.trim().isNotEmpty) 'state': state.trim(),
+        if (zip.trim().isNotEmpty) 'zip': zip.trim(),
+      };
+}
 
 Future<String> _stableInstallationId() async {
   final prefs = await SharedPreferences.getInstance();
@@ -24,6 +53,15 @@ Future<String> _stableInstallationId() async {
 }
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  assert(seniorStepSpecs.length >= 14, 'seniorStepSpecs must have at least 14 entries');
+  assert(trustCircleStepSpecs.length >= 5, 'trustCircleStepSpecs must have at least 5 entries');
+  assert(businessStepSpecs.length >= 5, 'businessStepSpecs must have at least 5 entries');
+  // Catch Flutter framework errors and prevent blank white screen
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+  };
   runApp(const TsgResidentApp());
 }
 
@@ -58,7 +96,6 @@ class TsgResidentApp extends StatelessWidget {
           primary: TsgColors.purple,
           surface: TsgColors.card,
         ),
-        fontFamily: 'SF Pro Text',
       ),
       home: const ResidentShell(),
     );
@@ -131,6 +168,7 @@ enum Screen {
   medications,
   medicationConfirm,
   refill,
+  guruChat,
   rideChat,
   rideMatches,
   rideStatus,
@@ -178,6 +216,9 @@ class _ResidentShellState extends State<ResidentShell> {
   AppRole appRole = initialRoleFromKey(initialScreenKey);
   String apiStatus = 'Connecting to mobile API...';
   bool apiBusy = false;
+  String? _guruChatInitialMessage;
+  String? _companionChatInitialMessage;
+  String? _pendingConfirmMedId;
 
   @override
   void initState() {
@@ -265,6 +306,21 @@ class _ResidentShellState extends State<ResidentShell> {
     if (role != null) appRole = role;
   });
 
+  void _goGuruChat(String initialMessage) => setState(() {
+    _guruChatInitialMessage = initialMessage;
+    screen = Screen.guruChat;
+  });
+
+  void _goCompanionChat(String initialMessage) => setState(() {
+    _companionChatInitialMessage = initialMessage;
+    screen = Screen.companionChat;
+  });
+
+  void _goConfirmMed(String medicationId) => setState(() {
+    _pendingConfirmMedId = medicationId;
+    screen = Screen.medicationConfirm;
+  });
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -315,6 +371,14 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('guru'),
         go: go,
         runApi: runApi,
+        goGuruChat: _goGuruChat,
+      ),
+      Screen.guruChat => GuruChatScreen(
+        key: ValueKey('guru-chat-${_guruChatInitialMessage ?? ''}'),
+        go: go,
+        apiClient: apiClient,
+        state: appState,
+        initialMessage: _guruChatInitialMessage,
       ),
       Screen.today => TodayHome(
         key: const ValueKey('today'),
@@ -324,6 +388,7 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.companion => CompanionHome(
         key: const ValueKey('companion'),
         go: go,
+        goCompanionChat: _goCompanionChat,
       ),
       Screen.feed => FeedHome(key: const ValueKey('feed'), go: go),
       Screen.more => MoreHome(key: const ValueKey('more'), go: go),
@@ -368,11 +433,13 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('senior-photo'),
         step: seniorStepSpecs[1],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorVerify => SeniorStepScreen(
         key: const ValueKey('senior-verify'),
         step: seniorStepSpecs[2],
         go: go,
+        runApi: runApi,
       ),
       Screen.onboardingProfile => OnboardingProfile(
         key: const ValueKey('onboard2'),
@@ -382,31 +449,37 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('senior-address'),
         step: seniorStepSpecs[4],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorHealth => SeniorStepScreen(
         key: const ValueKey('senior-health'),
         step: seniorStepSpecs[5],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorMedications => SeniorStepScreen(
         key: const ValueKey('senior-meds'),
         step: seniorStepSpecs[6],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorDevices => SeniorStepScreen(
         key: const ValueKey('senior-devices'),
         step: seniorStepSpecs[7],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorPermissions => SeniorStepScreen(
         key: const ValueKey('senior-permissions'),
         step: seniorStepSpecs[8],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorMusic => SeniorStepScreen(
         key: const ValueKey('senior-music'),
         step: seniorStepSpecs[9],
         go: go,
+        runApi: runApi,
       ),
       Screen.onboardingCircle => OnboardingCircle(
         key: const ValueKey('onboard3'),
@@ -416,11 +489,13 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('senior-privacy'),
         step: seniorStepSpecs[11],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorSos => SeniorStepScreen(
         key: const ValueKey('senior-sos'),
         step: seniorStepSpecs[12],
         go: go,
+        runApi: runApi,
       ),
       Screen.seniorRoutine => SeniorStepScreen(
         key: const ValueKey('senior-routine'),
@@ -442,6 +517,7 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('trust-relationship'),
         step: trustCircleStepSpecs[1],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCircleProfile => TrustCircleProfileScreen(
         key: const ValueKey('trust-profile'),
@@ -452,21 +528,25 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('trust-messaging'),
         step: trustCircleStepSpecs[3],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCircleAlerts => TrustCircleStepScreen(
         key: const ValueKey('trust-alerts'),
         step: trustCircleStepSpecs[4],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCircleVisibility => TrustCircleStepScreen(
         key: const ValueKey('trust-visibility'),
         step: trustCircleStepSpecs[5],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCircleEmergency => TrustCircleStepScreen(
         key: const ValueKey('trust-emergency'),
         step: trustCircleStepSpecs[6],
         go: go,
+        runApi: runApi,
       ),
       Screen.trustCirclePreview => TrustCircleStepScreen(
         key: const ValueKey('trust-preview'),
@@ -482,6 +562,7 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('business-type'),
         step: businessStepSpecs[0],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessProfile => BusinessProfileScreen(
         key: const ValueKey('business-profile'),
@@ -492,11 +573,13 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('business-verification'),
         step: businessStepSpecs[2],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessOwnerVerify => BusinessStepScreen(
         key: const ValueKey('business-owner'),
         step: businessStepSpecs[3],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessServices => BusinessServicesScreen(
         key: const ValueKey('business-services'),
@@ -507,26 +590,31 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('business-pricing'),
         step: businessStepSpecs[5],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessAvailability => BusinessStepScreen(
         key: const ValueKey('business-availability'),
         step: businessStepSpecs[6],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessServiceArea => BusinessStepScreen(
         key: const ValueKey('business-area'),
         step: businessStepSpecs[7],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessLeadRules => BusinessStepScreen(
         key: const ValueKey('business-leads-rules'),
         step: businessStepSpecs[8],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessCommunication => BusinessStepScreen(
         key: const ValueKey('business-comm'),
         step: businessStepSpecs[9],
         go: go,
+        runApi: runApi,
       ),
       Screen.businessReview => BusinessStepScreen(
         key: const ValueKey('business-review'),
@@ -545,11 +633,15 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.medications => MedicationsScreen(
         key: const ValueKey('meds'),
         go: go,
+        goConfirm: _goConfirmMed,
+        apiClient: apiClient,
         state: appState,
       ),
       Screen.medicationConfirm => MedicationConfirm(
-        key: const ValueKey('confirm'),
+        key: ValueKey('confirm-${_pendingConfirmMedId ?? 'none'}'),
         go: go,
+        apiClient: apiClient,
+        medicationId: _pendingConfirmMedId,
         state: appState,
         runApi: runApi,
       ),
@@ -575,8 +667,11 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
       ),
       Screen.companionChat => CompanionChat(
-        key: const ValueKey('companionChat'),
+        key: ValueKey('companion-chat-${_companionChatInitialMessage ?? ''}'),
         go: go,
+        apiClient: apiClient,
+        state: appState,
+        initialMessage: _companionChatInitialMessage,
       ),
       Screen.circle => CircleScreen(key: const ValueKey('circle'), go: go),
       Screen.person => PersonDetail(
@@ -619,6 +714,7 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
         state: appState,
         runApi: runApi,
+        goGuruChat: _goGuruChat,
       ),
       Screen.safety => SafetyScreen(
         key: const ValueKey('safety'),
@@ -629,6 +725,7 @@ class _ResidentShellState extends State<ResidentShell> {
       Screen.safetyMap => SafetyMapScreen(
         key: const ValueKey('safety-map'),
         go: go,
+        runApi: runApi,
         state: appState,
       ),
     };
@@ -792,6 +889,7 @@ Screen primaryTabForScreen(Screen screen, AppRole role) {
   return switch (role) {
     AppRole.senior => switch (screen) {
       Screen.guru ||
+      Screen.guruChat ||
       Screen.rideChat ||
       Screen.rideMatches ||
       Screen.rideStatus => Screen.guru,
@@ -1606,6 +1704,14 @@ class TodayHome extends StatelessWidget {
     final contextIntel = residentSurfaceSection(state, 'contextIntelligence');
     final guidanceItems = listOfMaps(contextIntel['guidanceItems']);
     final sections = listOfMaps(contextIntel['sections']);
+    final rawBookings = listOfMaps(state?.raw['bookings']);
+    final nextBooking = rawBookings.isNotEmpty ? rawBookings.first : null;
+    final bookingTitle = stringValue(nextBooking?['label'], fallback: 'Upcoming Appointment');
+    final bookingDate = stringValue(nextBooking?['scheduledFor'], fallback: 'Tomorrow, 10:00 AM');
+    final rawEvents = listOfMaps(state?.raw['events']);
+    final nextEvent = rawEvents.isNotEmpty ? rawEvents.first : null;
+    final eventTitle = stringValue(nextEvent?['name'] ?? nextEvent?['label'], fallback: 'Chair Yoga');
+    final eventTime = stringValue(nextEvent?['time'], fallback: '10:30 AM  •  Community Hall');
     return ScreenScaffold(
       children: [
         SizedBox(
@@ -1731,11 +1837,11 @@ class TodayHome extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const H1('Cardiology Visit', size: 26),
+                    H1(bookingTitle, size: 26),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Tomorrow, 10:00 AM',
-                      style: TextStyle(fontSize: 17, color: TsgColors.ink),
+                    Text(
+                      bookingDate,
+                      style: const TextStyle(fontSize: 17, color: TsgColors.ink),
                     ),
                     const SizedBox(height: 16),
                     OutlinedButton(
@@ -1821,11 +1927,11 @@ class TodayHome extends StatelessWidget {
           onTap: () => go(Screen.events),
           child: Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       "TODAY'S ACTIVITY",
                       style: TextStyle(
                         color: TsgColors.green,
@@ -1833,12 +1939,12 @@ class TodayHome extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    SizedBox(height: 8),
-                    H1('Chair Yoga', size: 26),
-                    SizedBox(height: 6),
+                    const SizedBox(height: 8),
+                    H1(eventTitle, size: 26),
+                    const SizedBox(height: 6),
                     Text(
-                      '10:30 AM  •  Community Hall',
-                      style: TextStyle(fontSize: 15, color: TsgColors.ink),
+                      eventTime,
+                      style: const TextStyle(fontSize: 15, color: TsgColors.ink),
                     ),
                   ],
                 ),
@@ -1912,51 +2018,61 @@ class TodayHome extends StatelessWidget {
 }
 
 class GuruHome extends StatelessWidget {
-  const GuruHome({super.key, required this.go, required this.runApi});
+  const GuruHome({
+    super.key,
+    required this.go,
+    required this.runApi,
+    required this.goGuruChat,
+  });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
+  final ValueChanged<String> goGuruChat;
 
   @override
   Widget build(BuildContext context) {
+    // (Screen?, String?) = (navigate to screen, or open guru chat with this message)
     final requests = [
-      (CupertinoIcons.car_detailed, 'I need a ride', Screen.rideChat),
-      (CupertinoIcons.capsule, 'I need medication help', Screen.medications),
-      (CupertinoIcons.bag, 'I need food', Screen.services),
-      (CupertinoIcons.sparkles, 'I need cleaning', Screen.services),
-      (CupertinoIcons.doc_text_search, 'I need diapers', Screen.services),
-      (CupertinoIcons.heart, 'Feeling lonely', Screen.companionChat),
+      (CupertinoIcons.car_detailed, 'I need a ride', Screen.rideChat, null),
+      (CupertinoIcons.capsule, 'I need medication help', Screen.medications, null),
+      (CupertinoIcons.hammer_fill, 'Home repair needed', null, 'I need home repair help'),
+      (CupertinoIcons.sparkles, 'I need cleaning', null, 'I need house cleaning'),
+      (CupertinoIcons.bag, 'I need food', null, 'I need food delivered'),
+      (CupertinoIcons.heart, 'Feeling lonely', Screen.companionChat, null),
     ];
     return ScreenScaffold(
       title: 'How can we help?',
       children: [
-        Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: TsgColors.line),
-          ),
-          child: const Row(
-            children: [
-              Icon(CupertinoIcons.search, color: TsgColors.muted),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'What do you need today?',
-                  style: TextStyle(color: TsgColors.muted),
+        GestureDetector(
+          onTap: () => goGuruChat(''),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: TsgColors.line),
+            ),
+            child: const Row(
+              children: [
+                Icon(CupertinoIcons.search, color: TsgColors.muted),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'What do you need today?',
+                    style: TextStyle(color: TsgColors.muted),
+                  ),
                 ),
-              ),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: TsgColors.lilac,
-                child: Icon(
-                  CupertinoIcons.mic_fill,
-                  size: 18,
-                  color: TsgColors.purple,
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: TsgColors.lilac,
+                  child: Icon(
+                    CupertinoIcons.mic_fill,
+                    size: 18,
+                    color: TsgColors.purple,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 24),
@@ -1974,7 +2090,13 @@ class GuruHome extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 9),
             child: SoftCard(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-              onTap: () => go(item.$3),
+              onTap: () {
+                if (item.$4 != null) {
+                  goGuruChat(item.$4!);
+                } else if (item.$3 != null) {
+                  go(item.$3!);
+                }
+              },
               child: Row(
                 children: [
                   Icon(item.$1, color: TsgColors.purple, size: 22),
@@ -1988,6 +2110,13 @@ class GuruHome extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (item.$4 != null)
+                    const Pill(
+                      'Find Pros',
+                      color: Color(0xFFEDE8FF),
+                      ink: TsgColors.purple,
+                    ),
+                  const SizedBox(width: 6),
                   const Icon(
                     CupertinoIcons.chevron_right,
                     size: 18,
@@ -2001,7 +2130,7 @@ class GuruHome extends StatelessWidget {
         const SizedBox(height: 12),
         SoftCard(
           color: TsgColors.lilac2,
-          onTap: () => go(Screen.rideChat),
+          onTap: () => goGuruChat(''),
           child: const Row(
             children: [
               Avatar(size: 62, icon: CupertinoIcons.chat_bubble_2_fill),
@@ -2033,85 +2162,1491 @@ class GuruHome extends StatelessWidget {
   }
 }
 
-class MedicationsScreen extends StatelessWidget {
-  const MedicationsScreen({super.key, required this.go, this.state});
+// ---------------------------------------------------------------------------
+// Guru Chat with Thumbtack Pro Integration
+// ---------------------------------------------------------------------------
+
+enum _ChatRole { user, guru }
+
+class _ChatEntry {
+  const _ChatEntry({required this.role, required this.text, this.pros = const []});
+  final _ChatRole role;
+  final String text;
+  final List<ServicePro> pros;
+
+  static _ChatEntry user(String text) =>
+      _ChatEntry(role: _ChatRole.user, text: text);
+  static _ChatEntry guru(String text, {List<ServicePro> pros = const []}) =>
+      _ChatEntry(role: _ChatRole.guru, text: text, pros: pros);
+}
+
+class GuruChatScreen extends StatefulWidget {
+  const GuruChatScreen({
+    super.key,
+    required this.go,
+    required this.apiClient,
+    this.state,
+    this.initialMessage,
+  });
   final ValueChanged<Screen> go;
+  final TsgApiClient apiClient;
   final ResidentAppState? state;
+  final String? initialMessage;
+
+  @override
+  State<GuruChatScreen> createState() => _GuruChatScreenState();
+}
+
+class _GuruChatScreenState extends State<GuruChatScreen> {
+  final _controller = TextEditingController();
+  final _scroll = ScrollController();
+  final List<_ChatEntry> _messages = [];
+  final Set<String> _selectedProIds = {};
+  bool _loading = false;
+  bool _rfqSent = false;
+
+  String get _firstName {
+    final full = widget.state?.residentName ?? '';
+    return full.isNotEmpty ? full.split(' ').first : 'there';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialMessage?.trim() ?? '';
+    if (initial.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _send(initial));
+    } else {
+      _messages.add(_ChatEntry.guru(
+        'Hi $_firstName! 😊 I\'m your Guru assistant — I\'m here to help with anything you need.\n\n'
+        'Whether it\'s a home repair, cleaning, lawn care, or just finding a trusted local pro — just tell me what\'s going on and I\'ll take care of the rest.',
+      ));
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  // ── Intent detection ─────────────────────────────────────────────────
+
+  static String? _detectIntent(String message) {
+    final m = message.toLowerCase();
+    if (RegExp(r'leak|pipe|plumb|faucet|toilet|drain|flood|water damage').hasMatch(m)) return 'plumbing';
+    if (RegExp(r'clean|maid|housekeep|sweep|vacuum|dust|scrub|tidy').hasMatch(m)) return 'cleaning';
+    if (RegExp(r'electric|outlet|wire|circuit|breaker|power outage|light fixture').hasMatch(m)) return 'electrical';
+    if (RegExp(r'lawn|grass|garden|landscape|mow|trim|yard|hedge').hasMatch(m)) return 'landscaping';
+    if (RegExp(r'paint|wall color|ceiling|repaint').hasMatch(m)) return 'painting';
+    if (RegExp(r'pest|bug|insect|rodent|termite|cockroach|ant|mouse').hasMatch(m)) return 'pest_control';
+    if (RegExp(r'move|moving|haul|junk removal|furniture removal').hasMatch(m)) return 'moving';
+    if (RegExp(r'care|caregiver|nurse|aide|companion|elder care').hasMatch(m)) return 'home_care';
+    if (RegExp(r'repair|fix|broken|handyman|install|mount|assemble|drywall|tile').hasMatch(m)) return 'handyman';
+    return null;
+  }
+
+  static String _intentLabel(String intent) => switch (intent) {
+    'plumbing'     => 'Plumbing',
+    'cleaning'     => 'Cleaning',
+    'electrical'   => 'Electrical',
+    'landscaping'  => 'Lawn Care',
+    'painting'     => 'Painting',
+    'pest_control' => 'Pest Control',
+    'moving'       => 'Moving & Hauling',
+    'home_care'    => 'Home Care',
+    'handyman'     => 'Handyman',
+    _              => 'Home Service',
+  };
+
+  static String _intentAck(String intent) => switch (intent) {
+    'plumbing'     => 'Oh no, a leak can be really stressful — don\'t worry, I\'ve got you! 🔧\nLet me find trusted plumbers near you right now...',
+    'cleaning'     => 'Great idea — a clean home makes such a difference! 🧹\nSearching for top-rated cleaning pros in your area...',
+    'electrical'   => 'Electrical issues can feel scary — you\'re right to get help quickly. ⚡\nLooking for licensed electricians near you...',
+    'landscaping'  => 'A beautiful yard is so important! 🌿\nFinding lawn care and landscaping pros in your area...',
+    'painting'     => 'A fresh coat of paint can totally transform a space! 🎨\nSearching for painters near you...',
+    'pest_control' => 'I completely understand — pests are no fun at all! 🐛\nFinding pest control specialists near you...',
+    'moving'       => 'Moving can be overwhelming — I\'m here to make it easier for you! 📦\nSearching for moving and hauling help nearby...',
+    'home_care'    => 'Finding the right care provider is so important — I want to help you find someone you can truly trust. 💙\nSearching for vetted home care providers near you...',
+    'handyman'     => 'Happy to help get that sorted! 🔨\nSearching for experienced handymen in your area...',
+    _              => 'Let me check our trusted partner network for pros near you... 🔍',
+  };
+
+  // Demo pros shown immediately when backend has no Thumbtack wired yet
+  static List<ServicePro> _demoPros(String intent) {
+    final label = _intentLabel(intent);
+    return [
+      ServicePro(
+        id: 'demo-$intent-gp',
+        name: 'Guru Certified $label Pro',
+        category: label,
+        source: 'guru_partner',
+        rating: 4.9,
+        reviewCount: 214,
+        location: 'Near you',
+        badge: 'Guru Vetted',
+      ),
+      ServicePro(
+        id: 'demo-$intent-tt',
+        name: "Mike's $label Services",
+        category: label,
+        source: 'thumbtack',
+        rating: 4.8,
+        reviewCount: 127,
+        location: 'Near you',
+        priceLabel: r'$85/hr',
+        badge: 'Top Pro',
+      ),
+      ServicePro(
+        id: 'demo-$intent-angi',
+        name: 'QuickFix $label',
+        category: label,
+        source: 'angi',
+        rating: 4.6,
+        reviewCount: 58,
+        location: 'Near you',
+        priceLabel: r'$70/hr',
+      ),
+    ];
+  }
+
+  // ── Emotional / greeting detection ───────────────────────────────────────
+
+  static bool _isGreeting(String m) =>
+      RegExp(r'^(hi|hello|hey|good morning|good afternoon|good evening|howdy)[\s!.,?]*$').hasMatch(m.toLowerCase().trim());
+
+  static bool _isEmotional(String m) =>
+      RegExp(r"stress|worried|scared|anxious|overwhelm|lonely|tired|pain|hurt|help me|don.t know").hasMatch(m.toLowerCase());
+
+  static String _emotionalReply(String firstName) =>
+      'I hear you, $firstName — and I\'m right here with you. 💙\n\n'
+      'You don\'t have to figure this out alone. Tell me a bit more about what\'s going on and I\'ll do everything I can to help.';
+
+  static String _greetingReply(String firstName) =>
+      'Hi $firstName! So great to hear from you 😊\n\n'
+      'What can I help you with today? You can ask me about home repairs, cleaning, lawn care, finding local services — anything really!';
+
+  static String _noIntentReply(String firstName) =>
+      'I want to make sure I help you with exactly the right thing, $firstName. 🤔\n\n'
+      'Could you tell me a bit more? For example:\n'
+      '• "My sink is leaking"\n'
+      '• "I need someone to clean my home"\n'
+      '• "My lights aren\'t working"\n\n'
+      'Or if you\'re looking for a specific type of service, just say so and I\'ll search for trusted pros near you!';
+
+  // ── Conversation history for API context ─────────────────────────────────
+
+  List<Map<String, String>> _buildHistory() {
+    return _messages.map((m) => {
+      'role': m.role == _ChatRole.user ? 'user' : 'assistant',
+      'content': m.text,
+    }).toList();
+  }
+
+  // ── Core send logic ──────────────────────────────────────────────────────
+
+  Future<void> _send(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _loading) return;
+
+    final m = trimmed.toLowerCase();
+    final intent = _detectIntent(trimmed);
+    final isGreeting = _isGreeting(m);
+    final isEmotional = _isEmotional(m);
+
+    setState(() {
+      _messages.add(_ChatEntry.user(trimmed));
+      _loading = true;
+      _selectedProIds.clear();
+      _rfqSent = false;
+      // Instant warm acknowledgment before any API responds
+      if (intent != null) {
+        _messages.add(_ChatEntry.guru(_intentAck(intent)));
+      }
+    });
+    _controller.clear();
+    _scrollToBottom();
+
+    // For greetings and emotional messages, respond locally without API round-trip
+    if (isGreeting && intent == null) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatEntry.guru(_greetingReply(_firstName)));
+        _loading = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
+    if (isEmotional && intent == null) {
+      await Future.delayed(const Duration(milliseconds: 700));
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatEntry.guru(_emotionalReply(_firstName)));
+        _loading = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
+    try {
+      Map<String, dynamic> guruResponse = {};
+      List<ServicePro> fetchedPros = [];
+      final history = _buildHistory();
+
+      // Always try the phone's live GPS first — the senior may be away from
+      // home, and "near me" answers (weather, local pros) should reflect
+      // where they actually are right now.
+      final liveLocation = await LocationService.instance.getCurrentLatLon();
+      final lat = liveLocation?.lat ?? widget.state?.homeLat;
+      final lon = liveLocation?.lon ?? widget.state?.homeLng;
+
+      await Future.wait([
+        // Guru conversational response with full chat history
+        widget.apiClient
+            .post('/api/guru/chat', {
+              'message': trimmed,
+              'screen': 'services',
+              'residentName': widget.state?.residentName ?? '',
+              'community': widget.state?.community ?? '',
+              'history': history,
+              if (widget.state?.zip != null) 'zip': widget.state!.zip,
+              if (lat != null) 'lat': lat,
+              if (lon != null) 'lon': lon,
+              if (intent != null) 'intent': intent,
+              if (intent != null) 'serviceCategory': intent,
+            })
+            .then((r) => guruResponse = r)
+            .catchError((_) => <String, dynamic>{}),
+
+        // Pro search in parallel
+        if (intent != null)
+          widget.apiClient
+              .post('/api/services/find-pros', {
+                'category': intent,
+                'recipientName': widget.state?.residentName ?? '',
+                'address': widget.state?.community ?? '',
+                if (lat != null) 'lat': lat,
+                if (lon != null) 'lon': lon,
+                'limit': 3,
+              })
+              .then((r) {
+                final raw = listOfMaps(r['pros'] ?? r['data'] ?? r['providers']);
+                if (raw.isNotEmpty) fetchedPros = raw.map(ServicePro.fromJson).toList();
+              })
+              .catchError((_) => null),
+      ]);
+
+      if (!mounted) return;
+
+      // Priority: backend pros > fetched pros > demo pros
+      final backendProsRaw = listOfMaps(
+        guruResponse['service_pros'] ?? guruResponse['pros'] ??
+        guruResponse['thumbtack_pros'] ?? guruResponse['guru_pros'],
+      );
+      final finalPros = backendProsRaw.isNotEmpty
+          ? backendProsRaw.map(ServicePro.fromJson).toList()
+          : fetchedPros.isNotEmpty
+              ? fetchedPros
+              : (intent != null ? _demoPros(intent) : <ServicePro>[]);
+
+      // Build empathetic reply
+      final rawReply = stringValue(
+        guruResponse['reply'] ?? guruResponse['message'] ?? guruResponse['text'],
+      );
+      final replyText = rawReply.isNotEmpty
+          ? rawReply
+          : finalPros.isNotEmpty
+              ? 'Great news, $_firstName! 🎉 I found ${finalPros.length} local pros near you from Google.\n\nJust tap **Call Now** on any card to reach them directly — no waiting!'
+              : intent != null
+                  ? _noIntentReply(_firstName)
+                  : _noIntentReply(_firstName);
+
+      setState(() {
+        // Replace ack bubble with real reply + pro cards
+        if (intent != null &&
+            _messages.isNotEmpty &&
+            _messages.last.role == _ChatRole.guru &&
+            _messages.last.pros.isEmpty) {
+          _messages.removeLast();
+        }
+        _messages.add(_ChatEntry.guru(replyText, pros: finalPros));
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final fallback = intent != null ? _demoPros(intent) : <ServicePro>[];
+      setState(() {
+        if (_messages.isNotEmpty &&
+            _messages.last.role == _ChatRole.guru &&
+            _messages.last.pros.isEmpty) {
+          _messages.removeLast();
+        }
+        _messages.add(_ChatEntry.guru(
+          fallback.isNotEmpty
+              ? 'Here are some pros near you, $_firstName! 🏠\n\nTap **Call Now** on any card to reach them directly.'
+              : 'I\'m having a little trouble connecting right now, $_firstName. Please try again in a moment — I\'ll be right here! 💙',
+          pros: fallback,
+        ));
+        _loading = false;
+      });
+    }
+    _scrollToBottom();
+  }
+
+  Future<void> _sendRfq() async {
+    if (_selectedProIds.isEmpty || _rfqSent) return;
+    final proIds = _selectedProIds.toList();
+    final issue = _messages
+        .where((m) => m.role == _ChatRole.user)
+        .map((m) => m.text)
+        .join(' ');
+    setState(() {
+      _loading = true;
+    });
+    try {
+      await widget.apiClient.requestServiceQuotes(
+        proIds: proIds,
+        issue: issue,
+        recipientName: widget.state?.residentName ?? '',
+        address: widget.state?.community ?? '',
+      );
+      if (!mounted) return;
+      setState(() {
+        _rfqSent = true;
+        _loading = false;
+        _selectedProIds.clear();
+        _messages.add(_ChatEntry.guru(
+          'Done, $_firstName! ✅ Your request has been sent to ${proIds.length} pro${proIds.length > 1 ? 's' : ''}.\n\nThey\'ll reach out to you soon. Is there anything else I can help you with?',
+        ));
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _messages.add(_ChatEntry.guru(
+          'Could not send the request right now. Please try again.',
+        ));
+      });
+    }
+    _scrollToBottom();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final medications = state?.medications;
-    final visibleMeds = medications == null || medications.isEmpty
-        ? const [
-            ResidentMedication(
-              id: 'demo-lisinopril',
-              name: 'Lisinopril 10mg',
-              status: 'confirmed',
-              remainingCount: 5,
+    final hasProsAvailable = _messages.any((m) => m.pros.isNotEmpty);
+    return Column(
+      children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(CupertinoIcons.chevron_left, size: 24),
+                onPressed: () => widget.go(Screen.guru),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              ),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'TSG Guru',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: TsgColors.ink,
+                      ),
+                    ),
+                    Text(
+                      'Powered by Thumbtack',
+                      style: TextStyle(fontSize: 12, color: TsgColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              const Avatar(size: 38, icon: CupertinoIcons.sparkles),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Divider(color: TsgColors.line, height: 1),
+        // Chat area
+        Expanded(
+          child: ListView.builder(
+            controller: _scroll,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            itemCount: _messages.length + (_loading ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == _messages.length) {
+                return _TypingBubble();
+              }
+              final entry = _messages[index];
+              if (entry.role == _ChatRole.user) {
+                return _UserBubble(text: entry.text);
+              }
+              return _GuroBubble(
+                text: entry.text,
+                pros: entry.pros,
+                selectedProIds: _selectedProIds,
+                onTogglePro: (id) {
+                  setState(() {
+                    if (_selectedProIds.contains(id)) {
+                      _selectedProIds.remove(id);
+                    } else {
+                      _selectedProIds.add(id);
+                    }
+                  });
+                },
+              );
+            },
+          ),
+        ),
+        // Input
+        Container(
+          padding: EdgeInsets.fromLTRB(
+            12,
+            10,
+            12,
+            MediaQuery.of(context).padding.bottom + 90,
+          ),
+          decoration: const BoxDecoration(
+            color: TsgColors.glass,
+            border: Border(top: BorderSide(color: TsgColors.line)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  enabled: !_loading,
+                  decoration: InputDecoration(
+                    hintText: hasProsAvailable
+                        ? 'Select pros above or ask a follow-up...'
+                        : 'Describe what you need...',
+                    hintStyle: const TextStyle(
+                      color: TsgColors.muted,
+                      fontSize: 15,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.line),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.line),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.purple),
+                    ),
+                  ),
+                  onSubmitted: _send,
+                  textInputAction: TextInputAction.send,
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _send(_controller.text),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [TsgColors.purple2, TsgColors.purple],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.arrow_up,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _UserBubble extends StatelessWidget {
+  const _UserBubble({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12, left: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [TsgColors.purple2, TsgColors.purple],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(18),
+            topRight: Radius.circular(4),
+            bottomLeft: Radius.circular(18),
+            bottomRight: Radius.circular(18),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: TsgColors.purple.withValues(alpha: .18),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
-            ResidentMedication(
-              id: 'demo-metformin',
-              name: 'Metformin 500mg',
-              status: 'pending',
-              remainingCount: 18,
+          ],
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
+        ),
+      ),
+    );
+  }
+}
+
+class _GuroBubble extends StatelessWidget {
+  const _GuroBubble({
+    required this.text,
+    required this.pros,
+    required this.selectedProIds,
+    required this.onTogglePro,
+  });
+  final String text;
+  final List<ServicePro> pros;
+  final Set<String> selectedProIds;
+  final ValueChanged<String> onTogglePro;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(bottom: 8, right: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            decoration: BoxDecoration(
+              color: TsgColors.lilac2,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(4),
+                topRight: Radius.circular(18),
+                bottomLeft: Radius.circular(18),
+                bottomRight: Radius.circular(18),
+              ),
+              border: Border.all(color: TsgColors.line),
             ),
-            ResidentMedication(
-              id: 'demo-atorvastatin',
-              name: 'Atorvastatin 20mg',
-              status: 'pending',
-              remainingCount: 9,
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: TsgColors.ink,
+                fontSize: 15,
+                height: 1.4,
+              ),
             ),
-          ]
-        : medications;
-    final first = visibleMeds[0];
-    final second = visibleMeds.length > 1 ? visibleMeds[1] : null;
-    final third = visibleMeds.length > 2 ? visibleMeds[2] : null;
+          ),
+          if (pros.isNotEmpty) ...[
+            ...pros.map(
+              (pro) => _ProCard(
+                pro: pro,
+                selected: selectedProIds.contains(pro.id),
+                onToggle: () => onTogglePro(pro.id),
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _TypingBubble extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12, right: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          color: TsgColors.lilac2,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: TsgColors.line),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: TsgColors.purple,
+              ),
+            ),
+            SizedBox(width: 10),
+            Text(
+              'Guru is thinking...',
+              style: TextStyle(color: TsgColors.muted, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Source badge metadata for each partner network.
+({String label, Color bg, Color ink}) _sourceBadge(String source) {
+  return switch (source) {
+    'guru_partner' => (
+      label: 'Guru Partner',
+      bg: const Color(0xFFEDE8FF),
+      ink: TsgColors.purple,
+    ),
+    'thumbtack' => (
+      label: 'Thumbtack',
+      bg: const Color(0xFFE8F3FF),
+      ink: const Color(0xFF1B72C0),
+    ),
+    'angi' => (
+      label: 'Angi',
+      bg: const Color(0xFFFFEEE8),
+      ink: const Color(0xFFD45D1A),
+    ),
+    'taskrabbit' => (
+      label: 'TaskRabbit',
+      bg: const Color(0xFFE9F5E1),
+      ink: const Color(0xFF3F7A1A),
+    ),
+    'care_com' => (
+      label: 'Care.com',
+      bg: const Color(0xFFE8EFFF),
+      ink: const Color(0xFF1A4CC0),
+    ),
+    'amazon_home' => (
+      label: 'Amazon',
+      bg: const Color(0xFFFFF5E0),
+      ink: const Color(0xFFB35A00),
+    ),
+    _ => (
+      label: '3rd Party',
+      bg: const Color(0xFFF2F2F2),
+      ink: TsgColors.muted,
+    ),
+  };
+}
+
+class _ProCard extends StatelessWidget {
+  const _ProCard({
+    required this.pro,
+    required this.selected,
+    required this.onToggle,
+  });
+  final ServicePro pro;
+  final bool selected;
+  final VoidCallback onToggle;
+
+  void _call() {
+    if (pro.phone != null) {
+      launchUrl(Uri(scheme: 'tel', path: pro.phone!));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = _sourceBadge(pro.source);
+    final isGuruPartner = pro.source == 'guru_partner';
+    final hasPhone = pro.phone != null && pro.phone!.isNotEmpty;
+    final isOpen = pro.isOpenNow;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: TsgColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: TsgColors.line, width: 1),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0E2D2038), blurRadius: 14, offset: Offset(0, 6)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // \u2500\u2500 Top row: avatar + info \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          Padding(
+            padding: const EdgeInsets.fromLTRB(13, 13, 13, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: badge.bg,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    isGuruPartner
+                        ? CupertinoIcons.star_circle_fill
+                        : CupertinoIcons.building_2_fill,
+                    color: badge.ink,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        pro.name,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: TsgColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (pro.rating > 0) ...[
+                            Text(
+                              '\u2605 ${pro.rating.toStringAsFixed(1)}',
+                              style: const TextStyle(
+                                color: TsgColors.orange,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                            if (pro.reviewCount > 0) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '(${pro.reviewCount})',
+                                style: const TextStyle(fontSize: 12, color: TsgColors.muted),
+                              ),
+                            ],
+                            const SizedBox(width: 8),
+                          ],
+                          if (isOpen != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isOpen
+                                    ? const Color(0xFFDCFCE7)
+                                    : const Color(0xFFFEE2E2),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                isOpen ? 'Open Now' : 'Closed',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: isOpen
+                                      ? const Color(0xFF16A34A)
+                                      : const Color(0xFFDC2626),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      if (pro.location != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          pro.location!,
+                          style: const TextStyle(fontSize: 12, color: TsgColors.muted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      if (pro.badge != null) ...[
+                        const SizedBox(height: 3),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: badge.bg,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            pro.badge!,
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: badge.ink),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // \u2500\u2500 Phone number display \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          if (hasPhone)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(13, 0, 13, 8),
+              child: Row(
+                children: [
+                  const Icon(CupertinoIcons.phone_fill, size: 13, color: TsgColors.muted),
+                  const SizedBox(width: 5),
+                  Text(
+                    pro.phone!,
+                    style: const TextStyle(fontSize: 13, color: TsgColors.muted, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          // \u2500\u2500 Action buttons \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          Padding(
+            padding: const EdgeInsets.fromLTRB(13, 0, 13, 13),
+            child: Row(
+              children: [
+                if (hasPhone)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _call,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF16A34A),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.phone_fill, color: Colors.white, size: 16),
+                            SizedBox(width: 6),
+                            Text(
+                              'Call Now',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (hasPhone && pro.website != null) const SizedBox(width: 8),
+                if (pro.website != null)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => launchUrl(Uri.parse(pro.website!), mode: LaunchMode.externalApplication),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        decoration: BoxDecoration(
+                          color: badge.bg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: badge.ink.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.globe, color: badge.ink, size: 15),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Website',
+                              style: TextStyle(
+                                color: badge.ink,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (!hasPhone && pro.website == null)
+                  // Demo card \u2014 no real contact yet
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(CupertinoIcons.info_circle, color: TsgColors.muted, size: 15),
+                          SizedBox(width: 6),
+                          Text(
+                            'Contact info loading...',
+                            style: TextStyle(color: TsgColors.muted, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PartnerChip extends StatelessWidget {
+  const _PartnerChip({
+    required this.label,
+    required this.sublabel,
+    required this.bg,
+    required this.ink,
+    required this.icon,
+  });
+  final String label;
+  final String sublabel;
+  final Color bg;
+  final Color ink;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ink.withValues(alpha: .18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: ink, size: 18),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: ink,
+                ),
+              ),
+              Text(
+                sublabel,
+                style: TextStyle(fontSize: 10, color: ink.withValues(alpha: .7)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+// ---------------------------------------------------------------------------
+
+class MedicationsScreen extends StatefulWidget {
+  const MedicationsScreen({
+    super.key,
+    required this.go,
+    required this.goConfirm,
+    required this.apiClient,
+    this.state,
+  });
+  final ValueChanged<Screen> go;
+  final ValueChanged<String> goConfirm;
+  final TsgApiClient apiClient;
+  final ResidentAppState? state;
+
+  @override
+  State<MedicationsScreen> createState() => _MedicationsScreenState();
+}
+
+class _MedicationsScreenState extends State<MedicationsScreen> {
+  List<ResidentMedication> _meds = [];
+  List<Map<String, dynamic>> _interactions = [];
+  bool _loading = true;
+  String _loadError = '';
+  bool _showAddForm = false;
+
+  // Add medication form fields
+  final _nameCtrl = TextEditingController();
+  final _freqCtrl = TextEditingController();
+  final _condCtrl = TextEditingController();
+  final _strengthCtrl = TextEditingController();
+  final _countCtrl = TextEditingController();
+  bool _addBusy = false;
+  bool _scanBusy = false;
+  String? _addError;
+  Map<String, dynamic>? _addInteractionWarning;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _freqCtrl.dispose();
+    _condCtrl.dispose();
+    _strengthCtrl.dispose();
+    _countCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _loadError = ''; });
+    try {
+      final data = await widget.apiClient.getMedicationDashboard();
+      final rawMeds = listOfMaps(data['medications'] ?? data['meds'] ?? []);
+      final rawAlerts = listOfMaps(data['interactions'] ?? data['alerts'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _meds = rawMeds.map(ResidentMedication.fromJson).toList();
+        _interactions = rawAlerts
+            .where((a) => a['acknowledged'] != true)
+            .toList();
+        _loading = false;
+      });
+    } catch (e) {
+      // Fall back to state from ResidentShell if API fails
+      final fallback = widget.state?.medications ?? const [];
+      if (!mounted) return;
+      setState(() {
+        _meds = fallback.isNotEmpty
+            ? fallback
+            : const [
+                ResidentMedication(
+                  id: 'demo-lisinopril',
+                  name: 'Lisinopril 10mg',
+                  status: 'confirmed',
+                  remainingCount: 14,
+                  frequency: 'once daily',
+                  condition: 'Blood Pressure',
+                ),
+                ResidentMedication(
+                  id: 'demo-metformin',
+                  name: 'Metformin 500mg',
+                  status: 'pending',
+                  remainingCount: 6,
+                  frequency: 'twice daily',
+                  condition: 'Diabetes',
+                ),
+              ];
+        _loading = false;
+        _loadError = fallback.isEmpty ? 'Could not load medications' : '';
+      });
+    }
+  }
+
+  /// Opens camera, runs ML Kit OCR, sends text to Groq, pre-fills form fields.
+  Future<void> _scanLabel() async {
+    setState(() { _scanBusy = true; _addError = null; });
+    try {
+      // 1. Pick image from camera
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        preferredCameraDevice: CameraDevice.rear,
+      );
+      if (pickedFile == null) {
+        setState(() => _scanBusy = false);
+        return;
+      }
+
+      // 2. ML Kit on-device OCR
+      final inputImage = InputImage.fromFilePath(pickedFile.path);
+      final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final RecognizedText recognizedText =
+          await textRecognizer.processImage(inputImage);
+      await textRecognizer.close();
+
+      final rawOcr = recognizedText.text.trim();
+      if (rawOcr.isEmpty) {
+        setState(() {
+          _scanBusy = false;
+          _addError = 'Could not read text from image. Try better lighting or a flatter label.';
+        });
+        return;
+      }
+
+      // 3. Send to Groq for structured parsing
+      final result = await widget.apiClient.scanMedicationLabel(rawOcr);
+      final parsed = result['parsed'] as Map<String, dynamic>? ?? {};
+      final drugInfo = result['drugInfo'] as Map<String, dynamic>?;
+
+      if (!mounted) return;
+
+      // 4. Pre-fill the form fields
+      final name = stringValue(
+          parsed['name'] ?? parsed['genericName'], fallback: '');
+      final strength = stringValue(parsed['strength'], fallback: '');
+      final freq = stringValue(parsed['frequency'], fallback: '');
+      final condition = stringValue(
+          parsed['condition'] ?? drugInfo?['indication'], fallback: '');
+
+      setState(() {
+        _scanBusy = false;
+        _showAddForm = true;
+        if (name.isNotEmpty) _nameCtrl.text = name;
+        if (strength.isNotEmpty) _strengthCtrl.text = strength;
+        if (freq.isNotEmpty) _freqCtrl.text = freq;
+        if (condition.isNotEmpty) _condCtrl.text = condition;
+        if (_countCtrl.text.isEmpty) _countCtrl.text = '30';
+        // Show Beers/NTI info from drug reference
+        if (drugInfo != null &&
+            (drugInfo['beersListCaution'] == true ||
+                drugInfo['narrowTherapeuticIndex'] == true)) {
+          _addInteractionWarning = {
+            'drug_a': name,
+            'drug_b': 'reference check',
+            'severity': drugInfo['narrowTherapeuticIndex'] == true
+                ? 'HIGH'
+                : 'MODERATE',
+            'description': drugInfo['narrowTherapeuticIndex'] == true
+                ? 'Narrow therapeutic index — small dose changes have large effects. Monitor carefully.'
+                : 'This medication is on the Beers Criteria list for older adults. Use with caution.',
+          };
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _scanBusy = false;
+        _addError = 'Scan failed: ${e.toString()}';
+      });
+    }
+  }
+
+  Future<void> _addMedication() async {
+    final name = _nameCtrl.text.trim();
+    final freq = _freqCtrl.text.trim();
+    if (name.isEmpty || freq.isEmpty) {
+      setState(() => _addError = 'Name and frequency are required');
+      return;
+    }
+    setState(() { _addBusy = true; _addError = null; _addInteractionWarning = null; });
+    try {
+      final result = await widget.apiClient.addMedication(
+        name: name,
+        frequency: freq,
+        condition: _condCtrl.text.trim().isNotEmpty ? _condCtrl.text.trim() : null,
+        strength: _strengthCtrl.text.trim().isNotEmpty ? _strengthCtrl.text.trim() : null,
+        remainingCount: int.tryParse(_countCtrl.text.trim()) ?? 30,
+      );
+      final rawWarnings = listOfMaps(result['warnings'] ?? []);
+      if (!mounted) return;
+      if (rawWarnings.isNotEmpty) {
+        setState(() {
+          _addInteractionWarning = rawWarnings.first;
+          _addBusy = false;
+        });
+      } else {
+        _nameCtrl.clear(); _freqCtrl.clear();
+        _condCtrl.clear(); _strengthCtrl.clear(); _countCtrl.clear();
+        setState(() { _showAddForm = false; _addBusy = false; });
+        await _load();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _addError = e.toString(); _addBusy = false; });
+    }
+  }
+
+  String _medStatusLabel(ResidentMedication m) {
+    final s = m.status.toLowerCase();
+    if (s.contains('confirm') || s.contains('taken')) return 'Done';
+    if (s.contains('skip')) return 'Skipped';
+    if (s.contains('snooze')) return 'Later';
+    return 'Pending';
+  }
+
+  Color _medStatusColor(ResidentMedication m) {
+    final s = m.status.toLowerCase();
+    if (s.contains('confirm') || s.contains('taken')) return TsgColors.green;
+    if (s.contains('skip')) return TsgColors.muted;
+    return TsgColors.orange;
+  }
+
+  Color _inventoryColor(ResidentMedication m) {
+    if (m.isCriticalSupply) return const Color(0xFFE53935);
+    if (m.isLowSupply) return TsgColors.orange;
+    return TsgColors.green;
+  }
+
+  String _daysLabel(ResidentMedication m) {
+    final d = m.daysSupplyRemaining;
+    if (d == null) return '${m.remainingCount} left';
+    if (d <= 0) return 'Out of stock';
+    if (d == 1) return '1 day left';
+    return '$d days left';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return ScreenScaffold(
       title: 'Medications',
-      back: () => go(Screen.today),
+      back: () => widget.go(Screen.today),
+      action: GestureDetector(
+        onTap: () => setState(() => _showAddForm = !_showAddForm),
+        child: Icon(
+          _showAddForm ? CupertinoIcons.xmark : CupertinoIcons.plus,
+          color: TsgColors.purple,
+        ),
+      ),
       children: [
-        Segmented(labels: const ['My meds', 'History'], selected: 0),
-        const SizedBox(height: 22),
-        medSection('Morning', '8:00 AM', [
-          medRow(
-            first.name,
-            'Blood Pressure',
-            TsgColors.green,
-            medStatus(first),
-            () => go(Screen.medicationConfirm),
+        // ── Interaction alerts ─────────────────────────────────────────
+        ..._interactions.map((alert) => _interactionBanner(alert)),
+
+        // ── Add medication form ────────────────────────────────────────
+        if (_showAddForm) ...[
+          _addMedicationForm(),
+          const SizedBox(height: 20),
+        ],
+
+        // ── Loading / error ────────────────────────────────────────────
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_meds.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Column(
+              children: [
+                const Icon(CupertinoIcons.capsule, size: 48, color: TsgColors.muted),
+                const SizedBox(height: 12),
+                const Text(
+                  'No medications yet',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _loadError.isNotEmpty ? _loadError : 'Tap + to add your first medication',
+                  style: const TextStyle(color: TsgColors.muted),
+                ),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(CupertinoIcons.refresh, color: TsgColors.purple),
+                  label: const Text('Refresh', style: TextStyle(color: TsgColors.purple)),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          // Group by dose time
+          ..._buildMedSections(),
+        ],
+      ],
+    );
+  }
+
+  Widget _interactionBanner(Map<String, dynamic> alert) {
+    final severity = stringValue(alert['severity'], fallback: 'MODERATE');
+    final isHigh = severity == 'HIGH';
+    final color = isHigh ? const Color(0xFFE53935) : TsgColors.orange;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(CupertinoIcons.exclamationmark_triangle_fill, color: color, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${stringValue(alert["drug_a"])} + ${stringValue(alert["drug_b"])}',
+                  style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  stringValue(alert['description'], fallback: 'Drug interaction detected'),
+                  style: const TextStyle(fontSize: 12, color: TsgColors.ink),
+                ),
+              ],
+            ),
           ),
-        ]),
-        if (second != null)
-          medSection('Afternoon', '2:00 PM', [
-            medRow(
-              second.name,
-              'Diabetes',
-              TsgColors.orange,
-              medStatus(second),
-              () => go(Screen.medicationConfirm),
-            ),
-          ]),
-        if (third != null)
-          medSection('Evening', '8:00 PM', [
-            medRow(
-              third.name,
-              'Cholesterol',
-              TsgColors.orange,
-              medStatus(third),
-              () => go(Screen.refill),
-            ),
-          ]),
-        const SizedBox(height: 18),
-        Center(
-          child: TextButton.icon(
-            onPressed: () => go(Screen.medications),
-            icon: const Icon(CupertinoIcons.plus, color: TsgColors.purple),
-            label: const Text(
-              'Add medication',
-              style: TextStyle(
-                color: TsgColors.purple,
-                fontWeight: FontWeight.w800,
+          Pill(severity, color: color.withValues(alpha: .12), ink: color),
+        ],
+      ),
+    );
+  }
+
+  Widget _addMedicationForm() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F4FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: TsgColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Add Medication',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
               ),
+              // Camera scan button
+              GestureDetector(
+                onTap: _scanBusy ? null : _scanLabel,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: TsgColors.purple.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: _scanBusy
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: TsgColors.purple))
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.camera, size: 15,
+                                color: TsgColors.purple),
+                            SizedBox(width: 5),
+                            Text('Scan Label',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: TsgColors.purple,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Point camera at your prescription label to auto-fill',
+            style: TextStyle(fontSize: 11, color: TsgColors.muted),
+          ),
+          const SizedBox(height: 10),
+          _field(_nameCtrl, 'Medication name *', 'e.g. Lisinopril 10mg'),
+          const SizedBox(height: 8),
+          _field(_strengthCtrl, 'Strength / dose', 'e.g. 10mg'),
+          const SizedBox(height: 8),
+          _field(_freqCtrl, 'Frequency *', 'e.g. once daily, twice daily'),
+          const SizedBox(height: 8),
+          _field(_condCtrl, 'Condition / reason', 'e.g. Blood Pressure'),
+          const SizedBox(height: 8),
+          _field(_countCtrl, 'Pills in hand', '30', numeric: true),
+          if (_addInteractionWarning != null) ...[
+            const SizedBox(height: 10),
+            _interactionBanner(_addInteractionWarning!),
+            const Text(
+              'Interaction detected — please consult your doctor. You can still add this medication.',
+              style: TextStyle(fontSize: 12, color: TsgColors.muted),
+            ),
+          ],
+          if (_addError != null) ...[
+            const SizedBox(height: 8),
+            Text(_addError!, style: const TextStyle(color: Color(0xFFE53935), fontSize: 12)),
+          ],
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: GestureDetector(
+              onTap: _addBusy ? null : _addMedication,
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: TsgColors.purple,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: _addBusy
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Text('Save Medication',
+                          style: TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _field(
+    TextEditingController ctrl,
+    String label,
+    String hint, {
+    bool numeric = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Container(
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: TsgColors.line),
+          ),
+          child: TextField(
+            controller: ctrl,
+            keyboardType: numeric ? TextInputType.number : TextInputType.text,
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: TsgColors.muted, fontSize: 13),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              border: InputBorder.none,
             ),
           ),
         ),
@@ -2119,194 +3654,470 @@ class MedicationsScreen extends StatelessWidget {
     );
   }
 
-  Widget medSection(String title, String time, List<Widget> rows) {
+  List<Widget> _buildMedSections() {
+    // Group medications by dose time
+    final morning = <ResidentMedication>[];
+    final afternoon = <ResidentMedication>[];
+    final evening = <ResidentMedication>[];
+    final other = <ResidentMedication>[];
+
+    for (final m in _meds) {
+      final t = (m.doseTime ?? '').toLowerCase();
+      if (t.contains('morning') || t.contains('8:00 am') || t.contains('am')) {
+        morning.add(m);
+      } else if (t.contains('afternoon') || t.contains('noon') || t.contains('2:')) {
+        afternoon.add(m);
+      } else if (t.contains('evening') || t.contains('night') || t.contains('pm')) {
+        evening.add(m);
+      } else {
+        other.add(m);
+      }
+    }
+    // If no time info, show all under "Today"
+    if (morning.isEmpty && afternoon.isEmpty && evening.isEmpty) {
+      return [_medSection('Today', _meds)];
+    }
+    return [
+      if (morning.isNotEmpty) _medSection('Morning', morning, time: '8:00 AM'),
+      if (afternoon.isNotEmpty) _medSection('Afternoon', afternoon, time: '2:00 PM'),
+      if (evening.isNotEmpty) _medSection('Evening', evening, time: '8:00 PM'),
+      if (other.isNotEmpty) _medSection('Other', other),
+    ];
+  }
+
+  Widget _medSection(String title, List<ResidentMedication> meds, {String? time}) {
     return Column(
       children: [
         Row(
           children: [
             Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
+              child: Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
             ),
-            Text(
-              time,
-              style: const TextStyle(color: TsgColors.muted, fontSize: 12),
-            ),
+            if (time != null)
+              Text(time,
+                  style: const TextStyle(color: TsgColors.muted, fontSize: 12)),
           ],
         ),
         const SizedBox(height: 9),
-        ...rows,
+        ...meds.map(_medCard),
         const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget medRow(
-    String name,
-    String subtitle,
-    Color color,
-    String status,
-    VoidCallback onTap,
-  ) {
+  Widget _medCard(ResidentMedication m) {
+    final statusColor = _medStatusColor(m);
+    final invColor = _inventoryColor(m);
+    final daysLabel = _daysLabel(m);
+    final isDone = m.status.toLowerCase().contains('confirm') ||
+        m.status.toLowerCase().contains('taken');
     return SoftCard(
       padding: const EdgeInsets.all(14),
-      onTap: onTap,
+      onTap: isDone
+          ? null
+          : () => widget.goConfirm(m.id),
       child: Row(
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .13),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(CupertinoIcons.capsule, color: color, size: 18),
+          Stack(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(CupertinoIcons.capsule, color: statusColor, size: 20),
+              ),
+              if (m.beersCaution || m.narrowTherapeuticIndex)
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE53935),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(CupertinoIcons.exclamationmark,
+                        size: 9, color: Colors.white),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 12, color: TsgColors.muted),
+                Text(m.name,
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+                if (m.condition != null)
+                  Text(m.condition!,
+                      style: const TextStyle(
+                          fontSize: 12, color: TsgColors.muted)),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Icon(CupertinoIcons.capsule_fill,
+                        size: 11, color: invColor),
+                    const SizedBox(width: 3),
+                    Text(daysLabel,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: invColor,
+                            fontWeight: FontWeight.w600)),
+                    if (m.isLowSupply) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: invColor.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          m.isCriticalSupply ? 'Refill NOW' : 'Refill soon',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: invColor,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
           ),
-          Pill(status, color: color.withValues(alpha: .12), ink: color),
+          if (!isDone)
+            Pill(_medStatusLabel(m),
+                color: statusColor.withValues(alpha: .12), ink: statusColor)
+          else
+            const Icon(CupertinoIcons.checkmark_circle_fill,
+                color: TsgColors.green, size: 22),
         ],
       ),
     );
   }
-
-  String medStatus(ResidentMedication medication) {
-    final normalized = medication.status.toLowerCase();
-    if (normalized.contains('confirm') || normalized.contains('taken')) {
-      return 'Done';
-    }
-    if (normalized.contains('skip')) return 'Skipped';
-    if (normalized.contains('snooze')) return 'Later';
-    return 'Pending';
-  }
 }
 
-class MedicationConfirm extends StatelessWidget {
+class MedicationConfirm extends StatefulWidget {
   const MedicationConfirm({
     super.key,
     required this.go,
     required this.runApi,
+    required this.apiClient,
     this.state,
+    this.medicationId,
   });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
+  final TsgApiClient apiClient;
   final ResidentAppState? state;
+  final String? medicationId;
 
   @override
-  Widget build(BuildContext context) {
-    final medication = state?.medications.isNotEmpty == true
-        ? state!.medications.first
+  State<MedicationConfirm> createState() => _MedicationConfirmState();
+}
+
+class _MedicationConfirmState extends State<MedicationConfirm> {
+  bool _confirming = false;
+  String? _confirmResult;
+  int? _daysRemaining;
+  bool _refillNeeded = false;
+  bool _confirmed = false;
+
+  ResidentMedication get _medication {
+    final id = widget.medicationId;
+    if (id != null && id.isNotEmpty) {
+      final found = widget.state?.medications.where((m) => m.id == id).firstOrNull;
+      if (found != null) return found;
+    }
+    return widget.state?.medications.isNotEmpty == true
+        ? widget.state!.medications.first
         : const ResidentMedication(
             id: 'demo-lisinopril',
             name: 'Lisinopril 10mg',
             status: 'pending',
-            remainingCount: 5,
+            remainingCount: 14,
+            frequency: 'once daily',
+            condition: 'Blood Pressure',
           );
+  }
+
+  Future<void> _confirmDose() async {
+    setState(() => _confirming = true);
+    try {
+      final result = await widget.apiClient.confirmMedication(_medication.id);
+      if (!mounted) return;
+      final days = result['daysSupplyRemaining'] is int
+          ? result['daysSupplyRemaining'] as int
+          : null;
+      final refill = result['refillNeeded'] == true;
+      setState(() {
+        _confirming = false;
+        _confirmed = true;
+        _daysRemaining = days;
+        _refillNeeded = refill;
+        _confirmResult = 'Dose confirmed!';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _confirming = false;
+        _confirmResult = 'Error: ${e.toString()}';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final med = _medication;
+    final doseInfo = [
+      if (med.doseTime != null && med.doseTime!.isNotEmpty) med.doseTime!,
+      '1 tablet',
+      if (med.frequency != null && med.frequency!.isNotEmpty) med.frequency!,
+    ].join('  •  ');
+
     return ScreenScaffold(
       title: 'Confirm medication',
-      back: () => go(Screen.medications),
+      back: () => widget.go(Screen.medications),
       children: [
+        // Medication card
         SoftCard(
           color: const Color(0xFFFFFAF8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                medication.name,
-                style: const TextStyle(fontWeight: FontWeight.w900),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: TsgColors.lilac,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(CupertinoIcons.capsule,
+                    color: TsgColors.purple, size: 22),
               ),
-              const SizedBox(height: 4),
-              const Text(
-                '8:00 AM  •  1 tablet',
-                style: TextStyle(color: TsgColors.muted),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(med.name,
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                    if (doseInfo.isNotEmpty)
+                      Text(doseInfo,
+                          style: const TextStyle(
+                              color: TsgColors.muted, fontSize: 13)),
+                    if (med.condition != null)
+                      Text(med.condition!,
+                          style: const TextStyle(
+                              fontSize: 12, color: TsgColors.muted)),
+                  ],
+                ),
+              ),
+              // Days supply badge
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${med.remainingCount}',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: med.isLowSupply
+                          ? const Color(0xFFE53935)
+                          : TsgColors.ink,
+                    ),
+                  ),
+                  const Text('pills left',
+                      style: TextStyle(
+                          fontSize: 10, color: TsgColors.muted)),
+                ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 42),
-        const Center(
-          child: H1('Did you take your\nmedication?', size: 26, center: true),
-        ),
-        const SizedBox(height: 24),
-        const Center(
-          child: Avatar(
-            size: 74,
-            icon: CupertinoIcons.capsule,
-            tone: TsgColors.lilac,
-          ),
-        ),
-        const SizedBox(height: 38),
-        confirmButton(
-          'Yes, I took it',
-          CupertinoIcons.check_mark_circled,
-          const Color(0xFFE7F8EA),
-          TsgColors.green,
-          () async {
-            await runApi('Confirming medication dose', (client, state) {
-              return client.confirmMedication(requireMedicationId(state));
-            });
-            go(Screen.today);
-          },
-        ),
-        confirmButton(
-          'Remind me later',
-          CupertinoIcons.clock,
-          Colors.white,
-          TsgColors.ink,
-          () async {
-            await runApi('Snoozing medication reminder', (client, state) {
-              return client.remindMedicationLater(requireMedicationId(state));
-            });
-            go(Screen.today);
-          },
-        ),
-        confirmButton(
-          'Skip this dose',
-          CupertinoIcons.xmark_circle,
-          Colors.white,
-          TsgColors.ink,
-          () async {
-            await runApi('Skipping medication dose', (client, state) {
-              return client.skipMedication(requireMedicationId(state));
-            });
-            go(Screen.today);
-          },
-        ),
-        const SizedBox(height: 20),
-        Center(
-          child: TextButton.icon(
-            onPressed: () async {
-              await launchUrl(Uri.parse('mailto:support@theseniorguru.com?subject=Issue%20Report'));
-            },
-            icon: const Icon(
-              CupertinoIcons.exclamationmark_circle,
-              size: 17,
-              color: TsgColors.purple,
+
+        // Beers criteria or narrow-therapeutic warning
+        if (med.beersCaution || med.narrowTherapeuticIndex) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3E0),
+              borderRadius: BorderRadius.circular(10),
+              border:
+                  Border.all(color: TsgColors.orange.withValues(alpha: .4)),
             ),
-            label: const Text(
-              'Report an issue',
-              style: TextStyle(color: TsgColors.purple),
+            child: Row(
+              children: [
+                const Icon(CupertinoIcons.exclamationmark_triangle_fill,
+                    color: TsgColors.orange, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    med.narrowTherapeuticIndex
+                        ? 'Narrow therapeutic index — take exactly as prescribed. Do not skip doses.'
+                        : 'Beers Criteria medication — monitor for side effects.',
+                    style: const TextStyle(fontSize: 12, color: TsgColors.ink),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
+        ],
+
+        const SizedBox(height: 36),
+
+        if (_confirmed) ...[
+          // Confirmation success state
+          const Center(
+            child: Icon(CupertinoIcons.check_mark_circled_solid,
+                color: TsgColors.green, size: 72),
+          ),
+          const SizedBox(height: 16),
+          const Center(
+            child: Text('Dose recorded!',
+                style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: TsgColors.green)),
+          ),
+          if (_daysRemaining != null) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: Text(
+                '$_daysRemaining days of supply remaining',
+                style: TextStyle(
+                    color: _refillNeeded
+                        ? const Color(0xFFE53935)
+                        : TsgColors.muted),
+              ),
+            ),
+          ],
+          if (_refillNeeded) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: TsgColors.orange.withValues(alpha: .5)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(CupertinoIcons.bell_fill,
+                      color: TsgColors.orange, size: 18),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Running low — a refill request has been sent automatically.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 28),
+          _actionButton(
+            'Back to Today',
+            CupertinoIcons.house,
+            TsgColors.purple,
+            Colors.white,
+            () => widget.go(Screen.today),
+          ),
+          const SizedBox(height: 10),
+          _actionButton(
+            'View All Medications',
+            CupertinoIcons.capsule,
+            const Color(0xFFF1E8F8),
+            TsgColors.purple,
+            () => widget.go(Screen.medications),
+          ),
+        ] else ...[
+          // Confirm prompt
+          const Center(
+            child: H1('Did you take your\nmedication?', size: 26, center: true),
+          ),
+          const SizedBox(height: 24),
+          const Center(
+            child: Avatar(
+              size: 74,
+              icon: CupertinoIcons.capsule,
+              tone: TsgColors.lilac,
+            ),
+          ),
+          const SizedBox(height: 38),
+          if (_confirming)
+            const Center(child: CircularProgressIndicator())
+          else ...[
+            _actionButton(
+              'Yes, I took it',
+              CupertinoIcons.check_mark_circled,
+              const Color(0xFFE7F8EA),
+              TsgColors.green,
+              _confirmDose,
+            ),
+            _actionButton(
+              'Remind me later',
+              CupertinoIcons.clock,
+              Colors.white,
+              TsgColors.ink,
+              () async {
+                await widget.runApi('Snoozing medication reminder',
+                    (client, state) {
+                  return client.remindMedicationLater(_medication.id);
+                });
+                widget.go(Screen.today);
+              },
+            ),
+            _actionButton(
+              'Skip this dose',
+              CupertinoIcons.xmark_circle,
+              Colors.white,
+              TsgColors.ink,
+              () async {
+                await widget.runApi('Skipping medication dose',
+                    (client, state) {
+                  return client.skipMedication(_medication.id);
+                });
+                widget.go(Screen.today);
+              },
+            ),
+            if (_confirmResult != null && _confirmResult!.startsWith('Error')) ...[
+              const SizedBox(height: 8),
+              Center(
+                child: Text(_confirmResult!,
+                    style: const TextStyle(
+                        color: Color(0xFFE53935), fontSize: 12)),
+              ),
+            ],
+          ],
+          const SizedBox(height: 20),
+          Center(
+            child: TextButton.icon(
+              onPressed: () async {
+                await launchUrl(Uri.parse(
+                    'mailto:support@theseniorguru.com?subject=Issue%20Report'));
+              },
+              icon: const Icon(CupertinoIcons.exclamationmark_circle,
+                  size: 17, color: TsgColors.purple),
+              label: const Text('Report an issue',
+                  style: TextStyle(color: TsgColors.purple)),
+            ),
+          ),
+        ],
       ],
     );
   }
 
-  Widget confirmButton(
+  Widget _actionButton(
     String text,
     IconData icon,
     Color bg,
@@ -2329,10 +4140,8 @@ class MedicationConfirm extends StatelessWidget {
             children: [
               Icon(icon, color: ink, size: 18),
               const SizedBox(width: 8),
-              Text(
-                text,
-                style: TextStyle(color: ink, fontWeight: FontWeight.w800),
-              ),
+              Text(text,
+                  style: TextStyle(color: ink, fontWeight: FontWeight.w800)),
             ],
           ),
         ),
@@ -2567,45 +4376,345 @@ Widget chatBubble(String text, bool mine, String meta) {
   );
 }
 
-Widget inputBar({BuildContext? context}) {
-  return Builder(
-    builder: (ctx) => Container(
-      height: 56,
+Widget inputBar({BuildContext? context, ValueChanged<String>? onSend, String hint = 'Type or speak...'}) {
+  return _InputBar(onSend: onSend, hint: hint);
+}
+
+class _InputBar extends StatefulWidget {
+  const _InputBar({this.onSend, this.hint = 'Type or speak...'});
+  final ValueChanged<String>? onSend;
+  final String hint;
+
+  @override
+  State<_InputBar> createState() => _InputBarState();
+}
+
+class _InputBarState extends State<_InputBar> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final text = _controller.text.trim();
+    if (text.isEmpty || widget.onSend == null) return;
+    widget.onSend!(text);
+    _controller.clear();
+    setState(() {});
+  }
+
+  Future<void> _openVoice() async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => const _VoiceListenSheet(),
+    );
+    if (result == null) return;
+    final text = result.trim();
+    if (text.isEmpty) return;
+    if (widget.onSend != null) {
+      widget.onSend!(text);
+      _controller.clear();
+      setState(() {});
+    } else {
+      _controller.text = text;
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasText = widget.onSend != null && _controller.text.trim().isNotEmpty;
+    return Container(
+      height: 64,
       padding: const EdgeInsets.only(left: 16, right: 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: TsgColors.line),
       ),
       child: Row(
         children: [
-          const Expanded(
-            child: Text(
-              'Type or speak...',
-              style: TextStyle(color: TsgColors.muted, fontSize: 16),
+          Expanded(
+            child: widget.onSend != null
+                ? TextField(
+                    controller: _controller,
+                    decoration: InputDecoration(
+                      hintText: widget.hint,
+                      hintStyle: const TextStyle(color: TsgColors.muted, fontSize: 16),
+                      border: InputBorder.none,
+                      isCollapsed: true,
+                    ),
+                    style: const TextStyle(fontSize: 16, color: TsgColors.ink),
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _submit(),
+                    onChanged: (_) => setState(() {}),
+                  )
+                : Text(
+                    widget.hint,
+                    style: const TextStyle(color: TsgColors.muted, fontSize: 16),
+                  ),
+          ),
+          if (hasText)
+            GestureDetector(
+              onTap: _submit,
+              child: const CircleAvatar(
+                radius: 24,
+                backgroundColor: TsgColors.purple,
+                child: Icon(CupertinoIcons.arrow_up, color: Colors.white, size: 22),
+              ),
+            )
+          else
+            // Big mic button — primary input affordance for seniors.
+            GestureDetector(
+              onTap: _openVoice,
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [TsgColors.purple2, TsgColors.purple],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: TsgColors.purple.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Icon(CupertinoIcons.mic_fill, color: Colors.white, size: 26),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Full-screen-ish "big mic" voice input sheet. Listens via the device's
+/// speech recognizer, shows a large pulsing mic with a live transcript, and
+/// returns the recognized text when the senior taps "Use this".
+class _VoiceListenSheet extends StatefulWidget {
+  const _VoiceListenSheet();
+
+  @override
+  State<_VoiceListenSheet> createState() => _VoiceListenSheetState();
+}
+
+class _VoiceListenSheetState extends State<_VoiceListenSheet>
+    with SingleTickerProviderStateMixin {
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  late final AnimationController _pulse;
+  String _text = '';
+  String _status = 'Getting ready...';
+  bool _listening = false;
+  bool _available = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _init();
+  }
+
+  Future<void> _init() async {
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (!mounted) return;
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _listening = false);
+        }
+      },
+      onError: (error) {
+        if (!mounted) return;
+        setState(() {
+          _listening = false;
+          _status = "Sorry, I didn't catch that. Tap the mic to try again.";
+        });
+      },
+    );
+    if (!mounted) return;
+    setState(() => _available = available);
+    if (available) {
+      _listen();
+    } else {
+      setState(() {
+        _status = 'Voice input is not available on this device.\nPlease type your message instead.';
+      });
+    }
+  }
+
+  void _listen() {
+    setState(() {
+      _listening = true;
+      _status = "I'm listening... go ahead";
+    });
+    _speech.listen(
+      onResult: (result) {
+        if (!mounted) return;
+        setState(() => _text = result.recognizedWords);
+      },
+      listenOptions: stt.SpeechListenOptions(
+        listenMode: stt.ListenMode.confirmation,
+        partialResults: true,
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _speech.stop();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  void _toggleListening() {
+    if (_listening) {
+      _speech.stop();
+      setState(() => _listening = false);
+    } else {
+      _listen();
+    }
+  }
+
+  void _useText() {
+    _speech.stop();
+    Navigator.pop(context, _text);
+  }
+
+  void _cancel() {
+    _speech.stop();
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        28,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 28,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: _available ? _toggleListening : null,
+            child: AnimatedBuilder(
+              animation: _pulse,
+              builder: (context, child) {
+                final scale = _listening ? 1.0 + (_pulse.value * 0.15) : 1.0;
+                return Transform.scale(scale: scale, child: child);
+              },
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [TsgColors.purple2, TsgColors.purple],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: TsgColors.purple.withValues(alpha: 0.35),
+                      blurRadius: _listening ? 32 : 16,
+                      spreadRadius: _listening ? 6 : 0,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  _listening ? CupertinoIcons.stop_fill : CupertinoIcons.mic_fill,
+                  color: Colors.white,
+                  size: 52,
+                ),
+              ),
             ),
           ),
-          GestureDetector(
-            onTap: () {
-              showCupertinoDialog(
-                context: ctx,
-                builder: (_) => CupertinoAlertDialog(
-                  title: const Text('Voice Input'),
-                  content: const Text('Voice input is coming soon. Please type your request.'),
-                  actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-                ),
-              );
-            },
-            child: const CircleAvatar(
-              radius: 20,
-              backgroundColor: TsgColors.purple,
-              child: Icon(CupertinoIcons.mic_fill, color: Colors.white, size: 18),
+          const SizedBox(height: 20),
+          Text(
+            _status,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: TsgColors.ink,
             ),
+          ),
+          if (_text.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: TsgColors.lilac2,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: TsgColors.line),
+              ),
+              child: Text(
+                _text,
+                style: const TextStyle(fontSize: 18, height: 1.4, color: TsgColors.ink),
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _cancel,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: const BorderSide(color: TsgColors.line),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: TsgColors.ink),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: _text.trim().isEmpty ? null : _useText,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: TsgColors.purple,
+                    disabledBackgroundColor: TsgColors.purple.withValues(alpha: 0.35),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text(
+                    'Use this',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 class RideMatchesScreen extends StatelessWidget {
@@ -2623,7 +4732,7 @@ class RideMatchesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ScreenScaffold(
       title: 'Matched for you',
-      subtitle: 'Tomorrow, May 25',
+      subtitle: 'Tomorrow, ${_tomorrowLabel()}',
       back: () => go(Screen.rideChat),
       children: [
         rideOption(
@@ -2735,10 +4844,12 @@ class RideStatusScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final fmt = (DateTime t) => '${t.hour % 12 == 0 ? 12 : t.hour % 12}:${t.minute.toString().padLeft(2, '0')} ${t.hour < 12 ? 'AM' : 'PM'}';
     final steps = [
-      ('Request received', '10:31 AM', true),
-      ('Driver assigned', '10:32 AM', true),
-      ('Driver arriving', '9:45 AM', false),
+      ('Request received', fmt(now.subtract(const Duration(minutes: 2))), true),
+      ('Driver assigned', fmt(now.subtract(const Duration(minutes: 1))), true),
+      ('Driver arriving', fmt(now.add(const Duration(minutes: 15))), false),
       ('Completed', '', false),
     ];
     return ScreenScaffold(
@@ -2761,10 +4872,10 @@ class RideStatusScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        const Center(
+        Center(
           child: Text(
-            'Tomorrow, May 25 • 10:00 AM',
-            style: TextStyle(color: TsgColors.muted),
+            'Tomorrow, ${_tomorrowLabel()} • 10:00 AM',
+            style: const TextStyle(color: TsgColors.muted),
           ),
         ),
         const SizedBox(height: 28),
@@ -2800,8 +4911,9 @@ class RideStatusScreen extends StatelessWidget {
 }
 
 class CompanionHome extends StatelessWidget {
-  const CompanionHome({super.key, required this.go});
+  const CompanionHome({super.key, required this.go, required this.goCompanionChat});
   final ValueChanged<Screen> go;
+  final ValueChanged<String> goCompanionChat;
 
   @override
   Widget build(BuildContext context) {
@@ -2842,7 +4954,7 @@ class CompanionHome extends StatelessWidget {
           children: ['Great', 'Okay', 'Lonely', 'Worried'].map((mood) {
             return SoftCard(
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              onTap: () => go(Screen.companionChat),
+              onTap: () => goCompanionChat("I'm feeling $mood today."),
               child: Row(
                 children: [
                   const Icon(
@@ -2861,95 +4973,364 @@ class CompanionHome extends StatelessWidget {
           }).toList(),
         ),
         const SizedBox(height: 24),
-        inputBar(),
+        inputBar(onSend: goCompanionChat, hint: "Type how you're feeling..."),
       ],
     );
   }
 }
 
-class CompanionChat extends StatelessWidget {
-  const CompanionChat({super.key, required this.go});
+class CompanionChat extends StatefulWidget {
+  const CompanionChat({
+    super.key,
+    required this.go,
+    required this.apiClient,
+    this.state,
+    this.initialMessage,
+  });
   final ValueChanged<Screen> go;
+  final TsgApiClient apiClient;
+  final ResidentAppState? state;
+  final String? initialMessage;
+
+  @override
+  State<CompanionChat> createState() => _CompanionChatState();
+}
+
+class _CompanionChatState extends State<CompanionChat> {
+  final _controller = TextEditingController();
+  final _scroll = ScrollController();
+  final List<_ChatEntry> _messages = [];
+  bool _loading = false;
+
+  String get _firstName {
+    final full = widget.state?.residentName ?? '';
+    return full.isNotEmpty ? full.split(' ').first : 'there';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialMessage?.trim() ?? '';
+    if (initial.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _send(initial));
+    } else {
+      _messages.add(_ChatEntry.guru(
+        "Hi $_firstName! 😊 I'm Guru, your companion.\n\n"
+        "How are you feeling today? I'm here to listen.",
+      ));
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  List<Map<String, String>> _buildHistory() {
+    return _messages.map((m) => {
+      'role': m.role == _ChatRole.user ? 'user' : 'assistant',
+      'content': m.text,
+    }).toList();
+  }
+
+  Future<void> _send(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _loading) return;
+
+    setState(() {
+      _messages.add(_ChatEntry.user(trimmed));
+      _loading = true;
+    });
+    _controller.clear();
+    _scrollToBottom();
+
+    try {
+      final history = _buildHistory();
+      final response = await widget.apiClient.post('/api/guru/chat', {
+        'message': trimmed,
+        'screen': 'companion',
+        'residentName': widget.state?.residentName ?? '',
+        'community': widget.state?.community ?? '',
+        'history': history,
+      });
+
+      if (!mounted) return;
+      final reply = stringValue(
+        response['reply'] ?? response['message'] ?? response['text'],
+      );
+      setState(() {
+        _messages.add(_ChatEntry.guru(
+          reply.isNotEmpty
+              ? reply
+              : "I'm here for you, $_firstName. Tell me more about how you're feeling.",
+        ));
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatEntry.guru(
+          "I'm having a little trouble connecting right now, $_firstName. "
+          "I'm still here with you — please try again in a moment. 💙",
+        ));
+        _loading = false;
+      });
+    }
+    _scrollToBottom();
+  }
+
+  Future<void> _openVoice() async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => const _VoiceListenSheet(),
+    );
+    final text = result?.trim() ?? '';
+    if (text.isNotEmpty) _send(text);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ScreenScaffold(
-      title: 'Chat with Guru',
-      back: () => go(Screen.companion),
+    return Column(
       children: [
-        chatBubble("I didn't sleep well\nlast night.", true, 'You • 8:15 AM'),
-        chatBubble(
-          'I’m sorry to hear that. Want to talk about what kept you awake?',
-          false,
-          'Guru • 8:15 AM',
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(CupertinoIcons.chevron_left, size: 24),
+                onPressed: () => widget.go(Screen.companion),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              ),
+              const Expanded(
+                child: Text(
+                  'Chat with Guru',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: TsgColors.ink,
+                  ),
+                ),
+              ),
+              const Avatar(size: 38, icon: CupertinoIcons.smiley_fill, tone: TsgColors.lilac),
+            ],
+          ),
         ),
-        chatBubble('Just too many\nthoughts.', true, 'You • 8:16 AM'),
-        chatBubble(
-          'I understand. Take a deep breath with me.',
-          false,
-          'Guru • 8:16 AM',
+        const SizedBox(height: 8),
+        const Divider(color: TsgColors.line, height: 1),
+        Expanded(
+          child: ListView.builder(
+            controller: _scroll,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            itemCount: _messages.length + (_loading ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == _messages.length) {
+                return _TypingBubble();
+              }
+              final entry = _messages[index];
+              if (entry.role == _ChatRole.user) {
+                return _UserBubble(text: entry.text);
+              }
+              return _GuroBubble(
+                text: entry.text,
+                pros: const [],
+                selectedProIds: const {},
+                onTogglePro: (_) {},
+              );
+            },
+          ),
         ),
-        const SizedBox(height: 120),
-        inputBar(),
+        Container(
+          padding: EdgeInsets.fromLTRB(
+            12,
+            10,
+            12,
+            MediaQuery.of(context).padding.bottom + 90,
+          ),
+          decoration: const BoxDecoration(
+            color: TsgColors.glass,
+            border: Border(top: BorderSide(color: TsgColors.line)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  enabled: !_loading,
+                  decoration: InputDecoration(
+                    hintText: 'Type how you\'re feeling...',
+                    hintStyle: const TextStyle(
+                      color: TsgColors.muted,
+                      fontSize: 15,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.line),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.line),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: TsgColors.purple),
+                    ),
+                  ),
+                  onSubmitted: _send,
+                  textInputAction: TextInputAction.send,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (_controller.text.trim().isNotEmpty)
+                GestureDetector(
+                  onTap: () => _send(_controller.text),
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [TsgColors.purple2, TsgColors.purple],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      CupertinoIcons.arrow_up,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                )
+              else
+                // Big mic button — primary input affordance for seniors.
+                GestureDetector(
+                  onTap: _loading ? null : _openVoice,
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [TsgColors.purple2, TsgColors.purple],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: TsgColors.purple.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(CupertinoIcons.mic_fill, color: Colors.white, size: 26),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
 }
 
 class CircleScreen extends StatelessWidget {
-  const CircleScreen({super.key, required this.go});
+  const CircleScreen({super.key, required this.go, this.state});
   final ValueChanged<Screen> go;
+  final ResidentAppState? state;
 
   @override
   Widget build(BuildContext context) {
-    final people = [
-      ('Rita Sharma', 'Daughter', 'R', '+13035550102'),
-      ('Arjun Sharma', 'Son', 'A', '+13035550103'),
-      ('Susan Patel', 'Friend', 'S', '+13035550104'),
-      ('Dr. Mehta', 'Physician', 'D', '+13035550105'),
-      ('Meena Joshi', 'Caregiver', 'M', '+13035550106'),
-    ];
+    final statePeople = state?.people ?? [];
     return ScreenScaffold(
       title: 'My Circle',
       back: () => go(Screen.more),
       children: [
-        ...people.map(
-          (p) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: SoftCard(
-              padding: const EdgeInsets.all(12),
-              onTap: () => go(Screen.person),
-              child: Row(
-                children: [
-                  Avatar(size: 46, label: p.$3, tone: const Color(0xFFFFE0CC)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          p.$1,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          p.$2,
-                          style: const TextStyle(
-                            color: TsgColors.muted,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+        if (statePeople.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(
+              child: Text(
+                'No contacts added yet.\nTap "Add Person" to get started.',
+                style: TextStyle(color: TsgColors.muted),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ...statePeople.map(
+            (p) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SoftCard(
+                padding: const EdgeInsets.all(12),
+                onTap: () => go(Screen.person),
+                child: Row(
+                  children: [
+                    Avatar(
+                      size: 46,
+                      label: p.name.isNotEmpty ? p.name.characters.first.toUpperCase() : '?',
+                      tone: const Color(0xFFFFE0CC),
                     ),
-                  ),
-                  GestureDetector(
-                    onTap: () => launchPhoneCall(p.$4),
-                    child: const Icon(CupertinoIcons.phone, color: TsgColors.purple),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.name,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const Text(
+                            'Trust Circle',
+                            style: TextStyle(
+                              color: TsgColors.muted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (p.phone.isNotEmpty)
+                      GestureDetector(
+                        onTap: () async {
+                          try {
+                            await launchPhoneCall(p.phone);
+                          } catch (_) {}
+                        },
+                        child: const Icon(CupertinoIcons.phone, color: TsgColors.purple),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
         const SizedBox(height: 14),
         PurpleButton('Add Person', onTap: () => go(Screen.trustCircleInvite)),
       ],
@@ -2965,14 +5346,14 @@ class PersonDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final person = state?.people.isNotEmpty == true ? state!.people.first : null;
-    final name = person?.name.isNotEmpty == true ? person!.name : 'Rita Sharma';
-    final phone = person?.phone.isNotEmpty == true ? person!.phone : '+13035550102';
+    final name = person?.name.isNotEmpty == true ? person!.name : 'Contact';
+    final phone = person?.phone.isNotEmpty == true ? person!.phone : '';
     final initial = name.trim().isEmpty
-        ? 'R'
+        ? '?'
         : name.trim().characters.first.toUpperCase();
     return ScreenScaffold(
       title: name,
-      subtitle: 'Daughter',
+      subtitle: 'Trust Circle Contact',
       back: () => go(Screen.circle),
       children: [
         Center(
@@ -2985,7 +5366,9 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Call',
                 icon: CupertinoIcons.phone_fill,
-                onTap: () => launchPhoneCall(phone),
+                onTap: () async {
+                  try { await launchPhoneCall(phone); } catch (_) {}
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -2993,7 +5376,9 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Message',
                 icon: CupertinoIcons.chat_bubble_fill,
-                onTap: () => launchSms(phone),
+                onTap: () async {
+                  try { await launchSms(phone); } catch (_) {}
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -3001,7 +5386,9 @@ class PersonDetail extends StatelessWidget {
               child: PurpleButton(
                 'Video',
                 icon: CupertinoIcons.video_camera_solid,
-                onTap: () => launchSms(phone, body: 'Can we start a video call?'),
+                onTap: () async {
+                  try { await launchSms(phone, body: 'Can we start a video call?'); } catch (_) {}
+                },
               ),
             ),
           ],
@@ -3075,14 +5462,16 @@ class FeedHome extends StatelessWidget {
         const Segmented(labels: ['For You', 'Following'], selected: 0),
         const SizedBox(height: 16),
         postCard(
-          'Mary D.',
+          context,
+          'Community Member',
           'Beautiful morning walk\nwith my friends',
           CupertinoIcons.tree,
           '24',
         ),
         postCard(
-          'Park View Community',
-          'Community Lunch\nthis Friday at 1 PM.',
+          context,
+          'Your Community',
+          'Community Lunch\ncoming up soon.',
           CupertinoIcons.photo,
           '18',
         ),
@@ -3090,7 +5479,7 @@ class FeedHome extends StatelessWidget {
     );
   }
 
-  Widget postCard(String name, String body, IconData icon, String likes) {
+  Widget postCard(BuildContext context, String name, String body, IconData icon, String likes) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: SoftCard(
@@ -3127,7 +5516,9 @@ class FeedHome extends StatelessWidget {
             Row(
               children: [
                 GestureDetector(
-                  onTap: () {},
+                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Liked'), duration: Duration(seconds: 1)),
+                  ),
                   child: const Icon(
                     CupertinoIcons.heart_fill,
                     color: TsgColors.red,
@@ -3138,12 +5529,12 @@ class FeedHome extends StatelessWidget {
                 Text(likes),
                 const SizedBox(width: 22),
                 GestureDetector(
-                  onTap: () {},
+                  onTap: () => go(Screen.createPost),
                   child: const Icon(CupertinoIcons.chat_bubble, size: 18),
                 ),
                 const SizedBox(width: 6),
                 GestureDetector(
-                  onTap: () {},
+                  onTap: () => go(Screen.createPost),
                   child: const Text('Comment'),
                 ),
               ],
@@ -3155,16 +5546,29 @@ class FeedHome extends StatelessWidget {
   }
 }
 
-class CreatePost extends StatelessWidget {
+class CreatePost extends StatefulWidget {
   const CreatePost({super.key, required this.go, required this.runApi});
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
 
   @override
+  State<CreatePost> createState() => _CreatePostState();
+}
+
+class _CreatePostState extends State<CreatePost> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ScreenScaffold(
       title: 'Create Post',
-      back: () => go(Screen.feed),
+      back: () => widget.go(Screen.feed),
       children: [
         Container(
           height: 156,
@@ -3174,11 +5578,15 @@ class CreatePost extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: TsgColors.line),
           ),
-          child: const Align(
-            alignment: Alignment.topLeft,
-            child: Text(
-              "What's on your mind?",
-              style: TextStyle(color: TsgColors.muted),
+          child: TextField(
+            controller: _controller,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: const InputDecoration(
+              hintText: "What's on your mind?",
+              hintStyle: TextStyle(color: TsgColors.muted),
+              border: InputBorder.none,
             ),
           ),
         ),
@@ -3191,12 +5599,12 @@ class CreatePost extends StatelessWidget {
         PurpleButton(
           'Post',
           onTap: () async {
-            await runApi('Publishing community post', (client, state) {
-              return client.createPost(
-                'Beautiful morning walk with my friends',
-              );
+            final text = _controller.text.trim();
+            if (text.isEmpty) return;
+            await widget.runApi('Publishing community post', (client, state) {
+              return client.createPost(text);
             });
-            go(Screen.feed);
+            widget.go(Screen.feed);
           },
         ),
       ],
@@ -3627,6 +6035,9 @@ class BusinessDashboard extends StatelessWidget {
       business['status'],
       fallback: 'pending_review',
     ).replaceAll('_', ' ');
+    final rawBookings = listOfMaps(state?.raw['bookings']);
+    final leadsCount = rawBookings.length;
+    final bookingsCount = state?.services.length ?? 0;
     return ScreenScaffold(
       title: 'Business',
       subtitle: 'Provider operations and service requests.',
@@ -3686,7 +6097,7 @@ class BusinessDashboard extends StatelessWidget {
             Expanded(
               child: BusinessMetricCard(
                 label: 'New leads',
-                value: '12',
+                value: '$leadsCount',
                 icon: CupertinoIcons.person_crop_circle_badge_plus,
                 onTap: () => go(Screen.businessLeads),
               ),
@@ -3695,7 +6106,7 @@ class BusinessDashboard extends StatelessWidget {
             Expanded(
               child: BusinessMetricCard(
                 label: 'Bookings',
-                value: '5',
+                value: '$bookingsCount',
                 icon: CupertinoIcons.calendar_badge_plus,
                 onTap: () => go(Screen.businessBookings),
               ),
@@ -3804,55 +6215,63 @@ class BusinessLeadsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final leads = const [
-      ('Ride to hospital', 'Tomorrow, 10:00 AM · 3.2 mi', 'New'),
-      ('Pharmacy pickup', 'Today · 2.1 mi', 'New'),
-      ('Airport ride', 'Jun 6, 8:00 AM · 18 mi', 'Review'),
-    ];
+    final rawBookings = listOfMaps(state?.raw['bookings']);
     return ScreenScaffold(
       title: 'Leads',
       subtitle: 'Service requests routed to this provider.',
       children: [
-        ...leads.map(
-          (lead) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: SoftCard(
-              child: Row(
-                children: [
-                  const Avatar(
-                    size: 46,
-                    icon: CupertinoIcons.car_detailed,
-                    tone: Color(0xFFEAF4FF),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          lead.$1,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          lead.$2,
-                          style: const TextStyle(color: TsgColors.muted),
-                        ),
-                      ],
+        if (rawBookings.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(
+              child: Text(
+                'No service leads at this time.',
+                style: TextStyle(color: TsgColors.muted),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ...rawBookings.map(
+            (b) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SoftCard(
+                child: Row(
+                  children: [
+                    const Avatar(
+                      size: 46,
+                      icon: CupertinoIcons.car_detailed,
+                      tone: Color(0xFFEAF4FF),
                     ),
-                  ),
-                  RoleStatusChip(
-                    lead.$3,
-                    color: lead.$3 == 'New' ? TsgColors.green : TsgColors.blue,
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            stringValue(b['label'], fallback: 'Service request'),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            stringValue(b['scheduledFor']),
+                            style: const TextStyle(color: TsgColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    RoleStatusChip(
+                      stringValue(b['status'], fallback: 'New'),
+                      color: TsgColors.green,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -3866,54 +6285,60 @@ class BusinessBookingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bookings = const [
-      ('Today, 2:30 PM', 'Ride · Local', 'Confirmed'),
-      ('Tomorrow, 10:00 AM', 'Ride · Hospital', 'Confirmed'),
-      ('Jun 6, 8:00 AM', 'Ride · Airport', 'Pending'),
-    ];
+    final rawBookings = listOfMaps(state?.raw['bookings']);
     return ScreenScaffold(
       title: 'Bookings',
       subtitle: 'Confirmed and pending provider work.',
       children: [
-        ...bookings.map(
-          (booking) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: SoftCard(
-              child: Row(
-                children: [
-                  const Avatar(
-                    size: 44,
-                    icon: CupertinoIcons.calendar,
-                    tone: Color(0xFFF1E8F8),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          booking.$1,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          booking.$2,
-                          style: const TextStyle(color: TsgColors.muted),
-                        ),
-                      ],
+        if (rawBookings.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(
+              child: Text(
+                'No bookings at this time.',
+                style: TextStyle(color: TsgColors.muted),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ...rawBookings.map(
+            (b) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SoftCard(
+                child: Row(
+                  children: [
+                    const Avatar(
+                      size: 44,
+                      icon: CupertinoIcons.calendar,
+                      tone: Color(0xFFF1E8F8),
                     ),
-                  ),
-                  RoleStatusChip(
-                    booking.$3,
-                    color: booking.$3 == 'Confirmed'
-                        ? TsgColors.green
-                        : TsgColors.orange,
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            stringValue(b['scheduledFor'], fallback: 'Upcoming'),
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            stringValue(b['label'], fallback: 'Booking'),
+                            style: const TextStyle(color: TsgColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    RoleStatusChip(
+                      stringValue(b['status'], fallback: 'Confirmed'),
+                      color: TsgColors.green,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -4203,32 +6628,47 @@ class SettingsSection extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             ...rows.map(
-              (row) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.$1,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+              (row) => GestureDetector(
+                onTap: () => showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: Text('Edit ${row.$1}'),
+                    content: TextFormField(initialValue: row.$2),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Done'),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Text(
-                        row.$2,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(color: TsgColors.muted),
+                    ],
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          row.$1,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(
-                      CupertinoIcons.pencil,
-                      size: 15,
-                      color: TsgColors.muted,
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          row.$2,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(color: TsgColors.muted),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        CupertinoIcons.pencil,
+                        size: 15,
+                        color: TsgColors.muted,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -4244,164 +6684,275 @@ class ServicesScreen extends StatelessWidget {
     super.key,
     required this.go,
     required this.runApi,
+    required this.goGuruChat,
     this.state,
   });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
+  final ValueChanged<String> goGuruChat;
   final ResidentAppState? state;
+
+  // TSG-native services booked directly through the backend.
+  // Thumbtack services (cleaning, handyman, plumbing, etc.) open the Guru chat.
+  static const _thumbtackCategories = {
+    'cleaning',
+    'handyman',
+    'home_care',
+    'plumbing',
+    'electrical',
+    'landscaping',
+    'painting',
+  };
 
   @override
   Widget build(BuildContext context) {
+    // (label, category, availability, icon, color, guruMessage or null)
+    // guruMessage != null → route through Thumbtack Guru chat
     final services = [
       (
         'CareRide',
         'Transportation',
-        '4.8',
         'Available tomorrow',
         CupertinoIcons.car_detailed,
         const Color(0xFFFFF3E8),
+        null,
       ),
       (
         'HealthPlus Pharmacy',
         'pharmacy',
-        '4.7',
         'Fast delivery',
         CupertinoIcons.capsule,
         const Color(0xFFEFF8ED),
+        null,
       ),
       (
         'Comfort Cleaning',
         'cleaning',
-        '4.9',
-        'Today, 3 PM open',
+        'Find vetted pros',
         CupertinoIcons.sparkles,
         const Color(0xFFF4EDFF),
+        'I need house cleaning',
       ),
       (
         'Fresh Meals',
         'food',
-        '4.6',
         'Low sodium meals',
         CupertinoIcons.bag,
         const Color(0xFFFFF7DF),
+        null,
       ),
       (
         'Handyman Help',
         'handyman',
-        '4.8',
-        'Home repairs and setup',
+        'Find vetted pros',
         CupertinoIcons.hammer_fill,
         const Color(0xFFEAF4FF),
+        'I need a handyman for home repair',
       ),
       (
         'Groceries',
         'grocery',
-        '4.7',
         'Essentials delivered',
         CupertinoIcons.cart_fill,
         const Color(0xFFEFF8ED),
+        null,
       ),
     ];
+
+    // (icon, label, guruMessage or null)
+    // guruMessage != null → Thumbtack category, opens Guru chat
     final categories = [
-      (CupertinoIcons.car_detailed, 'Transport'),
-      (CupertinoIcons.capsule, 'Medication'),
-      (CupertinoIcons.bag, 'Food'),
-      (CupertinoIcons.cart_fill, 'Groceries'),
-      (CupertinoIcons.hammer_fill, 'Handyman'),
-      (CupertinoIcons.house_fill, 'Home Care'),
-      (CupertinoIcons.calendar, 'Events'),
+      (CupertinoIcons.car_detailed, 'Transport', null),
+      (CupertinoIcons.capsule, 'Medication', null),
+      (CupertinoIcons.bag, 'Food', null),
+      (CupertinoIcons.cart_fill, 'Groceries', null),
+      (CupertinoIcons.hammer_fill, 'Handyman', 'I need a handyman'),
+      (CupertinoIcons.house_fill, 'Home Care', 'I need home care help'),
+      (CupertinoIcons.drop_fill, 'Plumbing', 'I need a plumber'),
+      (CupertinoIcons.bolt_fill, 'Electrical', 'I need an electrician'),
+      (CupertinoIcons.leaf_arrow_circlepath, 'Lawn Care', 'I need lawn care'),
     ];
+
     return ScreenScaffold(
       title: 'Services',
       subtitle: 'Find trusted help near you.',
       back: () => go(Screen.more),
       children: [
-        Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: TsgColors.line),
-          ),
-          child: const Row(
-            children: [
-              Icon(CupertinoIcons.search, color: TsgColors.muted),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Search services...',
-                  style: TextStyle(color: TsgColors.muted),
+        // Search bar — opens Guru chat for any service query
+        GestureDetector(
+          onTap: () => goGuruChat(''),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: TsgColors.line),
+            ),
+            child: const Row(
+              children: [
+                Icon(CupertinoIcons.search, color: TsgColors.muted),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'What do you need? Ask the Guru...',
+                    style: TextStyle(color: TsgColors.muted),
+                  ),
                 ),
-              ),
-              Icon(CupertinoIcons.slider_horizontal_3, color: TsgColors.purple),
-            ],
+                Icon(CupertinoIcons.sparkles, color: TsgColors.purple),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 18),
-        const SectionHeader('AI matched for you', action: 'View all'),
+
+        // Thumbtack banner — home service CTA
+        GestureDetector(
+          onTap: () => goGuruChat(''),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1B72C0), Color(0xFF0E4F8A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x221B72C0),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .18),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.hammer_fill,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Need a plumber, cleaner, or handyman?',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          height: 1.3,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Ask the Guru — we will find vetted pros from our network and top platforms.',
+                        style: TextStyle(
+                          color: Color(0xCCFFFFFF),
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  CupertinoIcons.chevron_right,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        const SectionHeader('Your Services'),
         const SizedBox(height: 12),
-        ...services.map(
-          (s) => Padding(
+        ...services.map((s) {
+          final isThumbtatck = s.$6 != null;
+          return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: SoftCard(
               padding: const EdgeInsets.all(13),
               onTap: () async {
-                if (s.$1 == 'CareRide') {
-                  await runApi('Creating CareRide booking', (client, state) {
+                if (isThumbtatck) {
+                  goGuruChat(s.$6!);
+                  return;
+                }
+                if (s.$2 == 'Transportation') {
+                  await runApi('Creating CareRide booking', (client, st) {
                     return client.createRideBooking(
-                      serviceId: requireTransportServiceId(state),
+                      serviceId: requireTransportServiceId(st),
                       label: 'Cardiology Visit',
                       time: 'Tomorrow, 10:00 AM',
-                      pickupLabel: state?.community ?? '',
-                      riderName: state?.residentName ?? '',
+                      pickupLabel: st?.community ?? '',
+                      riderName: st?.residentName ?? '',
                     );
                   });
                   go(Screen.rideStatus);
                   return;
                 }
-                await runApi('Creating ${s.$2} order', (client, state) {
+                await runApi('Creating ${s.$2} order', (client, st) {
                   return client.createSupportOrder(
                     category: s.$2,
                     label: s.$1,
                     providerBillCents: supportOrderEstimateCents(s.$2),
-                    recipientName: state?.residentName ?? '',
-                    deliveryAddress: state?.community ?? '',
+                    recipientName: st?.residentName ?? '',
+                    deliveryAddress: st?.community ?? '',
                   );
                 });
               },
               child: Row(
                 children: [
-                  PhotoTile(icon: s.$5, width: 72, height: 72, color: s.$6),
+                  PhotoTile(icon: s.$4, width: 72, height: 72, color: s.$5),
                   const SizedBox(width: 13),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          s.$1,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                s.$1,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            if (isThumbtatck)
+                              const Pill(
+                                'Find Pros',
+                                color: Color(0xFFEDE8FF),
+                                ink: TsgColors.purple,
+                              ),
+                          ],
                         ),
                         Text(
                           s.$2,
                           style: const TextStyle(color: TsgColors.muted),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Text(
-                          '★ ${s.$3}',
-                          style: const TextStyle(
-                            color: TsgColors.orange,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          s.$4,
-                          style: const TextStyle(
-                            color: TsgColors.green,
-                            fontWeight: FontWeight.w800,
+                          s.$3,
+                          style: TextStyle(
+                            color: isThumbtatck
+                                ? const Color(0xFF1B72C0)
+                                : TsgColors.green,
+                            fontWeight: FontWeight.w700,
                             fontSize: 12,
                           ),
                         ),
@@ -4415,9 +6966,63 @@ class ServicesScreen extends StatelessWidget {
                 ],
               ),
             ),
-          ),
+          );
+        }),
+        const SizedBox(height: 20),
+        const SectionHeader('Partner Networks'),
+        const SizedBox(height: 4),
+        const Text(
+          'Pros sourced from our vetted network and top platforms.',
+          style: TextStyle(fontSize: 13, color: TsgColors.muted),
         ),
         const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _PartnerChip(
+                label: 'Guru Partners',
+                sublabel: 'TSG Vetted',
+                bg: Color(0xFFEDE8FF),
+                ink: TsgColors.purple,
+                icon: CupertinoIcons.star_circle_fill,
+              ),
+              SizedBox(width: 8),
+              _PartnerChip(
+                label: 'Thumbtack',
+                sublabel: 'Home Services',
+                bg: Color(0xFFE8F3FF),
+                ink: Color(0xFF1B72C0),
+                icon: CupertinoIcons.hammer_fill,
+              ),
+              SizedBox(width: 8),
+              _PartnerChip(
+                label: 'Angi',
+                sublabel: 'Home Pros',
+                bg: Color(0xFFFFEEE8),
+                ink: Color(0xFFD45D1A),
+                icon: CupertinoIcons.house_fill,
+              ),
+              SizedBox(width: 8),
+              _PartnerChip(
+                label: 'TaskRabbit',
+                sublabel: 'Handywork',
+                bg: Color(0xFFE9F5E1),
+                ink: Color(0xFF3F7A1A),
+                icon: CupertinoIcons.checkmark_seal_fill,
+              ),
+              SizedBox(width: 8),
+              _PartnerChip(
+                label: 'Care.com',
+                sublabel: 'Caregivers',
+                bg: Color(0xFFE8EFFF),
+                ink: Color(0xFF1A4CC0),
+                icon: CupertinoIcons.heart_fill,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         const SectionHeader('Browse categories'),
         const SizedBox(height: 12),
         GridView.count(
@@ -4428,22 +7033,52 @@ class ServicesScreen extends StatelessWidget {
           crossAxisSpacing: 10,
           childAspectRatio: 1,
           children: categories.map((c) {
+            final isThumbtatck = c.$3 != null;
             return SoftCard(
               padding: const EdgeInsets.all(10),
-              onTap: () => go(Screen.services),
+              color: isThumbtatck
+                  ? const Color(0xFFF0F7FF)
+                  : TsgColors.card,
+              onTap: () {
+                if (isThumbtatck) {
+                  goGuruChat(c.$3!);
+                } else {
+                  go(Screen.services);
+                }
+              },
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(c.$1, color: TsgColors.purple, size: 24),
-                  const SizedBox(height: 9),
+                  Icon(
+                    c.$1,
+                    color: isThumbtatck
+                        ? const Color(0xFF1B72C0)
+                        : TsgColors.purple,
+                    size: 24,
+                  ),
+                  const SizedBox(height: 7),
                   Text(
                     c.$2,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
+                      color: isThumbtatck
+                          ? const Color(0xFF1B72C0)
+                          : TsgColors.ink,
                     ),
                   ),
+                  if (isThumbtatck) ...[
+                    const SizedBox(height: 3),
+                    const Text(
+                      'via Partners',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFF1B72C0),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -4578,40 +7213,60 @@ class _SafetyScreenState extends State<SafetyScreen> {
               height: 214,
               child: Stack(
                 children: [
-                  Positioned.fill(
-                    child: GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: center,
-                        zoom: hasLocation ? 15 : 12,
-                      ),
-                      markers: {
-                        Marker(
-                          markerId: const MarkerId('resident-location'),
-                          position: center,
-                          infoWindow: InfoWindow(
-                            title: hasLocation
-                                ? 'Current location'
-                                : 'Waiting for location',
-                            snippet: safeZoneStatus,
+                  if (androidGoogleMapsKey.isNotEmpty)
+                    Positioned.fill(
+                      child: GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: center,
+                          zoom: hasLocation ? 15 : 12,
+                        ),
+                        markers: {
+                          Marker(
+                            markerId: const MarkerId('resident-location'),
+                            position: center,
+                            infoWindow: InfoWindow(
+                              title: hasLocation
+                                  ? 'Current location'
+                                  : 'Waiting for location',
+                              snippet: safeZoneStatus,
+                            ),
                           ),
-                        ),
-                      },
-                      circles: {
-                        Circle(
-                          circleId: const CircleId('safe-zone'),
-                          center: center,
-                          radius: hasLocation ? 250 : 500,
-                          strokeColor: TsgColors.green,
-                          fillColor: TsgColors.green.withValues(alpha: .12),
-                          strokeWidth: 2,
-                        ),
-                      },
-                      myLocationEnabled: hasLocation,
-                      myLocationButtonEnabled: false,
-                      zoomControlsEnabled: false,
-                      compassEnabled: false,
+                        },
+                        circles: {
+                          Circle(
+                            circleId: const CircleId('safe-zone'),
+                            center: center,
+                            radius: hasLocation ? 250 : 500,
+                            strokeColor: TsgColors.green,
+                            fillColor: TsgColors.green.withValues(alpha: .12),
+                            strokeWidth: 2,
+                          ),
+                          for (final zone in listOfMaps(mapValue(widget.state?.raw['safety'])['safeZones']))
+                            Circle(
+                              circleId: CircleId('safe-zone-${surfaceText(zone['id'], zone.hashCode.toString())}'),
+                              center: LatLng(
+                                doubleValue(zone['center_lat'], fallback: center.latitude),
+                                doubleValue(zone['center_lng'], fallback: center.longitude),
+                              ),
+                              radius: doubleValue(zone['radius_meters'], fallback: 150),
+                              strokeColor: TsgColors.purple,
+                              fillColor: TsgColors.purple.withValues(alpha: .12),
+                              strokeWidth: 2,
+                            ),
+                        },
+                        myLocationEnabled: hasLocation,
+                        myLocationButtonEnabled: false,
+                        zoomControlsEnabled: false,
+                        compassEnabled: false,
+                      ),
+                    )
+                  else
+                    Positioned.fill(
+                      child: Container(
+                        color: const Color(0xFFEEEEEE),
+                        child: const Center(child: Text('Map unavailable', style: TextStyle(color: TsgColors.muted))),
+                      ),
                     ),
-                  ),
                   Positioned(
                     top: 12,
                     right: 12,
@@ -4831,7 +7486,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
           movementStatus: current.speed > 0.6 ? 'moving' : 'still',
           lastKnownSpeedMph:
               (current.speed * 2.236936 * 10).roundToDouble() / 10,
-          safeZoneStatus: 'inside',
+          safeZoneStatus: null,
         );
       });
       if (!mounted) return;
@@ -4903,51 +7558,130 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 }
 
-class SafetyMapScreen extends StatelessWidget {
-  const SafetyMapScreen({super.key, required this.go, this.state});
+class SafetyMapScreen extends StatefulWidget {
+  const SafetyMapScreen({super.key, required this.go, required this.runApi, this.state});
   final ValueChanged<Screen> go;
+  final ApiRunner runApi;
   final ResidentAppState? state;
 
   @override
+  State<SafetyMapScreen> createState() => _SafetyMapScreenState();
+}
+
+class _SafetyMapScreenState extends State<SafetyMapScreen> {
+  GoogleMapController? _mapController;
+  bool _placingZone = false;
+  LatLng? _draftCenter;
+  double _draftRadius = 150;
+  bool _saving = false;
+
+  static const _zoneColors = [
+    TsgColors.purple,
+    TsgColors.orange,
+    Color(0xFF2E9E6B),
+    Color(0xFF3B82F6),
+    Color(0xFFD83D55),
+  ];
+
+  @override
   Widget build(BuildContext context) {
-    final telemetry = mapValue(mapValue(state?.raw['safety'])['latestTelemetry']);
+    final telemetry = mapValue(mapValue(widget.state?.raw['safety'])['latestTelemetry']);
     final lat = doubleValue(telemetry['lat'], fallback: 37.3688);
     final lng = doubleValue(telemetry['lng'], fallback: -122.0363);
     final hasTelemetry = telemetry.isNotEmpty;
     final center = LatLng(lat, lng);
     final safeZone = surfaceText(telemetry['safe_zone_status'], 'Unknown');
     final label = surfaceText(telemetry['location_label'], 'Current location');
+    final zones = listOfMaps(mapValue(widget.state?.raw['safety'])['safeZones']);
+
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('resident-location-full'),
+        position: center,
+        infoWindow: InfoWindow(title: label, snippet: safeZone),
+      ),
+    };
+    final circles = <Circle>{
+      Circle(
+        circleId: const CircleId('resident-safe-zone-full'),
+        center: center,
+        radius: 300,
+        strokeWidth: 3,
+        strokeColor: TsgColors.green,
+        fillColor: TsgColors.green.withValues(alpha: .12),
+      ),
+    };
+    for (var i = 0; i < zones.length; i++) {
+      final zone = zones[i];
+      final zoneId = surfaceText(zone['id'], 'zone-$i');
+      final zoneLat = doubleValue(zone['center_lat'], fallback: lat);
+      final zoneLng = doubleValue(zone['center_lng'], fallback: lng);
+      final zoneRadius = doubleValue(zone['radius_meters'], fallback: 150);
+      final zoneCenter = LatLng(zoneLat, zoneLng);
+      final color = _zoneColors[i % _zoneColors.length];
+      circles.add(Circle(
+        circleId: CircleId('safe-zone-$zoneId'),
+        center: zoneCenter,
+        radius: zoneRadius,
+        strokeWidth: 2,
+        strokeColor: color,
+        fillColor: color.withValues(alpha: .14),
+      ));
+      markers.add(Marker(
+        markerId: MarkerId('safe-zone-marker-$zoneId'),
+        position: zoneCenter,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+        infoWindow: InfoWindow(
+          title: surfaceText(zone['name'], 'Safe zone'),
+          snippet: '${zoneRadius.round()} m radius',
+        ),
+      ));
+    }
+    if (_draftCenter != null) {
+      circles.add(Circle(
+        circleId: const CircleId('draft-safe-zone'),
+        center: _draftCenter!,
+        radius: _draftRadius,
+        strokeWidth: 2,
+        strokeColor: TsgColors.purple,
+        fillColor: TsgColors.purple.withValues(alpha: .18),
+      ));
+      markers.add(Marker(
+        markerId: const MarkerId('draft-safe-zone-marker'),
+        position: _draftCenter!,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+      ));
+    }
+
     return Scaffold(
       body: Stack(
         children: [
-          Positioned.fill(
-            child: GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: center,
-                zoom: hasTelemetry ? 16 : 12,
+          if (androidGoogleMapsKey.isNotEmpty)
+            Positioned.fill(
+              child: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: center,
+                  zoom: hasTelemetry ? 16 : 12,
+                ),
+                onMapCreated: (controller) => _mapController = controller,
+                onTap: (tapped) {
+                  if (!_placingZone) return;
+                  setState(() => _draftCenter = tapped);
+                },
+                markers: markers,
+                circles: circles,
+                myLocationEnabled: hasTelemetry,
+                myLocationButtonEnabled: true,
+                zoomControlsEnabled: false,
               ),
-              markers: {
-                Marker(
-                  markerId: const MarkerId('resident-location-full'),
-                  position: center,
-                  infoWindow: InfoWindow(title: label, snippet: safeZone),
-                ),
-              },
-              circles: {
-                Circle(
-                  circleId: const CircleId('resident-safe-zone-full'),
-                  center: center,
-                  radius: 300,
-                  strokeWidth: 3,
-                  strokeColor: TsgColors.green,
-                  fillColor: TsgColors.green.withValues(alpha: .12),
-                ),
-              },
-              myLocationEnabled: hasTelemetry,
-              myLocationButtonEnabled: true,
-              zoomControlsEnabled: false,
+            )
+          else
+            Positioned.fill(
+              child: Container(
+                color: const Color(0xFFEEEEEE),
+                child: const Center(child: Text('Map requires Google Maps API key', style: TextStyle(color: TsgColors.muted))),
+              ),
             ),
-          ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(18),
@@ -4956,7 +7690,7 @@ class SafetyMapScreen extends StatelessWidget {
                   Row(
                     children: [
                       GestureDetector(
-                        onTap: () => go(Screen.safety),
+                        onTap: () => widget.go(Screen.safety),
                         child: Container(
                           width: 48,
                           height: 48,
@@ -5011,9 +7745,131 @@ class SafetyMapScreen extends StatelessWidget {
                           ),
                         ),
                       ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: _toggleAddZoneMode,
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: _placingZone ? TsgColors.purple : Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x262D2038),
+                                blurRadius: 18,
+                                offset: Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            _placingZone ? CupertinoIcons.xmark : CupertinoIcons.add_circled_solid,
+                            color: _placingZone ? Colors.white : TsgColors.purple,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
+                  if (_placingZone) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .95),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: TsgColors.line),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _draftCenter == null
+                                ? 'Tap on the map to place your safe zone'
+                                : 'Adjust the radius, then save',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          if (_draftCenter != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Text('Radius', style: TextStyle(color: TsgColors.muted)),
+                                Expanded(
+                                  child: Slider(
+                                    value: _draftRadius,
+                                    min: 50,
+                                    max: 2000,
+                                    divisions: 39,
+                                    activeColor: TsgColors.purple,
+                                    label: '${_draftRadius.round()} m',
+                                    onChanged: (v) => setState(() => _draftRadius = v),
+                                  ),
+                                ),
+                                Text('${_draftRadius.round()} m'),
+                              ],
+                            ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: ElevatedButton(
+                                onPressed: _saving ? null : _saveZone,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: TsgColors.purple,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: Text(_saving ? 'Saving...' : 'Save safe zone'),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                   const Spacer(),
+                  if (zones.isNotEmpty) ...[
+                    SizedBox(
+                      height: 64,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: zones.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          final zone = zones[i];
+                          final zoneId = surfaceText(zone['id'], '');
+                          final color = _zoneColors[i % _zoneColors.length];
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .95),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: TsgColors.line),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${surfaceText(zone['name'], 'Safe zone')} · ${doubleValue(zone['radius_meters'], fallback: 150).round()}m',
+                                  style: const TextStyle(fontWeight: FontWeight.w800),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: zoneId.isEmpty ? null : () => _deleteZone(zoneId),
+                                  child: const Icon(CupertinoIcons.delete, size: 18, color: TsgColors.muted),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -5045,8 +7901,10 @@ class SafetyMapScreen extends StatelessWidget {
                         const SizedBox(height: 8),
                         Text(
                           androidGoogleMapsKey.isEmpty
-                              ? 'Google Maps Android key is missing in this APK build. Coordinates are synced, but map tiles may not render.'
-                              : 'Latest phone location is synced with the safety engine.',
+                              ? 'Google Maps API key is missing in this build. Coordinates are synced, but map tiles may not render.'
+                              : zones.isEmpty
+                                  ? 'Tap the + button above to add your first safe zone with a custom radius.'
+                                  : 'Latest phone location is synced with the safety engine.',
                           style: const TextStyle(
                             color: TsgColors.muted,
                             height: 1.3,
@@ -5062,6 +7920,72 @@ class SafetyMapScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  void _toggleAddZoneMode() {
+    setState(() {
+      _placingZone = !_placingZone;
+      _draftCenter = null;
+      _draftRadius = 150;
+    });
+  }
+
+  Future<void> _saveZone() async {
+    final center = _draftCenter;
+    if (center == null) return;
+    final controller = TextEditingController(text: 'My Safe Zone');
+    final name = await showCupertinoDialog<String>(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: const Text('Name this safe zone'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(controller: controller, autofocus: true),
+        ),
+        actions: [
+          CupertinoDialogAction(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    setState(() => _saving = true);
+    final ok = await widget.runApi('Saving safe zone', (client, state) {
+      return client.addSafeZone(
+        name: name,
+        lat: center.latitude,
+        lng: center.longitude,
+        radiusMeters: _draftRadius.round(),
+      );
+    });
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (ok) {
+        _placingZone = false;
+        _draftCenter = null;
+      }
+    });
+  }
+
+  Future<void> _deleteZone(String zoneId) async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: const Text('Remove safe zone?'),
+        content: const Text('Your trusted circle will no longer be alerted based on this area.'),
+        actions: [
+          CupertinoDialogAction(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          CupertinoDialogAction(isDestructiveAction: true, onPressed: () => Navigator.pop(context, true), child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await widget.runApi('Removing safe zone', (client, state) => client.removeSafeZone(zoneId));
   }
 }
 
@@ -5359,6 +8283,9 @@ Future<void> captureOnboardingEvidence({
           maxWidth: 1400,
         );
   if (picked == null) return;
+  const maxBytes = 10 * 1024 * 1024;
+  final fileSize = await picked.length();
+  if (fileSize > maxBytes) return;
   final bytes = await picked.readAsBytes();
   await runApi('Saving ${optionLabel.toLowerCase()}', (client, state) {
     return client.captureEvidence(
@@ -5930,7 +8857,7 @@ class SeniorStepScreen extends StatelessWidget {
       runApi: runApi,
       onFinish: (runner) async {
         await runner?.call('Completing senior onboarding', (client, state) {
-          return client.completeSeniorOnboarding();
+          return client.completeSeniorOnboarding(OnboardingDraft.instance.toPayload());
         });
       },
     );
@@ -6040,17 +8967,23 @@ class OnboardingSpecScreen extends StatelessWidget {
             (item) => OnboardingOptionCard(
               item: item,
               accent: step.accent,
-              onTap:
-                  runApi == null ||
-                      evidenceCaptureSpecForOption(step, item.$2) == null
-                  ? null
-                  : () {
-                      captureOnboardingEvidence(
-                        step: step,
-                        optionLabel: item.$2,
-                        runApi: runApi!,
-                      );
-                    },
+              onTap: step.title == 'Permissions' && item.$2 == 'Location'
+                  ? () {
+                      // Ask for live GPS access now, so Guru already has it
+                      // by the time the resident asks about weather or
+                      // nearby services.
+                      LocationService.instance.getCurrentLatLon();
+                    }
+                  : runApi == null ||
+                          evidenceCaptureSpecForOption(step, item.$2) == null
+                      ? null
+                      : () {
+                          captureOnboardingEvidence(
+                            step: step,
+                            optionLabel: item.$2,
+                            runApi: runApi!,
+                          );
+                        },
             ),
           ),
         ],
@@ -6269,6 +9202,13 @@ class _OnboardingProfileState extends State<OnboardingProfile> {
         const SizedBox(height: 20),
         PurpleButton('Continue', onTap: () {
           if (_formKey.currentState?.validate() ?? true) {
+            OnboardingDraft.instance
+              ..name = _fullName.text
+              ..phone = _phone.text
+              ..address = _address.text
+              ..city = _city.text
+              ..state = _stateField.text
+              ..zip = _zip.text;
             widget.go(Screen.seniorAddress);
           }
         }),
@@ -6350,6 +9290,7 @@ class OnboardingCircle extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 10),
             child: SoftCard(
               padding: const EdgeInsets.all(12),
+              onTap: () => go(Screen.trustCircleInvite),
               child: Row(
                 children: [
                   Avatar(size: 42, label: p.$3, tone: const Color(0xFFFFE0CC)),
@@ -6422,7 +9363,7 @@ class OnboardingSafety extends StatelessWidget {
           'Finish Setup',
           onTap: () async {
             await runApi('Completing senior onboarding', (client, state) {
-              return client.completeSeniorOnboarding();
+              return client.completeSeniorOnboarding(OnboardingDraft.instance.toPayload());
             });
             go(Screen.today);
           },
@@ -6762,6 +9703,12 @@ String surfaceText(Object? value, String fallback) {
 double doubleValue(Object? value, {double fallback = 0}) {
   if (value is num) return value.toDouble();
   return double.tryParse(stringValue(value)) ?? fallback;
+}
+
+String _tomorrowLabel() {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final tomorrow = DateTime.now().add(const Duration(days: 1));
+  return '${months[tomorrow.month - 1]} ${tomorrow.day}';
 }
 
 Future<void> launchPhoneCall(String phone) async {
@@ -7344,58 +10291,7 @@ class _VitalsScreenState extends State<VitalsScreen> {
       residentSurfaceSection(widget.state, 'vitals')['monitor'],
     );
     final readings = listOfMaps(mapValue(widget.state?.raw['healthVitals'])['readings']);
-    final rows = vitals.isNotEmpty
-        ? vitals
-        : [
-            {
-              'label': 'Resting Heart Rate',
-              'value_text': '72',
-              'unit': 'bpm',
-              'baseline_text': '30-day baseline: 69 bpm',
-              'status_label': 'Normal',
-              'vital_key': 'resting_heart_rate',
-            },
-            {
-              'label': 'Heart Rate Variability',
-              'value_text': '48',
-              'unit': 'ms',
-              'baseline_text': '30-day baseline: 44 ms',
-              'status_label': 'Good',
-              'vital_key': 'hrv',
-            },
-            {
-              'label': 'Blood Oxygen (SpO2)',
-              'value_text': '97',
-              'unit': '%',
-              'baseline_text': 'Normal range: 95 - 100%',
-              'status_label': 'Normal',
-              'vital_key': 'oxygen_saturation',
-            },
-            {
-              'label': 'Respiratory Rate',
-              'value_text': '16',
-              'unit': '/min',
-              'baseline_text': 'Normal range: 12 - 20',
-              'status_label': 'Normal',
-              'vital_key': 'respiratory_rate',
-            },
-            {
-              'label': 'Body Temperature',
-              'value_text': '98.3',
-              'unit': 'F',
-              'baseline_text': 'Normal range: 97.5 - 99.5',
-              'status_label': 'Normal',
-              'vital_key': 'body_temperature',
-            },
-            {
-              'label': 'Blood Pressure',
-              'value_text': '118 / 76',
-              'unit': 'mmHg',
-              'baseline_text': 'Normal range: < 130/80',
-              'status_label': 'Normal',
-              'vital_key': 'blood_pressure',
-            },
-          ];
+    final rows = vitals;
     return ScreenScaffold(
       title: 'Vitals Monitor',
       back: () => widget.go(Screen.more),
@@ -7419,6 +10315,17 @@ class _VitalsScreenState extends State<VitalsScreen> {
                 : 'Only ${readings.length} recent reading(s) were returned by the API. Historical range aggregation is not available yet.',
           ),
         const SizedBox(height: 16),
+        if (rows.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(
+              child: Text(
+                'No vitals synced from health device.',
+                style: TextStyle(color: TsgColors.muted),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
         ...rows.map(
           (v) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -7755,33 +10662,39 @@ class RiskScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final now = DateTime.now();
+    String dayLabel(int daysAgo) {
+      final d = now.subtract(Duration(days: daysAgo));
+      return '${months[d.month - 1]} ${d.day}';
+    }
     final risks = [
       (
-        'Today\nMay 13',
+        'Today\n${dayLabel(0)}',
         'Normal',
         'All vitals and activities\nin normal range.',
         TsgColors.green,
       ),
       (
-        'May 12',
+        dayLabel(1),
         'Reduced Activity',
         'Steps were 18% below\nyour usual range.',
         TsgColors.orange,
       ),
       (
-        'May 11',
+        dayLabel(2),
         'Missed Medication',
         'Evening medication was\nmissed.',
         TsgColors.red,
       ),
       (
-        'May 10',
+        dayLabel(3),
         'Low Sleep',
         'Slept 4h 52m which is\nbelow your usual.',
         TsgColors.purple,
       ),
       (
-        'May 9',
+        dayLabel(4),
         'Normal',
         'All vitals and activities\nin normal range.',
         TsgColors.green,
