@@ -220,6 +220,7 @@ class _ResidentShellState extends State<ResidentShell> {
   String? _guruChatInitialMessage;
   String? _companionChatInitialMessage;
   String? _pendingConfirmMedId;
+  ResidentMedication? _pendingConfirmMed;
   Timer? _healthSyncTimer;
   bool _syncingVitals = false;
   DateTime? _lastVitalsSyncAt;
@@ -366,8 +367,9 @@ class _ResidentShellState extends State<ResidentShell> {
     screen = Screen.companionChat;
   });
 
-  void _goConfirmMed(String medicationId) => setState(() {
-    _pendingConfirmMedId = medicationId;
+  void _goConfirmMed(ResidentMedication medication) => setState(() {
+    _pendingConfirmMedId = medication.id;
+    _pendingConfirmMed = medication;
     screen = Screen.medicationConfirm;
   });
 
@@ -692,6 +694,7 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
         apiClient: apiClient,
         medicationId: _pendingConfirmMedId,
+        medication: _pendingConfirmMed,
         state: appState,
         runApi: runApi,
       ),
@@ -3334,7 +3337,7 @@ class MedicationsScreen extends StatefulWidget {
     this.state,
   });
   final ValueChanged<Screen> go;
-  final ValueChanged<String> goConfirm;
+  final ValueChanged<ResidentMedication> goConfirm;
   final TsgApiClient apiClient;
   final ResidentAppState? state;
 
@@ -3866,7 +3869,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       padding: const EdgeInsets.all(14),
       onTap: isDone
           ? null
-          : () => widget.goConfirm(m.id),
+          : () => widget.goConfirm(m),
       child: Row(
         children: [
           Stack(
@@ -3962,12 +3965,14 @@ class MedicationConfirm extends StatefulWidget {
     required this.apiClient,
     this.state,
     this.medicationId,
+    this.medication,
   });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
   final TsgApiClient apiClient;
   final ResidentAppState? state;
   final String? medicationId;
+  final ResidentMedication? medication;
 
   @override
   State<MedicationConfirm> createState() => _MedicationConfirmState();
@@ -3981,6 +3986,8 @@ class _MedicationConfirmState extends State<MedicationConfirm> {
   bool _confirmed = false;
 
   ResidentMedication get _medication {
+    final passed = widget.medication;
+    if (passed != null) return passed;
     final id = widget.medicationId;
     if (id != null && id.isNotEmpty) {
       final found = widget.state?.medications.where((m) => m.id == id).firstOrNull;
