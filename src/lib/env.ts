@@ -36,6 +36,9 @@ export type AppEnv = {
   importLaunchExecutionLiveApproved?: string;
   importLaunchExecutionApprovedBy?: string;
   importLaunchExecutionApprovedAt?: string;
+  resendApiKey?: string;
+  leadNotificationFromEmail?: string;
+  leadNotificationToEmail?: string;
   mailjetApiKey?: string;
   mailjetApiSecret?: string;
   providerVerificationMailjetSenderEmail?: string;
@@ -90,6 +93,9 @@ export function getAppEnv(): AppEnv {
     importLaunchExecutionLiveApproved: process.env.IMPORT_LAUNCH_EXECUTION_LIVE_APPROVED,
     importLaunchExecutionApprovedBy: process.env.IMPORT_LAUNCH_EXECUTION_APPROVED_BY,
     importLaunchExecutionApprovedAt: process.env.IMPORT_LAUNCH_EXECUTION_APPROVED_AT,
+    resendApiKey: process.env.RESEND_API_KEY,
+    leadNotificationFromEmail: process.env.LEAD_NOTIFICATION_FROM_EMAIL,
+    leadNotificationToEmail: process.env.LEAD_NOTIFICATION_TO_EMAIL,
     mailjetApiKey: process.env.MAILJET_API_KEY,
     mailjetApiSecret: process.env.MAILJET_API_SECRET,
     providerVerificationMailjetSenderEmail: process.env.PROVIDER_VERIFICATION_MAILJET_SENDER_EMAIL,

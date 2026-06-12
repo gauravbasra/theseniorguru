@@ -634,6 +634,12 @@ class TsgApiClient {
     });
   }
 
+  /// Acknowledges a safety/SOS event (including critical health alerts) on
+  /// behalf of a trust circle member.
+  Future<Map<String, dynamic>> acknowledgeSosEvent(String eventId) {
+    return post('/api/sos-events/$eventId/ack', const {});
+  }
+
   Future<Map<String, dynamic>> get(String path) => _request('GET', path);
   Future<Map<String, dynamic>> post(String path, Map<String, dynamic> body) =>
       _request('POST', path, body: body);

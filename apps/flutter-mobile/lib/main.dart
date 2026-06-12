@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -219,6 +220,12 @@ class _ResidentShellState extends State<ResidentShell> {
   String? _guruChatInitialMessage;
   String? _companionChatInitialMessage;
   String? _pendingConfirmMedId;
+  Timer? _healthSyncTimer;
+  bool _syncingVitals = false;
+  DateTime? _lastVitalsSyncAt;
+  String? _vitalsSyncError;
+
+  static const _healthSyncInterval = Duration(minutes: 15);
 
   @override
   void initState() {
@@ -229,15 +236,58 @@ class _ResidentShellState extends State<ResidentShell> {
       installationIdProvider: _stableInstallationId,
     );
     _refreshState();
-    NativeHealthService().collectRecentVitals().then((snapshot) {
+    _syncHealthVitals();
+    _healthSyncTimer = Timer.periodic(
+      _healthSyncInterval,
+      (_) => _syncHealthVitals(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _healthSyncTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _syncHealthVitals() async {
+    if (_syncingVitals) return;
+    if (mounted) {
+      setState(() {
+        _syncingVitals = true;
+        _vitalsSyncError = null;
+      });
+    } else {
+      _syncingVitals = true;
+    }
+    try {
+      final snapshot = await NativeHealthService().collectRecentVitals();
       if (snapshot.available && snapshot.readings.isNotEmpty) {
-        apiClient.syncHealthConsentAndVitals(
+        await apiClient.syncHealthConsentAndVitals(
           source: snapshot.source,
           readings: snapshot.readings,
           dataTypes: snapshot.consentDataTypes,
         );
       }
-    }).catchError((_) {});
+      if (mounted) {
+        setState(() {
+          _syncingVitals = false;
+          _lastVitalsSyncAt = DateTime.now();
+          _vitalsSyncError = snapshot.available ? null : snapshot.message;
+        });
+      } else {
+        _syncingVitals = false;
+        _lastVitalsSyncAt = DateTime.now();
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _syncingVitals = false;
+          _vitalsSyncError = error.toString();
+        });
+      } else {
+        _syncingVitals = false;
+      }
+    }
   }
 
   Future<void> _refreshState() async {
@@ -708,6 +758,7 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('risk'),
         go: go,
         state: appState,
+        runApi: runApi,
       ),
       Screen.services => ServicesScreen(
         key: const ValueKey('services'),
@@ -721,6 +772,10 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
         runApi: runApi,
         state: appState,
+        syncingVitals: _syncingVitals,
+        lastVitalsSyncAt: _lastVitalsSyncAt,
+        vitalsSyncError: _vitalsSyncError,
+        onSyncVitals: _syncHealthVitals,
       ),
       Screen.safetyMap => SafetyMapScreen(
         key: const ValueKey('safety-map'),
@@ -2168,16 +2223,58 @@ class GuruHome extends StatelessWidget {
 
 enum _ChatRole { user, guru }
 
+/// A real-world action Guru can hand back to the app — e.g. "call this
+/// person" or "text this person" — resolved server-side from the resident's
+/// trusted circle. The app executes it via the device dialer/messenger.
+class GuruAction {
+  const GuruAction({required this.type, this.label, this.phone, this.body});
+  final String type; // 'call' | 'sms' | 'contacts'
+  final String? label;
+  final String? phone;
+  final String? body;
+
+  static GuruAction? fromJson(dynamic json) {
+    if (json is! Map) return null;
+    final type = json['type']?.toString();
+    if (type == null || type.isEmpty) return null;
+    return GuruAction(
+      type: type,
+      label: json['label']?.toString(),
+      phone: json['phone']?.toString(),
+      body: json['body']?.toString(),
+    );
+  }
+}
+
+Future<void> launchGuruAction(GuruAction action) async {
+  Uri? uri;
+  if (action.type == 'call' && (action.phone ?? '').isNotEmpty) {
+    uri = Uri(scheme: 'tel', path: action.phone);
+  } else if (action.type == 'sms' && (action.phone ?? '').isNotEmpty) {
+    final body = action.body ?? '';
+    uri = Uri(
+      scheme: 'sms',
+      path: action.phone,
+      queryParameters: body.isNotEmpty ? {'body': body} : null,
+    );
+  }
+  if (uri == null) return;
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {}
+}
+
 class _ChatEntry {
-  const _ChatEntry({required this.role, required this.text, this.pros = const []});
+  const _ChatEntry({required this.role, required this.text, this.pros = const [], this.action});
   final _ChatRole role;
   final String text;
   final List<ServicePro> pros;
+  final GuruAction? action;
 
   static _ChatEntry user(String text) =>
       _ChatEntry(role: _ChatRole.user, text: text);
-  static _ChatEntry guru(String text, {List<ServicePro> pros = const []}) =>
-      _ChatEntry(role: _ChatRole.guru, text: text, pros: pros);
+  static _ChatEntry guru(String text, {List<ServicePro> pros = const [], GuruAction? action}) =>
+      _ChatEntry(role: _ChatRole.guru, text: text, pros: pros, action: action);
 }
 
 class GuruChatScreen extends StatefulWidget {
@@ -2468,6 +2565,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
       final rawReply = stringValue(
         guruResponse['reply'] ?? guruResponse['message'] ?? guruResponse['text'],
       );
+      final action = GuruAction.fromJson(guruResponse['action']);
       final replyText = rawReply.isNotEmpty
           ? rawReply
           : finalPros.isNotEmpty
@@ -2484,7 +2582,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
             _messages.last.pros.isEmpty) {
           _messages.removeLast();
         }
-        _messages.add(_ChatEntry.guru(replyText, pros: finalPros));
+        _messages.add(_ChatEntry.guru(replyText, pros: finalPros, action: action));
         _loading = false;
       });
     } catch (e) {
@@ -2604,6 +2702,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
               return _GuroBubble(
                 text: entry.text,
                 pros: entry.pros,
+                action: entry.action,
                 selectedProIds: _selectedProIds,
                 onTogglePro: (id) {
                   setState(() {
@@ -2742,11 +2841,13 @@ class _GuroBubble extends StatelessWidget {
     required this.pros,
     required this.selectedProIds,
     required this.onTogglePro,
+    this.action,
   });
   final String text;
   final List<ServicePro> pros;
   final Set<String> selectedProIds;
   final ValueChanged<String> onTogglePro;
+  final GuruAction? action;
 
   @override
   Widget build(BuildContext context) {
@@ -2777,6 +2878,55 @@ class _GuroBubble extends StatelessWidget {
               ),
             ),
           ),
+          if (action != null && (action!.type == 'call' || action!.type == 'sms'))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, right: 48),
+              child: GestureDetector(
+                onTap: () => launchGuruAction(action!),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: action!.type == 'call' && action!.phone == '911'
+                          ? const [Color(0xFFE0432B), Color(0xFFC4281A)]
+                          : [TsgColors.purple2, TsgColors.purple],
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (action!.type == 'call' && action!.phone == '911'
+                                ? const Color(0xFFE0432B)
+                                : TsgColors.purple)
+                            .withValues(alpha: 0.35),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        action!.type == 'sms' ? CupertinoIcons.chat_bubble_text_fill : CupertinoIcons.phone_fill,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        action!.type == 'sms'
+                            ? 'Text ${action!.label ?? action!.phone ?? ''}'
+                            : 'Call ${action!.label ?? action!.phone ?? ''}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           if (pros.isNotEmpty) ...[
             ...pros.map(
               (pro) => _ProCard(
@@ -5072,11 +5222,13 @@ class _CompanionChatState extends State<CompanionChat> {
       final reply = stringValue(
         response['reply'] ?? response['message'] ?? response['text'],
       );
+      final action = GuruAction.fromJson(response['action']);
       setState(() {
         _messages.add(_ChatEntry.guru(
           reply.isNotEmpty
               ? reply
               : "I'm here for you, $_firstName. Tell me more about how you're feeling.",
+          action: action,
         ));
         _loading = false;
       });
@@ -5153,6 +5305,7 @@ class _CompanionChatState extends State<CompanionChat> {
               return _GuroBubble(
                 text: entry.text,
                 pros: const [],
+                action: entry.action,
                 selectedProIds: const {},
                 onTogglePro: (_) {},
               );
@@ -7095,10 +7248,18 @@ class SafetyScreen extends StatefulWidget {
     required this.go,
     required this.runApi,
     this.state,
+    this.syncingVitals = false,
+    this.lastVitalsSyncAt,
+    this.vitalsSyncError,
+    this.onSyncVitals,
   });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
   final ResidentAppState? state;
+  final bool syncingVitals;
+  final DateTime? lastVitalsSyncAt;
+  final String? vitalsSyncError;
+  final Future<void> Function()? onSyncVitals;
 
   @override
   State<SafetyScreen> createState() => _SafetyScreenState();
@@ -7109,6 +7270,31 @@ class _SafetyScreenState extends State<SafetyScreen> {
   String locationStatus = 'Tap to sync live location';
   String safeZoneStatus = 'Not synced';
   bool syncingLocation = false;
+
+  String _vitalsStatusLabel() {
+    if (widget.syncingVitals) return 'Syncing vitals...';
+    if (widget.vitalsSyncError != null) {
+      return 'Sync issue: ${widget.vitalsSyncError}';
+    }
+    final lastSync = widget.lastVitalsSyncAt;
+    if (lastSync == null) return 'Tap to sync vitals';
+    return 'Vitals synced ${_timeAgo(lastSync)} - tap to sync now';
+  }
+
+  String _timeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return '$m minute${m == 1 ? '' : 's'} ago';
+    }
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return '$h hour${h == 1 ? '' : 's'} ago';
+    }
+    final d = diff.inDays;
+    return '$d day${d == 1 ? '' : 's'} ago';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -7372,22 +7558,11 @@ class _SafetyScreenState extends State<SafetyScreen> {
         safetyRow(
           CupertinoIcons.waveform_path_ecg,
           'Health monitoring',
-          'Vitals look stable',
-          TsgColors.green,
-          onTap: () {
-            widget.runApi('Syncing wearable health data', (
-              client,
-              state,
-            ) async {
-              final snapshot = await NativeHealthService()
-                  .collectRecentVitals();
-              return client.syncHealthConsentAndVitals(
-                source: snapshot.source,
-                readings: snapshot.readings,
-                dataTypes: snapshot.consentDataTypes,
-              );
-            });
-          },
+          _vitalsStatusLabel(),
+          widget.vitalsSyncError != null ? TsgColors.orange : TsgColors.green,
+          onTap: widget.syncingVitals
+              ? null
+              : () => widget.onSyncVitals?.call(),
         ),
         safetyRow(
           CupertinoIcons.shield_fill,
@@ -10655,13 +10830,99 @@ class FamilyHealthScreen extends StatelessWidget {
   }
 }
 
-class RiskScreen extends StatelessWidget {
-  const RiskScreen({super.key, required this.go, this.state});
-  final ValueChanged<Screen> go;
-  final ResidentAppState? state;
+class CriticalAlertCard extends StatefulWidget {
+  const CriticalAlertCard({super.key, required this.alert, this.runApi});
+  final Map<String, dynamic> alert;
+  final ApiRunner? runApi;
+
+  @override
+  State<CriticalAlertCard> createState() => _CriticalAlertCardState();
+}
+
+class _CriticalAlertCardState extends State<CriticalAlertCard> {
+  bool _acknowledging = false;
+  bool _acknowledged = false;
+
+  Future<void> _acknowledge() async {
+    final id = stringValue(widget.alert['id']);
+    if (id.isEmpty || _acknowledging || widget.runApi == null) return;
+    setState(() => _acknowledging = true);
+    final ok = await widget.runApi!('Acknowledging critical alert', (
+      client,
+      state,
+    ) {
+      return client.acknowledgeSosEvent(id);
+    });
+    if (!mounted) return;
+    setState(() {
+      _acknowledging = false;
+      _acknowledged = ok;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_acknowledged) return const SizedBox.shrink();
+    return SoftCard(
+      color: const Color(0xFFFFEAEA),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(CupertinoIcons.exclamationmark_triangle_fill, color: TsgColors.red),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Critical health alert',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: TsgColors.red,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            stringValue(widget.alert['body'], fallback: 'A critical health reading was detected.'),
+            style: const TextStyle(color: TsgColors.ink, height: 1.3),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoButton(
+              color: TsgColors.red,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              onPressed: _acknowledging ? null : _acknowledge,
+              child: Text(
+                _acknowledging ? 'Acknowledging...' : 'Acknowledge alert',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class RiskScreen extends StatelessWidget {
+  const RiskScreen({super.key, required this.go, this.state, this.runApi});
+  final ValueChanged<Screen> go;
+  final ResidentAppState? state;
+  final ApiRunner? runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    final criticalAlerts = listOfMaps(mapValue(state?.raw['safety'])['sosEvents'])
+        .where(
+          (event) =>
+              stringValue(event['severity']) == 'critical' &&
+              stringValue(event['status'], fallback: 'active') == 'active',
+        )
+        .toList(growable: false);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     final now = DateTime.now();
     String dayLabel(int daysAgo) {
@@ -10704,6 +10965,10 @@ class RiskScreen extends StatelessWidget {
       title: 'Risk Intelligence',
       back: () => go(Screen.more),
       children: [
+        for (final alert in criticalAlerts) ...[
+          CriticalAlertCard(alert: alert, runApi: runApi),
+          const SizedBox(height: 14),
+        ],
         const Segmented(labels: ['Timeline', 'Risk Overview'], selected: 0),
         const SizedBox(height: 18),
         const SoftCard(

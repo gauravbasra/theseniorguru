@@ -735,7 +735,18 @@ function createProductionApi(pool) {
     if (summary.heartRateAvg !== null && (summary.heartRateAvg > 115 || summary.heartRateAvg < 45)) summary.riskReasons.push('heart-rate-out-of-range');
     if (summary.respiratoryRateAvg !== null && (summary.respiratoryRateAvg > 24 || summary.respiratoryRateAvg < 9)) summary.riskReasons.push('respiratory-rate-out-of-range');
     if (summary.sleepMinutes !== null && summary.sleepMinutes < 240) summary.riskReasons.push('low-sleep-duration');
-    if (summary.riskReasons.length >= 2) summary.riskLevel = 'high';
+
+    // Life-threatening readings need an immediate trusted-circle alert, separate from the
+    // "watch"/"high" trending signals above.
+    const criticalReasons = [];
+    if (summary.oxygenAvg !== null && summary.oxygenAvg < 88) criticalReasons.push('oxygen-critically-low');
+    if (summary.heartRateAvg !== null && (summary.heartRateAvg > 140 || summary.heartRateAvg < 40)) criticalReasons.push('heart-rate-critical');
+    if (summary.respiratoryRateAvg !== null && (summary.respiratoryRateAvg > 30 || summary.respiratoryRateAvg < 8)) criticalReasons.push('respiratory-rate-critical');
+
+    if (criticalReasons.length) {
+      summary.riskLevel = 'critical';
+      summary.riskReasons = [...criticalReasons, ...summary.riskReasons];
+    } else if (summary.riskReasons.length >= 2) summary.riskLevel = 'high';
     else if (summary.riskReasons.length === 1) summary.riskLevel = 'watch';
     return summary;
   }
@@ -1652,6 +1663,34 @@ function createProductionApi(pool) {
     }
 
     const regexResolved = resolveGuruIntent(message, context);
+
+    // Actionable intents (call/text a contact, call 911) are deterministic and
+    // must never be rewritten by an LLM into "I can teach you how to..." — the
+    // app needs the structured `action` payload to place the call/SMS itself.
+    if (regexResolved.action) {
+      await recordGuruModelInvocation(resident?.id, "regex_templates", regexResolved.intent, route, {
+        tenantId: tenantIdForResident(resident),
+        screen,
+        modelName: "tsg-local-intent-v2",
+        cacheHit: false,
+        routeReason: "action_intent_bypass",
+        localConfidence: 1,
+        budgetMode: "n/a",
+        latencyMs: Date.now() - startedAt
+      });
+      return {
+        resolvedIntent: regexResolved,
+        reply: regexResolved.reply,
+        provider: "regex_templates",
+        model: "tsg-local-intent-v2",
+        configured: true,
+        navigateTo: regexResolved.navigateTo,
+        cacheHit: false,
+        action: regexResolved.action,
+        decision: { routeReason: "action_intent_bypass", localConfidence: 1, budgetMode: "n/a", blockedByBudget: false, emergencyBypass: false, usedRemoteAi: false }
+      };
+    }
+
     if (forcedIntent) {
       regexResolved.intent = forcedIntent;
       if (forcedIntent === "complex_reasoning") {
@@ -7345,7 +7384,9 @@ function createProductionApi(pool) {
       }
       const recent = (await query(`SELECT * FROM health_vitals WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 24`, [resident.id])).rows;
       const latestSummary = evaluateHealthVitals(inserted);
-      if (latestSummary.riskLevel === 'high') {
+      if (latestSummary.riskLevel === 'critical') {
+        await createSafetyEvent(req, user, resident.id, 'health-vitals-critical', 'critical', `${user.display_name} has critical health readings: ${latestSummary.riskReasons.join(', ')}. Trusted circle must acknowledge immediately.`, { source: payload.source });
+      } else if (latestSummary.riskLevel === 'high') {
         await createSafetyEvent(req, user, resident.id, 'health-vitals-risk', 'high', `${user.display_name} has elevated health risk signals: ${latestSummary.riskReasons.join(', ')}. Trusted circle notification triggered.`, { source: payload.source });
       }
       await enqueueJob("telemetry", "telemetry_ingest", {
@@ -8253,6 +8294,12 @@ function createProductionApi(pool) {
       const resident = (await query(`SELECT * FROM residents WHERE user_id = $1 LIMIT 1`, [user.id])).rows[0];
       const message = String(payload.message || "").trim();
       const medications = resident ? (await query(`SELECT * FROM medications WHERE resident_id = $1 ORDER BY created_at DESC LIMIT 20`, [resident.id])).rows : [];
+      const people = resident ? (await query(
+        `SELECT u.id, u.display_name AS name, u.role, u.phone, tc.permissions, tc.status
+         FROM trusted_connections tc JOIN users u ON u.id = tc.trusted_user_id
+         WHERE tc.resident_id = $1 AND tc.status = 'active' AND u.phone IS NOT NULL`,
+        [resident.id]
+      )).rows : [];
       const contextIntelligence = resident ? await buildContextIntelligenceState(resident, evaluateHealthVitals([])) : {};
       // Allow caller to pass their zip code or GPS for weather-aware responses
       const callerZip = payload.zip || payload.zipCode || null;
@@ -8266,6 +8313,7 @@ function createProductionApi(pool) {
         context: {
           resident,
           medications,
+          people,
           contextIntelligence,
           residentName: resident?.name || resident?.display_name || null,
           community: resident?.community || null,
@@ -8293,7 +8341,7 @@ function createProductionApi(pool) {
         [resident?.id || null, message, reply, intent, navigateTo, JSON.stringify({ screen: payload.screen || null, provider: guru.provider, cacheHit: guru.cacheHit === true, remoteAiUsed: guru.provider === "openai" })]
       )).rows[0];
       await audit(req, user, "guru_chat", "resident", resident?.id || null, { intent, navigateTo, provider: guru.provider, remoteAiUsed: guru.provider === "openai" }, "info");
-      return { reply, intent, navigateTo, task, event, aiConfigured: guru.configured };
+      return { reply, intent, navigateTo, task, event, aiConfigured: guru.configured, action: guru.action || resolvedIntent.action || null };
     }
 
     // ── Local service pro search via Google Places ────────────────────────

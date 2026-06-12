@@ -11,6 +11,7 @@
 const ZIPPOPOTAM_BASE = "https://api.zippopotam.us";
 const OPENMETEO_GEO    = "https://geocoding-api.open-meteo.com/v1/search";
 const OPENMETEO_WEATHER = "https://api.open-meteo.com/v1/forecast";
+const REVERSE_GEO_BASE = "https://api.bigdatacloud.net/data/reverse-geocode-client";
 
 const FETCH_TIMEOUT_MS = 6000;
 
@@ -184,10 +185,44 @@ async function getWeatherForZip(zip) {
 }
 
 // ---------------------------------------------------------------------------
+// Lat/lon → { city, stateAbbr, zip } via free reverse-geocoding (no API key)
+// ---------------------------------------------------------------------------
+async function reverseGeocode(lat, lon) {
+  if (lat == null || lon == null) return null;
+  const cacheKey = `rgeo:${Number(lat).toFixed(3)},${Number(lon).toFixed(3)}`;
+  const cached = _cached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const data = await _get(
+      `${REVERSE_GEO_BASE}?latitude=${lat}&longitude=${lon}&localityLanguage=en`,
+      "bigdatacloud-reverse-geo"
+    );
+    const result = {
+      city: data.city || data.locality || "",
+      state: data.principalSubdivision || "",
+      stateAbbr: (data.principalSubdivisionCode || "").split("-").pop() || "",
+      zip: data.postcode || null,
+      lat: Number(lat),
+      lon: Number(lon),
+      source: "bigdatacloud"
+    };
+    return _store(cacheKey, result);
+  } catch (err) {
+    console.warn("reverseGeocode failed:", err.message);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public: resolve lat/lon directly (for GPS-based queries)
 // ---------------------------------------------------------------------------
 async function getWeatherForLatLon(lat, lon) {
-  return fetchWeather(lat, lon);
+  const [wx, location] = await Promise.all([
+    fetchWeather(lat, lon),
+    reverseGeocode(lat, lon)
+  ]);
+  return location ? { location, ...wx } : wx;
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +234,8 @@ function buildWeatherSummary(weatherData) {
   const lines = [];
 
   if (location) {
-    lines.push(`Location: ${location.city}, ${location.stateAbbr} (zip ${location.zip})`);
+    const zipPart = location.zip ? ` (zip ${location.zip})` : "";
+    lines.push(`Location: ${location.city}, ${location.stateAbbr}${zipPart}`);
   }
 
   if (current) {
@@ -233,6 +269,7 @@ function isWeatherQuery(message) {
 
 module.exports = {
   resolveZip,
+  reverseGeocode,
   fetchWeather,
   getWeatherForZip,
   getWeatherForLatLon,

@@ -9,6 +9,7 @@ import type {
   OperatorDemoRequestRecord
 } from "@/lib/domain/leads";
 import { runPolicyCheck } from "@/lib/policy";
+import { sendLeadNotificationEmail } from "@/lib/server/lead-notifications";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 function hasContact(input: { requesterEmail?: string; requesterPhone?: string; contactEmail?: string; contactPhone?: string }) {
@@ -17,6 +18,19 @@ function hasContact(input: { requesterEmail?: string; requesterPhone?: string; c
 
 function nowId(prefix: string) {
   return `${prefix}-${Date.now()}`;
+}
+
+function notifyNewLead(subject: string, fields: Record<string, string | undefined>) {
+  const lines = Object.entries(fields)
+    .filter(([, value]) => Boolean(value))
+    .map(([label, value]) => `${label}: ${value}`);
+
+  const text = lines.join("\n");
+  const html = `<ul>${lines.map((line) => `<li>${line}</li>`).join("")}</ul>`;
+
+  return sendLeadNotificationEmail({ subject, html, text }).catch((error) => {
+    console.error("Failed to send lead notification email", error);
+  });
 }
 
 const localLeadStore = {
@@ -161,13 +175,25 @@ export async function submitFamilyInquiry(input: FamilyInquiryInput): Promise<Fa
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return pushNewest(localLeadStore.familyInquiries, {
+    const record = pushNewest(localLeadStore.familyInquiries, {
       id: nowId("family-inquiry"),
       ...input,
       status: "submitted",
       policyDecision: policy.decision,
       createdAt: new Date().toISOString()
     });
+    await notifyNewLead("New family inquiry", {
+      Name: record.requesterName,
+      Email: record.requesterEmail,
+      Phone: record.requesterPhone,
+      City: record.city,
+      State: record.state,
+      "Care type": record.careType,
+      Timeline: record.timeline,
+      Budget: record.budget,
+      Message: record.message
+    });
+    return record;
   }
 
   const { data, error } = await supabase
@@ -193,7 +219,19 @@ export async function submitFamilyInquiry(input: FamilyInquiryInput): Promise<Fa
     throw new Error(`Family inquiry submission failed: ${error.message}`);
   }
 
-  return familyFromRow(data);
+  const record = familyFromRow(data);
+  await notifyNewLead("New family inquiry", {
+    Name: record.requesterName,
+    Email: record.requesterEmail,
+    Phone: record.requesterPhone,
+    City: record.city,
+    State: record.state,
+    "Care type": record.careType,
+    Timeline: record.timeline,
+    Budget: record.budget,
+    Message: record.message
+  });
+  return record;
 }
 
 export async function submitOperatorDemoRequest(
@@ -227,13 +265,24 @@ export async function submitOperatorDemoRequest(
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return pushNewest(localLeadStore.operatorDemoRequests, {
+    const record = pushNewest(localLeadStore.operatorDemoRequests, {
       id: nowId("operator-demo"),
       ...input,
       status: "submitted",
       policyDecision: policy.decision,
       createdAt: new Date().toISOString()
     });
+    await notifyNewLead("New operator demo request", {
+      Organization: record.organizationName,
+      Contact: record.contactName,
+      Email: record.contactEmail,
+      Phone: record.contactPhone,
+      Role: record.role,
+      "Community count": record.communityCount,
+      "Occupancy challenge": record.occupancyChallenge,
+      "Requested product": record.requestedProduct
+    });
+    return record;
   }
 
   const { data, error } = await supabase
@@ -258,7 +307,18 @@ export async function submitOperatorDemoRequest(
     throw new Error(`Operator demo request failed: ${error.message}`);
   }
 
-  return demoFromRow(data);
+  const record = demoFromRow(data);
+  await notifyNewLead("New operator demo request", {
+    Organization: record.organizationName,
+    Contact: record.contactName,
+    Email: record.contactEmail,
+    Phone: record.contactPhone,
+    Role: record.role,
+    "Community count": record.communityCount,
+    "Occupancy challenge": record.occupancyChallenge,
+    "Requested product": record.requestedProduct
+  });
+  return record;
 }
 
 export async function submitFreeListingRequest(input: FreeListingRequestInput): Promise<FreeListingRequestRecord> {
@@ -290,13 +350,25 @@ export async function submitFreeListingRequest(input: FreeListingRequestInput): 
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
-    return pushNewest(localLeadStore.freeListingRequests, {
+    const record = pushNewest(localLeadStore.freeListingRequests, {
       id: nowId("free-listing"),
       ...input,
       status: "submitted",
       policyDecision: policy.decision,
       createdAt: new Date().toISOString()
     });
+    await notifyNewLead("New free listing request", {
+      "Community name": record.communityName,
+      Contact: record.contactName,
+      Email: record.contactEmail,
+      Phone: record.contactPhone,
+      City: record.city,
+      State: record.state,
+      Website: record.websiteUrl,
+      "Care types": record.careTypes?.join(", "),
+      Message: record.message
+    });
+    return record;
   }
 
   const { data, error } = await supabase
@@ -322,7 +394,19 @@ export async function submitFreeListingRequest(input: FreeListingRequestInput): 
     throw new Error(`Free listing request failed: ${error.message}`);
   }
 
-  return freeListingFromRow(data);
+  const record = freeListingFromRow(data);
+  await notifyNewLead("New free listing request", {
+    "Community name": record.communityName,
+    Contact: record.contactName,
+    Email: record.contactEmail,
+    Phone: record.contactPhone,
+    City: record.city,
+    State: record.state,
+    Website: record.websiteUrl,
+    "Care types": record.careTypes?.join(", "),
+    Message: record.message
+  });
+  return record;
 }
 
 export async function listLeadQueue(): Promise<LeadQueueSummary> {
