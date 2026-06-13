@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -71,7 +72,10 @@ const defaultApiBase = String.fromEnvironment(
 );
 
 const initialScreenKey = String.fromEnvironment('TSG_INITIAL_SCREEN');
-const androidGoogleMapsKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
+const androidGoogleMapsKey = String.fromEnvironment(
+  'GOOGLE_MAPS_API_KEY',
+  defaultValue: 'AIzaSyBjCEhSvSGfrcKJWe-QyN7aN1CqXSCR87w',
+);
 
 typedef ApiRunner =
     Future<bool> Function(
@@ -177,6 +181,8 @@ enum Screen {
   person,
   createPost,
   events,
+  groups,
+  friends,
   wellness,
   vitals,
   familyHealth,
@@ -219,6 +225,13 @@ class _ResidentShellState extends State<ResidentShell> {
   String? _guruChatInitialMessage;
   String? _companionChatInitialMessage;
   String? _pendingConfirmMedId;
+  ResidentMedication? _pendingConfirmMed;
+  Timer? _healthSyncTimer;
+  bool _syncingVitals = false;
+  DateTime? _lastVitalsSyncAt;
+  String? _vitalsSyncError;
+
+  static const _healthSyncInterval = Duration(minutes: 15);
 
   @override
   void initState() {
@@ -229,15 +242,59 @@ class _ResidentShellState extends State<ResidentShell> {
       installationIdProvider: _stableInstallationId,
     );
     _refreshState();
-    NativeHealthService().collectRecentVitals().then((snapshot) {
+    _syncHealthVitals();
+    _healthSyncTimer = Timer.periodic(
+      _healthSyncInterval,
+      (_) => _syncHealthVitals(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _healthSyncTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _syncHealthVitals() async {
+    if (_syncingVitals) return;
+    if (mounted) {
+      setState(() {
+        _syncingVitals = true;
+        _vitalsSyncError = null;
+      });
+    } else {
+      _syncingVitals = true;
+    }
+    try {
+      final snapshot = await NativeHealthService().collectRecentVitals();
       if (snapshot.available && snapshot.readings.isNotEmpty) {
-        apiClient.syncHealthConsentAndVitals(
+        await apiClient.syncHealthConsentAndVitals(
           source: snapshot.source,
           readings: snapshot.readings,
           dataTypes: snapshot.consentDataTypes,
         );
       }
-    }).catchError((_) {});
+      final synced = snapshot.available && snapshot.readings.isNotEmpty;
+      if (mounted) {
+        setState(() {
+          _syncingVitals = false;
+          _lastVitalsSyncAt = DateTime.now();
+          _vitalsSyncError = synced ? null : (snapshot.message ?? 'No recent health samples were available.');
+        });
+      } else {
+        _syncingVitals = false;
+        _lastVitalsSyncAt = DateTime.now();
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _syncingVitals = false;
+          _vitalsSyncError = error.toString();
+        });
+      } else {
+        _syncingVitals = false;
+      }
+    }
   }
 
   Future<void> _refreshState() async {
@@ -316,8 +373,9 @@ class _ResidentShellState extends State<ResidentShell> {
     screen = Screen.companionChat;
   });
 
-  void _goConfirmMed(String medicationId) => setState(() {
-    _pendingConfirmMedId = medicationId;
+  void _goConfirmMed(ResidentMedication medication) => setState(() {
+    _pendingConfirmMedId = medication.id;
+    _pendingConfirmMed = medication;
     screen = Screen.medicationConfirm;
   });
 
@@ -390,7 +448,7 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
         goCompanionChat: _goCompanionChat,
       ),
-      Screen.feed => FeedHome(key: const ValueKey('feed'), go: go),
+      Screen.feed => FeedHome(key: const ValueKey('feed'), go: go, apiClient: apiClient),
       Screen.more => MoreHome(key: const ValueKey('more'), go: go),
       Screen.trustCircleMore => TrustCircleMore(
         key: const ValueKey('trust-more'),
@@ -642,6 +700,7 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
         apiClient: apiClient,
         medicationId: _pendingConfirmMedId,
+        medication: _pendingConfirmMed,
         state: appState,
         runApi: runApi,
       ),
@@ -688,6 +747,17 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('events'),
         go: go,
         runApi: runApi,
+        apiClient: apiClient,
+      ),
+      Screen.groups => GroupsScreen(
+        key: const ValueKey('groups'),
+        go: go,
+        apiClient: apiClient,
+      ),
+      Screen.friends => FriendsScreen(
+        key: const ValueKey('friends'),
+        go: go,
+        apiClient: apiClient,
       ),
       Screen.wellness => WellnessScreen(
         key: const ValueKey('wellness'),
@@ -708,6 +778,7 @@ class _ResidentShellState extends State<ResidentShell> {
         key: const ValueKey('risk'),
         go: go,
         state: appState,
+        runApi: runApi,
       ),
       Screen.services => ServicesScreen(
         key: const ValueKey('services'),
@@ -721,6 +792,10 @@ class _ResidentShellState extends State<ResidentShell> {
         go: go,
         runApi: runApi,
         state: appState,
+        syncingVitals: _syncingVitals,
+        lastVitalsSyncAt: _lastVitalsSyncAt,
+        vitalsSyncError: _vitalsSyncError,
+        onSyncVitals: _syncHealthVitals,
       ),
       Screen.safetyMap => SafetyMapScreen(
         key: const ValueKey('safety-map'),
@@ -2168,16 +2243,58 @@ class GuruHome extends StatelessWidget {
 
 enum _ChatRole { user, guru }
 
+/// A real-world action Guru can hand back to the app — e.g. "call this
+/// person" or "text this person" — resolved server-side from the resident's
+/// trusted circle. The app executes it via the device dialer/messenger.
+class GuruAction {
+  const GuruAction({required this.type, this.label, this.phone, this.body});
+  final String type; // 'call' | 'sms' | 'contacts'
+  final String? label;
+  final String? phone;
+  final String? body;
+
+  static GuruAction? fromJson(dynamic json) {
+    if (json is! Map) return null;
+    final type = json['type']?.toString();
+    if (type == null || type.isEmpty) return null;
+    return GuruAction(
+      type: type,
+      label: json['label']?.toString(),
+      phone: json['phone']?.toString(),
+      body: json['body']?.toString(),
+    );
+  }
+}
+
+Future<void> launchGuruAction(GuruAction action) async {
+  Uri? uri;
+  if (action.type == 'call' && (action.phone ?? '').isNotEmpty) {
+    uri = Uri(scheme: 'tel', path: action.phone);
+  } else if (action.type == 'sms' && (action.phone ?? '').isNotEmpty) {
+    final body = action.body ?? '';
+    uri = Uri(
+      scheme: 'sms',
+      path: action.phone,
+      queryParameters: body.isNotEmpty ? {'body': body} : null,
+    );
+  }
+  if (uri == null) return;
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {}
+}
+
 class _ChatEntry {
-  const _ChatEntry({required this.role, required this.text, this.pros = const []});
+  const _ChatEntry({required this.role, required this.text, this.pros = const [], this.action});
   final _ChatRole role;
   final String text;
   final List<ServicePro> pros;
+  final GuruAction? action;
 
   static _ChatEntry user(String text) =>
       _ChatEntry(role: _ChatRole.user, text: text);
-  static _ChatEntry guru(String text, {List<ServicePro> pros = const []}) =>
-      _ChatEntry(role: _ChatRole.guru, text: text, pros: pros);
+  static _ChatEntry guru(String text, {List<ServicePro> pros = const [], GuruAction? action}) =>
+      _ChatEntry(role: _ChatRole.guru, text: text, pros: pros, action: action);
 }
 
 class GuruChatScreen extends StatefulWidget {
@@ -2468,6 +2585,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
       final rawReply = stringValue(
         guruResponse['reply'] ?? guruResponse['message'] ?? guruResponse['text'],
       );
+      final action = GuruAction.fromJson(guruResponse['action']);
       final replyText = rawReply.isNotEmpty
           ? rawReply
           : finalPros.isNotEmpty
@@ -2484,7 +2602,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
             _messages.last.pros.isEmpty) {
           _messages.removeLast();
         }
-        _messages.add(_ChatEntry.guru(replyText, pros: finalPros));
+        _messages.add(_ChatEntry.guru(replyText, pros: finalPros, action: action));
         _loading = false;
       });
     } catch (e) {
@@ -2604,6 +2722,7 @@ class _GuruChatScreenState extends State<GuruChatScreen> {
               return _GuroBubble(
                 text: entry.text,
                 pros: entry.pros,
+                action: entry.action,
                 selectedProIds: _selectedProIds,
                 onTogglePro: (id) {
                   setState(() {
@@ -2742,11 +2861,13 @@ class _GuroBubble extends StatelessWidget {
     required this.pros,
     required this.selectedProIds,
     required this.onTogglePro,
+    this.action,
   });
   final String text;
   final List<ServicePro> pros;
   final Set<String> selectedProIds;
   final ValueChanged<String> onTogglePro;
+  final GuruAction? action;
 
   @override
   Widget build(BuildContext context) {
@@ -2777,6 +2898,55 @@ class _GuroBubble extends StatelessWidget {
               ),
             ),
           ),
+          if (action != null && (action!.type == 'call' || action!.type == 'sms'))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, right: 48),
+              child: GestureDetector(
+                onTap: () => launchGuruAction(action!),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: action!.type == 'call' && action!.phone == '911'
+                          ? const [Color(0xFFE0432B), Color(0xFFC4281A)]
+                          : [TsgColors.purple2, TsgColors.purple],
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (action!.type == 'call' && action!.phone == '911'
+                                ? const Color(0xFFE0432B)
+                                : TsgColors.purple)
+                            .withValues(alpha: 0.35),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        action!.type == 'sms' ? CupertinoIcons.chat_bubble_text_fill : CupertinoIcons.phone_fill,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        action!.type == 'sms'
+                            ? 'Text ${action!.label ?? action!.phone ?? ''}'
+                            : 'Call ${action!.label ?? action!.phone ?? ''}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           if (pros.isNotEmpty) ...[
             ...pros.map(
               (pro) => _ProCard(
@@ -3184,7 +3354,7 @@ class MedicationsScreen extends StatefulWidget {
     this.state,
   });
   final ValueChanged<Screen> go;
-  final ValueChanged<String> goConfirm;
+  final ValueChanged<ResidentMedication> goConfirm;
   final TsgApiClient apiClient;
   final ResidentAppState? state;
 
@@ -3716,7 +3886,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       padding: const EdgeInsets.all(14),
       onTap: isDone
           ? null
-          : () => widget.goConfirm(m.id),
+          : () => widget.goConfirm(m),
       child: Row(
         children: [
           Stack(
@@ -3812,12 +3982,14 @@ class MedicationConfirm extends StatefulWidget {
     required this.apiClient,
     this.state,
     this.medicationId,
+    this.medication,
   });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
   final TsgApiClient apiClient;
   final ResidentAppState? state;
   final String? medicationId;
+  final ResidentMedication? medication;
 
   @override
   State<MedicationConfirm> createState() => _MedicationConfirmState();
@@ -3831,6 +4003,8 @@ class _MedicationConfirmState extends State<MedicationConfirm> {
   bool _confirmed = false;
 
   ResidentMedication get _medication {
+    final passed = widget.medication;
+    if (passed != null) return passed;
     final id = widget.medicationId;
     if (id != null && id.isNotEmpty) {
       final found = widget.state?.medications.where((m) => m.id == id).firstOrNull;
@@ -5072,11 +5246,13 @@ class _CompanionChatState extends State<CompanionChat> {
       final reply = stringValue(
         response['reply'] ?? response['message'] ?? response['text'],
       );
+      final action = GuruAction.fromJson(response['action']);
       setState(() {
         _messages.add(_ChatEntry.guru(
           reply.isNotEmpty
               ? reply
               : "I'm here for you, $_firstName. Tell me more about how you're feeling.",
+          action: action,
         ));
         _loading = false;
       });
@@ -5153,6 +5329,7 @@ class _CompanionChatState extends State<CompanionChat> {
               return _GuroBubble(
                 text: entry.text,
                 pros: const [],
+                action: entry.action,
                 selectedProIds: const {},
                 onTogglePro: (_) {},
               );
@@ -5442,16 +5619,185 @@ class PersonDetail extends StatelessWidget {
   }
 }
 
-class FeedHome extends StatelessWidget {
-  const FeedHome({super.key, required this.go});
+/// Maps a reaction_type key to an emoji + label shown in the picker and on posts.
+const Map<String, ({String emoji, String label})> kReactionTypes = {
+  'like': (emoji: '👍', label: 'Like'),
+  'love': (emoji: '❤️', label: 'Love'),
+  'happy': (emoji: '😊', label: 'Happy'),
+  'celebrate': (emoji: '🎉', label: 'Celebrate'),
+  'support': (emoji: '🙌', label: 'Support'),
+  'pray': (emoji: '🙏', label: 'Pray'),
+};
+
+class FeedHome extends StatefulWidget {
+  const FeedHome({super.key, required this.go, required this.apiClient});
   final ValueChanged<Screen> go;
+  final TsgApiClient apiClient;
+
+  @override
+  State<FeedHome> createState() => _FeedHomeState();
+}
+
+class _FeedHomeState extends State<FeedHome> {
+  List<Map<String, dynamic>> _posts = [];
+  Map<String, dynamic>? _analytics;
+  Set<String> _followingUserIds = {};
+  int _feedTab = 0;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _loadAnalytics();
+    _loadFollowing();
+  }
+
+  Future<void> _loadFollowing() async {
+    try {
+      final data = await widget.apiClient.getFriends();
+      final friends = listOfMaps(data['friends'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _followingUserIds = friends
+            .map((f) => f['user_id']?.toString())
+            .whereType<String>()
+            .toSet();
+      });
+    } catch (_) {
+      // best effort; Following tab will just show no posts
+    }
+  }
+
+  List<Map<String, dynamic>> get _visiblePosts {
+    if (_feedTab == 0) return _posts;
+    return _posts
+        .where((post) => _followingUserIds.contains(post['author_user_id']?.toString()))
+        .toList();
+  }
+
+  Future<void> _loadAnalytics() async {
+    try {
+      final data = await widget.apiClient.getSocialAnalytics();
+      if (!mounted) return;
+      setState(() {
+        _analytics = (data['analytics'] as Map?)?.cast<String, dynamic>();
+      });
+    } catch (_) {
+      // analytics are best-effort; ignore failures
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await widget.apiClient.getFeed();
+      final items = listOfMaps(data['items'] ?? data['posts'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _posts = items.where((item) => (item['itemType'] ?? 'post') == 'post' || item['body'] != null).toList();
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _toggleReaction(Map<String, dynamic> post, String reactionType) async {
+    final postId = post['id']?.toString();
+    if (postId == null) return;
+    final myReaction = post['my_reaction'] as String?;
+    setState(() {
+      if (myReaction == reactionType) {
+        post['my_reaction'] = null;
+        post['reaction_count'] = ((post['reaction_count'] ?? 0) as num).toInt() - 1;
+      } else {
+        if (myReaction == null) {
+          post['reaction_count'] = ((post['reaction_count'] ?? 0) as num).toInt() + 1;
+        }
+        post['my_reaction'] = reactionType;
+      }
+    });
+    try {
+      if (myReaction == reactionType) {
+        await widget.apiClient.removeReaction(postId);
+      } else {
+        await widget.apiClient.reactToPost(postId, reactionType);
+      }
+    } catch (_) {
+      // best effort; refresh to reconcile
+      _load();
+    }
+  }
+
+  void _openReactionPicker(Map<String, dynamic> post) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 12),
+          child: Wrap(
+            alignment: WrapAlignment.spaceEvenly,
+            children: kReactionTypes.entries.map((entry) {
+              return GestureDetector(
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _toggleReaction(post, entry.key);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    children: [
+                      Text(entry.value.emoji, style: const TextStyle(fontSize: 32)),
+                      const SizedBox(height: 4),
+                      Text(entry.value.label, style: const TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openComments(Map<String, dynamic> post) {
+    final postId = post['id']?.toString();
+    if (postId == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PostCommentsScreen(
+          postId: postId,
+          apiClient: widget.apiClient,
+          onCommentAdded: () {
+            setState(() {
+              post['comment_count'] = ((post['comment_count'] ?? 0) as num).toInt() + 1;
+            });
+          },
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return ScreenScaffold(
       title: 'Community Feed',
       action: IconButton(
-        onPressed: () => go(Screen.createPost),
+        onPressed: () => widget.go(Screen.createPost),
         icon: const Icon(
           CupertinoIcons.plus_circle_fill,
           color: TsgColors.purple,
@@ -5459,27 +5805,126 @@ class FeedHome extends StatelessWidget {
         ),
       ),
       children: [
-        const Segmented(labels: ['For You', 'Following'], selected: 0),
+        if (_analytics != null) _analyticsRow(_analytics!),
+        if (_analytics != null) const SizedBox(height: 16),
+        _quickLinksRow(),
         const SizedBox(height: 16),
-        postCard(
-          context,
-          'Community Member',
-          'Beautiful morning walk\nwith my friends',
-          CupertinoIcons.tree,
-          '24',
+        Segmented(
+          labels: const ['For You', 'Following'],
+          selected: _feedTab,
+          onChanged: (index) => setState(() => _feedTab = index),
         ),
-        postCard(
-          context,
-          'Your Community',
-          'Community Lunch\ncoming up soon.',
-          CupertinoIcons.photo,
-          '18',
-        ),
+        const SizedBox(height: 16),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              children: [
+                Text('Could not load the feed: $_error', textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                PurpleButton('Retry', onTap: _load),
+              ],
+            ),
+          )
+        else if (_visiblePosts.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: Text(
+                _feedTab == 0
+                    ? 'No posts yet. Be the first to share something with your community!'
+                    : 'No posts from people you follow yet.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: TsgColors.muted),
+              ),
+            ),
+          )
+        else
+          ..._visiblePosts.map((post) => postCard(context, post)),
       ],
     );
   }
 
-  Widget postCard(BuildContext context, String name, String body, IconData icon, String likes) {
+  Widget _quickLinksRow() {
+    final links = [
+      (CupertinoIcons.group_solid, 'Groups', Screen.groups),
+      (CupertinoIcons.calendar, 'Events', Screen.events),
+      (CupertinoIcons.person_3_fill, 'Friends', Screen.friends),
+    ];
+    return Row(
+      children: links.map((link) {
+        final (icon, label, screen) = link;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: GestureDetector(
+              onTap: () => widget.go(screen),
+              child: SoftCard(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: TsgColors.purple, size: 24),
+                    const SizedBox(height: 6),
+                    Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _analyticsRow(Map<String, dynamic> analytics) {
+    final stats = [
+      ('Friends', analytics['friendsCount']),
+      ('Groups', analytics['groupsJoined']),
+      ('Reactions', analytics['reactionsReceived']),
+      ('Comments', analytics['commentsReceived']),
+      ('Events', analytics['upcomingEvents']),
+    ];
+    return SizedBox(
+      height: 78,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: stats.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, i) {
+          final (label, value) = stats[i];
+          return SoftCard(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  '${(value as num?) ?? 0}',
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: TsgColors.purple),
+                ),
+                Text(label, style: const TextStyle(fontSize: 12, color: TsgColors.muted)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget postCard(BuildContext context, Map<String, dynamic> post) {
+    final name = (post['author_name'] as String?)?.trim();
+    final displayName = (name == null || name.isEmpty) ? 'Community Member' : name;
+    final body = (post['body'] as String?) ?? '';
+    final reactionCount = ((post['reaction_count'] ?? 0) as num).toInt();
+    final commentCount = ((post['comment_count'] ?? 0) as num).toInt();
+    final myReaction = post['my_reaction'] as String?;
+    final reactionMeta = myReaction != null ? kReactionTypes[myReaction] : null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: SoftCard(
@@ -5490,13 +5935,13 @@ class FeedHome extends StatelessWidget {
               children: [
                 Avatar(
                   size: 42,
-                  label: name.characters.first,
+                  label: displayName.characters.isNotEmpty ? displayName.characters.first : '?',
                   tone: const Color(0xFFFFDDCA),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    name,
+                    displayName,
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ),
@@ -5506,41 +5951,212 @@ class FeedHome extends StatelessWidget {
             const SizedBox(height: 12),
             Text(body, style: const TextStyle(fontSize: 16, height: 1.3)),
             const SizedBox(height: 12),
-            PhotoTile(
-              icon: icon,
-              width: double.infinity,
-              height: 145,
-              color: const Color(0xFFEAF4E6),
-            ),
-            const SizedBox(height: 12),
             Row(
               children: [
                 GestureDetector(
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Liked'), duration: Duration(seconds: 1)),
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.heart_fill,
-                    color: TsgColors.red,
-                    size: 18,
-                  ),
+                  onTap: () => _toggleReaction(post, myReaction ?? 'like'),
+                  onLongPress: () => _openReactionPicker(post),
+                  child: reactionMeta != null
+                      ? Text(reactionMeta.emoji, style: const TextStyle(fontSize: 18))
+                      : const Icon(
+                          CupertinoIcons.heart,
+                          color: TsgColors.red,
+                          size: 18,
+                        ),
                 ),
                 const SizedBox(width: 6),
-                Text(likes),
+                Text('$reactionCount'),
                 const SizedBox(width: 22),
                 GestureDetector(
-                  onTap: () => go(Screen.createPost),
+                  onTap: () => _openComments(post),
                   child: const Icon(CupertinoIcons.chat_bubble, size: 18),
                 ),
                 const SizedBox(width: 6),
                 GestureDetector(
-                  onTap: () => go(Screen.createPost),
-                  child: const Text('Comment'),
+                  onTap: () => _openComments(post),
+                  child: Text(commentCount > 0 ? '$commentCount comments' : 'Comment'),
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class PostCommentsScreen extends StatefulWidget {
+  const PostCommentsScreen({
+    super.key,
+    required this.postId,
+    required this.apiClient,
+    this.onCommentAdded,
+  });
+  final String postId;
+  final TsgApiClient apiClient;
+  final VoidCallback? onCommentAdded;
+
+  @override
+  State<PostCommentsScreen> createState() => _PostCommentsScreenState();
+}
+
+class _PostCommentsScreenState extends State<PostCommentsScreen> {
+  List<Map<String, dynamic>> _comments = [];
+  bool _loading = true;
+  String? _error;
+  bool _sending = false;
+  final _controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await widget.apiClient.getComments(widget.postId);
+      final comments = listOfMaps(data['comments'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _comments = comments;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    try {
+      await widget.apiClient.addComment(widget.postId, text);
+      _controller.clear();
+      widget.onCommentAdded?.call();
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not post comment: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: TsgColors.canvas,
+      appBar: AppBar(
+        backgroundColor: TsgColors.canvas,
+        elevation: 0,
+        title: const Text('Comments', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900)),
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(child: Text('Could not load comments: $_error'))
+                    : _comments.isEmpty
+                        ? const Center(
+                            child: Text('No comments yet. Be the first to reply!', style: TextStyle(color: TsgColors.muted)),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(18),
+                            itemCount: _comments.length,
+                            itemBuilder: (context, index) {
+                              final comment = _comments[index];
+                              final author = (comment['author_name'] as String?)?.trim();
+                              final displayName = (author == null || author.isEmpty) ? 'Community Member' : author;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 14),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Avatar(
+                                      size: 36,
+                                      label: displayName.characters.isNotEmpty ? displayName.characters.first : '?',
+                                      tone: const Color(0xFFFFDDCA),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(color: TsgColors.line),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(displayName, style: const TextStyle(fontWeight: FontWeight.w900)),
+                                            const SizedBox(height: 4),
+                                            Text((comment['body'] as String?) ?? ''),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      decoration: InputDecoration(
+                        hintText: 'Write a comment...',
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: const BorderSide(color: TsgColors.line),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _sending ? null : _send,
+                    icon: _sending
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(CupertinoIcons.arrow_up_circle_fill, color: TsgColors.purple, size: 32),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -5628,99 +6244,171 @@ class _CreatePostState extends State<CreatePost> {
   }
 }
 
-class EventsScreen extends StatelessWidget {
-  const EventsScreen({super.key, required this.go, required this.runApi});
+class EventsScreen extends StatefulWidget {
+  const EventsScreen({super.key, required this.go, required this.runApi, required this.apiClient});
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
+  final TsgApiClient apiClient;
+
+  @override
+  State<EventsScreen> createState() => _EventsScreenState();
+}
+
+class _EventsScreenState extends State<EventsScreen> {
+  List<Map<String, dynamic>> _events = [];
+  bool _loading = true;
+  String? _error;
+  int _tab = 0;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await widget.apiClient.getEvents(search: _searchCtrl.text.trim());
+      final events = listOfMaps(data['events'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _events = events;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> get _visibleEvents {
+    if (_tab == 3) {
+      return _events.where((e) => e['rsvp_status'] != null).toList();
+    }
+    return _events;
+  }
+
+  Future<void> _rsvp(Map<String, dynamic> event) async {
+    final id = event['id']?.toString();
+    final title = (event['title'] as String?) ?? 'this event';
+    if (id == null) return;
+    await widget.runApi('RSVPing to $title', (client, state) {
+      return client.joinEvent(id, title);
+    });
+    setState(() {
+      event['rsvp_status'] = 'interested';
+    });
+  }
+
+  void _openCreateEvent() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CreateEventScreen(apiClient: widget.apiClient, onCreated: _load),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final events = [
-      (
-        'TODAY',
-        'Chair Yoga',
-        'Gentle yoga for all levels.',
-        '10:30 AM - 11:30 AM',
-        'Community Hall',
-        '12',
-        Icons.directions_walk_rounded,
-        true,
-      ),
-      (
-        'FRIDAY, MAY 24',
-        'Movie Night',
-        'A fun movie and snacks\nwith friends!',
-        '7:00 PM - 9:30 PM',
-        'Community Lounge',
-        '18',
-        CupertinoIcons.film,
-        false,
-      ),
-      (
-        'TOMORROW',
-        'Memory Challenge',
-        'Fun games to keep\nyour minds sharp.',
-        '2:00 PM - 3:00 PM',
-        'Activity Room',
-        '10',
-        CupertinoIcons.game_controller,
-        false,
-      ),
-      (
-        'SAT, MAY 25',
-        'Community Lunch',
-        'Delicious food and great\nconversation.',
-        '12:00 PM - 1:30 PM',
-        'Dining Room',
-        '22',
-        CupertinoIcons.square_grid_2x2,
-        true,
-      ),
-      (
-        'WED, MAY 29',
-        'Art & Creativity',
-        'Express yourself and have fun\nwith colors.',
-        '1:00 PM - 2:30 PM',
-        'Activity Room',
-        '8',
-        CupertinoIcons.paintbrush,
-        false,
-      ),
-    ];
     return ScreenScaffold(
       title: 'Events',
       subtitle: 'Discover activities and events\nhappening in your community.',
-      back: () => go(Screen.more),
-      action: const Avatar(
-        size: 48,
-        icon: CupertinoIcons.calendar,
-        tone: TsgColors.lilac2,
+      back: () => widget.go(Screen.more),
+      action: IconButton(
+        onPressed: _openCreateEvent,
+        icon: const Icon(CupertinoIcons.add_circled_solid, color: TsgColors.purple, size: 30),
       ),
       children: [
-        const Segmented(
-          labels: ['Upcoming', 'This Week', 'This Month', 'My Events'],
-          selected: 0,
+        TextField(
+          controller: _searchCtrl,
+          onSubmitted: (_) => _load(),
+          decoration: InputDecoration(
+            hintText: 'Search events',
+            prefixIcon: const Icon(CupertinoIcons.search),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: TsgColors.line),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Segmented(
+          labels: const ['Upcoming', 'This Week', 'This Month', 'My Events'],
+          selected: _tab,
+          onChanged: (i) => setState(() => _tab = i),
         ),
         const SizedBox(height: 22),
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Upcoming Events',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-              ),
-            ),
-            TextButton(onPressed: () => go(Screen.events), child: const Text('View all')),
-          ],
+        const Text(
+          'Upcoming Events',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
         ),
-        ...events.map((e) => eventCard(e)),
+        const SizedBox(height: 14),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              children: [
+                Text('Could not load events: $_error', textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                PurpleButton('Retry', onTap: _load),
+              ],
+            ),
+          )
+        else if (_visibleEvents.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: Text('No events found.', style: TextStyle(color: TsgColors.muted)),
+            ),
+          )
+        else
+          ..._visibleEvents.map((e) => eventCard(e)),
       ],
     );
   }
 
-  Widget eventCard(
-    (String, String, String, String, String, String, IconData, bool) e,
-  ) {
+  Widget eventCard(Map<String, dynamic> event) {
+    final title = (event['title'] as String?) ?? 'Untitled event';
+    final description = (event['description'] as String?) ?? '';
+    final location = (event['location_label'] as String?) ?? '';
+    final goingCount = ((event['going_count'] ?? 0) as num).toInt();
+    final rsvpStatus = event['rsvp_status'] as String?;
+    final startsAtRaw = event['starts_at'] as String?;
+    DateTime? startsAt;
+    if (startsAtRaw != null) {
+      startsAt = DateTime.tryParse(startsAtRaw);
+    }
+    final dateLabel = startsAt != null
+        ? '${startsAt.month}/${startsAt.day} • ${startsAt.hour.toString().padLeft(2, '0')}:${startsAt.minute.toString().padLeft(2, '0')}'
+        : 'Date TBD';
+    final categoryIcon = switch (event['category']) {
+      'movie' => CupertinoIcons.film,
+      'game' => CupertinoIcons.game_controller,
+      'meal' => CupertinoIcons.square_grid_2x2,
+      'art' => CupertinoIcons.paintbrush,
+      _ => CupertinoIcons.calendar,
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: 13),
       child: SoftCard(
@@ -5728,61 +6416,57 @@ class EventsScreen extends StatelessWidget {
         child: Row(
           children: [
             PhotoTile(
-              icon: e.$7,
+              icon: categoryIcon,
               width: 104,
               height: 104,
-              color: e.$8 ? const Color(0xFFEFF9EF) : const Color(0xFFFFF3DE),
+              color: const Color(0xFFEFF9EF),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Pill(e.$1, color: TsgColors.lilac2),
+                  Pill(dateLabel, color: TsgColors.lilac2),
                   const SizedBox(height: 8),
                   Text(
-                    e.$2,
+                    title,
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  Text(
-                    e.$3,
-                    style: const TextStyle(color: TsgColors.muted, height: 1.2),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '◷ ${e.$4}',
-                    style: const TextStyle(fontSize: 12, color: TsgColors.ink),
-                  ),
-                  Text(
-                    '⌖ ${e.$5}',
-                    style: const TextStyle(fontSize: 12, color: TsgColors.ink),
-                  ),
+                  if (description.isNotEmpty)
+                    Text(
+                      description,
+                      style: const TextStyle(color: TsgColors.muted, height: 1.2),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  if (location.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '⌖ $location',
+                      style: const TextStyle(fontSize: 12, color: TsgColors.ink),
+                    ),
+                  ],
                 ],
               ),
             ),
             Column(
               children: [
                 Pill(
-                  '${e.$6}\ngoing',
-                  color: e.$8
-                      ? const Color(0xFFEAF8E9)
-                      : const Color(0xFFFFF4DE),
+                  '$goingCount\ngoing',
+                  color: const Color(0xFFEAF8E9),
                   ink: TsgColors.ink,
                 ),
                 const SizedBox(height: 20),
                 SizedBox(
-                  width: 64,
+                  width: 76,
                   height: 40,
                   child: PurpleButton(
-                    'Join',
-                    onTap: () {
-                      runApi('Joining ${e.$2}', (client, state) {
-                        return client.joinEvent(eventIdFor(e.$2), e.$2);
-                      });
-                    },
+                    rsvpStatus != null ? 'Going' : 'RSVP',
+                    color: rsvpStatus != null ? TsgColors.green : TsgColors.purple,
+                    onTap: () => _rsvp(event),
                   ),
                 ),
               ],
@@ -5794,11 +6478,530 @@ class EventsScreen extends StatelessWidget {
   }
 }
 
-String eventIdFor(String name) {
-  return name
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-      .replaceAll(RegExp(r'_+$'), '');
+class CreateEventScreen extends StatefulWidget {
+  const CreateEventScreen({super.key, required this.apiClient, this.onCreated});
+  final TsgApiClient apiClient;
+  final VoidCallback? onCreated;
+
+  @override
+  State<CreateEventScreen> createState() => _CreateEventScreenState();
+}
+
+class _CreateEventScreenState extends State<CreateEventScreen> {
+  final _titleCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _locationCtrl = TextEditingController();
+  String _category = 'activity';
+  DateTime _startsAt = DateTime.now().add(const Duration(days: 1));
+  bool _saving = false;
+  String? _error;
+
+  static const _categories = ['activity', 'meal', 'movie', 'game', 'art'];
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _locationCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDateTime() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _startsAt,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_startsAt),
+    );
+    if (time == null || !mounted) return;
+    setState(() {
+      _startsAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    });
+  }
+
+  Future<void> _save() async {
+    final title = _titleCtrl.text.trim();
+    if (title.isEmpty) {
+      setState(() => _error = 'Please enter a title for the event.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.apiClient.createEvent(
+        title: title,
+        description: _descCtrl.text.trim(),
+        category: _category,
+        locationLabel: _locationCtrl.text.trim(),
+        startsAt: _startsAt,
+      );
+      widget.onCreated?.call();
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: TsgColors.canvas,
+      appBar: AppBar(
+        backgroundColor: TsgColors.canvas,
+        elevation: 0,
+        title: const Text('Create Event', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900)),
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Title', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            TextField(controller: _titleCtrl, decoration: const InputDecoration(border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            const Text('Description', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            TextField(controller: _descCtrl, maxLines: 3, decoration: const InputDecoration(border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            const Text('Location', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            TextField(controller: _locationCtrl, decoration: const InputDecoration(border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            const Text('Category', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              children: _categories.map((c) {
+                final selected = c == _category;
+                return ChoiceChip(
+                  label: Text(c),
+                  selected: selected,
+                  onSelected: (_) => setState(() => _category = c),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            const Text('Date & time', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            SoftCard(
+              onTap: _pickDateTime,
+              child: Row(
+                children: [
+                  const Icon(CupertinoIcons.calendar, color: TsgColors.purple),
+                  const SizedBox(width: 10),
+                  Text('${_startsAt.month}/${_startsAt.day}/${_startsAt.year} • '
+                      '${_startsAt.hour.toString().padLeft(2, '0')}:${_startsAt.minute.toString().padLeft(2, '0')}'),
+                ],
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: TsgColors.red)),
+            ],
+            const SizedBox(height: 28),
+            PurpleButton(_saving ? 'Saving...' : 'Create Event', onTap: _saving ? () {} : _save),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class GroupsScreen extends StatefulWidget {
+  const GroupsScreen({super.key, required this.go, required this.apiClient});
+  final ValueChanged<Screen> go;
+  final TsgApiClient apiClient;
+
+  @override
+  State<GroupsScreen> createState() => _GroupsScreenState();
+}
+
+class _GroupsScreenState extends State<GroupsScreen> {
+  List<Map<String, dynamic>> _groups = [];
+  bool _loading = true;
+  String? _error;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await widget.apiClient.getGroups(search: _searchCtrl.text.trim());
+      final groups = listOfMaps(data['groups'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _groups = groups;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _toggleMembership(Map<String, dynamic> group) async {
+    final id = group['id']?.toString();
+    if (id == null) return;
+    final isMember = group['is_member'] == true;
+    try {
+      if (isMember) {
+        await widget.apiClient.leaveGroup(id);
+      } else {
+        await widget.apiClient.joinGroup(id);
+      }
+      setState(() {
+        group['is_member'] = !isMember;
+        final count = ((group['member_count'] ?? 0) as num).toInt();
+        group['member_count'] = isMember ? (count - 1).clamp(0, 1 << 30) : count + 1;
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update: $error')));
+      }
+    }
+  }
+
+  void _openCreateGroup() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _CreateGroupSheet(apiClient: widget.apiClient, onCreated: _load),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Groups',
+      subtitle: 'Find and join community groups.',
+      back: () => widget.go(Screen.more),
+      action: IconButton(
+        onPressed: _openCreateGroup,
+        icon: const Icon(CupertinoIcons.add_circled_solid, color: TsgColors.purple, size: 30),
+      ),
+      children: [
+        TextField(
+          controller: _searchCtrl,
+          onSubmitted: (_) => _load(),
+          decoration: InputDecoration(
+            hintText: 'Search groups',
+            prefixIcon: const Icon(CupertinoIcons.search),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: TsgColors.line),
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              children: [
+                Text('Could not load groups: $_error', textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                PurpleButton('Retry', onTap: _load),
+              ],
+            ),
+          )
+        else if (_groups.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: Text('No groups found.', style: TextStyle(color: TsgColors.muted)),
+            ),
+          )
+        else
+          ..._groups.map((g) => _groupCard(g)),
+      ],
+    );
+  }
+
+  Widget _groupCard(Map<String, dynamic> group) {
+    final name = (group['name'] as String?) ?? 'Untitled group';
+    final description = (group['description'] as String?) ?? '';
+    final memberCount = ((group['member_count'] ?? 0) as num).toInt();
+    final isMember = group['is_member'] == true;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 13),
+      child: SoftCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            const Avatar(size: 56, icon: CupertinoIcons.group_solid, tone: TsgColors.lilac2),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                  if (description.isNotEmpty)
+                    Text(
+                      description,
+                      style: const TextStyle(color: TsgColors.muted),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  const SizedBox(height: 4),
+                  Text('$memberCount members', style: const TextStyle(fontSize: 12, color: TsgColors.muted)),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: 84,
+              height: 40,
+              child: PurpleButton(
+                isMember ? 'Leave' : 'Join',
+                color: isMember ? TsgColors.muted : TsgColors.purple,
+                onTap: () => _toggleMembership(group),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateGroupSheet extends StatefulWidget {
+  const _CreateGroupSheet({required this.apiClient, this.onCreated});
+  final TsgApiClient apiClient;
+  final VoidCallback? onCreated;
+
+  @override
+  State<_CreateGroupSheet> createState() => _CreateGroupSheetState();
+}
+
+class _CreateGroupSheetState extends State<_CreateGroupSheet> {
+  final _nameCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      setState(() => _error = 'Please enter a group name.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.apiClient.createGroup(name: name, description: _descCtrl.text.trim());
+      widget.onCreated?.call();
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 22,
+        right: 22,
+        top: 22,
+        bottom: 22 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Create Group', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 14),
+          const Text('Name', style: TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          TextField(controller: _nameCtrl, decoration: const InputDecoration(border: OutlineInputBorder())),
+          const SizedBox(height: 14),
+          const Text('Description', style: TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          TextField(controller: _descCtrl, maxLines: 3, decoration: const InputDecoration(border: OutlineInputBorder())),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!, style: const TextStyle(color: TsgColors.red)),
+          ],
+          const SizedBox(height: 18),
+          PurpleButton(_saving ? 'Saving...' : 'Create Group', onTap: _saving ? () {} : _save),
+        ],
+      ),
+    );
+  }
+}
+
+class FriendsScreen extends StatefulWidget {
+  const FriendsScreen({super.key, required this.go, required this.apiClient});
+  final ValueChanged<Screen> go;
+  final TsgApiClient apiClient;
+
+  @override
+  State<FriendsScreen> createState() => _FriendsScreenState();
+}
+
+class _FriendsScreenState extends State<FriendsScreen> {
+  List<Map<String, dynamic>> _friends = [];
+  bool _loading = true;
+  String? _error;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await widget.apiClient.getFriends(search: _searchCtrl.text.trim());
+      final friends = listOfMaps(data['friends'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _friends = friends;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenScaffold(
+      title: 'Friends',
+      subtitle: 'People in your community connections.',
+      back: () => widget.go(Screen.more),
+      action: const Avatar(size: 48, icon: CupertinoIcons.person_3_fill, tone: TsgColors.lilac2),
+      children: [
+        TextField(
+          controller: _searchCtrl,
+          onSubmitted: (_) => _load(),
+          decoration: InputDecoration(
+            hintText: 'Search friends',
+            prefixIcon: const Icon(CupertinoIcons.search),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: TsgColors.line),
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              children: [
+                Text('Could not load friends: $_error', textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                PurpleButton('Retry', onTap: _load),
+              ],
+            ),
+          )
+        else if (_friends.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: Text('No friends found yet.', style: TextStyle(color: TsgColors.muted)),
+            ),
+          )
+        else
+          ..._friends.map((f) => _friendCard(f)),
+      ],
+    );
+  }
+
+  Widget _friendCard(Map<String, dynamic> friend) {
+    final name = (friend['display_name'] as String?) ?? (friend['name'] as String?) ?? 'Friend';
+    final relationship = (friend['relationship_label'] as String?) ?? (friend['role'] as String?) ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 13),
+      child: SoftCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            const Avatar(size: 56, icon: CupertinoIcons.person_fill, tone: TsgColors.lilac2),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                  if (relationship.isNotEmpty)
+                    Text(relationship, style: const TextStyle(color: TsgColors.muted)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class MoreHome extends StatelessWidget {
@@ -5811,6 +7014,8 @@ class MoreHome extends StatelessWidget {
       (CupertinoIcons.person_2_fill, 'People / Circle', Screen.circle),
       (CupertinoIcons.square_grid_2x2_fill, 'Services', Screen.services),
       (CupertinoIcons.calendar, 'Events', Screen.events),
+      (CupertinoIcons.group_solid, 'Groups', Screen.groups),
+      (CupertinoIcons.person_3_fill, 'Friends', Screen.friends),
       (CupertinoIcons.shield_fill, 'Safety', Screen.safety),
       (CupertinoIcons.heart_fill, 'Wellness Score', Screen.wellness),
       (CupertinoIcons.waveform_path_ecg, 'Vitals Monitor', Screen.vitals),
@@ -7095,10 +8300,18 @@ class SafetyScreen extends StatefulWidget {
     required this.go,
     required this.runApi,
     this.state,
+    this.syncingVitals = false,
+    this.lastVitalsSyncAt,
+    this.vitalsSyncError,
+    this.onSyncVitals,
   });
   final ValueChanged<Screen> go;
   final ApiRunner runApi;
   final ResidentAppState? state;
+  final bool syncingVitals;
+  final DateTime? lastVitalsSyncAt;
+  final String? vitalsSyncError;
+  final Future<void> Function()? onSyncVitals;
 
   @override
   State<SafetyScreen> createState() => _SafetyScreenState();
@@ -7109,6 +8322,31 @@ class _SafetyScreenState extends State<SafetyScreen> {
   String locationStatus = 'Tap to sync live location';
   String safeZoneStatus = 'Not synced';
   bool syncingLocation = false;
+
+  String _vitalsStatusLabel() {
+    if (widget.syncingVitals) return 'Syncing vitals...';
+    if (widget.vitalsSyncError != null) {
+      return 'Sync issue: ${widget.vitalsSyncError}';
+    }
+    final lastSync = widget.lastVitalsSyncAt;
+    if (lastSync == null) return 'Tap to sync vitals';
+    return 'Vitals synced ${_timeAgo(lastSync)} - tap to sync now';
+  }
+
+  String _timeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return '$m minute${m == 1 ? '' : 's'} ago';
+    }
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return '$h hour${h == 1 ? '' : 's'} ago';
+    }
+    final d = diff.inDays;
+    return '$d day${d == 1 ? '' : 's'} ago';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -7372,22 +8610,11 @@ class _SafetyScreenState extends State<SafetyScreen> {
         safetyRow(
           CupertinoIcons.waveform_path_ecg,
           'Health monitoring',
-          'Vitals look stable',
-          TsgColors.green,
-          onTap: () {
-            widget.runApi('Syncing wearable health data', (
-              client,
-              state,
-            ) async {
-              final snapshot = await NativeHealthService()
-                  .collectRecentVitals();
-              return client.syncHealthConsentAndVitals(
-                source: snapshot.source,
-                readings: snapshot.readings,
-                dataTypes: snapshot.consentDataTypes,
-              );
-            });
-          },
+          _vitalsStatusLabel(),
+          widget.vitalsSyncError != null ? TsgColors.orange : TsgColors.green,
+          onTap: widget.syncingVitals
+              ? null
+              : () => widget.onSyncVitals?.call(),
         ),
         safetyRow(
           CupertinoIcons.shield_fill,
@@ -10655,13 +11882,99 @@ class FamilyHealthScreen extends StatelessWidget {
   }
 }
 
-class RiskScreen extends StatelessWidget {
-  const RiskScreen({super.key, required this.go, this.state});
-  final ValueChanged<Screen> go;
-  final ResidentAppState? state;
+class CriticalAlertCard extends StatefulWidget {
+  const CriticalAlertCard({super.key, required this.alert, this.runApi});
+  final Map<String, dynamic> alert;
+  final ApiRunner? runApi;
+
+  @override
+  State<CriticalAlertCard> createState() => _CriticalAlertCardState();
+}
+
+class _CriticalAlertCardState extends State<CriticalAlertCard> {
+  bool _acknowledging = false;
+  bool _acknowledged = false;
+
+  Future<void> _acknowledge() async {
+    final id = stringValue(widget.alert['id']);
+    if (id.isEmpty || _acknowledging || widget.runApi == null) return;
+    setState(() => _acknowledging = true);
+    final ok = await widget.runApi!('Acknowledging critical alert', (
+      client,
+      state,
+    ) {
+      return client.acknowledgeSosEvent(id);
+    });
+    if (!mounted) return;
+    setState(() {
+      _acknowledging = false;
+      _acknowledged = ok;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_acknowledged) return const SizedBox.shrink();
+    return SoftCard(
+      color: const Color(0xFFFFEAEA),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(CupertinoIcons.exclamationmark_triangle_fill, color: TsgColors.red),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Critical health alert',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: TsgColors.red,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            stringValue(widget.alert['body'], fallback: 'A critical health reading was detected.'),
+            style: const TextStyle(color: TsgColors.ink, height: 1.3),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoButton(
+              color: TsgColors.red,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              onPressed: _acknowledging ? null : _acknowledge,
+              child: Text(
+                _acknowledging ? 'Acknowledging...' : 'Acknowledge alert',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class RiskScreen extends StatelessWidget {
+  const RiskScreen({super.key, required this.go, this.state, this.runApi});
+  final ValueChanged<Screen> go;
+  final ResidentAppState? state;
+  final ApiRunner? runApi;
+
+  @override
+  Widget build(BuildContext context) {
+    final criticalAlerts = listOfMaps(mapValue(state?.raw['safety'])['sosEvents'])
+        .where(
+          (event) =>
+              stringValue(event['severity']) == 'critical' &&
+              stringValue(event['status'], fallback: 'active') == 'active',
+        )
+        .toList(growable: false);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     final now = DateTime.now();
     String dayLabel(int daysAgo) {
@@ -10704,6 +12017,10 @@ class RiskScreen extends StatelessWidget {
       title: 'Risk Intelligence',
       back: () => go(Screen.more),
       children: [
+        for (final alert in criticalAlerts) ...[
+          CriticalAlertCard(alert: alert, runApi: runApi),
+          const SizedBox(height: 14),
+        ],
         const Segmented(labels: ['Timeline', 'Risk Overview'], selected: 0),
         const SizedBox(height: 18),
         const SoftCard(

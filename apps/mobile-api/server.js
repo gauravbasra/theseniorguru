@@ -595,7 +595,16 @@ function evaluateHealthVitals(readings) {
   if (summary.heartRateAvg !== null && (summary.heartRateAvg > 115 || summary.heartRateAvg < 45)) summary.riskReasons.push("heart-rate-out-of-range");
   if (summary.respiratoryRateAvg !== null && (summary.respiratoryRateAvg > 24 || summary.respiratoryRateAvg < 9)) summary.riskReasons.push("respiratory-rate-out-of-range");
   if (summary.sleepMinutes !== null && summary.sleepMinutes < 240) summary.riskReasons.push("low-sleep-duration");
-  if (summary.riskReasons.length >= 2) summary.riskLevel = "high";
+
+  const criticalReasons = [];
+  if (summary.oxygenAvg !== null && summary.oxygenAvg < 88) criticalReasons.push("oxygen-critically-low");
+  if (summary.heartRateAvg !== null && (summary.heartRateAvg > 140 || summary.heartRateAvg < 40)) criticalReasons.push("heart-rate-critical");
+  if (summary.respiratoryRateAvg !== null && (summary.respiratoryRateAvg > 30 || summary.respiratoryRateAvg < 8)) criticalReasons.push("respiratory-rate-critical");
+
+  if (criticalReasons.length) {
+    summary.riskLevel = "critical";
+    summary.riskReasons = [...criticalReasons, ...summary.riskReasons];
+  } else if (summary.riskReasons.length >= 2) summary.riskLevel = "high";
   else if (summary.riskReasons.length === 1) summary.riskLevel = "watch";
   return summary;
 }
@@ -1061,8 +1070,19 @@ function routeApi(req, res) {
       vitals.source = payload.source || normalized[0]?.source || "mobile-health-sync";
       vitals.summary = evaluateHealthVitals(vitals.readings.slice(0, 24));
       vitals.latestSummary = evaluateHealthVitals(normalized);
-      const alertSummary = vitals.latestSummary.riskLevel === "high" ? vitals.latestSummary : vitals.summary;
-      if (alertSummary.riskLevel === "high") {
+      const riskRank = {low: 0, watch: 1, high: 2, critical: 3};
+      const alertSummary = riskRank[vitals.latestSummary.riskLevel] >= riskRank[vitals.summary.riskLevel]
+        ? vitals.latestSummary
+        : vitals.summary;
+      if (alertSummary.riskLevel === "critical") {
+        createSosEvent(state, {
+          type: "health-vitals-critical",
+          severity: "critical",
+          source: vitals.source,
+          route: "trusted-circle-health-alert",
+          body: `${state.resident.name} has critical health readings: ${alertSummary.riskReasons.join(", ")}. Trusted circle must acknowledge immediately.`
+        });
+      } else if (alertSummary.riskLevel === "high") {
         createSosEvent(state, {
           type: "health-vitals-risk",
           severity: "high",
@@ -1074,7 +1094,7 @@ function routeApi(req, res) {
       addAuditLog(state, {
         action: "health_vitals_synced",
         entityType: "health_vitals",
-        severity: vitals.latestSummary.riskLevel === "high" ? "high" : "info",
+        severity: ["critical", "high"].includes(vitals.latestSummary.riskLevel) ? vitals.latestSummary.riskLevel : "info",
         actor: payload.source || "mobile-health-sync",
         details: `readings=${normalized.length}, risk=${vitals.latestSummary.riskLevel}, reasons=${vitals.latestSummary.riskReasons.join(",") || "none"}`
       });

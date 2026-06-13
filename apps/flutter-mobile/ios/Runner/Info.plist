@@ -38,6 +38,11 @@
 	<string>TheSeniorGuru uses your location to monitor safe zones and alert your care circle if you leave a designated area.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>TheSeniorGuru uses background location to keep your care circle informed of your safety.</string>
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>SafetyPreciseLocation</key>
+		<string>Precise location lets TheSeniorGuru pinpoint your safe zone status accurately on the map.</string>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>TheSeniorGuru uses your camera to capture photos for your profile and onboarding verification.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
