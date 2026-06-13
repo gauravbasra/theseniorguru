@@ -81,6 +81,7 @@ class NativeHealthService {
     final latest = <HealthDataType, HealthDataPoint>{};
     var sleepMinutes = 0;
     var stepsTotal = 0;
+    var caloriesTotal = 0.0;
     for (final point in points) {
       final value = _numericValue(point);
       if (value == null) continue;
@@ -90,6 +91,10 @@ class NativeHealthService {
       }
       if (point.type == HealthDataType.STEPS) {
         stepsTotal += value.round();
+        continue;
+      }
+      if (point.type == HealthDataType.ACTIVE_ENERGY_BURNED) {
+        caloriesTotal += value;
         continue;
       }
       final existing = latest[point.type];
@@ -122,10 +127,7 @@ class NativeHealthService {
           HealthDataType.HEART_RATE_VARIABILITY_SDNN,
         ])!.round(),
       if (stepsTotal > 0) 'stepsToday': stepsTotal,
-      if (_latestNumber(latest, [HealthDataType.ACTIVE_ENERGY_BURNED]) != null)
-        'caloriesToday': _latestNumber(latest, [
-          HealthDataType.ACTIVE_ENERGY_BURNED,
-        ])!.round(),
+      if (caloriesTotal > 0) 'caloriesToday': caloriesTotal.round(),
       if (sleepMinutes > 0) 'sleepMinutes': sleepMinutes,
       'capturedAt': now.toIso8601String(),
     };

@@ -269,11 +269,12 @@ class _ResidentShellState extends State<ResidentShell> {
           dataTypes: snapshot.consentDataTypes,
         );
       }
+      final synced = snapshot.available && snapshot.readings.isNotEmpty;
       if (mounted) {
         setState(() {
           _syncingVitals = false;
           _lastVitalsSyncAt = DateTime.now();
-          _vitalsSyncError = snapshot.available ? null : snapshot.message;
+          _vitalsSyncError = synced ? null : (snapshot.message ?? 'No recent health samples were available.');
         });
       } else {
         _syncingVitals = false;
