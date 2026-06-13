@@ -1934,7 +1934,9 @@ function createProductionApi(pool) {
         contributors: wellnessContributors.rows.length ? wellnessContributors.rows : defaultWellnessContributors()
       },
       vitals: {
-        monitor: vitalMonitor.rows.length ? vitalMonitor.rows : defaultVitalMonitorRows(healthSummary, healthRows)
+        monitor: healthRows.length
+          ? defaultVitalMonitorRows(healthSummary, healthRows)
+          : (vitalMonitor.rows.length ? vitalMonitor.rows : defaultVitalMonitorRows(healthSummary, healthRows))
       },
       familyHealth: family,
       risk: {
