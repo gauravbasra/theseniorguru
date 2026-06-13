@@ -8870,7 +8870,8 @@ function createProductionApi(pool) {
                 sfp.target_connection_types,
                 count(DISTINCT spr.id)::int AS reaction_count,
                 count(DISTINCT spc.id)::int AS comment_count,
-                bool_or(spr.user_id = $1)::boolean AS liked_by_me
+                bool_or(spr.user_id = $1)::boolean AS liked_by_me,
+                max(spr.reaction_type) FILTER (WHERE spr.user_id = $1) AS my_reaction
          FROM community_posts cp
          LEFT JOIN social_feed_posts sfp ON sfp.community_post_id = cp.id
          LEFT JOIN users u ON u.id = cp.author_user_id
@@ -9068,6 +9069,8 @@ function createProductionApi(pool) {
       return { preferences };
     }
 
+    const ALLOWED_REACTION_TYPES = new Set(["heart", "like", "love", "happy", "celebrate", "support", "pray"]);
+
     const postLikeMatch = url.pathname.match(/^\/api\/posts\/([^/]+)\/like$/);
     if (req.method === "POST" && postLikeMatch) {
       requireRole(user, ["senior", "trusted_person"]);
@@ -9078,17 +9081,55 @@ function createProductionApi(pool) {
         error.status = 404;
         throw error;
       }
-      const reactionType = String(payload.reactionType || "heart").trim().toLowerCase();
-      const reaction = (await query(
-        `INSERT INTO social_post_reactions (post_id, user_id, reaction_type)
-         VALUES ($1,$2,$3)
-         ON CONFLICT (post_id, user_id, reaction_type) DO NOTHING
-         RETURNING *`,
-        [postId, user.id, reactionType]
-      )).rows[0] || (await query(`SELECT * FROM social_post_reactions WHERE post_id = $1 AND user_id = $2 AND reaction_type = $3`, [postId, user.id, reactionType])).rows[0];
-      const count = Number((await query(`SELECT count(*) FROM social_post_reactions WHERE post_id = $1`, [postId])).rows[0].count || 0);
+      let reactionType = String(payload.reactionType || "heart").trim().toLowerCase();
+      if (!ALLOWED_REACTION_TYPES.has(reactionType)) reactionType = "heart";
+      const reaction = await transaction(async tx => {
+        await tx(`DELETE FROM social_post_reactions WHERE post_id = $1 AND user_id = $2`, [postId, user.id]);
+        return (await tx(
+          `INSERT INTO social_post_reactions (post_id, user_id, reaction_type)
+           VALUES ($1,$2,$3)
+           RETURNING *`,
+          [postId, user.id, reactionType]
+        )).rows[0];
+      });
+      const breakdownRows = (await query(
+        `SELECT reaction_type, count(*)::int AS count FROM social_post_reactions WHERE post_id = $1 GROUP BY reaction_type`,
+        [postId]
+      )).rows;
+      const reactionBreakdown = Object.fromEntries(breakdownRows.map(r => [r.reaction_type, r.count]));
+      const count = breakdownRows.reduce((sum, r) => sum + r.count, 0);
       await audit(req, user, "community_post_liked", "community_post", postId, { reactionType }, "info");
-      return { reaction, reactionCount: count };
+      return { reaction, reactionCount: count, reactionBreakdown };
+    }
+
+    if (req.method === "DELETE" && postLikeMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const postId = postLikeMatch[1];
+      await query(`DELETE FROM social_post_reactions WHERE post_id = $1 AND user_id = $2`, [postId, user.id]);
+      const breakdownRows = (await query(
+        `SELECT reaction_type, count(*)::int AS count FROM social_post_reactions WHERE post_id = $1 GROUP BY reaction_type`,
+        [postId]
+      )).rows;
+      const reactionBreakdown = Object.fromEntries(breakdownRows.map(r => [r.reaction_type, r.count]));
+      const count = breakdownRows.reduce((sum, r) => sum + r.count, 0);
+      await audit(req, user, "community_post_unliked", "community_post", postId, {}, "info");
+      return { ok: true, reactionCount: count, reactionBreakdown };
+    }
+
+    const postCommentsListMatch = url.pathname.match(/^\/api\/posts\/([^/]+)\/comments$/);
+    if (req.method === "GET" && postCommentsListMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const postId = postCommentsListMatch[1];
+      const comments = (await query(
+        `SELECT spc.*, u.display_name AS author_name
+         FROM social_post_comments spc
+         LEFT JOIN users u ON u.id = spc.author_user_id
+         WHERE spc.post_id = $1 AND spc.status = 'published'
+         ORDER BY spc.created_at ASC
+         LIMIT 200`,
+        [postId]
+      )).rows;
+      return { comments };
     }
 
     const postCommentsMatch = url.pathname.match(/^\/api\/posts\/([^/]+)\/comments$/);
@@ -9142,6 +9183,202 @@ function createProductionApi(pool) {
       });
       await audit(req, user, "community_event_rsvp_saved", "community_event_rsvp", rsvp.id, { eventId }, "info");
       return { ok: true, rsvp, job };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/groups") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const search = String(url.searchParams.get("q") || "").trim();
+      const myGroupIds = (await query(
+        `SELECT group_id FROM social_group_members WHERE user_id = $1 AND status = 'active'`,
+        [user.id]
+      )).rows.map(r => r.group_id);
+      const rows = (await query(
+        `SELECT sg.*,
+                count(DISTINCT gm.id)::int AS member_count,
+                ($2::uuid[] @> ARRAY[sg.id]) AS is_member
+         FROM social_groups sg
+         LEFT JOIN social_group_members gm ON gm.group_id = sg.id AND gm.status = 'active'
+         WHERE sg.status = 'active'
+           AND (sg.visibility = 'community' OR sg.id = ANY($2::uuid[]) OR sg.owner_user_id = $1)
+           AND ($3 = '' OR sg.name ILIKE '%' || $3 || '%' OR sg.description ILIKE '%' || $3 || '%')
+         GROUP BY sg.id
+         ORDER BY is_member DESC, sg.updated_at DESC
+         LIMIT 100`,
+        [user.id, myGroupIds, search]
+      )).rows;
+      return { groups: rows };
+    }
+
+    const groupJoinMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/join$/);
+    if (req.method === "POST" && groupJoinMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const groupId = groupJoinMatch[1];
+      const group = (await query(`SELECT * FROM social_groups WHERE id = $1 AND status = 'active'`, [groupId])).rows[0];
+      if (!group) {
+        const error = new Error("Group not found");
+        error.status = 404;
+        throw error;
+      }
+      if (group.visibility !== "community" && group.owner_user_id !== user.id) {
+        const error = new Error("This group requires an invite to join");
+        error.status = 403;
+        throw error;
+      }
+      const member = (await query(
+        `INSERT INTO social_group_members (group_id, user_id, member_role, source, status, added_by)
+         VALUES ($1,$2,'member','join_request','active',$2)
+         ON CONFLICT (group_id, user_id) DO UPDATE SET status = 'active', updated_at = now()
+         RETURNING *`,
+        [groupId, user.id]
+      )).rows[0];
+      await audit(req, user, "social_group_joined", "social_group", groupId, {}, "info");
+      return { ok: true, member };
+    }
+
+    const groupLeaveMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\/leave$/);
+    if (req.method === "POST" && groupLeaveMatch) {
+      requireRole(user, ["senior", "trusted_person"]);
+      const groupId = groupLeaveMatch[1];
+      await query(
+        `UPDATE social_group_members SET status = 'left', updated_at = now() WHERE group_id = $1 AND user_id = $2`,
+        [groupId, user.id]
+      );
+      await audit(req, user, "social_group_left", "social_group", groupId, {}, "info");
+      return { ok: true };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/events") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const { resident } = await feedContextForUser(user);
+      const search = String(url.searchParams.get("q") || "").trim();
+      const rows = (await query(
+        `SELECT ce.*, cer.status AS rsvp_status,
+                (SELECT COUNT(*)::int FROM community_event_rsvps r2 WHERE r2.event_id = ce.id) AS going_count
+         FROM community_events ce
+         LEFT JOIN community_event_rsvps cer ON cer.event_id = ce.id AND cer.user_id = $1
+         WHERE ce.status = 'published'
+           AND (ce.community IS NULL OR ce.community = $2 OR $2 IS NULL)
+           AND ($3 = '' OR ce.title ILIKE '%' || $3 || '%' OR ce.description ILIKE '%' || $3 || '%' OR ce.location_label ILIKE '%' || $3 || '%')
+         ORDER BY ce.starts_at NULLS LAST, ce.created_at DESC
+         LIMIT 100`,
+        [user.id, resident?.community || null, search]
+      )).rows;
+      return { events: rows };
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/events") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const { resident } = await feedContextForUser(user);
+      const title = String(required(payload.title, "title")).trim();
+      const startsAt = payload.startsAt ? new Date(payload.startsAt) : null;
+      const endsAt = payload.endsAt ? new Date(payload.endsAt) : null;
+      const id = crypto.randomUUID();
+      const event = (await query(
+        `INSERT INTO community_events (id, community, title, description, category, location_label, starts_at, ends_at, capacity, image_payload, status, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'published',$11)
+         RETURNING *`,
+        [
+          id,
+          resident?.community || payload.community || null,
+          title,
+          payload.description || "",
+          payload.category || "activity",
+          payload.locationLabel || "",
+          startsAt,
+          endsAt,
+          payload.capacity || null,
+          JSON.stringify(payload.imagePayload || {}),
+          user.id
+        ]
+      )).rows[0];
+      await audit(req, user, "community_event_created", "community_event", event.id, { title }, "info");
+      return { ok: true, event };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/friends") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const search = String(url.searchParams.get("q") || "").trim();
+      let rows = [];
+      if (user.role === "senior") {
+        const resident = await getResidentForUser(user);
+        if (resident) {
+          rows = (await query(
+            `SELECT tc.id AS connection_id, tc.connection_type, tc.status, u.id AS user_id, u.display_name, u.email, u.phone
+             FROM trusted_connections tc
+             JOIN users u ON u.id = tc.trusted_user_id
+             WHERE tc.resident_id = $1 AND tc.status = 'approved'
+               AND ($2 = '' OR u.display_name ILIKE '%' || $2 || '%')
+             ORDER BY u.display_name`,
+            [resident.id, search]
+          )).rows;
+        }
+      } else {
+        const { resident, connection } = await feedContextForUser(user);
+        if (resident) {
+          rows = (await query(
+            `SELECT tc.id AS connection_id, tc.connection_type, tc.status, u.id AS user_id, u.display_name, u.email, u.phone
+             FROM trusted_connections tc
+             JOIN users u ON u.id = tc.trusted_user_id
+             WHERE tc.resident_id = $1 AND tc.status = 'approved' AND tc.trusted_user_id != $2
+               AND ($3 = '' OR u.display_name ILIKE '%' || $3 || '%')
+             ORDER BY u.display_name`,
+            [resident.id, user.id, search]
+          )).rows;
+          if (connection?.resident_name && (search === "" || connection.resident_name.toLowerCase().includes(search.toLowerCase()))) {
+            rows = [{ connection_id: connection.resident_id, connection_type: "resident", status: "approved", user_id: null, display_name: connection.resident_name, email: null, phone: null }, ...rows];
+          }
+        }
+      }
+      return { friends: rows };
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/social/analytics") {
+      requireRole(user, ["senior", "trusted_person"]);
+      const { resident } = await feedContextForUser(user);
+      const residentId = resident?.id || null;
+      const [postsRow, reactionsRow, commentsRow, friendsRow, groupsRow, eventsRow] = await Promise.all([
+        query(
+          `SELECT COUNT(*)::int AS count FROM social_feed_posts WHERE author_user_id = $1`,
+          [user.id]
+        ).catch(() => ({ rows: [{ count: 0 }] })),
+        query(
+          `SELECT COUNT(*)::int AS count FROM social_post_reactions spr
+           JOIN social_feed_posts sfp ON sfp.id = spr.post_id
+           WHERE sfp.author_user_id = $1`,
+          [user.id]
+        ).catch(() => ({ rows: [{ count: 0 }] })),
+        query(
+          `SELECT COUNT(*)::int AS count FROM social_post_comments spc
+           JOIN social_feed_posts sfp ON sfp.id = spc.post_id
+           WHERE sfp.author_user_id = $1`,
+          [user.id]
+        ).catch(() => ({ rows: [{ count: 0 }] })),
+        residentId
+          ? query(`SELECT COUNT(*)::int AS count FROM trusted_connections WHERE resident_id = $1 AND status = 'approved'`, [residentId]).catch(() => ({ rows: [{ count: 0 }] }))
+          : Promise.resolve({ rows: [{ count: 0 }] }),
+        query(
+          `SELECT COUNT(*)::int AS count FROM social_group_members WHERE user_id = $1 AND status IN ('member','active')`,
+          [user.id]
+        ).catch(() => ({ rows: [{ count: 0 }] })),
+        residentId
+          ? query(
+              `SELECT COUNT(*)::int AS count FROM community_event_rsvps cer
+               JOIN community_events ce ON ce.id = cer.event_id
+               WHERE cer.user_id = $1 AND ce.starts_at >= now()`,
+              [user.id]
+            ).catch(() => ({ rows: [{ count: 0 }] }))
+          : Promise.resolve({ rows: [{ count: 0 }] }),
+      ]);
+      return {
+        analytics: {
+          postsCount: postsRow.rows[0]?.count || 0,
+          reactionsReceived: reactionsRow.rows[0]?.count || 0,
+          commentsReceived: commentsRow.rows[0]?.count || 0,
+          friendsCount: friendsRow.rows[0]?.count || 0,
+          groupsJoined: groupsRow.rows[0]?.count || 0,
+          upcomingEvents: eventsRow.rows[0]?.count || 0,
+        },
+      };
     }
 
     if (req.method === "POST" && url.pathname === "/api/guru/scan-intents") {

@@ -486,6 +486,83 @@ class TsgApiClient {
     return post('/api/posts', {'body': body, 'audience': 'community'});
   }
 
+  Future<Map<String, dynamic>> getFeed() => get('/api/feed');
+
+  Future<Map<String, dynamic>> reactToPost(String postId, String reactionType) {
+    return post('/api/posts/$postId/like', {'reactionType': reactionType});
+  }
+
+  Future<Map<String, dynamic>> removeReaction(String postId) {
+    return delete('/api/posts/$postId/like');
+  }
+
+  Future<Map<String, dynamic>> getComments(String postId) {
+    return get('/api/posts/$postId/comments');
+  }
+
+  Future<Map<String, dynamic>> addComment(String postId, String body) {
+    return post('/api/posts/$postId/comments', {'body': body});
+  }
+
+  Future<Map<String, dynamic>> getGroups({String search = ''}) {
+    final q = search.isEmpty ? '' : '?q=${Uri.encodeQueryComponent(search)}';
+    return get('/api/groups$q');
+  }
+
+  Future<Map<String, dynamic>> createGroup({
+    required String name,
+    String description = '',
+    String groupType = 'community',
+    String visibility = 'community',
+  }) {
+    return post('/api/groups', {
+      'name': name,
+      'description': description,
+      'groupType': groupType,
+      'visibility': visibility,
+    });
+  }
+
+  Future<Map<String, dynamic>> joinGroup(String groupId) {
+    return post('/api/groups/$groupId/join', const {});
+  }
+
+  Future<Map<String, dynamic>> leaveGroup(String groupId) {
+    return post('/api/groups/$groupId/leave', const {});
+  }
+
+  Future<Map<String, dynamic>> getEvents({String search = ''}) {
+    final q = search.isEmpty ? '' : '?q=${Uri.encodeQueryComponent(search)}';
+    return get('/api/events$q');
+  }
+
+  Future<Map<String, dynamic>> createEvent({
+    required String title,
+    String description = '',
+    String category = 'activity',
+    String locationLabel = '',
+    DateTime? startsAt,
+    DateTime? endsAt,
+    int? capacity,
+  }) {
+    return post('/api/events', {
+      'title': title,
+      'description': description,
+      'category': category,
+      'locationLabel': locationLabel,
+      if (startsAt != null) 'startsAt': startsAt.toUtc().toIso8601String(),
+      if (endsAt != null) 'endsAt': endsAt.toUtc().toIso8601String(),
+      if (capacity != null) 'capacity': capacity,
+    });
+  }
+
+  Future<Map<String, dynamic>> getFriends({String search = ''}) {
+    final q = search.isEmpty ? '' : '?q=${Uri.encodeQueryComponent(search)}';
+    return get('/api/friends$q');
+  }
+
+  Future<Map<String, dynamic>> getSocialAnalytics() => get('/api/social/analytics');
+
   Future<Map<String, dynamic>> triggerSos() {
     return post('/api/safety/sos', {
       'type': 'resident_sos',
