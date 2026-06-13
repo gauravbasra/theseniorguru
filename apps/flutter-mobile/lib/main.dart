@@ -5641,6 +5641,8 @@ class FeedHome extends StatefulWidget {
 class _FeedHomeState extends State<FeedHome> {
   List<Map<String, dynamic>> _posts = [];
   Map<String, dynamic>? _analytics;
+  Set<String> _followingUserIds = {};
+  int _feedTab = 0;
   bool _loading = true;
   String? _error;
 
@@ -5649,6 +5651,30 @@ class _FeedHomeState extends State<FeedHome> {
     super.initState();
     _load();
     _loadAnalytics();
+    _loadFollowing();
+  }
+
+  Future<void> _loadFollowing() async {
+    try {
+      final data = await widget.apiClient.getFriends();
+      final friends = listOfMaps(data['friends'] ?? []);
+      if (!mounted) return;
+      setState(() {
+        _followingUserIds = friends
+            .map((f) => f['user_id']?.toString())
+            .whereType<String>()
+            .toSet();
+      });
+    } catch (_) {
+      // best effort; Following tab will just show no posts
+    }
+  }
+
+  List<Map<String, dynamic>> get _visiblePosts {
+    if (_feedTab == 0) return _posts;
+    return _posts
+        .where((post) => _followingUserIds.contains(post['author_user_id']?.toString()))
+        .toList();
   }
 
   Future<void> _loadAnalytics() async {
@@ -5781,7 +5807,13 @@ class _FeedHomeState extends State<FeedHome> {
       children: [
         if (_analytics != null) _analyticsRow(_analytics!),
         if (_analytics != null) const SizedBox(height: 16),
-        const Segmented(labels: ['For You', 'Following'], selected: 0),
+        _quickLinksRow(),
+        const SizedBox(height: 16),
+        Segmented(
+          labels: const ['For You', 'Following'],
+          selected: _feedTab,
+          onChanged: (index) => setState(() => _feedTab = index),
+        ),
         const SizedBox(height: 16),
         if (_loading)
           const Padding(
@@ -5799,20 +5831,54 @@ class _FeedHomeState extends State<FeedHome> {
               ],
             ),
           )
-        else if (_posts.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
+        else if (_visiblePosts.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
             child: Center(
               child: Text(
-                'No posts yet. Be the first to share something with your community!',
+                _feedTab == 0
+                    ? 'No posts yet. Be the first to share something with your community!'
+                    : 'No posts from people you follow yet.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: TsgColors.muted),
+                style: const TextStyle(color: TsgColors.muted),
               ),
             ),
           )
         else
-          ..._posts.map((post) => postCard(context, post)),
+          ..._visiblePosts.map((post) => postCard(context, post)),
       ],
+    );
+  }
+
+  Widget _quickLinksRow() {
+    final links = [
+      (CupertinoIcons.group_solid, 'Groups', Screen.groups),
+      (CupertinoIcons.calendar, 'Events', Screen.events),
+      (CupertinoIcons.person_3_fill, 'Friends', Screen.friends),
+    ];
+    return Row(
+      children: links.map((link) {
+        final (icon, label, screen) = link;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: GestureDetector(
+              onTap: () => widget.go(screen),
+              child: SoftCard(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: TsgColors.purple, size: 24),
+                    const SizedBox(height: 6),
+                    Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
