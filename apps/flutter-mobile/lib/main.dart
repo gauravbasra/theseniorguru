@@ -72,7 +72,10 @@ const defaultApiBase = String.fromEnvironment(
 );
 
 const initialScreenKey = String.fromEnvironment('TSG_INITIAL_SCREEN');
-const androidGoogleMapsKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
+const androidGoogleMapsKey = String.fromEnvironment(
+  'GOOGLE_MAPS_API_KEY',
+  defaultValue: 'AIzaSyBjCEhSvSGfrcKJWe-QyN7aN1CqXSCR87w',
+);
 
 typedef ApiRunner =
     Future<bool> Function(
